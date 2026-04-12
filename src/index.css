@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+:root {
+  /* Elastic Drums Color Palette – Dark Theme with Warm Accents */
+  --ed-bg-primary: #0a0a0c;
+  --ed-bg-secondary: #141418;
+  --ed-bg-surface: #1c1c22;
+  --ed-bg-elevated: #24242c;
+  --ed-border: #2a2a34;
+  --ed-text-primary: #e8e8ec;
+  --ed-text-secondary: #8888a0;
+  --ed-text-muted: #555568;
+  --ed-accent-orange: #f59e0b;
+  --ed-accent-amber: #d97706;
+  --ed-accent-blue: #3b82f6;
+  --ed-accent-red: #ef4444;
+  --ed-accent-green: #22c55e;
+  --ed-pad-va: #f59e0b;
+  --ed-pad-sample: #3b82f6;
+  --ed-pad-hybrid: #8b5cf6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: var(--ed-bg-primary);
+  color: var(--ed-text-primary);
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  user-select: none;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+}
