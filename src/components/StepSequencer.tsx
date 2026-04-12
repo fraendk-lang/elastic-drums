@@ -173,7 +173,18 @@ export function StepSequencer() {
                   return (
                     <button
                       key={`${track}-${stepIdx}`}
-                      onClick={() => toggleStep(track, absoluteStep)}
+                      onClick={(e) => {
+                        if (e.shiftKey && step?.active) {
+                          // Shift+Click: cycle velocity
+                          const levels = [127, 100, 70, 40];
+                          const current = step.velocity;
+                          const idx = levels.findIndex((v) => v <= current);
+                          const next = levels[(idx + 1) % levels.length]!;
+                          setStepVelocity(track, absoluteStep, next);
+                        } else {
+                          toggleStep(track, absoluteStep);
+                        }
+                      }}
                       onContextMenu={(e) => handleContextMenu(e, track, absoluteStep)}
                       onMouseDown={(e) => handleStepMouseDown(e, track, absoluteStep)}
                       className={`h-[26px] rounded-[3px] transition-all relative overflow-hidden ${

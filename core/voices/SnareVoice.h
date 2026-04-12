@@ -18,6 +18,8 @@ private:
     float pitchEnv_ = 0.0f;
     float velocity_ = 0.0f;
     bool active_ = false;
+    unsigned int noiseState_ = 54321;
+    float hpState_ = 0.0f;
 };
 
 } // namespace elastic

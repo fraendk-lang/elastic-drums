@@ -50,11 +50,7 @@ void SnareVoice::process(float* left, float* right, int numSamples) {
     // Very fast pitch mod on attack (~10ms)
     const float pitchRate = std::exp(-1.0f / (0.010f * sampleRate_));
 
-    // Noise state (LCG for determinism)
-    static unsigned int ns = 54321;
-
-    // Simple highpass state for noise shaping
-    static float hpState = 0.0f;
+    // Per-instance noise + filter state (members, not static)
 
     for (int i = 0; i < numSamples; ++i) {
         // === Body: Triangle wave at 150-250Hz ===
@@ -71,14 +67,14 @@ void SnareVoice::process(float* left, float* right, int numSamples) {
         if (phase_ > kTwoPi) phase_ -= kTwoPi;
 
         // === Noise: shaped through HP for crack (1.5-4kHz) ===
-        ns = ns * 1664525u + 1013904223u;
-        float rawNoise = static_cast<float>(static_cast<int>(ns)) / 2147483648.0f;
+        noiseState_ = noiseState_ * 1664525u + 1013904223u;
+        float rawNoise = static_cast<float>(static_cast<int>(noiseState_)) / 2147483648.0f;
 
         // Simple 1-pole highpass at ~2kHz for snap character
         float hpCoeff = 1.0f - (kTwoPi * 2000.0f / sampleRate_);
         if (hpCoeff < 0.0f) hpCoeff = 0.0f;
-        float filteredNoise = rawNoise - hpState;
-        hpState = hpState + (1.0f - hpCoeff) * (rawNoise - hpState);
+        float filteredNoise = rawNoise - hpState_;
+        hpState_ = hpState_ + (1.0f - hpCoeff) * (rawNoise - hpState_);
 
         float noiseLayer = filteredNoise * noiseEnv_ * snapAmt * 0.65f;
 
@@ -96,7 +92,7 @@ void SnareVoice::process(float* left, float* right, int numSamples) {
 
         if (ampEnv_ < 0.0001f && noiseEnv_ < 0.0001f) {
             active_ = false;
-            hpState = 0.0f;
+            hpState_ = 0.0f;
             break;
         }
     }

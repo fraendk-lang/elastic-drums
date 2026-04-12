@@ -75,7 +75,10 @@ void Sequencer::advanceStep(TriggerCallback& onTrigger) {
 bool Sequencer::evaluateCondition(const StepData& step) const {
     // Quick probability check
     if (step.probability < 100) {
-        int r = rand() % 100;
+        // LCG noise instead of rand() (thread-safe, no mutex)
+    static unsigned int rngState = 42;
+    rngState = rngState * 1664525u + 1013904223u;
+    int r = static_cast<int>((rngState >> 16) % 100);
         if (r >= step.probability) return false;
     }
 

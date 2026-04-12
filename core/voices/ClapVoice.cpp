@@ -45,10 +45,9 @@ void ClapVoice::process(float* left, float* right, int numSamples) {
         static_cast<int>(sampleRate_ * 0.014f),
     };
 
-    // Bandpass filter state (targeting 700Hz-4kHz body+presence)
-    static float bpLow = 0.0f, bpBand = 0.0f;
-
-    static unsigned int ns = 98765;
+    // Per-instance state (no static!)
+    float bpLow = 0.0f, bpBand = 0.0f;
+    unsigned int ns = 98765 + static_cast<unsigned int>(burstSamples_);
 
     for (int i = 0; i < numSamples; ++i) {
         ns = ns * 1664525u + 1013904223u;

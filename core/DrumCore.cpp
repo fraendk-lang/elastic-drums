@@ -72,9 +72,16 @@ void DrumCore::process(float* leftOut, float* rightOut, int numSamples) {
 }
 
 void DrumCore::triggerVoice(int voiceIndex, float velocity) {
-    if (voiceIndex >= 0 && voiceIndex < kNumVoices) {
-        voices_[voiceIndex]->trigger(velocity);
+    if (voiceIndex < 0 || voiceIndex >= kNumVoices) return;
+
+    // HiHat choke group: closed chokes open, open chokes closed
+    if (voiceIndex == Voice::HiHatClosed) {
+        static_cast<HiHatVoice*>(voices_[Voice::HiHatOpen])->choke();
+    } else if (voiceIndex == Voice::HiHatOpen) {
+        static_cast<HiHatVoice*>(voices_[Voice::HiHatClosed])->choke();
     }
+
+    voices_[voiceIndex]->trigger(velocity);
 }
 
 void DrumCore::setVoiceParam(int voiceIndex, ParamID param, float value) {

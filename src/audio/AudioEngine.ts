@@ -129,6 +129,7 @@ export class AudioEngine {
   private channelAnalysers: AnalyserNode[] = [];
   private channelFilters: BiquadFilterNode[] = [];
   private channelShapers: WaveShaperNode[] = [];
+  private channelPanners: StereoPannerNode[] = [];
   private masterGain: GainNode | null = null;
   private masterAnalyser: AnalyserNode | null = null;
   private masterCompressor: DynamicsCompressorNode | null = null;
@@ -294,20 +295,26 @@ export class AudioEngine {
         const gain = this.ctx.createGain();
         gain.gain.value = 1.0;
 
+        // Channel panner
+        const panner = this.ctx.createStereoPanner();
+        panner.pan.value = 0; // Center
+
         // Analyser (meter)
         const analyser = this.ctx.createAnalyser();
         analyser.fftSize = 2048;
         analyser.smoothingTimeConstant = 0.3;
 
-        // Routing: filter → shaper → gain → analyser → master
+        // Routing: filter → shaper → gain → panner → analyser → master
         filter.connect(shaper);
         shaper.connect(gain);
-        gain.connect(analyser);
+        gain.connect(panner);
+        panner.connect(analyser);
         analyser.connect(this.masterGain);
 
         this.channelFilters.push(filter);
         this.channelShapers.push(shaper);
         this.channelGains.push(gain);
+        this.channelPanners.push(panner);
         this.channelAnalysers.push(analyser);
       }
 
@@ -404,9 +411,15 @@ export class AudioEngine {
    * - RMS = sqrt(mean(sample²)) — true signal power
    * - Peak = max(abs(sample))   — instantaneous peak
    */
+  // Pre-allocated buffer for meter analysis (avoids 6MB/s GC pressure)
+  private meterBuffer: Float32Array<ArrayBuffer> | null = null;
+
   private analyseLevel(analyser: AnalyserNode): { rms: number; peak: number } {
-    const data = new Float32Array(analyser.fftSize);
-    analyser.getFloatTimeDomainData(data);
+    if (!this.meterBuffer || this.meterBuffer.length < analyser.fftSize) {
+      this.meterBuffer = new Float32Array(analyser.fftSize);
+    }
+    analyser.getFloatTimeDomainData(this.meterBuffer);
+    const data = this.meterBuffer;
 
     let sumSquares = 0;
     let peak = 0;
@@ -597,6 +610,12 @@ export class AudioEngine {
   syncDelayToBpm(bpm: number, division: number = 0.375): void {
     const beatSec = 60 / bpm;
     if (this.delayNode) this.delayNode.delayTime.value = beatSec * division;
+  }
+
+  /** Set channel pan (-1=left, 0=center, 1=right) */
+  setChannelPan(channel: number, pan: number): void {
+    const panner = this.channelPanners[channel];
+    if (panner) panner.pan.value = Math.max(-1, Math.min(1, pan));
   }
 
   /** Set channel volume (0..1) */
@@ -808,11 +827,13 @@ export class AudioEngine {
     const ctx = this.getContext();
     if (ctx.state === "suspended") ctx.resume();
 
-    // Send to WASM worklet if active
-    this.postToWorklet({ type: "trigger", voice, velocity });
-
-    // Always also trigger TS synthesis (for immediate pad feedback + fallback)
-    this.scheduleVoice(ctx, voice, velocity, ctx.currentTime);
+    if (this.wasmMode) {
+      // WASM active: only send to worklet, no double-trigger
+      this.postToWorklet({ type: "trigger", voice, velocity });
+    } else {
+      // TS fallback: use Web Audio synthesis
+      this.scheduleVoice(ctx, voice, velocity, ctx.currentTime);
+    }
   }
 
   triggerVoiceAtTime(voice: number, velocity: number, time: number): void {

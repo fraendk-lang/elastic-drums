@@ -83,6 +83,7 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
   const [saturation, setSaturation] = useState(0);
   const [pumpDepth, setPumpDepth] = useState(0);
   const [pumpRate, setPumpRate] = useState(50);
+  const [pans, setPans] = useState<number[]>(new Array(12).fill(0));
   const [selectedChannels, setSelectedChannels] = useState<Set<number>>(new Set());
   const [muted, setMuted] = useState<Set<number>>(new Set());
   const [soloed, setSoloed] = useState<Set<number>>(new Set());
@@ -203,6 +204,11 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
             onMute={() => toggleMute(i)}
             onSolo={() => toggleSolo(i)}
             channelIndex={i}
+            panValue={pans[i] ?? 0}
+            onPanChange={(v) => {
+              setPans((p) => { const n = [...p]; n[i] = v; return n; });
+              audioEngine.setChannelPan(i, v);
+            }}
           />
         ))}
 
@@ -306,12 +312,14 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
 
 function ChannelStrip({ label, color, meter, faderValue, sendA, sendB, isMuted, isSoloed,
   onFader, onSendA, onSendB, onMute, onSolo, channelIndex, isSelected, group, onSelect,
+  panValue, onPanChange,
 }: {
   label: string; color: string; meter: MeterData; faderValue: number;
   sendA: number; sendB: number; isMuted: boolean; isSoloed: boolean;
   onFader: (v: number) => void; onSendA: (v: number) => void; onSendB: (v: number) => void;
   onMute: () => void; onSolo: () => void; channelIndex: number;
   isSelected?: boolean; group?: string; onSelect?: () => void;
+  panValue: number; onPanChange: (v: number) => void;
 }) {
   const [filterFreq, setFilterFreq] = useState(1000);
   const [filterType, setFilterType] = useState<BiquadFilterType>("allpass");
@@ -344,6 +352,8 @@ function ChannelStrip({ label, color, meter, faderValue, sendA, sendB, isMuted, 
 
       {/* Sends */}
       <div className="px-1 py-1 space-y-0.5 border-b border-[var(--ed-border)]">
+        <MiniSend label="P" value={Math.round((panValue + 1) * 50)} color="#888"
+          onChange={(v) => { const pan = (v / 50) - 1; onPanChange(pan); }} />
         <MiniSend label="R" value={sendA} color="#3b82f6" onChange={onSendA} />
         <MiniSend label="D" value={sendB} color="#f59e0b" onChange={onSendB} />
       </div>
