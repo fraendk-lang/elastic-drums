@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useDrumStore, setFillMode } from "../store/drumStore";
 import { downloadMidi } from "../utils/midiExport";
 import { sharePattern } from "../utils/patternShare";
@@ -21,6 +21,30 @@ export function Transport({
     setBpm, setSwing, togglePlay,
     nextPreset, prevPreset, clearPattern,
   } = useDrumStore();
+
+  // Tap Tempo
+  const tapTimes = useRef<number[]>([]);
+  const handleTap = useCallback(() => {
+    const now = performance.now();
+    tapTimes.current.push(now);
+    // Keep last 6 taps
+    if (tapTimes.current.length > 6) tapTimes.current.shift();
+    if (tapTimes.current.length >= 2) {
+      const intervals: number[] = [];
+      for (let i = 1; i < tapTimes.current.length; i++) {
+        intervals.push(tapTimes.current[i]! - tapTimes.current[i - 1]!);
+      }
+      const avgMs = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+      const tappedBpm = Math.round(60000 / avgMs);
+      if (tappedBpm >= 30 && tappedBpm <= 300) setBpm(tappedBpm);
+    }
+    // Reset after 2s pause
+    setTimeout(() => {
+      if (tapTimes.current.length > 0 && performance.now() - tapTimes.current[tapTimes.current.length - 1]! > 2000) {
+        tapTimes.current = [];
+      }
+    }, 2100);
+  }, [setBpm]);
 
   return (
     <header className="flex items-center h-11 px-3 border-b border-[var(--ed-border)] bg-[var(--ed-bg-secondary)] gap-2">
@@ -72,6 +96,33 @@ export function Transport({
           className="w-12 h-1 accent-[var(--ed-accent-orange)]"
         />
         <span className="text-[9px] font-mono text-[var(--ed-text-secondary)] w-5">{swing}</span>
+      </div>
+
+      {/* Tap Tempo */}
+      <button
+        onClick={handleTap}
+        className="px-1.5 h-6 rounded text-[8px] font-bold bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-[var(--ed-text-primary)] hover:bg-[var(--ed-bg-elevated)] transition-colors"
+      >
+        TAP
+      </button>
+
+      {/* Pattern Length */}
+      <div className="flex items-center gap-1">
+        <span className="text-[8px] text-[var(--ed-text-muted)] uppercase">Len</span>
+        <select
+          value={pattern.length}
+          onChange={(e) => {
+            const len = Number(e.target.value);
+            useDrumStore.setState((s) => ({
+              pattern: { ...s.pattern, length: len },
+            }));
+          }}
+          className="h-6 px-1 text-[10px] bg-[var(--ed-bg-primary)] border border-[var(--ed-border)] rounded text-[var(--ed-text-primary)] focus:outline-none"
+        >
+          {[4, 8, 12, 16, 24, 32, 48, 64].map((l) => (
+            <option key={l} value={l}>{l}</option>
+          ))}
+        </select>
       </div>
 
       <div className="w-px h-5 bg-[var(--ed-border)]" />

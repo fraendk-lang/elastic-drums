@@ -1,8 +1,5 @@
 /**
- * Kit Manager
- *
- * A Kit = complete voice parameter setup for all 12 voices + optional starter pattern.
- * Each kit creates a distinct sonic character by adjusting the VA synth parameters.
+ * Kit Manager — Enhanced with FX, Pan, Sends
  */
 
 import { audioEngine } from "../audio/AudioEngine";
@@ -22,6 +19,15 @@ export interface VoiceKitParams {
   spread?: number;
 }
 
+export interface VoiceMixParams {
+  pan?: number;        // -1..1
+  reverbSend?: number; // 0..1
+  delaySend?: number;  // 0..1
+  filterType?: BiquadFilterType; // "allpass", "lowpass", "highpass", "bandpass"
+  filterFreq?: number; // Hz
+  insertDrive?: number; // 0..1
+}
+
 export interface DrumKit {
   id: string;
   name: string;
@@ -29,22 +35,75 @@ export interface DrumKit {
   tags: string[];
   author: string;
   bpmRange: [number, number];
+  description?: string;
   voices: Record<number, VoiceKitParams>;
+  mix?: Record<number, VoiceMixParams>;
+  masterFx?: {
+    reverbLevel?: number;   // 0..1
+    delayTime?: number;     // ms
+    delayFeedback?: number; // 0..1
+    delayLevel?: number;    // 0..1
+    saturation?: number;    // 0..1
+    eqLow?: number;         // dB
+    eqMid?: number;
+    eqHigh?: number;
+  };
   pattern?: {
     length: number;
     swing: number;
-    tracks: Record<number, { steps: number[]; vel?: number[] }>;
+    tracks: Record<number, {
+      steps: number[];
+      vel?: number[];
+      ratchets?: Record<number, number>; // stepIdx → ratchetCount
+    }>;
   };
 }
 
 // Apply a kit to the audio engine
 export function applyKit(kit: DrumKit): void {
+  // Voice params
   for (const [voiceStr, params] of Object.entries(kit.voices)) {
     const voice = Number(voiceStr);
     for (const [paramId, value] of Object.entries(params)) {
       if (value !== undefined) {
         audioEngine.setVoiceParam(voice, paramId, value);
       }
+    }
+  }
+
+  // Mix params (pan, sends, insert FX)
+  if (kit.mix) {
+    for (const [voiceStr, mix] of Object.entries(kit.mix)) {
+      const voice = Number(voiceStr);
+      if (mix.pan !== undefined) audioEngine.setChannelPan(voice, mix.pan);
+      if (mix.reverbSend !== undefined) audioEngine.setChannelReverbSend(voice, mix.reverbSend);
+      if (mix.delaySend !== undefined) audioEngine.setChannelDelaySend(voice, mix.delaySend);
+      if (mix.filterType && mix.filterFreq) {
+        audioEngine.setChannelFilter(voice, mix.filterType, mix.filterFreq, 2);
+      } else {
+        audioEngine.bypassChannelFilter(voice);
+      }
+      if (mix.insertDrive !== undefined) {
+        audioEngine.setChannelDrive(voice, mix.insertDrive);
+      }
+    }
+  }
+
+  // Master FX
+  if (kit.masterFx) {
+    const fx = kit.masterFx;
+    if (fx.reverbLevel !== undefined) audioEngine.setReverbLevel(fx.reverbLevel);
+    if (fx.delayTime !== undefined || fx.delayFeedback !== undefined) {
+      audioEngine.setDelayParams(
+        (fx.delayTime ?? 375) / 1000,
+        fx.delayFeedback ?? 0.4,
+        4000,
+      );
+    }
+    if (fx.delayLevel !== undefined) audioEngine.setDelayLevel(fx.delayLevel);
+    if (fx.saturation !== undefined) audioEngine.setMasterSaturation(fx.saturation);
+    if (fx.eqLow !== undefined || fx.eqMid !== undefined || fx.eqHigh !== undefined) {
+      audioEngine.setMasterEQ(fx.eqLow ?? 0, fx.eqMid ?? 0, fx.eqHigh ?? 0);
     }
   }
 }
@@ -69,9 +128,8 @@ export function kitToPattern(kit: DrumKit): PatternData | null {
       const stepIdx = info.steps[i]!;
       const step = track.steps[stepIdx]!;
       step.active = true;
-      if (info.vel?.[i] !== undefined) {
-        step.velocity = info.vel[i]!;
-      }
+      if (info.vel?.[i] !== undefined) step.velocity = info.vel[i]!;
+      if (info.ratchets?.[stepIdx] !== undefined) step.ratchetCount = info.ratchets[stepIdx]!;
     }
   }
 

@@ -16,6 +16,7 @@ export const FACTORY_KITS: DrumKit[] = [
   {
     id: "808-classic", name: "808 Classic", category: "808",
     tags: ["boom-bap", "hip-hop", "classic"], author: "Factory", bpmRange: [80, 100],
+    description: "The original 808 sound — deep kick, snappy snare, crisp hats",
     voices: {
       0: { tune: 48, decay: 600, click: 40, drive: 25, sub: 70, pitch: 45 },
       1: { tune: 180, decay: 200, tone: 50, snap: 65, body: 55 },
@@ -25,16 +26,27 @@ export const FACTORY_KITS: DrumKit[] = [
       8: { tune: 380, decay: 800 }, 9: { tune: 480, decay: 800 },
       10: { tune: 800, decay: 120 }, 11: { tune: 1200, decay: 100 },
     },
+    mix: {
+      0: { pan: 0, reverbSend: 0.05 },
+      1: { pan: 0, reverbSend: 0.15, delaySend: 0.05 },
+      2: { pan: 0.1, reverbSend: 0.25 },
+      6: { pan: -0.2 }, 7: { pan: 0.2, reverbSend: 0.1 },
+      8: { pan: -0.3, reverbSend: 0.2 }, 9: { pan: 0.3, reverbSend: 0.15 },
+    },
+    masterFx: { reverbLevel: 0.25, saturation: 0.1, eqLow: 2, eqHigh: 1 },
     pattern: { length: 16, swing: 54, tracks: {
       0: { steps: [0, 6, 10], vel: [127, 90, 110] },
       1: { steps: [4, 12], vel: [120, 110] },
+      2: { steps: [4], vel: [80] },
       6: { steps: [0, 2, 4, 6, 8, 10, 12, 14], vel: [100, 60, 80, 60, 100, 60, 80, 60] },
+      7: { steps: [3, 11], vel: [70, 60] },
     }},
   },
 
   {
     id: "808-deep", name: "808 Deep Sub", category: "808",
     tags: ["sub", "bass", "deep"], author: "Factory", bpmRange: [70, 90],
+    description: "Ultra-deep 808 sub bass — perfect for trap and hip-hop",
     voices: {
       0: { tune: 38, decay: 900, click: 20, drive: 15, sub: 90, pitch: 40 },
       1: { tune: 160, decay: 180, tone: 40, snap: 50, body: 70 },
@@ -44,6 +56,14 @@ export const FACTORY_KITS: DrumKit[] = [
       8: { tune: 350, decay: 900 }, 9: { tune: 450, decay: 900 },
       10: { tune: 600, decay: 150 }, 11: { tune: 900, decay: 130 },
     },
+    mix: {
+      0: { pan: 0, reverbSend: 0.02, insertDrive: 0.15 },
+      1: { pan: 0, reverbSend: 0.2 },
+      2: { pan: 0, reverbSend: 0.3 },
+      6: { pan: -0.15, filterType: "highpass", filterFreq: 8000 },
+      7: { pan: 0.15, reverbSend: 0.15 },
+    },
+    masterFx: { reverbLevel: 0.2, saturation: 0.15, eqLow: 4, eqMid: -1, eqHigh: 2 },
     pattern: { length: 16, swing: 56, tracks: {
       0: { steps: [0, 10], vel: [127, 100] },
       1: { steps: [4, 12] },
@@ -465,6 +485,195 @@ export const FACTORY_KITS: DrumKit[] = [
       8: { tune: 300, decay: 2000 }, 9: { tune: 380, decay: 2000 },
       10: { tune: 350, decay: 300 }, 11: { tune: 600, decay: 270 },
     },
+  },
+
+  // ═══════════════════════════════════════════════════════
+  // PREMIUM KITS (with full mix + FX + ratchets)
+  // ═══════════════════════════════════════════════════════
+
+  {
+    id: "garage-uk", name: "UK Garage", category: "909",
+    tags: ["garage", "2step", "uk", "shuffled"], author: "Factory", bpmRange: [130, 140],
+    description: "Shuffled 2-step groove with garage bass and skippy hats",
+    voices: {
+      0: { tune: 50, decay: 380, click: 50, drive: 30, sub: 55, pitch: 46 },
+      1: { tune: 190, decay: 180, tone: 55, snap: 75, body: 45 },
+      2: { decay: 280, tone: 2100, spread: 35, level: 110 },
+      3: { tune: 105, decay: 250 }, 4: { tune: 150, decay: 210 }, 5: { tune: 210, decay: 175 },
+      6: { tune: 350, decay: 35 }, 7: { tune: 350, decay: 200 },
+      8: { tune: 400, decay: 650 }, 9: { tune: 500, decay: 650 },
+      10: { tune: 1100, decay: 80 }, 11: { tune: 1600, decay: 60 },
+    },
+    mix: {
+      0: { pan: 0, reverbSend: 0.08 },
+      1: { pan: 0, reverbSend: 0.2, delaySend: 0.08 },
+      2: { pan: 0.1, reverbSend: 0.35 },
+      6: { pan: -0.2 }, 7: { pan: 0.25, reverbSend: 0.1 },
+      10: { pan: -0.4, delaySend: 0.15 }, 11: { pan: 0.4, delaySend: 0.1 },
+    },
+    masterFx: { reverbLevel: 0.3, delayTime: 250, delayFeedback: 0.3, delayLevel: 0.2, eqLow: 2, eqHigh: 2 },
+    pattern: { length: 16, swing: 62, tracks: {
+      0: { steps: [0, 5, 8, 13], vel: [127, 90, 120, 85] },
+      1: { steps: [4, 12], vel: [120, 110] },
+      2: { steps: [2, 10], vel: [90, 80] },
+      6: { steps: [0, 2, 3, 6, 8, 10, 11, 14], vel: [100, 50, 70, 100, 50, 70, 100, 50] },
+      7: { steps: [4, 12] },
+    }},
+  },
+
+  {
+    id: "drill-uk", name: "UK Drill", category: "Trap",
+    tags: ["drill", "uk", "dark", "sliding-808"], author: "Factory", bpmRange: [140, 145],
+    description: "Dark drill kit with sliding 808 bass and crisp hi-hats",
+    voices: {
+      0: { tune: 36, decay: 1100, click: 45, drive: 65, sub: 85, pitch: 38 },
+      1: { tune: 215, decay: 150, tone: 65, snap: 85, body: 25 },
+      2: { decay: 220, tone: 2500, spread: 25, level: 120 },
+      3: { tune: 85, decay: 180 }, 4: { tune: 120, decay: 150 }, 5: { tune: 170, decay: 130 },
+      6: { tune: 380, decay: 25 }, 7: { tune: 380, decay: 140 },
+      8: { tune: 440, decay: 500 }, 9: { tune: 540, decay: 500 },
+      10: { tune: 1300, decay: 45 }, 11: { tune: 2000, decay: 35 },
+    },
+    mix: {
+      0: { pan: 0, insertDrive: 0.2 },
+      1: { pan: 0, reverbSend: 0.12 },
+      2: { pan: 0, reverbSend: 0.15 },
+      6: { pan: -0.15, filterType: "highpass", filterFreq: 9000 },
+      7: { pan: 0.15 },
+    },
+    masterFx: { reverbLevel: 0.15, saturation: 0.2, eqLow: 3, eqMid: -2, eqHigh: 3 },
+    pattern: { length: 16, swing: 50, tracks: {
+      0: { steps: [0, 3, 7, 10], vel: [127, 100, 115, 90] },
+      1: { steps: [4, 12] },
+      6: { steps: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+           vel: [100, 40, 65, 40, 100, 40, 65, 40, 100, 40, 65, 40, 100, 40, 65, 40],
+           ratchets: { 6: 2, 14: 3 } },
+      7: { steps: [6, 14] },
+    }},
+  },
+
+  {
+    id: "breakbeat", name: "Breakbeat", category: "DnB",
+    tags: ["breaks", "breakbeat", "rave", "old-school"], author: "Factory", bpmRange: [130, 145],
+    description: "Classic breakbeat energy with chopped drums and reverb",
+    voices: {
+      0: { tune: 55, decay: 320, click: 60, drive: 40, sub: 35, pitch: 52 },
+      1: { tune: 195, decay: 200, tone: 55, snap: 75, body: 45 },
+      2: { decay: 300, tone: 2000, spread: 50, level: 105 },
+      3: { tune: 110, decay: 240 }, 4: { tune: 155, decay: 200 }, 5: { tune: 215, decay: 170 },
+      6: { tune: 345, decay: 40 }, 7: { tune: 345, decay: 200 },
+      8: { tune: 410, decay: 700 }, 9: { tune: 510, decay: 700 },
+      10: { tune: 1000, decay: 90 }, 11: { tune: 1500, decay: 70 },
+    },
+    mix: {
+      0: { pan: 0, reverbSend: 0.1 },
+      1: { pan: 0.05, reverbSend: 0.25, delaySend: 0.1 },
+      2: { pan: -0.1, reverbSend: 0.3 },
+      6: { pan: -0.15 }, 7: { pan: 0.2, reverbSend: 0.15 },
+      9: { pan: 0.3, reverbSend: 0.2, delaySend: 0.15 },
+    },
+    masterFx: { reverbLevel: 0.35, delayTime: 300, delayFeedback: 0.35, delayLevel: 0.2, saturation: 0.15 },
+    pattern: { length: 16, swing: 50, tracks: {
+      0: { steps: [0, 3, 8, 10, 14], vel: [127, 90, 120, 80, 100] },
+      1: { steps: [4, 7, 12], vel: [120, 80, 115] },
+      6: { steps: [0, 2, 4, 6, 8, 10, 12, 14], vel: [100, 60, 90, 55, 100, 60, 90, 55] },
+      7: { steps: [6, 14] },
+      9: { steps: [0, 4, 8, 12], vel: [50, 45, 50, 45] },
+    }},
+  },
+
+  {
+    id: "dub-techno", name: "Dub Techno", category: "909",
+    tags: ["dub", "techno", "minimal", "echo", "deep"], author: "Factory", bpmRange: [118, 128],
+    description: "Hypnotic dub techno — deep reverb, echo, minimal groove",
+    voices: {
+      0: { tune: 52, decay: 420, click: 40, drive: 20, sub: 50, pitch: 44 },
+      1: { tune: 180, decay: 240, tone: 45, snap: 55, body: 60 },
+      2: { decay: 350, tone: 1600, spread: 55, level: 90 },
+      3: { tune: 95, decay: 300 }, 4: { tune: 135, decay: 260 }, 5: { tune: 195, decay: 220 },
+      6: { tune: 310, decay: 50 }, 7: { tune: 310, decay: 260 },
+      8: { tune: 370, decay: 900 }, 9: { tune: 460, decay: 1000 },
+      10: { tune: 700, decay: 150 }, 11: { tune: 1050, decay: 120 },
+    },
+    mix: {
+      0: { pan: 0, reverbSend: 0.12 },
+      1: { pan: 0, reverbSend: 0.3, delaySend: 0.2 },
+      2: { pan: 0.1, reverbSend: 0.4, delaySend: 0.15 },
+      6: { pan: -0.2, delaySend: 0.1 },
+      7: { pan: 0.25, reverbSend: 0.2, delaySend: 0.25 },
+      9: { pan: 0.35, reverbSend: 0.3, delaySend: 0.2 },
+      10: { pan: -0.4, reverbSend: 0.35, delaySend: 0.3 },
+    },
+    masterFx: { reverbLevel: 0.4, delayTime: 500, delayFeedback: 0.5, delayLevel: 0.35, eqLow: 1, eqHigh: -1 },
+    pattern: { length: 16, swing: 50, tracks: {
+      0: { steps: [0, 4, 8, 12], vel: [120, 115, 120, 115] },
+      2: { steps: [4, 12], vel: [80, 75] },
+      6: { steps: [2, 6, 10, 14], vel: [85, 65, 85, 65] },
+      10: { steps: [0, 8], vel: [50, 45] },
+      9: { steps: [2, 10], vel: [40, 35] },
+    }},
+  },
+
+  {
+    id: "latin-perc", name: "Latin Percussion", category: "World",
+    tags: ["latin", "salsa", "conga", "bongo", "percussion"], author: "Factory", bpmRange: [95, 120],
+    description: "Rich Latin percussion with congas, bongos and shakers",
+    voices: {
+      0: { tune: 52, decay: 400, click: 35, drive: 20, sub: 50, pitch: 44 },
+      1: { tune: 175, decay: 210, tone: 50, snap: 60, body: 55 },
+      2: { decay: 320, tone: 1700, spread: 55, level: 100 },
+      3: { tune: 90, decay: 320 }, 4: { tune: 130, decay: 280 }, 5: { tune: 180, decay: 240 },
+      6: { tune: 320, decay: 45 }, 7: { tune: 320, decay: 230 },
+      8: { tune: 380, decay: 750 }, 9: { tune: 470, decay: 750 },
+      10: { tune: 650, decay: 160 }, 11: { tune: 1000, decay: 130 },
+    },
+    mix: {
+      0: { pan: 0 },
+      1: { pan: 0, reverbSend: 0.15 },
+      3: { pan: -0.3, reverbSend: 0.1 }, 4: { pan: 0.3, reverbSend: 0.1 },
+      10: { pan: -0.4, reverbSend: 0.15 }, 11: { pan: 0.4, reverbSend: 0.12 },
+      8: { pan: -0.2, reverbSend: 0.2 },
+    },
+    masterFx: { reverbLevel: 0.3, eqMid: 1, eqHigh: 2 },
+    pattern: { length: 16, swing: 55, tracks: {
+      0: { steps: [0, 8], vel: [110, 95] },
+      1: { steps: [4, 12] },
+      3: { steps: [0, 3, 6, 10, 12], vel: [100, 70, 90, 75, 100] },
+      4: { steps: [2, 5, 8, 11, 14], vel: [80, 60, 85, 65, 80] },
+      6: { steps: [0, 2, 4, 6, 8, 10, 12, 14] },
+      10: { steps: [1, 3, 5, 7, 9, 11, 13, 15], vel: [60, 40, 55, 40, 60, 40, 55, 40] },
+      11: { steps: [0, 4, 8, 12], vel: [50, 40, 50, 40] },
+    }},
+  },
+
+  {
+    id: "trap-drill-rolls", name: "Trap Rolls", category: "Trap",
+    tags: ["trap", "rolls", "ratchets", "hi-hat-rolls"], author: "Factory", bpmRange: [140, 160],
+    description: "Heavy trap with hi-hat rolls, ratchets and 808 sub",
+    voices: {
+      0: { tune: 35, decay: 1200, click: 50, drive: 65, sub: 85, pitch: 38 },
+      1: { tune: 210, decay: 160, tone: 65, snap: 85, body: 28 },
+      2: { decay: 230, tone: 2500, spread: 28, level: 118 },
+      3: { tune: 85, decay: 190 }, 4: { tune: 120, decay: 160 }, 5: { tune: 170, decay: 135 },
+      6: { tune: 380, decay: 22 }, 7: { tune: 380, decay: 150 },
+      8: { tune: 440, decay: 480 }, 9: { tune: 540, decay: 480 },
+      10: { tune: 1300, decay: 45 }, 11: { tune: 1900, decay: 35 },
+    },
+    mix: {
+      0: { pan: 0, insertDrive: 0.25 },
+      1: { pan: 0, reverbSend: 0.1 },
+      6: { pan: -0.1, filterType: "highpass", filterFreq: 9500 },
+      7: { pan: 0.1 },
+    },
+    masterFx: { reverbLevel: 0.12, saturation: 0.2, eqLow: 4, eqMid: -2, eqHigh: 4 },
+    pattern: { length: 16, swing: 50, tracks: {
+      0: { steps: [0, 4, 7, 11], vel: [127, 100, 115, 90] },
+      1: { steps: [4, 12], vel: [125, 115] },
+      6: { steps: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+           vel: [110, 45, 70, 45, 110, 45, 70, 45, 110, 45, 70, 45, 110, 45, 70, 45],
+           ratchets: { 5: 2, 6: 3, 7: 2, 13: 2, 14: 4, 15: 2 } },
+      7: { steps: [6, 14] },
+    }},
   },
 ];
 
