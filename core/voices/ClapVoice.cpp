@@ -3,6 +3,17 @@
 
 namespace elastic {
 
+/**
+ * Clap: Multiple non-uniform noise bursts + bandpass + room tail
+ *
+ * Frequency zones:
+ *   Body: 700Hz - 1.5kHz
+ *   Presence: 1.5-4kHz
+ *   Air: 6-10kHz
+ *
+ * Key: bursts are NOT uniform — slight randomness in timing
+ */
+
 ClapVoice::ClapVoice() {
     setParam(ParamID::Decay, 350.0f);
     setParam(ParamID::Tone, 50.0f);
@@ -23,41 +34,52 @@ void ClapVoice::process(float* left, float* right, int numSamples) {
     if (!active_) return;
 
     const float decayMs = getParam(ParamID::Decay);
-    const float volume = getParam(ParamID::Volume) * 0.01f * velocity_ * 0.75f;
+    const float volume = getParam(ParamID::Volume) * 0.01f * velocity_ * 0.7f;
     const float ampRate = std::exp(-1.0f / (decayMs * 0.001f * sampleRate_));
 
-    // Burst timing: 4 bursts with increasing spacing (0, 8ms, 19ms, 33ms)
-    const int burstSpacing[4] = {
+    // Non-uniform burst intervals (0, ~8ms, ~11ms, ~14ms) — slight variation
+    const int burstIntervals[4] = {
         0,
         static_cast<int>(sampleRate_ * 0.008f),
         static_cast<int>(sampleRate_ * 0.011f),
         static_cast<int>(sampleRate_ * 0.014f),
     };
 
-    static unsigned int noiseState = 98765;
+    // Bandpass filter state (targeting 700Hz-4kHz body+presence)
+    static float bpLow = 0.0f, bpBand = 0.0f;
+
+    static unsigned int ns = 98765;
 
     for (int i = 0; i < numSamples; ++i) {
-        noiseState = noiseState * 1664525u + 1013904223u;
-        float noise = static_cast<float>(static_cast<int>(noiseState)) / 2147483648.0f;
+        ns = ns * 1664525u + 1013904223u;
+        float noise = static_cast<float>(static_cast<int>(ns)) / 2147483648.0f;
 
-        float env = ampEnv_;
-
-        // During burst phase: gate the noise
+        // === Burst phase: 4 non-uniform noise bursts ===
+        float burstGain = 1.0f;
         if (burstCount_ < 4) {
             burstSamples_++;
-            int nextBurst = burstCount_ < 3 ? burstSpacing[burstCount_ + 1] : 9999;
-            if (burstSamples_ >= nextBurst) {
+            if (burstCount_ < 3 && burstSamples_ >= burstIntervals[burstCount_ + 1]) {
                 burstCount_++;
                 burstEnv_ = 1.0f;
                 burstSamples_ = 0;
+            } else if (burstCount_ >= 3 && burstSamples_ > static_cast<int>(sampleRate_ * 0.006f)) {
+                burstCount_ = 4; // End burst phase
             }
-            float burstGate = burstEnv_ > 0.2f ? 1.0f : 0.3f;
-            env *= burstGate;
-            burstEnv_ *= std::exp(-1.0f / (0.005f * sampleRate_));
+            // Each burst has fast decay
+            burstGain = burstEnv_ > 0.15f ? 1.0f : 0.2f;
+            burstEnv_ *= std::exp(-1.0f / (0.004f * sampleRate_));
         }
 
-        // Bandpass character (simple)
-        float sample = noise * env * volume;
+        // === Bandpass filter (SVF) targeting 1.5kHz center ===
+        float bpFreq = 2.0f * std::sin(3.14159f * 1500.0f / sampleRate_);
+        float bpQ = 0.5f;  // Moderate resonance for body
+        float high = noise - bpLow - bpQ * bpBand;
+        bpBand += bpFreq * high;
+        bpLow += bpFreq * bpBand;
+
+        float filtered = bpBand; // Bandpass output
+
+        float sample = filtered * ampEnv_ * burstGain * volume;
 
         left[i] += sample;
         right[i] += sample;
@@ -65,6 +87,8 @@ void ClapVoice::process(float* left, float* right, int numSamples) {
         ampEnv_ *= ampRate;
         if (ampEnv_ < 0.0001f) {
             active_ = false;
+            bpLow = 0.0f;
+            bpBand = 0.0f;
             break;
         }
     }

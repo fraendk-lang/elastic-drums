@@ -1,18 +1,35 @@
 #include "HiHatVoice.h"
 #include <cmath>
-#include <cstdlib>
 
 namespace elastic {
 
 static constexpr float kTwoPi = 6.283185307f;
+constexpr float HiHatVoice::kRatios[kNumOsc];
 
-// 909 hi-hat uses 6 square-wave oscillators at metallic ratios
-static constexpr float kMetallicRatios[] = {1.0f, 1.4471f, 1.7409f, 1.9307f, 2.5377f, 2.7616f};
+/**
+ * Hi-Hat synthesis following professional drum design:
+ *
+ * Layer 1 — Metallic Core (4-10kHz):
+ *   6 square/pulse oscillators at 909 inharmonic ratios
+ *   Creates the characteristic metallic shimmer
+ *
+ * Layer 2 — Noise (8-16kHz):
+ *   White noise through highpass for air/sizzle
+ *   Decays faster than metal layer
+ *
+ * Layer 3 — Transient (attack click):
+ *   Very short noise burst for definition
+ *   ~1ms, gives the "tick" on each hit
+ *
+ * Post-processing:
+ *   HPF at ~500Hz removes all unwanted low content
+ *   Light saturation for presence
+ */
 
 HiHatVoice::HiHatVoice() {
-    setParam(ParamID::Tune, 320.0f);    // Base frequency
-    setParam(ParamID::Decay, 80.0f);    // Short for closed, longer for open
-    setParam(ParamID::Tone, 70.0f);     // Metallic vs noise mix
+    setParam(ParamID::Tune, 330.0f);     // Base frequency for metallic core
+    setParam(ParamID::Decay, 80.0f);     // 45ms closed, 250ms open
+    setParam(ParamID::Tone, 60.0f);      // Metal vs noise balance
     setParam(ParamID::Volume, 100.0f);
     setParam(ParamID::Pan, 0.0f);
 }
@@ -20,47 +37,72 @@ HiHatVoice::HiHatVoice() {
 void HiHatVoice::trigger(float velocity) {
     velocity_ = velocity;
     active_ = true;
-    phase1_ = 0.0f;
-    phase2_ = 0.0f;
-    phase3_ = 0.0f;
     ampEnv_ = 1.0f;
+    transientEnv_ = 1.0f;
+    // Don't reset phases — allows for natural variation between hits
+    // (real cymbals don't reset phase on each strike)
 }
 
 void HiHatVoice::process(float* left, float* right, int numSamples) {
     if (!active_) return;
 
-    const float tune = getParam(ParamID::Tune);
-    const float decayMs = getParam(ParamID::Decay);
-    const float toneMix = getParam(ParamID::Tone) * 0.01f;
-    const float volume = getParam(ParamID::Volume) * 0.01f * velocity_;
+    const float baseFreq = getParam(ParamID::Tune);      // ~330Hz base
+    const float decayMs = getParam(ParamID::Decay);       // Closed: ~45ms, Open: ~250ms
+    const float metalMix = getParam(ParamID::Tone) * 0.01f; // Metal vs noise
+    const float volume = getParam(ParamID::Volume) * 0.01f * velocity_ * 0.35f;
 
     const float ampRate = std::exp(-1.0f / (decayMs * 0.001f * sampleRate_));
+    // Transient: very short (~1ms)
+    const float transRate = std::exp(-1.0f / (0.001f * sampleRate_));
+    // Noise decays slightly faster for crisp sound
+    const float noiseDecayFactor = 0.8f;
+
+    // HPF coefficient (~500Hz cutoff to remove low content)
+    const float hpCoeff = std::exp(-kTwoPi * 500.0f / sampleRate_);
 
     for (int i = 0; i < numSamples; ++i) {
-        // Metallic oscillators (simplified: 3 detuned square waves)
+        // === Layer 1: Metallic Core ===
+        // 6 square oscillators at inharmonic ratios
         float metal = 0.0f;
-        float sq1 = (std::sin(phase1_) > 0.0f) ? 1.0f : -1.0f;
-        float sq2 = (std::sin(phase2_) > 0.0f) ? 1.0f : -1.0f;
-        float sq3 = (std::sin(phase3_) > 0.0f) ? 1.0f : -1.0f;
-        metal = (sq1 + sq2 + sq3) * 0.2f * toneMix;
+        for (int o = 0; o < kNumOsc; o++) {
+            // Square wave: sign of sine
+            float sq = (std::sin(phases_[o]) > 0.0f) ? 1.0f : -1.0f;
+            metal += sq;
+            phases_[o] += kTwoPi * baseFreq * kRatios[o] / sampleRate_;
+            if (phases_[o] > kTwoPi) phases_[o] -= kTwoPi;
+        }
+        metal *= (1.0f / kNumOsc) * metalMix * 0.6f;
 
-        phase1_ += kTwoPi * tune * kMetallicRatios[0] / sampleRate_;
-        phase2_ += kTwoPi * tune * kMetallicRatios[2] / sampleRate_;
-        phase3_ += kTwoPi * tune * kMetallicRatios[4] / sampleRate_;
-        if (phase1_ > kTwoPi) phase1_ -= kTwoPi;
-        if (phase2_ > kTwoPi) phase2_ -= kTwoPi;
-        if (phase3_ > kTwoPi) phase3_ -= kTwoPi;
+        // === Layer 2: Noise (air/sizzle) ===
+        float n = noise();
+        float noiseAmt = (1.0f - metalMix * 0.5f) * 0.4f;
+        float noiseLayer = n * noiseAmt;
+        // Noise envelope decays faster
+        float noiseEnv = std::pow(ampEnv_, 1.0f / noiseDecayFactor);
 
-        // Noise
-        float noise = (static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.0f - 1.0f)
-                       * (1.0f - toneMix * 0.5f) * 0.5f;
+        // === Layer 3: Transient click ===
+        float transient = noise() * transientEnv_ * 0.3f;
 
-        float sample = (metal + noise) * ampEnv_ * volume;
+        // === Mix all layers ===
+        float raw = (metal * ampEnv_) + (noiseLayer * noiseEnv) + transient;
+
+        // === Highpass filter (remove everything below ~500Hz) ===
+        float hp = raw - hpState_;
+        hpState_ = hpState_ * hpCoeff + raw * (1.0f - hpCoeff);
+
+        // === Light saturation for presence ===
+        float sat = hp * 1.3f;
+        if (sat > 1.0f) sat = 1.0f;
+        if (sat < -1.0f) sat = -1.0f;
+
+        float sample = sat * volume;
 
         left[i] += sample;
         right[i] += sample;
 
         ampEnv_ *= ampRate;
+        transientEnv_ *= transRate;
+
         if (ampEnv_ < 0.0001f) {
             active_ = false;
             break;

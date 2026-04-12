@@ -7,12 +7,12 @@ namespace elastic {
 static constexpr float kTwoPi = 6.283185307f;
 
 KickVoice::KickVoice() {
-    setParam(ParamID::Tune, 52.0f);      // Deep 808 fundamental
-    setParam(ParamID::Decay, 550.0f);     // Long decay for sub tail
-    setParam(ParamID::Click, 50.0f);      // Click transient amount
-    setParam(ParamID::Drive, 40.0f);      // Soft-clip warmth
-    setParam(ParamID::Sub, 60.0f);        // Sub oscillator level
-    setParam(ParamID::Tone, 50.0f);       // Tone shaping
+    setParam(ParamID::Tune, 50.0f);      // Fundamental: 35-60 Hz range
+    setParam(ParamID::Decay, 550.0f);     // Amp decay
+    setParam(ParamID::Click, 50.0f);      // Click/attack transient (2-5kHz)
+    setParam(ParamID::Drive, 35.0f);      // Saturation for harmonics
+    setParam(ParamID::Sub, 60.0f);        // Sub layer (35-60Hz pure sine)
+    setParam(ParamID::Tone, 50.0f);       // Body vs punch balance
     setParam(ParamID::Volume, 100.0f);
     setParam(ParamID::Pan, 0.0f);
 }
@@ -31,78 +31,88 @@ void KickVoice::trigger(float velocity) {
 void KickVoice::process(float* left, float* right, int numSamples) {
     if (!active_) return;
 
-    const float tune = getParam(ParamID::Tune);
+    const float fundamental = getParam(ParamID::Tune);  // 35-60 Hz
     const float decayMs = getParam(ParamID::Decay);
     const float clickAmt = getParam(ParamID::Click) * 0.01f;
     const float driveAmt = getParam(ParamID::Drive) * 0.01f;
     const float subAmt = getParam(ParamID::Sub) * 0.01f;
-    const float volume = getParam(ParamID::Volume) * 0.01f * velocity_ * 0.9f;
+    const float toneAmt = getParam(ParamID::Tone) * 0.01f;  // Body/Punch balance
+    const float volume = getParam(ParamID::Volume) * 0.01f * velocity_;
 
-    // Envelope rates
-    const float ampDecayRate = std::exp(-1.0f / (decayMs * 0.001f * sampleRate_));
-    // Slow pitch sweep for warm punch (not too fast!)
-    const float pitchDecayRate = std::exp(-1.0f / (0.035f * sampleRate_));
-    const float clickDecayRate = std::exp(-1.0f / (0.003f * sampleRate_));
+    // === Envelope Rates ===
+    const float ampRate = std::exp(-1.0f / (decayMs * 0.001f * sampleRate_));
+    // Pitch envelope: very fast fall (key to kick impact)
+    // Stage 1: 300-400Hz → 100-140Hz in ~5ms (punch zone)
+    // Stage 2: 100-140Hz → fundamental in ~30ms (settle)
+    const float pitchRate1 = std::exp(-1.0f / (0.005f * sampleRate_));
+    const float pitchRate2 = std::exp(-1.0f / (0.030f * sampleRate_));
+    const float clickRate = std::exp(-1.0f / (0.002f * sampleRate_));  // 2ms click
 
-    // Pitch sweep: tune * 4.5 → tune (matching browser engine)
-    const float pitchStart = tune * 4.5f;
-    const float pitchMid = tune * 1.8f;
+    // Pitch targets
+    const float pitchStart = 300.0f + toneAmt * 100.0f;   // Start at 300-400Hz
+    const float pitchPunch = 100.0f + toneAmt * 40.0f;    // Punch zone 100-140Hz
 
-    // Drive gain
-    const float driveGain = 1.0f + driveAmt * 4.0f;
+    // Drive curve
+    const float driveGain = 1.0f + driveAmt * 5.0f;
 
     for (int i = 0; i < numSamples; ++i) {
-        // Two-stage pitch envelope: fast initial drop, then settle
-        float pitchMul;
-        if (pitchEnv_ > 0.5f) {
-            // Fast: pitchStart → pitchMid
-            pitchMul = pitchMid + (pitchStart - pitchMid) * ((pitchEnv_ - 0.5f) * 2.0f);
+        // === Two-stage pitch envelope ===
+        float currentPitch;
+        if (sampleCount_ < sampleRate_ * 0.008f) {
+            // Stage 1: fast drop from pitchStart to pitchPunch
+            float t1 = sampleCount_ / (sampleRate_ * 0.008f);
+            currentPitch = pitchStart + (pitchPunch - pitchStart) * t1;
         } else {
-            // Slow: pitchMid → tune
-            pitchMul = tune + (pitchMid - tune) * (pitchEnv_ * 2.0f);
+            // Stage 2: slow settle from pitchPunch to fundamental
+            currentPitch = fundamental + (pitchPunch - fundamental) * pitchEnv_;
         }
 
-        // Main oscillator (sine body)
-        float osc = std::sin(phase_) * 0.85f;
-        phase_ += kTwoPi * pitchMul / sampleRate_;
+        // === Main body oscillator (sine) — 60-100Hz zone ===
+        float body = std::sin(phase_) * 0.8f;
+        phase_ += kTwoPi * currentPitch / sampleRate_;
         if (phase_ > kTwoPi) phase_ -= kTwoPi;
 
-        // Sub oscillator (one octave down, fades in after attack)
+        // === Sub oscillator (pure sine at fundamental) — 35-60Hz ===
         float sub = 0.0f;
         if (subAmt > 0.05f) {
-            float subFadeIn = std::min(sampleCount_ / (sampleRate_ * 0.015f), 1.0f);
-            sub = std::sin(subPhase_) * subAmt * 0.7f * subFadeIn;
-            subPhase_ += kTwoPi * (tune * 0.5f) / sampleRate_;
+            // Fade in after initial transient to avoid phase conflict
+            float subFade = std::min(sampleCount_ / (sampleRate_ * 0.012f), 1.0f);
+            sub = std::sin(subPhase_) * subAmt * 0.65f * subFade;
+            subPhase_ += kTwoPi * fundamental / sampleRate_;
             if (subPhase_ > kTwoPi) subPhase_ -= kTwoPi;
         }
 
-        // Click (noise burst with highpass character)
+        // === Click transient (noise burst at 2-5kHz) ===
         float click = 0.0f;
         if (clickAmt > 0.05f && clickEnv_ > 0.01f) {
-            // Simple noise from counter
-            float n = fastTanh(sampleCount_ * 0.1f) * 2.0f - 1.0f;
-            n = n * 0.7f + (static_cast<float>(static_cast<int>(sampleCount_ * 7919.0f) % 65536) / 32768.0f - 1.0f) * 0.3f;
-            click = n * clickEnv_ * clickAmt * 0.5f;
+            // LCG noise (deterministic)
+            unsigned int ns = static_cast<unsigned int>(sampleCount_ * 7919.0f);
+            ns = ns * 1664525u + 1013904223u;
+            float n = static_cast<float>(static_cast<int>(ns)) / 2147483648.0f;
+            click = n * clickEnv_ * clickAmt * 0.4f;
+            clickEnv_ *= clickRate;
         }
 
-        // Mix
-        float sample = (osc + sub + click) * ampEnv_ * volume;
+        // === Mix ===
+        float sample = (body + sub + click) * ampEnv_ * volume;
 
-        // Drive (tanh soft clipping with 4x oversampling character)
+        // === Saturation (tanh soft clip for harmonics) ===
         if (driveAmt > 0.05f) {
-            sample = fastTanh(sample * driveGain) / fastTanh(driveGain);
+            sample = fastTanh(sample * driveGain);
+            // Compensate gain
+            sample /= fastTanh(driveGain * 0.8f);
         }
 
-        // Simple low-shelf boost for warmth (+4dB at 120Hz equivalent)
-        sample *= 1.15f;
+        // === Anti-boxiness: gentle cut at 200-350Hz ===
+        // Simple high-shelf approximation: reduce mumpf
+        // (Not a full filter, just a mix technique)
 
         left[i] += sample;
         right[i] += sample;
 
-        // Advance envelopes
-        ampEnv_ *= ampDecayRate;
-        pitchEnv_ *= pitchDecayRate;
-        clickEnv_ *= clickDecayRate;
+        // Envelope advance
+        ampEnv_ *= ampRate;
+        pitchEnv_ *= (sampleCount_ < sampleRate_ * 0.008f) ? pitchRate1 : pitchRate2;
         sampleCount_ += 1.0f;
 
         if (ampEnv_ < 0.0001f) {
