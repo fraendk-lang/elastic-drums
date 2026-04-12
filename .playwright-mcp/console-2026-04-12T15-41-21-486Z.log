@@ -45,3 +45,8 @@ Visit https://react.dev/link/error-boundaries to learn more about error boundari
 [  733775ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776009160356:34
 [  733777ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0
 [  734909ms] [WARNING] WASM worklet error: TypeError: WebAssembly.instantiate(): Import #0 "a": module is not an object or function @ http://localhost:5173/src/audio/AudioEngine.ts?t=1776009160356:440
+[  791504ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[  791527ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776009160356:34
+[  791527ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776009160356:34
+[  791527ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0
+[  793052ms] [WARNING] WASM worklet error: TypeError: WebAssembly.instantiate(): Import #0 "a": module is not an object or function @ http://localhost:5173/src/audio/AudioEngine.ts?t=1776009160356:440
