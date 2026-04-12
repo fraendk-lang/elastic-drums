@@ -590,6 +590,16 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
       const s = newPattern.tracks[track]!.steps[step]!;
       s.active = !s.active;
       if (s.active && s.velocity === 0) s.velocity = 100;
+
+      // Auto-extend pattern length if activating a step beyond current length
+      if (s.active && step >= newPattern.length) {
+        const VALID = [4, 8, 12, 16, 24, 32, 48, 64];
+        const needed = step + 1;
+        const newLen = VALID.find((l) => l >= needed) ?? 64;
+        newPattern.length = newLen;
+        for (const t of newPattern.tracks) t.length = newLen;
+      }
+
       return { pattern: newPattern };
     }),
 

@@ -227,24 +227,10 @@ export function StepSequencer() {
                   const isHeld = heldStep?.track === track && heldStep?.step === absoluteStep;
                   const velNorm = velocity / 127;
                   const isBeat = stepIdx % 4 === 0;
-                  const isBeyondLength = absoluteStep >= pattern.length;
-
                   return (
                     <button
                       key={`${track}-${stepIdx}`}
                       onClick={(e) => {
-                        // Click beyond length → auto-extend pattern
-                        if (isBeyondLength) {
-                          const newLen = absoluteStep + 1;
-                          // Snap to next valid length
-                          const VALID = [4, 8, 12, 16, 24, 32, 48, 64];
-                          const snapped = VALID.find((l) => l >= newLen) ?? 64;
-                          useDrumStore.setState((s) => ({
-                            pattern: { ...s.pattern, length: snapped },
-                          }));
-                          toggleStep(track, absoluteStep);
-                          return;
-                        }
                         if (e.shiftKey && step?.active) {
                           const levels = [127, 100, 70, 40];
                           const current = step.velocity;

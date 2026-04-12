@@ -62,3 +62,7 @@ Check out your Vite / network configuration and https://vite.dev/config/server-o
 [ 3971890ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5174/src/hooks/useMidi.ts?t=1776027926744:34
 [ 3971890ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5174/src/hooks/useMidi.ts?t=1776027926744:34
 [ 3971899ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5174/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5174/:0
+[ 4244983ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 4245058ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5174/src/hooks/useMidi.ts?t=1776029283221:34
+[ 4245058ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5174/src/hooks/useMidi.ts?t=1776029283221:34
+[ 4245063ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5174/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5174/:0
