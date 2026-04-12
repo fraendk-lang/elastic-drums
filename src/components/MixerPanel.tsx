@@ -1,11 +1,7 @@
 /**
- * Fullscreen Mixer — Professional Metering
+ * Fullscreen Mixer — Professional Metering v2
  *
- * - FFT-based RMS + Peak level analysis
- * - Logarithmic dB scale on meters (-60dB to 0dB)
- * - Peak hold indicators with slow decay
- * - Logarithmic fader law (like real consoles)
- * - Clip indicators at 0dBFS
+ * Fixed: dB scale aligned to meters, wider meters, proper IEC mapping
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -26,48 +22,45 @@ const CHANNELS = [
   { id: 11, label: "PRC 2", color: "#8b5cf6" },
 ];
 
-// dB scale: maps dBFS to meter position (0..1)
-// Logarithmic: more resolution near 0dB, less at -60dB
-const DB_MIN = -60;
-const DB_MAX = 6; // Allow +6dB for clip indication
-const _DB_RANGE = DB_MAX - DB_MIN; void _DB_RANGE;
-
-function dbToMeterPosition(db: number): number {
-  if (db <= DB_MIN) return 0;
-  if (db >= DB_MAX) return 1;
-  // Attempt at IEC 60268-18 scale approximation
-  if (db >= -0.1) return 1.0;
-  if (db >= -6)  return 0.85 + (db + 6) / 6 * 0.15;
-  if (db >= -12) return 0.70 + (db + 12) / 6 * 0.15;
-  if (db >= -20) return 0.50 + (db + 20) / 8 * 0.20;
-  if (db >= -30) return 0.30 + (db + 30) / 10 * 0.20;
-  if (db >= -40) return 0.15 + (db + 40) / 10 * 0.15;
-  if (db >= -60) return (db + 60) / 20 * 0.15;
+// IEC 60268-18 meter scale: dBFS → meter % (0..100)
+function dbToPercent(db: number): number {
+  if (db < -60) return 0;
+  if (db > 6)   return 100;
+  // Piecewise linear approximation of IEC scale
+  if (db >= -0.1) return 100;
+  if (db >= -6)   return 85 + (db + 6) / 6 * 15;
+  if (db >= -12)  return 70 + (db + 12) / 6 * 15;
+  if (db >= -20)  return 50 + (db + 20) / 8 * 20;
+  if (db >= -30)  return 30 + (db + 30) / 10 * 20;
+  if (db >= -40)  return 15 + (db + 40) / 10 * 15;
+  if (db >= -60)  return (db + 60) / 20 * 15;
   return 0;
 }
 
-// Logarithmic fader law: fader position (0..1) → gain multiplier
-function faderToGain(position: number): number {
-  if (position <= 0) return 0;
-  // Attempt at industry-standard fader curve
-  // Position 0.75 = unity (0dB), 1.0 = +6dB
-  const db = position <= 0.001 ? -Infinity
-    : position < 0.75 ? -60 + (position / 0.75) * 60
-    : (position - 0.75) / 0.25 * 6;
+// Logarithmic fader: position (0..1) → gain
+function faderToGain(pos: number): number {
+  if (pos <= 0.005) return 0;
+  const db = pos < 0.75
+    ? -60 + (pos / 0.75) * 60
+    : (pos - 0.75) / 0.25 * 6;
   return AudioEngine.dbToLinear(db);
 }
 
-// Used for preset recall
-function _gainToFaderPosition(gain: number): number {
-  if (gain <= 0.001) return 0;
-  const db = AudioEngine.linearToDb(gain);
-  if (db <= -60) return 0;
-  if (db <= 0) return (db + 60) / 60 * 0.75;
-  return 0.75 + db / 6 * 0.25;
-} void _gainToFaderPosition;
+// dB scale marks with their IEC positions
+const DB_SCALE = [
+  { db: 0,   label: "0" },
+  { db: -3,  label: "-3" },
+  { db: -6,  label: "-6" },
+  { db: -12, label: "-12" },
+  { db: -18, label: "-18" },
+  { db: -24, label: "-24" },
+  { db: -30, label: "-30" },
+  { db: -40, label: "-40" },
+  { db: -50, label: "-50" },
+  { db: -60, label: "-60" },
+];
 
-// dB scale marks for the meter
-const DB_MARKS = [0, -3, -6, -12, -18, -24, -36, -48];
+interface MeterData { rmsDb: number; peakDb: number }
 
 interface MixerPanelProps {
   isOpen: boolean;
@@ -75,11 +68,10 @@ interface MixerPanelProps {
 }
 
 export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
-  interface MeterData { rmsDb: number; peakDb: number }
   const [meters, setMeters] = useState<MeterData[]>(Array.from({ length: 12 }, () => ({ rmsDb: -Infinity, peakDb: -Infinity })));
   const [masterMeter, setMasterMeter] = useState<MeterData>({ rmsDb: -Infinity, peakDb: -Infinity });
-  const [faderPositions, setFaderPositions] = useState<number[]>(new Array(12).fill(0.75)); // Unity
-  const [masterFader, setMasterFader] = useState(0.7);
+  const [faders, setFaders] = useState<number[]>(new Array(12).fill(750));
+  const [masterFader, setMasterFaderVal] = useState(700);
   const [sends, setSends] = useState<{ a: number[]; b: number[] }>({ a: new Array(12).fill(0), b: new Array(12).fill(0) });
   const [reverbLevel, setReverbLvl] = useState(35);
   const [delayTime, setDelayTime] = useState(375);
@@ -87,41 +79,34 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
   const [delayLevel, setDelayLvl] = useState(30);
   const [muted, setMuted] = useState<Set<number>>(new Set());
   const [soloed, setSoloed] = useState<Set<number>>(new Set());
-  const [clipped, setClipped] = useState<Set<number>>(new Set());
   const rafRef = useRef<number>(0);
 
-  // ─── Meter Loop (FFT-based) ────────────────────────────
+  // Meter animation loop
   useEffect(() => {
     if (!isOpen) return;
     const update = () => {
-      const newMeters: MeterData[] = [];
-      const newClipped = new Set<number>();
-
+      const m: MeterData[] = [];
       for (let i = 0; i < 12; i++) {
-        const m = audioEngine.getChannelMeter(i);
-        newMeters.push({ rmsDb: m.rmsDb, peakDb: m.peakDb });
-        if (m.peakDb > -0.1) newClipped.add(i);
+        const d = audioEngine.getChannelMeter(i);
+        m.push({ rmsDb: d.rmsDb, peakDb: d.peakDb });
       }
-
       const mm = audioEngine.getMasterMeter();
-      setMeters(newMeters);
+      setMeters(m);
       setMasterMeter({ rmsDb: mm.rmsDb, peakDb: mm.peakDb });
-      setClipped(newClipped);
       rafRef.current = requestAnimationFrame(update);
     };
     rafRef.current = requestAnimationFrame(update);
     return () => cancelAnimationFrame(rafRef.current);
   }, [isOpen]);
 
-  // ─── Handlers ──────────────────────────────────────────
-  const handleFader = useCallback((ch: number, position: number) => {
-    setFaderPositions((p) => { const n = [...p]; n[ch] = position; return n; });
-    audioEngine.setChannelVolume(ch, faderToGain(position));
+  const handleFader = useCallback((ch: number, val: number) => {
+    setFaders((p) => { const n = [...p]; n[ch] = val; return n; });
+    audioEngine.setChannelVolume(ch, faderToGain(val / 1000));
   }, []);
 
-  const handleMasterFader = useCallback((position: number) => {
-    setMasterFader(position);
-    audioEngine.setMasterVolume(faderToGain(position));
+  const handleMasterFader = useCallback((val: number) => {
+    setMasterFaderVal(val);
+    audioEngine.setMasterVolume(faderToGain(val / 1000));
   }, []);
 
   const handleSendA = useCallback((ch: number, v: number) => {
@@ -137,198 +122,137 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
   const toggleMute = useCallback((ch: number) => {
     setMuted((prev) => {
       const next = new Set(prev);
-      if (next.has(ch)) { next.delete(ch); audioEngine.setChannelVolume(ch, faderToGain(faderPositions[ch]!)); }
+      if (next.has(ch)) { next.delete(ch); audioEngine.setChannelVolume(ch, faderToGain((faders[ch] ?? 750) / 1000)); }
       else { next.add(ch); audioEngine.setChannelVolume(ch, 0); }
       return next;
     });
-  }, [faderPositions]);
+  }, [faders]);
 
   const toggleSolo = useCallback((ch: number) => {
     setSoloed((prev) => {
       const next = new Set(prev);
       if (next.has(ch)) next.delete(ch); else next.add(ch);
       for (let i = 0; i < 12; i++) {
-        if (next.size === 0) audioEngine.setChannelVolume(i, muted.has(i) ? 0 : faderToGain(faderPositions[i]!));
-        else audioEngine.setChannelVolume(i, next.has(i) ? faderToGain(faderPositions[i]!) : 0);
+        if (next.size === 0) audioEngine.setChannelVolume(i, muted.has(i) ? 0 : faderToGain((faders[i] ?? 750) / 1000));
+        else audioEngine.setChannelVolume(i, next.has(i) ? faderToGain((faders[i] ?? 750) / 1000) : 0);
       }
       return next;
     });
-  }, [faderPositions, muted]);
+  }, [faders, muted]);
 
   if (!isOpen) return null;
 
+  const meterAreaRef = useRef<HTMLDivElement>(null);
+
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[var(--ed-bg-primary)]">
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#08080a]">
       {/* Header */}
-      <div className="flex items-center justify-between h-10 px-5 border-b border-[var(--ed-border)] bg-[var(--ed-bg-secondary)] shrink-0">
+      <div className="flex items-center justify-between h-9 px-4 border-b border-[var(--ed-border)] bg-[var(--ed-bg-secondary)] shrink-0">
         <div className="flex items-center gap-3">
-          <h2 className="text-xs font-bold text-[var(--ed-accent-orange)] tracking-[0.2em]">MIXER</h2>
-          <span className="text-[9px] text-[var(--ed-text-muted)]">FFT RMS+Peak &middot; IEC 60268 Scale &middot; Log Fader Law</span>
+          <span className="text-[11px] font-black text-[var(--ed-accent-orange)] tracking-[0.2em]">MIXER</span>
+          <span className="text-[8px] text-[var(--ed-text-muted)]">FFT RMS+Peak · IEC 60268 · Log Fader</span>
         </div>
-        <button onClick={onClose} className="px-3 py-1 text-xs bg-[var(--ed-bg-surface)] text-[var(--ed-text-secondary)] hover:text-[var(--ed-text-primary)] rounded transition-colors">
-          ← BACK
-        </button>
+        <button onClick={onClose} className="px-3 py-1 text-[10px] bg-[var(--ed-bg-surface)] text-[var(--ed-text-secondary)] hover:text-white rounded transition-colors">← BACK</button>
       </div>
 
-      {/* Channels */}
-      <div className="flex-1 flex min-h-0 px-2 py-2 gap-[3px]">
-        {/* dB Scale ruler */}
-        <div className="w-8 flex flex-col justify-between py-8 shrink-0">
-          {DB_MARKS.map((db) => (
-            <div key={db} className="flex items-center gap-0.5" style={{ position: "relative", top: `${(1 - dbToMeterPosition(db)) * 0}px` }}>
-              <div className="w-2 h-px bg-[var(--ed-text-muted)]" />
-              <span className="text-[7px] font-mono text-[var(--ed-text-muted)]">{db}</span>
-            </div>
-          ))}
+      {/* Main area */}
+      <div className="flex-1 flex min-h-0 px-1 py-1">
+
+        {/* dB Scale ruler — positioned to match meter area */}
+        <div ref={meterAreaRef} className="w-10 shrink-0 relative">
+          {DB_SCALE.map((mark) => {
+            const pct = dbToPercent(mark.db);
+            return (
+              <div key={mark.db} className="absolute right-0 flex items-center" style={{ bottom: `${pct}%`, transform: "translateY(50%)" }}>
+                <span className="text-[8px] font-mono text-[var(--ed-text-muted)] mr-1">{mark.label}</span>
+                <div className="w-3 h-px bg-[var(--ed-text-muted)]/40" />
+              </div>
+            );
+          })}
         </div>
 
         {/* Channel strips */}
-        {CHANNELS.map((ch, i) => {
-          const meter = meters[i] ?? { rmsDb: -Infinity, peakDb: -Infinity };
-          const rmsPos = dbToMeterPosition(meter.rmsDb);
-          const peakPos = dbToMeterPosition(meter.peakDb);
-          const isClipped = clipped.has(i);
-          const faderPos = faderPositions[i] ?? 0.75;
-          const faderDb = faderPos <= 0.001 ? -Infinity : AudioEngine.linearToDb(faderToGain(faderPos));
-
-          return (
-            <div key={ch.id} className="flex-1 flex flex-col bg-[var(--ed-bg-secondary)] rounded-lg border border-[var(--ed-border)] overflow-hidden min-w-0">
-              {/* Label */}
-              <div className="h-7 flex items-center justify-center border-b border-[var(--ed-border)]" style={{ backgroundColor: ch.color + "12" }}>
-                <span className="text-[10px] font-bold tracking-wider" style={{ color: muted.has(i) ? "var(--ed-text-muted)" : ch.color }}>
-                  {ch.label}
-                </span>
-              </div>
-
-              {/* Sends */}
-              <div className="flex flex-col gap-1 px-1.5 py-1.5 border-b border-[var(--ed-border)]">
-                <SendKnob label="REV" value={sends.a[i] ?? 0} color="#3b82f6" onChange={(v) => handleSendA(i, v)} />
-                <SendKnob label="DLY" value={sends.b[i] ?? 0} color="#f59e0b" onChange={(v) => handleSendB(i, v)} />
-              </div>
-
-              {/* Meter + Fader */}
-              <div className="flex-1 flex items-stretch px-1.5 py-1.5 gap-1 min-h-0">
-                {/* Meter */}
-                <div className="w-[6px] rounded-sm bg-black relative overflow-hidden border border-[var(--ed-border)]/10">
-                  {/* RMS bar (main level) */}
-                  <div className="absolute bottom-0 left-0 right-0 transition-[height] duration-75" style={{
-                    height: `${rmsPos * 100}%`,
-                    background: meter.rmsDb > -6
-                      ? "linear-gradient(to top, #22c55e 0%, #84cc16 40%, #eab308 70%, #ef4444 100%)"
-                      : meter.rmsDb > -18
-                        ? "linear-gradient(to top, #22c55e 0%, #84cc16 60%, #eab308 100%)"
-                        : "#22c55e",
-                  }} />
-
-                  {/* Peak hold line */}
-                  {peakPos > 0.01 && (
-                    <div className="absolute left-0 right-0 h-[2px]" style={{
-                      bottom: `${peakPos * 100}%`,
-                      backgroundColor: meter.peakDb > -3 ? "#ef4444" : meter.peakDb > -12 ? "#eab308" : ch.color,
-                      boxShadow: meter.peakDb > -3 ? "0 0 3px #ef4444" : "none",
-                    }} />
-                  )}
-
-                  {/* 0dB line */}
-                  <div className="absolute left-0 right-0 h-px bg-red-500/40" style={{ bottom: `${dbToMeterPosition(0) * 100}%` }} />
-
-                  {/* Clip indicator */}
-                  {isClipped && (
-                    <div className="absolute top-0 left-0 right-0 h-2 bg-red-500 animate-pulse" />
-                  )}
-                </div>
-
-                {/* Fader (logarithmic) */}
-                <div className="flex-1 flex items-center justify-center">
-                  <input
-                    type="range" min={0} max={1000} value={Math.round(faderPos * 1000)}
-                    onChange={(e) => handleFader(i, Number(e.target.value) / 1000)}
-                    className="accent-[var(--ed-text-primary)]"
-                    style={{ writingMode: "vertical-lr", direction: "rtl", height: "100%", width: "24px", minHeight: "100px" }}
-                  />
-                </div>
-              </div>
-
-              {/* dB readout */}
-              <div className={`text-center py-0.5 text-[8px] font-mono border-t border-[var(--ed-border)] ${isClipped ? "text-red-400 font-bold" : "text-[var(--ed-text-muted)]"}`}>
-                {meter.rmsDb > -60 ? `${meter.rmsDb.toFixed(1)}` : "-∞"} / {isFinite(faderDb) ? `${faderDb.toFixed(1)}` : "-∞"}
-              </div>
-
-              {/* M/S */}
-              <div className="flex border-t border-[var(--ed-border)]">
-                <button onClick={() => toggleMute(i)} className={`flex-1 py-1 text-[9px] font-bold transition-colors ${muted.has(i) ? "bg-[var(--ed-accent-red)] text-white" : "text-[var(--ed-text-muted)] hover:bg-[var(--ed-bg-elevated)]"}`}>M</button>
-                <div className="w-px bg-[var(--ed-border)]" />
-                <button onClick={() => toggleSolo(i)} className={`flex-1 py-1 text-[9px] font-bold transition-colors ${soloed.has(i) ? "bg-[var(--ed-accent-orange)] text-black" : "text-[var(--ed-text-muted)] hover:bg-[var(--ed-bg-elevated)]"}`}>S</button>
-              </div>
-            </div>
-          );
-        })}
+        {CHANNELS.map((ch, i) => (
+          <ChannelStrip
+            key={ch.id}
+            label={ch.label}
+            color={ch.color}
+            meter={meters[i]!}
+            faderValue={faders[i] ?? 750}
+            sendA={sends.a[i] ?? 0}
+            sendB={sends.b[i] ?? 0}
+            isMuted={muted.has(i)}
+            isSoloed={soloed.has(i)}
+            onFader={(v) => handleFader(i, v)}
+            onSendA={(v) => handleSendA(i, v)}
+            onSendB={(v) => handleSendB(i, v)}
+            onMute={() => toggleMute(i)}
+            onSolo={() => toggleSolo(i)}
+          />
+        ))}
 
         {/* Divider */}
-        <div className="w-px bg-[var(--ed-border)] mx-0.5" />
+        <div className="w-px bg-[var(--ed-accent-green)]/20 mx-1" />
 
         {/* Master */}
-        <div className="w-20 flex flex-col bg-[var(--ed-bg-secondary)] rounded-lg border-2 border-[var(--ed-accent-green)]/30 overflow-hidden">
-          <div className="h-7 flex items-center justify-center bg-[var(--ed-accent-green)]/10 border-b border-[var(--ed-border)]">
-            <span className="text-[10px] font-bold text-[var(--ed-accent-green)] tracking-[0.12em]">MASTER</span>
+        <div className="w-24 flex flex-col bg-[#0a0f0a] rounded border border-[var(--ed-accent-green)]/20 overflow-hidden">
+          <div className="h-7 flex items-center justify-center bg-[var(--ed-accent-green)]/8 border-b border-[var(--ed-accent-green)]/20">
+            <span className="text-[10px] font-bold text-[var(--ed-accent-green)] tracking-[0.15em]">MASTER</span>
           </div>
 
-          <div className="flex-1 flex items-stretch px-2 py-1.5 gap-1.5 min-h-0">
-            <div className="w-2 rounded-sm bg-black relative overflow-hidden border border-[var(--ed-border)]/10">
-              <div className="absolute bottom-0 left-0 right-0 transition-[height] duration-75" style={{
-                height: `${dbToMeterPosition(masterMeter.rmsDb) * 100}%`,
-                background: masterMeter.rmsDb > -6
-                  ? "linear-gradient(to top, #22c55e 0%, #eab308 70%, #ef4444 100%)"
-                  : "#22c55e",
-              }} />
-              {dbToMeterPosition(masterMeter.peakDb) > 0.01 && (
-                <div className="absolute left-0 right-0 h-[2px]" style={{
-                  bottom: `${dbToMeterPosition(masterMeter.peakDb) * 100}%`,
-                  backgroundColor: masterMeter.peakDb > -3 ? "#ef4444" : "#22c55e",
-                }} />
-              )}
-              <div className="absolute left-0 right-0 h-px bg-red-500/40" style={{ bottom: `${dbToMeterPosition(0) * 100}%` }} />
-            </div>
+          {/* Meter + Fader */}
+          <div className="flex-1 flex px-2 py-2 gap-2 min-h-0">
+            <Meter rmsDb={masterMeter.rmsDb} peakDb={masterMeter.peakDb} color="#22c55e" width={14} />
             <div className="flex-1 flex items-center justify-center">
-              <input type="range" min={0} max={1000} value={Math.round(masterFader * 1000)}
-                onChange={(e) => handleMasterFader(Number(e.target.value) / 1000)}
+              <input type="range" min={0} max={1000} value={masterFader}
+                onChange={(e) => handleMasterFader(Number(e.target.value))}
                 className="accent-[var(--ed-accent-green)]"
-                style={{ writingMode: "vertical-lr", direction: "rtl", height: "100%", width: "26px", minHeight: "100px" }}
-              />
+                style={{ writingMode: "vertical-lr", direction: "rtl", height: "100%", width: "28px", minHeight: "80px" }} />
             </div>
           </div>
 
-          <div className={`text-center py-0.5 text-[8px] font-mono border-t border-[var(--ed-border)] ${masterMeter.peakDb > -0.1 ? "text-red-400" : "text-[var(--ed-accent-green)]"}`}>
-            {masterMeter.rmsDb > -60 ? `${masterMeter.rmsDb.toFixed(1)} dB` : "-∞"}
+          {/* Readout */}
+          <div className="text-center py-1 border-t border-[var(--ed-accent-green)]/20">
+            <div className={`text-[9px] font-mono ${masterMeter.peakDb > -0.5 ? "text-red-400" : "text-[var(--ed-accent-green)]"}`}>
+              {masterMeter.rmsDb > -60 ? `${masterMeter.rmsDb.toFixed(1)} dB` : "-∞ dB"}
+            </div>
+            <div className="text-[7px] text-[var(--ed-text-muted)]">
+              Peak: {masterMeter.peakDb > -60 ? `${masterMeter.peakDb.toFixed(1)}` : "-∞"}
+            </div>
           </div>
 
-          {/* Compressor GR meter */}
-          <div className="px-2 py-1 border-t border-[var(--ed-border)]">
-            <span className="text-[7px] text-[var(--ed-text-muted)]">GR</span>
-            <div className="h-1.5 bg-black rounded-sm overflow-hidden mt-0.5">
-              <div className="h-full bg-yellow-500 transition-all duration-100" style={{
-                width: `${Math.min(Math.abs(audioEngine.getCompressorReduction()) / 20 * 100, 100)}%`,
-              }} />
+          {/* Compressor GR */}
+          <div className="px-2 py-1 border-t border-[var(--ed-accent-green)]/20">
+            <div className="flex items-center gap-1">
+              <span className="text-[7px] font-bold text-[var(--ed-text-muted)]">GR</span>
+              <div className="flex-1 h-2 bg-black rounded-sm overflow-hidden">
+                <div className="h-full bg-yellow-500/80 transition-all duration-100" style={{
+                  width: `${Math.min(Math.abs(audioEngine.getCompressorReduction()) / 20 * 100, 100)}%`,
+                }} />
+              </div>
+              <span className="text-[7px] font-mono text-[var(--ed-text-muted)]">
+                {audioEngine.getCompressorReduction().toFixed(1)}
+              </span>
             </div>
           </div>
         </div>
       </div>
 
       {/* FX Bar */}
-      <div className="h-12 flex items-center gap-8 px-6 border-t border-[var(--ed-border)] bg-[var(--ed-bg-secondary)] shrink-0">
-        <div className="flex items-center gap-3">
-          <span className="text-[9px] font-bold text-[var(--ed-accent-blue)] tracking-wider w-12">REVERB</span>
-          <FxSlider label="Level" value={reverbLevel} max={100} color="var(--ed-accent-blue)"
+      <div className="h-11 flex items-center gap-6 px-5 border-t border-[var(--ed-border)] bg-[var(--ed-bg-secondary)] shrink-0">
+        <div className="flex items-center gap-2">
+          <span className="text-[9px] font-bold text-[var(--ed-accent-blue)] tracking-wider">REVERB</span>
+          <FxSlider value={reverbLevel} max={100} label="Lvl" color="#3b82f6"
             onChange={(v) => { setReverbLvl(v); audioEngine.setReverbLevel(v / 100); }} />
         </div>
         <div className="w-px h-5 bg-[var(--ed-border)]" />
-        <div className="flex items-center gap-3">
-          <span className="text-[9px] font-bold text-[var(--ed-accent-orange)] tracking-wider w-10">DELAY</span>
-          <FxSlider label="Time" value={delayTime} max={1000} suffix="ms" color="var(--ed-accent-orange)"
+        <div className="flex items-center gap-2">
+          <span className="text-[9px] font-bold text-[var(--ed-accent-orange)] tracking-wider">DELAY</span>
+          <FxSlider value={delayTime} max={1000} label="Time" suffix="ms" color="#f59e0b"
             onChange={(v) => { setDelayTime(v); audioEngine.setDelayParams(v / 1000, delayFB / 100, 4000); }} />
-          <FxSlider label="FB" value={delayFB} max={90} suffix="%" color="var(--ed-accent-orange)"
+          <FxSlider value={delayFB} max={90} label="FB" color="#f59e0b"
             onChange={(v) => { setDelayFB(v); audioEngine.setDelayParams(delayTime / 1000, v / 100, 4000); }} />
-          <FxSlider label="Wet" value={delayLevel} max={100} suffix="%" color="var(--ed-accent-orange)"
+          <FxSlider value={delayLevel} max={100} label="Wet" color="#f59e0b"
             onChange={(v) => { setDelayLvl(v); audioEngine.setDelayLevel(v / 100); }} />
         </div>
       </div>
@@ -336,26 +260,139 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
   );
 }
 
-function SendKnob({ label, value, color, onChange }: { label: string; value: number; color: string; onChange: (v: number) => void }) {
+// ─── Channel Strip ───────────────────────────────────────
+
+function ChannelStrip({ label, color, meter, faderValue, sendA, sendB, isMuted, isSoloed,
+  onFader, onSendA, onSendB, onMute, onSolo,
+}: {
+  label: string; color: string; meter: MeterData; faderValue: number;
+  sendA: number; sendB: number; isMuted: boolean; isSoloed: boolean;
+  onFader: (v: number) => void; onSendA: (v: number) => void; onSendB: (v: number) => void;
+  onMute: () => void; onSolo: () => void;
+}) {
+  const faderDb = faderValue <= 5 ? -Infinity : AudioEngine.linearToDb(faderToGain(faderValue / 1000));
+
   return (
-    <div className="flex items-center gap-1">
-      <span className="text-[7px] font-bold tracking-wider w-5" style={{ color }}>{label}</span>
-      <input type="range" min={0} max={100} value={value} onChange={(e) => onChange(Number(e.target.value))}
-        className="flex-1 h-1" style={{ accentColor: color }} />
-      <span className="text-[7px] font-mono text-[var(--ed-text-muted)] w-4 text-right">{value}</span>
+    <div className="flex-1 flex flex-col bg-[var(--ed-bg-secondary)] rounded border border-[var(--ed-border)] overflow-hidden min-w-0">
+      {/* Label */}
+      <div className="h-6 flex items-center justify-center" style={{ backgroundColor: color + "10", borderBottom: `1px solid ${color}20` }}>
+        <span className="text-[9px] font-bold tracking-wider" style={{ color: isMuted ? "#555" : color }}>{label}</span>
+      </div>
+
+      {/* Sends */}
+      <div className="px-1 py-1 space-y-0.5 border-b border-[var(--ed-border)]">
+        <MiniSend label="R" value={sendA} color="#3b82f6" onChange={onSendA} />
+        <MiniSend label="D" value={sendB} color="#f59e0b" onChange={onSendB} />
+      </div>
+
+      {/* Meter + Fader area */}
+      <div className="flex-1 flex px-1 py-1 gap-[3px] min-h-0">
+        {/* Meter */}
+        <Meter rmsDb={meter.rmsDb} peakDb={meter.peakDb} color={color} width={10} />
+
+        {/* Fader */}
+        <div className="flex-1 flex items-center justify-center">
+          <input type="range" min={0} max={1000} value={faderValue}
+            onChange={(e) => onFader(Number(e.target.value))}
+            className="accent-white/80"
+            style={{ writingMode: "vertical-lr", direction: "rtl", height: "100%", width: "22px", minHeight: "80px" }} />
+        </div>
+      </div>
+
+      {/* Readout */}
+      <div className="text-center py-[2px] border-t border-[var(--ed-border)] bg-black/30">
+        <span className={`text-[8px] font-mono ${meter.peakDb > -0.5 ? "text-red-400 font-bold" : "text-[var(--ed-text-muted)]"}`}>
+          {meter.rmsDb > -60 ? meter.rmsDb.toFixed(1) : "-∞"}
+        </span>
+        <span className="text-[7px] text-[var(--ed-text-muted)]"> / </span>
+        <span className="text-[7px] font-mono text-[var(--ed-text-muted)]">
+          {isFinite(faderDb) ? `${faderDb >= 0 ? "+" : ""}${faderDb.toFixed(1)}` : "-∞"}
+        </span>
+      </div>
+
+      {/* M/S */}
+      <div className="flex">
+        <button onClick={onMute} className={`flex-1 py-[3px] text-[8px] font-bold border-t border-r border-[var(--ed-border)] transition-colors ${isMuted ? "bg-red-500 text-white" : "text-[var(--ed-text-muted)] hover:bg-white/5"}`}>M</button>
+        <button onClick={onSolo} className={`flex-1 py-[3px] text-[8px] font-bold border-t border-[var(--ed-border)] transition-colors ${isSoloed ? "bg-amber-500 text-black" : "text-[var(--ed-text-muted)] hover:bg-white/5"}`}>S</button>
+      </div>
     </div>
   );
 }
 
-function FxSlider({ label, value, max, suffix, color, onChange }: {
-  label: string; value: number; max: number; suffix?: string; color: string; onChange: (v: number) => void;
+// ─── Meter Component ─────────────────────────────────────
+
+interface MeterData { rmsDb: number; peakDb: number }
+
+function Meter({ rmsDb, peakDb, color, width }: { rmsDb: number; peakDb: number; color: string; width: number }) {
+  const rmsPct = dbToPercent(rmsDb);
+  const peakPct = dbToPercent(peakDb);
+  const isClip = peakDb > -0.5;
+
+  // Color gradient based on level
+  const gradient = rmsPct > 85
+    ? "linear-gradient(to top, #22c55e 0%, #84cc16 30%, #eab308 60%, #f97316 80%, #ef4444 100%)"
+    : rmsPct > 50
+      ? "linear-gradient(to top, #22c55e 0%, #84cc16 50%, #eab308 100%)"
+      : "#22c55e";
+
+  return (
+    <div className="relative rounded-sm overflow-hidden bg-[#080808]" style={{ width, minWidth: width }}>
+      {/* Tick marks at key dB points */}
+      {[-6, -12, -24, -40].map((db) => (
+        <div key={db} className="absolute left-0 right-0 h-px bg-white/5" style={{ bottom: `${dbToPercent(db)}%` }} />
+      ))}
+
+      {/* 0dB reference line */}
+      <div className="absolute left-0 right-0 h-px bg-red-500/30 z-10" style={{ bottom: `${dbToPercent(0)}%` }} />
+
+      {/* RMS bar */}
+      <div className="absolute bottom-0 left-0 right-0 transition-[height] duration-[60ms]" style={{
+        height: `${rmsPct}%`,
+        background: gradient,
+        borderRadius: "1px 1px 0 0",
+      }} />
+
+      {/* Peak hold line */}
+      {peakPct > 0.5 && (
+        <div className="absolute left-0 right-0 z-10" style={{
+          height: "2px",
+          bottom: `${peakPct}%`,
+          backgroundColor: peakDb > -3 ? "#ef4444" : peakDb > -12 ? "#eab308" : color,
+          boxShadow: peakDb > -3 ? "0 0 4px #ef4444" : "none",
+        }} />
+      )}
+
+      {/* Clip indicator */}
+      {isClip && (
+        <div className="absolute top-0 left-0 right-0 h-[3px] bg-red-500 z-20" style={{ boxShadow: "0 0 6px #ef4444" }} />
+      )}
+    </div>
+  );
+}
+
+// ─── Mini Send Slider ────────────────────────────────────
+
+function MiniSend({ label, value, color, onChange }: { label: string; value: number; color: string; onChange: (v: number) => void }) {
+  return (
+    <div className="flex items-center gap-[3px]">
+      <span className="text-[6px] font-bold w-2" style={{ color }}>{label}</span>
+      <input type="range" min={0} max={100} value={value} onChange={(e) => onChange(Number(e.target.value))}
+        className="flex-1 h-[3px]" style={{ accentColor: color }} />
+    </div>
+  );
+}
+
+// ─── FX Slider ───────────────────────────────────────────
+
+function FxSlider({ value, max, label, suffix, color, onChange }: {
+  value: number; max: number; label: string; suffix?: string; color: string; onChange: (v: number) => void;
 }) {
   return (
     <div className="flex items-center gap-1">
       <span className="text-[8px] text-[var(--ed-text-muted)]">{label}</span>
       <input type="range" min={0} max={max} value={value} onChange={(e) => onChange(Number(e.target.value))}
-        className="w-16 h-1" style={{ accentColor: color }} />
-      <span className="text-[9px] font-mono text-[var(--ed-text-secondary)] w-10">{value}{suffix ?? "%"}</span>
+        className="w-14 h-1" style={{ accentColor: color }} />
+      <span className="text-[8px] font-mono text-[var(--ed-text-secondary)] w-10">{value}{suffix ?? "%"}</span>
     </div>
   );
 }
