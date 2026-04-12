@@ -87,6 +87,11 @@ export class AudioEngine {
   private ctx: AudioContext | null = null;
   private noiseBuffer: AudioBuffer | null = null;
 
+  // WASM mode
+  private wasmMode = false;
+  private workletNode: AudioWorkletNode | null = null;
+  private wasmReady = false;
+
   // Per-voice parameter storage
   private voiceParams: VoiceParams[] = [];
 
@@ -450,17 +455,101 @@ export class AudioEngine {
     if (ctx.state === "suspended") {
       await ctx.resume();
     }
+
+    // Try to initialize WASM AudioWorklet
+    if (!this.wasmReady && !this.workletNode) {
+      try {
+        await this.initWasmWorklet(ctx);
+      } catch (err) {
+        console.log("WASM AudioWorklet not available, using TypeScript synthesis:", err);
+      }
+    }
+  }
+
+  private async initWasmWorklet(ctx: AudioContext): Promise<void> {
+    // Load WASM binary
+    const wasmResponse = await fetch("/wasm/elastic-drums-wasm.wasm");
+    if (!wasmResponse.ok) throw new Error("WASM file not found");
+    const wasmBinary = await wasmResponse.arrayBuffer();
+
+    // Register worklet processor
+    await ctx.audioWorklet.addModule("/drum-worklet.js");
+
+    // Create worklet node
+    this.workletNode = new AudioWorkletNode(ctx, "elastic-drums-processor", {
+      numberOfInputs: 0,
+      numberOfOutputs: 1,
+      outputChannelCount: [2],
+    });
+
+    // Connect to master gain (through our mixer routing)
+    this.workletNode.connect(this.masterGain!);
+
+    // Listen for messages from worklet
+    this.workletNode.port.onmessage = (e) => {
+      if (e.data.type === "ready") {
+        this.wasmReady = true;
+        this.wasmMode = true;
+        console.log("✅ WASM AudioWorklet active — C++ DSP running in audio thread");
+      } else if (e.data.type === "error") {
+        console.warn("WASM worklet error:", e.data.message);
+      }
+    };
+
+    // Send WASM binary to worklet
+    this.workletNode.port.postMessage({
+      type: "wasm-binary",
+      binary: wasmBinary,
+    }, [wasmBinary]);
+  }
+
+  /** Send a command to the WASM worklet */
+  private postToWorklet(msg: Record<string, unknown>): void {
+    if (this.wasmMode && this.workletNode) {
+      this.workletNode.port.postMessage(msg);
+    }
+  }
+
+  /** Check if WASM DSP is active */
+  get isWasmActive(): boolean {
+    return this.wasmMode;
   }
 
   triggerVoice(voice: number, velocity = 0.8): void {
     const ctx = this.getContext();
     if (ctx.state === "suspended") ctx.resume();
+
+    // Send to WASM worklet if active
+    this.postToWorklet({ type: "trigger", voice, velocity });
+
+    // Always also trigger TS synthesis (for immediate pad feedback + fallback)
     this.scheduleVoice(ctx, voice, velocity, ctx.currentTime);
   }
 
   triggerVoiceAtTime(voice: number, velocity: number, time: number): void {
     const ctx = this.getContext();
+
+    if (this.wasmMode) {
+      // In WASM mode, the sequencer runs inside the worklet — don't double-trigger
+      // Only trigger if this is a manual pad hit (time === now)
+      return;
+    }
+
     this.scheduleVoice(ctx, voice, velocity, time);
+  }
+
+  /** Sync entire pattern to the WASM worklet */
+  syncPatternToWasm(pattern: { tracks: Array<{ steps: Array<{ active: boolean; velocity: number; ratchetCount: number }>; length: number }>; length: number; swing: number }): void {
+    this.postToWorklet({ type: "syncPattern", ...pattern });
+  }
+
+  /** Set transport state in WASM worklet */
+  setWasmPlaying(playing: boolean): void {
+    this.postToWorklet({ type: "setPlaying", playing });
+  }
+
+  setWasmBpm(bpm: number): void {
+    this.postToWorklet({ type: "setBpm", bpm });
   }
 
   get currentTime(): number {

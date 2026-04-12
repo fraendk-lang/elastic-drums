@@ -18,16 +18,31 @@ const TRACK_COLORS = [
 export function StepSequencer() {
   const {
     pattern, currentStep, isPlaying, selectedPage, heldStep, selectedVoice,
-    setSelectedPage, toggleStep, setStepVelocity, setStepRatchet,
+    setSelectedPage, toggleStep, setStepVelocity, setStepRatchet, setStepCondition,
     holdStep, releaseStep, setSelectedVoice,
   } = useDrumStore();
 
   const pageOffset = selectedPage * 16;
 
+  // All available conditions for cycling
+  const CONDITIONS: import("../store/drumStore").ConditionType[] = [
+    "always", "prob", "fill", "!fill", "pre", "!pre", "nei", "!nei",
+    "1st", "!1st", "2:2", "3:3", "4:4", "2:3", "2:4", "3:4",
+  ];
+
   const handleContextMenu = useCallback((e: React.MouseEvent, track: number, absStep: number) => {
     e.preventDefault();
     const step = pattern.tracks[track]?.steps[absStep];
     if (!step?.active) return;
+
+    if (e.altKey || e.metaKey) {
+      // Alt+right-click: cycle conditional trig
+      const current = step.condition ?? "always";
+      const idx = CONDITIONS.indexOf(current);
+      const next = CONDITIONS[(idx + 1) % CONDITIONS.length]!;
+      setStepCondition(track, absStep, next);
+      return;
+    }
 
     if (e.shiftKey) {
       const ratchetLevels = [1, 2, 3, 4, 6, 8];
@@ -74,7 +89,7 @@ export function StepSequencer() {
         <span className="text-[9px] text-[var(--ed-text-muted)]">
           {heldStep
             ? `⬤ P-LOCK: ${VOICE_LABELS[heldStep.track]} Step ${heldStep.step + 1}`
-            : "hold + knob = P-Lock · rclick = vel · shift+rclick = ratchet"
+            : "hold=P-Lock · rclick=vel · shift+rclick=ratchet · alt+rclick=condition"
           }
         </span>
       </div>
@@ -149,6 +164,8 @@ export function StepSequencer() {
                   const hasLocks = isActive && step !== undefined && Object.keys(step.paramLocks).length > 0;
                   const ratchetCount = step?.ratchetCount ?? 1;
                   const hasRatchet = isActive && ratchetCount > 1;
+                  const condition = step?.condition ?? "always";
+                  const hasCondition = isActive && condition !== "always";
                   const isHeld = heldStep?.track === track && heldStep?.step === absoluteStep;
                   const velNorm = velocity / 127;
                   const isBeat = stepIdx % 4 === 0;
@@ -195,6 +212,13 @@ export function StepSequencer() {
                       {hasRatchet && (
                         <span className="absolute bottom-[1px] left-[2px] text-[6px] font-bold leading-none" style={{ color: "rgba(0,0,0,0.4)" }}>
                           {ratchetCount}×
+                        </span>
+                      )}
+
+                      {/* Condition indicator */}
+                      {hasCondition && (
+                        <span className="absolute top-[1px] left-[2px] text-[5px] font-bold leading-none text-yellow-300/80">
+                          {condition}
                         </span>
                       )}
                     </button>

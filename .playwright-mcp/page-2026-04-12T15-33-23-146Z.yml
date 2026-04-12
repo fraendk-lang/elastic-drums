@@ -1,0 +1,14 @@
+- generic [ref=e5]:
+  - heading "ELASTIC DRUMS" [level=1] [ref=e12]
+  - paragraph [ref=e13]: VA Synth · Sample Engine · Elektron Sequencer
+  - button "▶" [ref=e14] [cursor=pointer]:
+    - generic [ref=e15]: ▶
+  - paragraph [ref=e17]: Click to initialize audio engine
+  - generic [ref=e18]:
+    - generic [ref=e19]: 12 Voices
+    - generic [ref=e20]: P-Locks
+    - generic [ref=e21]: Euclidean
+    - generic [ref=e22]: Reverb/Delay
+    - generic [ref=e23]: MIDI
+    - generic [ref=e24]: 14 Presets
+    - generic [ref=e25]: WASM DSP

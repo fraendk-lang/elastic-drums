@@ -1,12 +1,29 @@
 import { create } from "zustand";
 import { audioEngine } from "../audio/AudioEngine";
 
+// Conditional Trig types (Elektron-style)
+export type ConditionType =
+  | "always"       // Always trigger
+  | "prob"         // Random probability (uses probability field)
+  | "fill"         // Only during fill mode
+  | "!fill"        // Only when NOT in fill mode
+  | "pre"          // Previous step on this track was active
+  | "!pre"         // Previous step was NOT active
+  | "nei"          // Neighbor track has active step
+  | "!nei"         // Neighbor track does NOT have active step
+  | "1st"          // Only first cycle
+  | "!1st"         // Not first cycle
+  | "2:2" | "3:3" | "4:4"  // Every Nth cycle
+  | "2:3" | "2:4" | "3:4"  // Specific cycle patterns
+  | "3:5" | "4:7" | "5:8"; // Complex polyrhythmic
+
 export interface StepData {
   active: boolean;
   velocity: number;       // 0-127
   microTiming: number;    // ±23 ticks
   probability: number;    // 0-100
   ratchetCount: number;   // 1-8 (1 = normal, 2+ = retrig/roll)
+  condition: ConditionType; // Conditional trig
   paramLocks: Record<string, number>;
 }
 
@@ -41,8 +58,58 @@ function createEmptyStep(): StepData {
     microTiming: 0,
     probability: 100,
     ratchetCount: 1,
+    condition: "always",
     paramLocks: {},
   };
+}
+
+// ─── Conditional Trig Evaluation ─────────────────────────
+const CYCLE_CONDITIONS: Record<string, [number, number]> = {
+  "2:2": [2, 2], "3:3": [3, 3], "4:4": [4, 4],
+  "2:3": [2, 3], "2:4": [2, 4], "3:4": [3, 4],
+  "3:5": [3, 5], "4:7": [4, 7], "5:8": [5, 8],
+};
+
+let cycleCount = 0;
+let fillMode = false;
+let prevStepTriggered: boolean[] = new Array(12).fill(false);
+
+export function setFillMode(on: boolean) { fillMode = on; }
+
+function evaluateCondition(
+  condition: ConditionType,
+  probability: number,
+  track: number,
+): boolean {
+  switch (condition) {
+    case "always": return true;
+    case "prob": return Math.random() * 100 < probability;
+    case "fill": return fillMode;
+    case "!fill": return !fillMode;
+    case "pre": return prevStepTriggered[track] ?? false;
+    case "!pre": return !(prevStepTriggered[track] ?? false);
+    case "nei": {
+      const above = track > 0 ? (prevStepTriggered[track - 1] ?? false) : false;
+      const below = track < 11 ? (prevStepTriggered[track + 1] ?? false) : false;
+      return above || below;
+    }
+    case "!nei": {
+      const above = track > 0 ? (prevStepTriggered[track - 1] ?? false) : false;
+      const below = track < 11 ? (prevStepTriggered[track + 1] ?? false) : false;
+      return !above && !below;
+    }
+    case "1st": return cycleCount === 0;
+    case "!1st": return cycleCount > 0;
+    default: {
+      // Cycle conditions (x:y)
+      const cycle = CYCLE_CONDITIONS[condition];
+      if (cycle) {
+        const [a, b] = cycle;
+        return (cycleCount % b) === (a - 1);
+      }
+      return true;
+    }
+  }
 }
 
 // ─── Euclidean Rhythm Generator ──────────────────────────
@@ -267,6 +334,8 @@ let nextStepTime = 0;
 
 function startScheduler() {
   nextStepTime = audioEngine.currentTime + 0.05;
+  cycleCount = 0;
+  prevStepTriggered = new Array(12).fill(false);
 
   if (schedulerTimer !== null) clearInterval(schedulerTimer);
 
@@ -274,71 +343,114 @@ function startScheduler() {
     const state = useDrumStore.getState();
     if (!state.isPlaying) return;
 
-    const secondsPerStep = 60.0 / state.bpm / 4; // 16th notes
-    const swingRatio = (state.pattern.swing - 50) / 100; // 0..0.25
+    // In WASM mode, sequencer runs in the worklet — just sync step for UI
+    if (audioEngine.isWasmActive) return;
 
-    // Schedule all steps that fall within the look-ahead window (100ms)
+    const secondsPerStep = 60.0 / state.bpm / 4;
+    const swingRatio = (state.pattern.swing - 50) / 100;
+
     while (nextStepTime < audioEngine.currentTime + 0.1) {
-      const { pattern, currentStep } = useDrumStore.getState();
+      const { pattern, currentStep, songMode, songChain, songPosition, songRepeatCount, patternBank } =
+        useDrumStore.getState();
 
-      // Apply swing: off-beat steps (odd) are delayed
+      // Song Mode: determine which pattern to play
+      let activePattern = pattern;
+      if (songMode === "song" && songChain.length > 0) {
+        const chainEntry = songChain[songPosition];
+        if (chainEntry) {
+          const bankPattern = patternBank[chainEntry.patternIndex];
+          if (bankPattern) activePattern = bankPattern;
+        }
+      }
+
+      // Swing
       let stepDuration = secondsPerStep;
       if (currentStep % 2 === 0 && swingRatio > 0) {
-        // Even step: slightly shorter
         stepDuration = secondsPerStep * (1 - swingRatio);
       } else if (currentStep % 2 === 1 && swingRatio > 0) {
-        // Odd step: slightly longer (swung)
         stepDuration = secondsPerStep * (1 + swingRatio);
       }
 
-      // Trigger active steps on all tracks, apply P-Locks
+      // Track trigger state for conditional trigs
+      const currentTrigState: boolean[] = new Array(12).fill(false);
+
+      // Trigger active steps with conditional trig evaluation
       for (let track = 0; track < 12; track++) {
-        const trackData = pattern.tracks[track];
+        const trackData = activePattern.tracks[track];
         if (!trackData || trackData.mute) continue;
 
         const trackStep = currentStep % trackData.length;
         const step = trackData.steps[trackStep];
         if (!step?.active) continue;
 
-        // Probability check
-        if (step.probability < 100 && Math.random() * 100 >= step.probability) continue;
+        // Evaluate conditional trig
+        const condition = step.condition ?? "always";
+        if (!evaluateCondition(condition, step.probability, track)) continue;
 
-        // Apply P-Locks: temporarily override voice params for this step
+        // Probability check (separate from condition — applies on top)
+        if (condition !== "prob" && step.probability < 100) {
+          if (Math.random() * 100 >= step.probability) continue;
+        }
+
+        currentTrigState[track] = true;
+
+        // Apply P-Locks
         const locks = step.paramLocks;
         const lockKeys = Object.keys(locks);
         const savedValues: Record<string, number> = {};
-
         for (const key of lockKeys) {
           savedValues[key] = audioEngine.getVoiceParam(track, key);
           audioEngine.setVoiceParam(track, key, locks[key]!);
         }
 
+        // Trigger with ratchet support
         const vel = step.velocity / 127;
         const ratchets = step.ratchetCount ?? 1;
-
         if (ratchets <= 1) {
-          // Normal single trigger
           audioEngine.triggerVoiceAtTime(track, vel, nextStepTime);
         } else {
-          // Ratchet: multiple triggers within this step
           const ratchetInterval = stepDuration / ratchets;
           for (let r = 0; r < ratchets; r++) {
-            // Velocity ramp: each retrig slightly quieter
             const rVel = vel * (1 - r * 0.15);
             audioEngine.triggerVoiceAtTime(track, Math.max(rVel, 0.1), nextStepTime + r * ratchetInterval);
           }
         }
 
-        // Restore original params after trigger
+        // Restore P-Locks
         for (const key of lockKeys) {
           audioEngine.setVoiceParam(track, key, savedValues[key]!);
         }
       }
 
-      // Advance step
-      const nextStep = (currentStep + 1) % pattern.length;
-      useDrumStore.setState({ currentStep: nextStep });
+      // Update prev-step state for PRE/!PRE conditions
+      prevStepTriggered = currentTrigState;
 
+      // Advance step
+      const nextStep = (currentStep + 1) % activePattern.length;
+
+      // Song mode: advance chain position at pattern end
+      if (nextStep === 0 && songMode === "song" && songChain.length > 0) {
+        cycleCount++;
+        const chainEntry = songChain[songPosition];
+        const newRepeat = songRepeatCount + 1;
+
+        if (chainEntry && newRepeat >= chainEntry.repeats) {
+          // Move to next pattern in chain
+          const newPos = songPosition + 1;
+          if (newPos >= songChain.length) {
+            // Song complete — loop back to start
+            useDrumStore.setState({ songPosition: 0, songRepeatCount: 0 });
+          } else {
+            useDrumStore.setState({ songPosition: newPos, songRepeatCount: 0 });
+          }
+        } else {
+          useDrumStore.setState({ songRepeatCount: newRepeat });
+        }
+      } else if (nextStep === 0) {
+        cycleCount++;
+      }
+
+      useDrumStore.setState({ currentStep: nextStep });
       nextStepTime += stepDuration;
     }
   }, 25);
@@ -349,6 +461,8 @@ function stopScheduler() {
     clearInterval(schedulerTimer);
     schedulerTimer = null;
   }
+  cycleCount = 0;
+  prevStepTriggered = new Array(12).fill(false);
 }
 
 // ─── Store ───────────────────────────────────────────────
@@ -410,6 +524,7 @@ interface DrumStore {
 
   // Ratchet
   setStepRatchet: (track: number, step: number, count: number) => void;
+  setStepCondition: (track: number, step: number, condition: ConditionType) => void;
 
   // Copy/Paste
   copyTrack: (track: number) => void;
@@ -595,6 +710,13 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     set((state) => {
       const newPattern = structuredClone(state.pattern);
       newPattern.tracks[track]!.steps[step]!.ratchetCount = Math.max(1, Math.min(8, count));
+      return { pattern: newPattern };
+    }),
+
+  setStepCondition: (track, step, condition) =>
+    set((state) => {
+      const newPattern = structuredClone(state.pattern);
+      newPattern.tracks[track]!.steps[step]!.condition = condition;
       return { pattern: newPattern };
     }),
 }));
