@@ -15,7 +15,6 @@ set(CORE_SOURCES
     voices/HiHatVoice.cpp
     voices/SampleVoice.cpp
     sequencer/Sequencer.cpp
-    sequencer/PatternData.cpp
     fx/Distortion.cpp
     fx/Filter.cpp
     fx/Compressor.cpp
@@ -51,12 +50,12 @@ if(EMSCRIPTEN)
 
     target_link_options(${WASM_TARGET} PRIVATE
         -O3
-        -s WASM=1
-        -s ALLOW_MEMORY_GROWTH=1
-        -s EXPORTED_FUNCTIONS=['_malloc','_free']
-        -s EXPORTED_RUNTIME_METHODS=['ccall','cwrap']
-        -s ENVIRONMENT=worker
-        -s SINGLE_FILE=0
+        -sWASM=1
+        -sALLOW_MEMORY_GROWTH=1
+        "-sEXPORTED_FUNCTIONS=['_malloc','_free']"
+        "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']"
+        -sENVIRONMENT=worker
+        -sSINGLE_FILE=0
         --no-entry
     )
 endif()
