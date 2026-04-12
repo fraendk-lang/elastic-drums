@@ -1206,7 +1206,7 @@ export class AudioEngine {
   // ─── HIHAT ─────────────────────────────────────────────
   // 909-style: 6 metallic square oscillators + filtered noise
   private hihat(ctx: AudioContext, t: number, vel: number, closed: boolean, out: AudioNode, p: VoiceParams): GainNode {
-    const vol = vel * (closed ? 0.32 : 0.38);
+    const vol = vel * (closed ? 0.55 : 0.6);
     const decaySec = (p.decay ?? (closed ? 45 : 250)) / 1000;
 
     const master = ctx.createGain();
@@ -1252,7 +1252,7 @@ export class AudioEngine {
   // ─── CYMBAL / RIDE ─────────────────────────────────────
   // Extended metallic oscillator bank with long decay
   private cymbal(ctx: AudioContext, t: number, vel: number, baseFreq: number, out: AudioNode, p: VoiceParams): void {
-    const vol = vel * 0.28;
+    const vol = vel * 0.55;
     const decaySec = (p.decay ?? 800) / 1000;
 
     const master = ctx.createGain();
@@ -1293,7 +1293,7 @@ export class AudioEngine {
   // ─── PERCUSSION ────────────────────────────────────────
   // Resonant filtered noise hit (conga/bongo/shaker character)
   private perc(ctx: AudioContext, t: number, vel: number, freq: number, out: AudioNode, p: VoiceParams): void {
-    const vol = vel * 0.5;
+    const vol = vel * 0.65;
     const decaySec = (p.decay ?? 120) / 1000;
 
     const master = ctx.createGain();
