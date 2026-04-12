@@ -1,0 +1,5 @@
+[    2877ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[    2955ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5174/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5174/:0
+[    4366ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5174/src/hooks/useMidi.ts:34
+[    4367ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5174/src/hooks/useMidi.ts:34
+[    5386ms] [LOG] WASM worklet init failed (using TS fallback): TypeError: WebAssembly.instantiate(): Import #0 "a": module is not an object or function @ http://localhost:5174/src/audio/AudioEngine.ts:625
