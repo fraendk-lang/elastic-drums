@@ -1,6 +1,11 @@
 import { useDrumStore } from "../store/drumStore";
 
-export function Transport() {
+interface TransportProps {
+  onOpenBrowser: () => void;
+  onToggleHelp: () => void;
+}
+
+export function Transport({ onOpenBrowser, onToggleHelp }: TransportProps) {
   const {
     bpm, isPlaying, swing, pattern,
     setBpm, setSwing, togglePlay,
@@ -82,6 +87,22 @@ export function Transport() {
           className="ml-1 px-2 h-6 rounded text-[10px] bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-[var(--ed-accent-red)] hover:bg-[var(--ed-bg-elevated)] transition-colors"
         >
           CLR
+        </button>
+
+        {/* Save/Load */}
+        <button
+          onClick={onOpenBrowser}
+          className="ml-2 px-2 h-6 rounded text-[10px] font-bold bg-[var(--ed-accent-blue)] text-white hover:brightness-110 transition-all"
+        >
+          SAVE/LOAD
+        </button>
+
+        {/* Help toggle */}
+        <button
+          onClick={onToggleHelp}
+          className="px-2 h-6 rounded text-[10px] bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-[var(--ed-text-primary)] hover:bg-[var(--ed-bg-elevated)] transition-colors"
+        >
+          ?
         </button>
       </div>
     </header>

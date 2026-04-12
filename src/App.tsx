@@ -4,6 +4,7 @@ import { StepSequencer } from "./components/StepSequencer";
 import { Transport } from "./components/Transport";
 import { MixerStrip } from "./components/MixerStrip";
 import { MixerPanel } from "./components/MixerPanel";
+import { PatternBrowser } from "./components/PatternBrowser";
 import { VoiceEditor } from "./components/VoiceEditor";
 import { audioEngine } from "./audio/AudioEngine";
 import { useKeyboard } from "./hooks/useKeyboard";
@@ -12,8 +13,9 @@ import { useMidi } from "./hooks/useMidi";
 export function App() {
   const [audioReady, setAudioReady] = useState(false);
   const [mixerOpen, setMixerOpen] = useState(false);
+  const [browserOpen, setBrowserOpen] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
-  // Keyboard + MIDI hooks (active after audio is ready)
   useKeyboard();
   useMidi();
 
@@ -33,7 +35,7 @@ export function App() {
             ELASTIC DRUMS
           </h1>
           <p className="text-[var(--ed-text-secondary)] text-sm mb-8">
-            Hybrid Drum Machine
+            Hybrid Drum Machine — VA Synth + Samples + Elektron Sequencer
           </p>
           <div className="w-20 h-20 mx-auto rounded-full bg-[var(--ed-bg-elevated)] border-2 border-[var(--ed-accent-orange)] flex items-center justify-center hover:bg-[var(--ed-accent-orange)] hover:text-black transition-all">
             <span className="text-2xl ml-1">&#9654;</span>
@@ -49,7 +51,21 @@ export function App() {
   return (
     <div className="flex flex-col h-screen bg-[var(--ed-bg-primary)]">
       {/* Header / Transport */}
-      <Transport />
+      <Transport
+        onOpenBrowser={() => setBrowserOpen(true)}
+        onToggleHelp={() => setShowHelp((h) => !h)}
+      />
+
+      {/* Keyboard Help Bar */}
+      {showHelp && (
+        <div className="flex items-center gap-6 px-4 py-1.5 bg-[var(--ed-bg-surface)] border-b border-[var(--ed-border)] text-[10px] text-[var(--ed-text-muted)]">
+          <span><kbd className="px-1 py-0.5 bg-[var(--ed-bg-elevated)] rounded text-[var(--ed-text-secondary)]">Q W E R</kbd> <kbd className="px-1 py-0.5 bg-[var(--ed-bg-elevated)] rounded text-[var(--ed-text-secondary)]">A S D F</kbd> <kbd className="px-1 py-0.5 bg-[var(--ed-bg-elevated)] rounded text-[var(--ed-text-secondary)]">Z X C V</kbd> = Pads</span>
+          <span><kbd className="px-1 py-0.5 bg-[var(--ed-bg-elevated)] rounded text-[var(--ed-text-secondary)]">Space</kbd> = Play/Stop</span>
+          <span><kbd className="px-1 py-0.5 bg-[var(--ed-bg-elevated)] rounded text-[var(--ed-text-secondary)]">1-6</kbd> = Presets</span>
+          <span><kbd className="px-1 py-0.5 bg-[var(--ed-bg-elevated)] rounded text-[var(--ed-text-secondary)]">← →</kbd> = Prev/Next</span>
+          <span className="ml-auto">Drop audio files on pads to load samples</span>
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="flex flex-1 min-h-0">
@@ -70,8 +86,9 @@ export function App() {
         </div>
       </div>
 
-      {/* Full Mixer Panel (overlay) */}
+      {/* Overlays */}
       <MixerPanel isOpen={mixerOpen} onClose={() => setMixerOpen(false)} />
+      <PatternBrowser isOpen={browserOpen} onClose={() => setBrowserOpen(false)} />
     </div>
   );
 }

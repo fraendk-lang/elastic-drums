@@ -17,3 +17,32 @@
 [  779529ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776004146449:34
 [  779529ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776004146449:34
 [  786823ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/favicon.ico:0
+[  948229ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[  948252ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776004146449:34
+[  948252ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776004146449:34
+[  957871ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/favicon.ico:0
+[ 1000706ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 1000711ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776004146449:34
+[ 1000711ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776004146449:34
+[ 1122128ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 1122149ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776004483579:34
+[ 1122149ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776004483579:34
+[ 1132557ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 1132574ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776004483579:34
+[ 1132575ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776004483579:34
+[ 1138413ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 1138431ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776004483579:34
+[ 1138431ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776004483579:34
+[ 1168682ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 1168703ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776004483579:34
+[ 1168703ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776004483579:34
+[ 1185124ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/favicon.ico:0
+[ 1187095ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 1187101ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/favicon.ico:0
+[ 1187113ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776004483579:34
+[ 1187113ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776004483579:34
+[ 1223794ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776004483579:34
+[ 1241984ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 1242003ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776004483579:34
+[ 1242003ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776004483579:34
+[ 1268469ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/favicon.ico:0

@@ -224,6 +224,37 @@ export class AudioEngine {
     return Math.min(this.masterPeakLevel, 1);
   }
 
+  /** Expose AudioContext for sample decoding */
+  getAudioContext(): AudioContext | null {
+    return this.ctx;
+  }
+
+  /** Play a sample buffer through a voice channel */
+  playSampleAtTime(buffer: AudioBuffer, voice: number, velocity: number, time: number, tune = 0): void {
+    const ctx = this.getContext();
+    const out = this.getChannelOutput(voice);
+
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+
+    // Pitch via playbackRate (semitones)
+    if (tune !== 0) {
+      src.playbackRate.value = Math.pow(2, tune / 12);
+    }
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(velocity * 0.8, time);
+
+    // Auto-fade at end to prevent clicks
+    const dur = buffer.duration / src.playbackRate.value;
+    gain.gain.setValueAtTime(velocity * 0.8, time + dur - 0.005);
+    gain.gain.linearRampToValueAtTime(0, time + dur);
+
+    src.connect(gain);
+    gain.connect(out);
+    src.start(time);
+  }
+
   /** Set channel volume (0..1) */
   setChannelVolume(channel: number, volume: number): void {
     const gain = this.channelGains[channel];
@@ -265,7 +296,25 @@ export class AudioEngine {
     return this.ctx?.currentTime ?? 0;
   }
 
+  // Sample lookup callback — set by SampleManager to avoid circular imports
+  private sampleLookup: ((voice: number) => AudioBuffer | null) | null = null;
+
+  /** Register sample lookup function */
+  setSampleLookup(fn: (voice: number) => AudioBuffer | null): void {
+    this.sampleLookup = fn;
+  }
+
   private scheduleVoice(ctx: AudioContext, voice: number, velocity: number, t: number): void {
+    // Check if this voice has a sample loaded — play sample instead of synth
+    if (this.sampleLookup) {
+      const buffer = this.sampleLookup(voice);
+      if (buffer) {
+        const p = this.voiceParams[voice] ?? {};
+        this.playSampleAtTime(buffer, voice, velocity, t, p.tune ?? 0);
+        return;
+      }
+    }
+
     const out = this.getChannelOutput(voice);
     const p = this.voiceParams[voice] ?? {};
 
