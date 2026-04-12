@@ -9,6 +9,9 @@ import { EuclideanGenerator } from "./components/EuclideanGenerator";
 import { SongEditor } from "./components/SongEditor";
 import { KitBrowser } from "./components/KitBrowser";
 import { VoiceEditor } from "./components/VoiceEditor";
+import { BassSequencer } from "./components/BassSequencer";
+import { bassEngine } from "./audio/BassEngine";
+import { startBassScheduler, stopBassScheduler } from "./store/bassStore";
 import { audioEngine } from "./audio/AudioEngine";
 import { useDrumStore } from "./store/drumStore";
 import { useKeyboard } from "./hooks/useKeyboard";
@@ -43,7 +46,21 @@ export function App() {
 
   const startAudio = useCallback(async () => {
     await audioEngine.resume();
+    // Init bass synth with the same audio context
+    const ctx = audioEngine.getAudioContext();
+    if (ctx) bassEngine.init(ctx);
     setAudioReady(true);
+  }, []);
+
+  // Sync bass scheduler with drum transport
+  useEffect(() => {
+    const unsub = useDrumStore.subscribe((state, prev) => {
+      if (state.isPlaying && !prev.isPlaying) startBassScheduler();
+      if (!state.isPlaying && prev.isPlaying) stopBassScheduler();
+    });
+    // Expose drum store for bass scheduler to read BPM
+    (window as unknown as Record<string, unknown>).__drumStore = useDrumStore;
+    return unsub;
   }, []);
 
   // ─── Splash Screen ──────────────────────────────────────
@@ -148,6 +165,9 @@ export function App() {
           <MixerStrip onOpenMixer={() => setMixerOpen(true)} />
         </div>
       </div>
+
+      {/* Bass 303 Sequencer */}
+      <BassSequencer />
 
       {/* Overlays */}
       <MixerPanel isOpen={mixerOpen} onClose={() => setMixerOpen(false)} />
