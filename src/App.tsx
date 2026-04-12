@@ -28,37 +28,71 @@ export function App() {
     setAudioReady(true);
   }, []);
 
+  // ─── Splash Screen ──────────────────────────────────────
   if (!audioReady) {
     return (
-      <div
-        className="flex items-center justify-center h-screen bg-[var(--ed-bg-primary)] cursor-pointer"
-        onClick={startAudio}
-      >
-        <div className="text-center">
-          <h1 className="text-3xl font-bold tracking-wider text-[var(--ed-accent-orange)] mb-4">
+      <div className="flex items-center justify-center h-screen bg-[var(--ed-bg-primary)] overflow-hidden">
+        {/* Background grid pattern */}
+        <div className="absolute inset-0 opacity-[0.03]" style={{
+          backgroundImage: "linear-gradient(var(--ed-text-muted) 1px, transparent 1px), linear-gradient(90deg, var(--ed-text-muted) 1px, transparent 1px)",
+          backgroundSize: "24px 24px",
+        }} />
+
+        <div className="relative text-center z-10">
+          {/* Logo */}
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <div className="flex gap-1">
+              <div className="w-3 h-3 rounded-sm bg-[var(--ed-accent-orange)]" />
+              <div className="w-3 h-3 rounded-sm bg-[var(--ed-accent-orange)]" />
+              <div className="w-3 h-3 rounded-sm bg-[var(--ed-accent-blue)]" />
+              <div className="w-3 h-3 rounded-sm bg-[var(--ed-pad-hybrid)]" />
+            </div>
+          </div>
+
+          <h1 className="text-4xl font-black tracking-[0.3em] text-[var(--ed-accent-orange)] mb-1">
             ELASTIC DRUMS
           </h1>
-          <p className="text-[var(--ed-text-secondary)] text-sm mb-8">
-            Hybrid Drum Machine — VA Synth + Samples + Elektron Sequencer
+          <p className="text-[var(--ed-text-muted)] text-[11px] tracking-[0.15em] uppercase mb-10">
+            VA Synth &middot; Sample Engine &middot; Elektron Sequencer
           </p>
-          <div className="w-20 h-20 mx-auto rounded-full bg-[var(--ed-bg-elevated)] border-2 border-[var(--ed-accent-orange)] flex items-center justify-center hover:bg-[var(--ed-accent-orange)] hover:text-black transition-all">
-            <span className="text-2xl ml-1">&#9654;</span>
+
+          {/* Start button */}
+          <button
+            onClick={startAudio}
+            className="group relative w-24 h-24 mx-auto rounded-full bg-[var(--ed-bg-elevated)] border-2 border-[var(--ed-accent-orange)]/50 flex items-center justify-center hover:border-[var(--ed-accent-orange)] hover:bg-[var(--ed-accent-orange)] transition-all duration-300 cursor-pointer"
+          >
+            <span className="text-3xl text-[var(--ed-accent-orange)] group-hover:text-black transition-colors ml-1">
+              &#9654;
+            </span>
+            {/* Pulse ring */}
+            <div className="absolute inset-0 rounded-full border-2 border-[var(--ed-accent-orange)]/30 animate-ping" />
+          </button>
+
+          <p className="text-[var(--ed-text-muted)] text-[10px] mt-6 tracking-wide">
+            Click to initialize audio engine
+          </p>
+
+          {/* Feature tags */}
+          <div className="flex gap-2 justify-center mt-8 flex-wrap max-w-sm mx-auto">
+            {["12 Voices", "P-Locks", "Euclidean", "Reverb/Delay", "MIDI", "14 Presets", "WASM DSP"].map((tag) => (
+              <span key={tag} className="px-2 py-0.5 text-[9px] rounded-full bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] border border-[var(--ed-border)]">
+                {tag}
+              </span>
+            ))}
           </div>
-          <p className="text-[var(--ed-text-muted)] text-xs mt-4">
-            Click to start audio engine
-          </p>
         </div>
       </div>
     );
   }
 
+  // ─── Main App ───────────────────────────────────────────
   return (
     <div className="flex flex-col h-screen bg-[var(--ed-bg-primary)]">
-      {/* Header / Transport */}
       <Transport
         onOpenBrowser={() => setBrowserOpen(true)}
         onOpenEuclidean={() => setEuclideanOpen(true)}
         onOpenSong={() => setSongOpen(true)}
+        onOpenMixer={() => setMixerOpen(true)}
         onToggleHelp={() => setShowHelp((h) => !h)}
       />
 
@@ -69,7 +103,7 @@ export function App() {
           <span><kbd className="px-1 py-0.5 bg-[var(--ed-bg-elevated)] rounded text-[var(--ed-text-secondary)]">Space</kbd> = Play/Stop</span>
           <span><kbd className="px-1 py-0.5 bg-[var(--ed-bg-elevated)] rounded text-[var(--ed-text-secondary)]">1-6</kbd> = Presets</span>
           <span><kbd className="px-1 py-0.5 bg-[var(--ed-bg-elevated)] rounded text-[var(--ed-text-secondary)]">← →</kbd> = Prev/Next</span>
-          <span className="ml-auto">Drop audio files on pads to load samples</span>
+          <span className="ml-auto">Drop audio on pads &middot; Right-click = velocity &middot; Shift+right = ratchet</span>
         </div>
       )}
 

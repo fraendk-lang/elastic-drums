@@ -3,9 +3,9 @@
 :root {
   /* Elastic Drums Color Palette – Dark Theme with Warm Accents */
   --ed-bg-primary: #0a0a0c;
-  --ed-bg-secondary: #141418;
-  --ed-bg-surface: #1c1c22;
-  --ed-bg-elevated: #24242c;
+  --ed-bg-secondary: #121215;
+  --ed-bg-surface: #1a1a20;
+  --ed-bg-elevated: #222228;
   --ed-border: #2a2a34;
   --ed-text-primary: #e8e8ec;
   --ed-text-secondary: #8888a0;
@@ -38,4 +38,60 @@ body {
 #root {
   width: 100vw;
   height: 100vh;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ed-border);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ed-text-muted);
+}
+
+/* Range input styling */
+input[type="range"] {
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  cursor: grab;
+}
+
+input[type="range"]:active::-webkit-slider-thumb {
+  cursor: grabbing;
+}
+
+/* Focus styles */
+button:focus-visible {
+  outline: 2px solid var(--ed-accent-orange);
+  outline-offset: 1px;
+}
+
+input:focus-visible {
+  outline: none;
+  border-color: var(--ed-accent-orange);
+}
+
+/* Keyboard shortcut tags */
+kbd {
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 9px;
+}
+
+/* Smooth animations */
+@media (prefers-reduced-motion: no-preference) {
+  .animate-ping {
+    animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
 }
