@@ -186,6 +186,7 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
             onSendB={(v) => handleSendB(i, v)}
             onMute={() => toggleMute(i)}
             onSolo={() => toggleSolo(i)}
+            channelIndex={i}
           />
         ))}
 
@@ -261,13 +262,16 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
 // ─── Channel Strip ───────────────────────────────────────
 
 function ChannelStrip({ label, color, meter, faderValue, sendA, sendB, isMuted, isSoloed,
-  onFader, onSendA, onSendB, onMute, onSolo,
+  onFader, onSendA, onSendB, onMute, onSolo, channelIndex,
 }: {
   label: string; color: string; meter: MeterData; faderValue: number;
   sendA: number; sendB: number; isMuted: boolean; isSoloed: boolean;
   onFader: (v: number) => void; onSendA: (v: number) => void; onSendB: (v: number) => void;
-  onMute: () => void; onSolo: () => void;
+  onMute: () => void; onSolo: () => void; channelIndex: number;
 }) {
+  const [filterFreq, setFilterFreq] = useState(1000);
+  const [filterType, setFilterType] = useState<BiquadFilterType>("allpass");
+  const [drive, setDrive] = useState(0);
   const faderDb = faderValue <= 5 ? -Infinity : AudioEngine.linearToDb(faderToGain(faderValue / 1000));
 
   return (
@@ -281,6 +285,36 @@ function ChannelStrip({ label, color, meter, faderValue, sendA, sendB, isMuted, 
       <div className="px-1 py-1 space-y-0.5 border-b border-[var(--ed-border)]">
         <MiniSend label="R" value={sendA} color="#3b82f6" onChange={onSendA} />
         <MiniSend label="D" value={sendB} color="#f59e0b" onChange={onSendB} />
+      </div>
+
+      {/* Insert FX */}
+      <div className="px-1 py-1 space-y-0.5 border-b border-[var(--ed-border)]">
+        {/* Filter type toggle */}
+        <div className="flex gap-[2px]">
+          {(["allpass", "lowpass", "highpass", "bandpass"] as const).map((t) => (
+            <button key={t} onClick={() => {
+              setFilterType(t);
+              audioEngine.setChannelFilter(channelIndex, t, filterFreq, 2);
+            }}
+              className={`flex-1 text-[5px] font-bold py-[1px] rounded-sm transition-colors ${
+                filterType === t ? "bg-[var(--ed-accent-blue)]/40 text-[var(--ed-accent-blue)]" : "text-[var(--ed-text-muted)] hover:text-[var(--ed-text-secondary)]"
+              }`}
+            >{t === "allpass" ? "OFF" : t === "lowpass" ? "LP" : t === "highpass" ? "HP" : "BP"}</button>
+          ))}
+        </div>
+        {/* Filter freq */}
+        {filterType !== "allpass" && (
+          <MiniSend label="F" value={Math.round(filterFreq / 200 * 100)} color="#3b82f6" onChange={(v) => {
+            const freq = Math.round(20 + (v / 100) * 19980);
+            setFilterFreq(freq);
+            audioEngine.setChannelFilter(channelIndex, filterType, freq, 2);
+          }} />
+        )}
+        {/* Drive */}
+        <MiniSend label="⚡" value={drive} color="#ef4444" onChange={(v) => {
+          setDrive(v);
+          audioEngine.setChannelDrive(channelIndex, v / 100);
+        }} />
       </div>
 
       {/* Meter + Fader area */}
