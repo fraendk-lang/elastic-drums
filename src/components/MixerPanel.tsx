@@ -82,6 +82,8 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
   const [eqHigh, setEqHigh] = useState(0);
   const [saturation, setSaturation] = useState(0);
   const [pumpDepth, setPumpDepth] = useState(0);
+  const [limiterOn, setLimiterOn] = useState(true);
+  const [limiterThreshold, setLimiterThreshold] = useState(99); // maps to -1dB default
   const [pumpRate, setPumpRate] = useState(50);
   const [pans, setPans] = useState<number[]>(new Array(12).fill(0));
   const [selectedChannels, setSelectedChannels] = useState<Set<number>>(new Set());
@@ -302,6 +304,33 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
             onChange={(v) => { setPumpDepth(v); audioEngine.setPump((pumpRate / 100) * 4 + 0.5, v / 100); }} />
           <FxSlider value={pumpRate} max={100} label="Rate" color="#a855f7"
             onChange={(v) => { setPumpRate(v); audioEngine.setPump((v / 100) * 4 + 0.5, pumpDepth / 100); }} />
+        </div>
+        <div className="w-px h-5 bg-[var(--ed-border)] shrink-0" />
+        {/* Limiter */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => {
+              const next = !limiterOn;
+              setLimiterOn(next);
+              audioEngine.setLimiterEnabled(next);
+            }}
+            className={`px-2 py-0.5 text-[9px] font-bold rounded transition-colors ${
+              limiterOn
+                ? "bg-[#ef4444]/30 text-[#ef4444]"
+                : "bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)]"
+            }`}
+          >
+            LIMIT {limiterOn ? "ON" : "OFF"}
+          </button>
+          {limiterOn && (
+            <FxSlider value={limiterThreshold} max={100} label="Ceil" suffix="" color="#ef4444"
+              onChange={(v) => {
+                setLimiterThreshold(v);
+                // Map 0-100 to -12dB..0dB
+                const db = -12 + (v / 100) * 12;
+                audioEngine.setLimiterThreshold(db);
+              }} />
+          )}
         </div>
       </div>
     </div>

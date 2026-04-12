@@ -784,6 +784,24 @@ export class AudioEngine {
     return this.masterCompressor?.reduction ?? 0;
   }
 
+  /** Toggle master limiter on/off */
+  setLimiterEnabled(enabled: boolean): void {
+    if (!this.masterLimiter) return;
+    if (enabled) {
+      this.masterLimiter.threshold.value = -1;
+      this.masterLimiter.ratio.value = 20;
+    } else {
+      // Bypass: set threshold very high
+      this.masterLimiter.threshold.value = 0;
+      this.masterLimiter.ratio.value = 1;
+    }
+  }
+
+  /** Set limiter threshold (dBFS) */
+  setLimiterThreshold(threshold: number): void {
+    if (this.masterLimiter) this.masterLimiter.threshold.value = threshold;
+  }
+
   private getNoise(ctx: AudioContext, duration: number, startTime: number): AudioBufferSourceNode {
     const src = ctx.createBufferSource();
     src.buffer = this.noiseBuffer;

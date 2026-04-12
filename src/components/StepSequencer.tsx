@@ -106,6 +106,28 @@ export function StepSequencer() {
           </button>
         </div>
 
+        {/* Length +/- */}
+        <div className="flex items-center gap-1 ml-2">
+          <button
+            onClick={() => {
+              const newLen = Math.max(4, pattern.length - 4);
+              useDrumStore.setState((s) => ({ pattern: { ...s.pattern, length: newLen } }));
+            }}
+            className="w-5 h-5 rounded text-[10px] font-bold bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-white transition-colors"
+          >−</button>
+          <span className="text-[9px] font-mono text-[var(--ed-accent-orange)] min-w-[24px] text-center">
+            {pattern.length}
+          </span>
+          <button
+            onClick={() => {
+              const newLen = Math.min(64, pattern.length + 4);
+              useDrumStore.setState((s) => ({ pattern: { ...s.pattern, length: newLen } }));
+            }}
+            className="w-5 h-5 rounded text-[10px] font-bold bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-white transition-colors"
+          >+</button>
+          <span className="text-[7px] text-[var(--ed-text-muted)]">STEPS</span>
+        </div>
+
         <div className="flex-1" />
 
         <span className="text-[9px] text-[var(--ed-text-muted)]">
@@ -125,15 +147,18 @@ export function StepSequencer() {
           {Array.from({ length: 16 }, (_, i) => {
             const absIdx = pageOffset + i;
             const isCurrent = isPlaying && currentStep === absIdx;
+            const beyondLen = absIdx >= pattern.length;
             return (
               <div
                 key={i}
                 className={`text-center text-[9px] font-mono pb-0.5 transition-colors ${
-                  isCurrent
-                    ? "text-[var(--ed-accent-orange)] font-bold"
-                    : i % 4 === 0
-                      ? "text-[var(--ed-text-secondary)]"
-                      : "text-[var(--ed-text-muted)]"
+                  beyondLen
+                    ? "text-[var(--ed-text-muted)] opacity-20"
+                    : isCurrent
+                      ? "text-[var(--ed-accent-orange)] font-bold"
+                      : i % 4 === 0
+                        ? "text-[var(--ed-text-secondary)]"
+                        : "text-[var(--ed-text-muted)]"
                 }`}
               >
                 {absIdx + 1}
@@ -191,13 +216,14 @@ export function StepSequencer() {
                   const isHeld = heldStep?.track === track && heldStep?.step === absoluteStep;
                   const velNorm = velocity / 127;
                   const isBeat = stepIdx % 4 === 0;
+                  const isBeyondLength = absoluteStep >= pattern.length;
 
                   return (
                     <button
                       key={`${track}-${stepIdx}`}
                       onClick={(e) => {
+                        if (isBeyondLength) return; // Can't edit beyond pattern length
                         if (e.shiftKey && step?.active) {
-                          // Shift+Click: cycle velocity
                           const levels = [127, 100, 70, 40];
                           const current = step.velocity;
                           const idx = levels.findIndex((v) => v <= current);
@@ -212,16 +238,21 @@ export function StepSequencer() {
                       className={`h-[26px] rounded-[3px] transition-all relative overflow-hidden ${
                         isHeld ? "ring-2 ring-[var(--ed-accent-green)] z-10" : ""
                       } ${
-                        isActive
-                          ? "hover:brightness-125"
-                          : isBeat
-                            ? "bg-[var(--ed-bg-elevated)] hover:bg-[var(--ed-bg-surface)]"
-                            : "bg-[var(--ed-bg-surface)]/60 hover:bg-[var(--ed-bg-surface)]"
+                        isBeyondLength
+                          ? "bg-[var(--ed-bg-primary)]/50 cursor-default"
+                          : isActive
+                            ? "hover:brightness-125"
+                            : isBeat
+                              ? "bg-[var(--ed-bg-elevated)] hover:bg-[var(--ed-bg-surface)]"
+                              : "bg-[var(--ed-bg-surface)]/60 hover:bg-[var(--ed-bg-surface)]"
                       }`}
-                      style={isActive ? {
-                        backgroundColor: trackColor,
-                        opacity: 0.35 + velNorm * 0.65,
-                      } : undefined}
+                      style={
+                        isBeyondLength
+                          ? { opacity: 0.2 }
+                          : isActive
+                            ? { backgroundColor: trackColor, opacity: 0.35 + velNorm * 0.65 }
+                            : undefined
+                      }
                     >
                       {/* Playhead highlight */}
                       {isCurrent && (
