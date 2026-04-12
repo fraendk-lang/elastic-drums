@@ -1,44 +1,40 @@
 #pragma once
 #include "PluginProcessor.h"
+#include <juce_gui_extra/juce_gui_extra.h>
+#include <map>
 
+/**
+ * Plugin Editor — WebView with Resource Provider
+ * (Same pattern as the working Elastic Synth M4 plugin)
+ */
 class ElasticDrumsEditor : public juce::AudioProcessorEditor,
                             private juce::Timer {
 public:
-    explicit ElasticDrumsEditor(ElasticDrumsProcessor& processor);
+    explicit ElasticDrumsEditor(ElasticDrumsProcessor& p);
     ~ElasticDrumsEditor() override;
 
-    void paint(juce::Graphics& g) override;
     void resized() override;
     void timerCallback() override;
-    void mouseDown(const juce::MouseEvent& e) override;
+    void paint(juce::Graphics&) override {}
 
 private:
-    ElasticDrumsProcessor& proc_;
+    struct PluginWebView : juce::WebBrowserComponent {
+        using WebBrowserComponent::WebBrowserComponent;
+        bool pageAboutToLoad(const juce::String&) override { return true; }
+        std::function<void()> onPageLoaded;
+        void pageFinishedLoading(const juce::String&) override {
+            if (onPageLoaded) onPageLoaded();
+        }
+    };
 
-    int selectedVoice_ = 0;
-    bool stepGrid_[12][16] = {};
-    int stepVel_[12][16] = {};
-    int playingStep_ = -1;
-    bool isPlaying_ = false;
+    std::optional<juce::WebBrowserComponent::Resource> getResource(const juce::String& url);
+    static std::string getMime(const juce::String& ext);
+    static std::vector<std::byte> readFile(const juce::File& f);
 
-    // Voice param sliders
-    juce::OwnedArray<juce::Slider> knobs_;
-    juce::OwnedArray<juce::Label> knobLabels_;
-    juce::OwnedArray<juce::AudioProcessorValueTreeState::SliderAttachment> attachments_;
-
-    juce::Slider masterSlider_;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterAtt_;
-
-    void selectVoice(int v);
-    void rebuildKnobs();
-    void toggleStep(int track, int step);
-    juce::Rectangle<int> getPadBounds(int index) const;
-    juce::Rectangle<int> getStepBounds(int track, int step) const;
-
-    static constexpr int kPadCols = 4;
-    static constexpr int kPadRows = 3;
-    static constexpr int kSteps = 16;
-    static constexpr int kTracks = 12;
+    ElasticDrumsProcessor& processor_;
+    juce::File webUiRoot_;
+    std::unique_ptr<PluginWebView> webView_;
+    bool uiLoaded_ = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ElasticDrumsEditor)
 };

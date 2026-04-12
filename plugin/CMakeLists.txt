@@ -28,6 +28,8 @@ juce_add_plugin(ElasticDrums
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
+    NEEDS_WEB_BROWSER TRUE
+    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD TRUE
 )
 
@@ -41,7 +43,7 @@ target_sources(ElasticDrums
 
 target_compile_definitions(ElasticDrums
     PUBLIC
-        JUCE_WEB_BROWSER=0
+        JUCE_WEB_BROWSER=1
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
 )
@@ -64,3 +66,32 @@ target_link_libraries(ElasticDrums
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags
 )
+
+# ─── Bundle Web UI into plugin ────────────────────────────
+if (EXISTS "${CMAKE_SOURCE_DIR}/../dist/index.html")
+    set(WEBUI_SRC "${CMAKE_SOURCE_DIR}/../dist")
+
+    # VST3
+    add_custom_command(TARGET ElasticDrums_VST3 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:ElasticDrums_VST3>/../Resources/webui"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ElasticDrums_VST3>/../Resources/webui"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${WEBUI_SRC}" "$<TARGET_FILE_DIR:ElasticDrums_VST3>/../Resources/webui"
+        COMMENT "Bundling Web UI into VST3"
+    )
+
+    # AU
+    add_custom_command(TARGET ElasticDrums_AU POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:ElasticDrums_AU>/../Resources/webui"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ElasticDrums_AU>/../Resources/webui"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${WEBUI_SRC}" "$<TARGET_FILE_DIR:ElasticDrums_AU>/../Resources/webui"
+        COMMENT "Bundling Web UI into AU"
+    )
+
+    # Standalone
+    add_custom_command(TARGET ElasticDrums_Standalone POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:ElasticDrums_Standalone>/../Resources/webui"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ElasticDrums_Standalone>/../Resources/webui"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${WEBUI_SRC}" "$<TARGET_FILE_DIR:ElasticDrums_Standalone>/../Resources/webui"
+        COMMENT "Bundling Web UI into Standalone"
+    )
+endif()
