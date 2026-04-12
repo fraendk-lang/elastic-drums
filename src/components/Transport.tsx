@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useDrumStore, setFillMode } from "../store/drumStore";
+import { downloadMidi } from "../utils/midiExport";
+import { sharePattern } from "../utils/patternShare";
 
 interface TransportProps {
   onOpenBrowser: () => void;
@@ -98,6 +100,8 @@ export function Transport({
         <ToolButton onClick={onOpenSong} color="var(--ed-accent-green)" label="SONG" />
         <ToolButton onClick={onOpenMixer} color="var(--ed-accent-orange)" label="MIXER" />
         <ToolButton onClick={onOpenBrowser} color="var(--ed-accent-blue)" label="SAVE" />
+        <ToolButton onClick={() => downloadMidi(pattern, bpm)} color="#6366f1" label="MIDI" />
+        <ToolButton onClick={() => { sharePattern(pattern, bpm); alert("Pattern URL copied!"); }} color="#06b6d4" label="SHARE" />
 
         <div className="w-px h-5 bg-[var(--ed-border)] mx-0.5" />
 

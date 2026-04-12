@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { PadGrid } from "./components/PadGrid";
 import { StepSequencer } from "./components/StepSequencer";
 import { Transport } from "./components/Transport";
@@ -10,8 +10,10 @@ import { SongEditor } from "./components/SongEditor";
 import { KitBrowser } from "./components/KitBrowser";
 import { VoiceEditor } from "./components/VoiceEditor";
 import { audioEngine } from "./audio/AudioEngine";
+import { useDrumStore } from "./store/drumStore";
 import { useKeyboard } from "./hooks/useKeyboard";
 import { useMidi } from "./hooks/useMidi";
+import { loadSharedPattern } from "./utils/patternShare";
 
 export function App() {
   const [audioReady, setAudioReady] = useState(false);
@@ -24,6 +26,18 @@ export function App() {
 
   useKeyboard();
   useMidi();
+
+  // Load shared pattern from URL hash on mount
+  useEffect(() => {
+    const shared = loadSharedPattern();
+    if (shared) {
+      useDrumStore.setState({
+        pattern: shared.pattern,
+        bpm: shared.bpm,
+        currentPatternIndex: -1,
+      });
+    }
+  }, []);
 
   const startAudio = useCallback(async () => {
     await audioEngine.resume();
@@ -110,21 +124,25 @@ export function App() {
         </div>
       )}
 
-      {/* Main Content */}
+      {/* Main Content — responsive: stack on small screens */}
       <div className="flex flex-1 min-h-0">
-        {/* Left: Pad Grid + Voice Editor */}
-        <div className="flex flex-col w-80 border-r border-[var(--ed-border)]">
+        {/* Left: Pad Grid + Voice Editor (hidden on small screens, use overlay) */}
+        <div className="hidden md:flex flex-col w-72 lg:w-80 border-r border-[var(--ed-border)] shrink-0">
           <PadGrid />
           <VoiceEditor />
         </div>
 
-        {/* Center: Step Sequencer */}
+        {/* Center: Step Sequencer (always visible) */}
         <div className="flex-1 min-w-0">
+          {/* Mobile: compact pad row above sequencer */}
+          <div className="md:hidden">
+            <PadGrid />
+          </div>
           <StepSequencer />
         </div>
 
-        {/* Right: Mini Mixer */}
-        <div className="w-48 border-l border-[var(--ed-border)]">
+        {/* Right: Mini Mixer (hidden on small screens) */}
+        <div className="hidden lg:block w-44 border-l border-[var(--ed-border)] shrink-0">
           <MixerStrip onOpenMixer={() => setMixerOpen(true)} />
         </div>
       </div>
