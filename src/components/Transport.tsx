@@ -6,11 +6,12 @@ interface TransportProps {
   onOpenEuclidean: () => void;
   onOpenSong: () => void;
   onOpenMixer: () => void;
+  onOpenKits: () => void;
   onToggleHelp: () => void;
 }
 
 export function Transport({
-  onOpenBrowser, onOpenEuclidean, onOpenSong, onOpenMixer, onToggleHelp,
+  onOpenBrowser, onOpenEuclidean, onOpenSong, onOpenMixer, onOpenKits, onToggleHelp,
 }: TransportProps) {
   const {
     bpm, isPlaying, swing, pattern,
@@ -92,6 +93,7 @@ export function Transport({
 
       {/* ── Tools Group ── */}
       <div className="flex items-center gap-1">
+        <ToolButton onClick={onOpenKits} color="#d97706" label="KITS" />
         <ToolButton onClick={onOpenEuclidean} color="var(--ed-pad-hybrid)" label="EUCLID" />
         <ToolButton onClick={onOpenSong} color="var(--ed-accent-green)" label="SONG" />
         <ToolButton onClick={onOpenMixer} color="var(--ed-accent-orange)" label="MIXER" />
