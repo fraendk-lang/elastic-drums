@@ -7,12 +7,15 @@
  */
 
 import { audioEngine } from "./AudioEngine";
+import { applyMuLaw } from "./MuLaw";
 
 export interface LoadedSample {
   name: string;
-  buffer: AudioBuffer;
+  buffer: AudioBuffer;        // Current buffer (possibly µ-Law processed)
+  originalBuffer: AudioBuffer; // Original unprocessed buffer
   duration: number;
   sampleRate: number;
+  muLawEnabled: boolean;
 }
 
 class SampleManagerClass {
@@ -28,10 +31,12 @@ class SampleManagerClass {
     const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
 
     const sample: LoadedSample = {
-      name: file.name.replace(/\.[^.]+$/, ""), // Strip extension
+      name: file.name.replace(/\.[^.]+$/, ""),
       buffer: audioBuffer,
+      originalBuffer: audioBuffer,
       duration: audioBuffer.duration,
       sampleRate: audioBuffer.sampleRate,
+      muLawEnabled: false,
     };
 
     this.samples.set(voiceIndex, sample);
@@ -52,8 +57,10 @@ class SampleManagerClass {
     const sample: LoadedSample = {
       name,
       buffer: audioBuffer,
+      originalBuffer: audioBuffer,
       duration: audioBuffer.duration,
       sampleRate: audioBuffer.sampleRate,
+      muLawEnabled: false,
     };
 
     this.samples.set(voiceIndex, sample);
@@ -68,6 +75,32 @@ class SampleManagerClass {
   /** Check if voice has a sample loaded */
   hasSample(voiceIndex: number): boolean {
     return this.samples.has(voiceIndex);
+  }
+
+  /** Toggle µ-Law vintage processing on a sample */
+  toggleMuLaw(voiceIndex: number): boolean {
+    const sample = this.samples.get(voiceIndex);
+    if (!sample) return false;
+
+    const ctx = audioEngine.getAudioContext();
+    if (!ctx) return false;
+
+    sample.muLawEnabled = !sample.muLawEnabled;
+
+    if (sample.muLawEnabled) {
+      // Apply µ-Law (8-bit, slight sample rate reduction)
+      sample.buffer = applyMuLaw(sample.originalBuffer, ctx, 8, 2);
+    } else {
+      // Restore original
+      sample.buffer = sample.originalBuffer;
+    }
+
+    return sample.muLawEnabled;
+  }
+
+  /** Check if µ-Law is enabled for a voice */
+  isMuLawEnabled(voiceIndex: number): boolean {
+    return this.samples.get(voiceIndex)?.muLawEnabled ?? false;
   }
 
   /** Remove sample from a voice (revert to synthesis) */

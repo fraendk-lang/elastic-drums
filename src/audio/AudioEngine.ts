@@ -131,6 +131,11 @@ export class AudioEngine {
   private channelShapers: WaveShaperNode[] = [];
   private masterGain: GainNode | null = null;
   private masterAnalyser: AnalyserNode | null = null;
+  private masterCompressor: DynamicsCompressorNode | null = null;
+  private masterEqLow: BiquadFilterNode | null = null;
+  private masterEqMid: BiquadFilterNode | null = null;
+  private masterEqHigh: BiquadFilterNode | null = null;
+  private masterLimiter: DynamicsCompressorNode | null = null;
 
   // Send FX
   private sendAGains: GainNode[] = [];       // Per-channel reverb send amount
@@ -168,7 +173,46 @@ export class AudioEngine {
       this.masterAnalyser.fftSize = 2048;
       this.masterAnalyser.smoothingTimeConstant = 0.3;
 
-      this.masterGain.connect(this.masterAnalyser);
+      // Master chain: masterGain → EQ → Compressor → Limiter → Analyser → Output
+      // 3-Band EQ
+      this.masterEqLow = this.ctx.createBiquadFilter();
+      this.masterEqLow.type = "lowshelf";
+      this.masterEqLow.frequency.value = 100;
+      this.masterEqLow.gain.value = 0;
+
+      this.masterEqMid = this.ctx.createBiquadFilter();
+      this.masterEqMid.type = "peaking";
+      this.masterEqMid.frequency.value = 1000;
+      this.masterEqMid.Q.value = 0.7;
+      this.masterEqMid.gain.value = 0;
+
+      this.masterEqHigh = this.ctx.createBiquadFilter();
+      this.masterEqHigh.type = "highshelf";
+      this.masterEqHigh.frequency.value = 8000;
+      this.masterEqHigh.gain.value = 0;
+
+      // Bus Compressor
+      this.masterCompressor = this.ctx.createDynamicsCompressor();
+      this.masterCompressor.threshold.value = -12;
+      this.masterCompressor.ratio.value = 4;
+      this.masterCompressor.attack.value = 0.01;
+      this.masterCompressor.release.value = 0.15;
+      this.masterCompressor.knee.value = 6;
+
+      // Limiter (brick-wall)
+      this.masterLimiter = this.ctx.createDynamicsCompressor();
+      this.masterLimiter.threshold.value = -1;
+      this.masterLimiter.ratio.value = 20;
+      this.masterLimiter.attack.value = 0.001;
+      this.masterLimiter.release.value = 0.05;
+
+      // Routing
+      this.masterGain.connect(this.masterEqLow);
+      this.masterEqLow.connect(this.masterEqMid);
+      this.masterEqMid.connect(this.masterEqHigh);
+      this.masterEqHigh.connect(this.masterCompressor);
+      this.masterCompressor.connect(this.masterLimiter);
+      this.masterLimiter.connect(this.masterAnalyser);
       this.masterAnalyser.connect(this.ctx.destination);
 
       // Create 12 channel strips with insert FX
@@ -440,6 +484,27 @@ export class AudioEngine {
   /** Set master volume (0..1) */
   setMasterVolume(volume: number): void {
     if (this.masterGain) this.masterGain.gain.value = volume;
+  }
+
+  /** Set master EQ (low/mid/high in dB, -12..+12) */
+  setMasterEQ(low: number, mid: number, high: number): void {
+    if (this.masterEqLow) this.masterEqLow.gain.value = low;
+    if (this.masterEqMid) this.masterEqMid.gain.value = mid;
+    if (this.masterEqHigh) this.masterEqHigh.gain.value = high;
+  }
+
+  /** Set master compressor params */
+  setMasterCompressor(threshold: number, ratio: number, attack: number, release: number): void {
+    if (!this.masterCompressor) return;
+    this.masterCompressor.threshold.value = threshold;
+    this.masterCompressor.ratio.value = ratio;
+    this.masterCompressor.attack.value = attack;
+    this.masterCompressor.release.value = release;
+  }
+
+  /** Get compressor gain reduction (for meter display) */
+  getCompressorReduction(): number {
+    return this.masterCompressor?.reduction ?? 0;
   }
 
   private getNoise(ctx: AudioContext, duration: number, startTime: number): AudioBufferSourceNode {

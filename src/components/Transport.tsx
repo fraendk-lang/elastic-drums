@@ -1,4 +1,5 @@
-import { useDrumStore } from "../store/drumStore";
+import { useState } from "react";
+import { useDrumStore, setFillMode } from "../store/drumStore";
 
 interface TransportProps {
   onOpenBrowser: () => void;
@@ -41,6 +42,9 @@ export function Transport({
       >
         {isPlaying ? "■" : "▶"}
       </button>
+
+      {/* Fill button (hold for fill mode) */}
+      <FillButton />
 
       {/* BPM */}
       <div className="flex items-center gap-1">
@@ -114,6 +118,25 @@ function ToolButton({ onClick, color, label }: { onClick: () => void; color: str
       style={{ backgroundColor: color }}
     >
       {label}
+    </button>
+  );
+}
+
+function FillButton() {
+  const [active, setActive] = useState(false);
+
+  return (
+    <button
+      onMouseDown={() => { setActive(true); setFillMode(true); }}
+      onMouseUp={() => { setActive(false); setFillMode(false); }}
+      onMouseLeave={() => { setActive(false); setFillMode(false); }}
+      className={`px-2 h-6 rounded text-[9px] font-bold transition-all ${
+        active
+          ? "bg-yellow-400 text-black"
+          : "bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-[var(--ed-text-primary)]"
+      }`}
+    >
+      FILL
     </button>
   );
 }
