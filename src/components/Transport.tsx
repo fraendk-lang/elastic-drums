@@ -27,7 +27,6 @@ export function Transport({
   const handleTap = useCallback(() => {
     const now = performance.now();
     tapTimes.current.push(now);
-    // Keep last 6 taps
     if (tapTimes.current.length > 6) tapTimes.current.shift();
     if (tapTimes.current.length >= 2) {
       const intervals: number[] = [];
@@ -38,7 +37,6 @@ export function Transport({
       const tappedBpm = Math.round(60000 / avgMs);
       if (tappedBpm >= 30 && tappedBpm <= 300) setBpm(tappedBpm);
     }
-    // Reset after 2s pause
     setTimeout(() => {
       if (tapTimes.current.length > 0 && performance.now() - tapTimes.current[tapTimes.current.length - 1]! > 2000) {
         tapTimes.current = [];
@@ -47,77 +45,62 @@ export function Transport({
   }, [setBpm]);
 
   return (
-    <header className="flex items-center h-11 px-3 border-b border-[var(--ed-border)] bg-[var(--ed-bg-secondary)] gap-2">
-      {/* Logo */}
-      <span className="text-[11px] font-black tracking-[0.2em] text-[var(--ed-accent-orange)] mr-2 hidden lg:block">
+    <header className="flex items-center h-10 px-3 border-b border-[var(--ed-border)] bg-[#0e0e12] gap-1.5">
+
+      {/* ── Brand ── */}
+      <span className="text-[10px] font-black tracking-[0.25em] text-[var(--ed-accent-orange)] mr-1 hidden lg:block">
         ELASTIC DRUMS
       </span>
-      <span className="text-[11px] font-black tracking-[0.2em] text-[var(--ed-accent-orange)] mr-2 lg:hidden">
-        ED
-      </span>
+      <span className="text-[10px] font-black tracking-[0.25em] text-[var(--ed-accent-orange)] mr-1 lg:hidden">ED</span>
 
-      {/* Divider */}
-      <div className="w-px h-5 bg-[var(--ed-border)]" />
+      <Sep />
 
-      {/* ── Transport Group ── */}
+      {/* ── Transport ── */}
       <button
         onClick={togglePlay}
-        className={`w-8 h-8 rounded-md flex items-center justify-center text-sm font-bold transition-all shrink-0 ${
+        className={`w-7 h-7 rounded flex items-center justify-center text-xs font-bold transition-all ${
           isPlaying
-            ? "bg-[var(--ed-accent-red)] text-white shadow-lg shadow-red-500/20"
-            : "bg-[var(--ed-bg-elevated)] text-[var(--ed-text-primary)] hover:bg-[var(--ed-accent-green)] hover:shadow-lg hover:shadow-green-500/20"
+            ? "bg-white/10 text-red-400 border border-red-400/30"
+            : "bg-white/5 text-white/70 border border-white/10 hover:bg-white/10 hover:text-white"
         }`}
       >
         {isPlaying ? "■" : "▶"}
       </button>
 
-      {/* Fill button (hold for fill mode) */}
       <FillButton />
 
       {/* BPM */}
-      <div className="flex items-center gap-1">
-        <input
-          type="number"
-          min={30}
-          max={300}
-          value={bpm}
-          onChange={(e) => setBpm(Number(e.target.value))}
-          className="w-12 h-7 px-1 text-center text-[12px] font-mono bg-[var(--ed-bg-primary)] border border-[var(--ed-border)] rounded text-[var(--ed-text-primary)] focus:border-[var(--ed-accent-orange)] focus:outline-none"
-        />
-        <span className="text-[8px] text-[var(--ed-text-muted)] uppercase">bpm</span>
-      </div>
-
-      {/* Swing */}
-      <div className="flex items-center gap-1">
-        <span className="text-[8px] text-[var(--ed-text-muted)] uppercase">Swg</span>
-        <input
-          type="range" min={50} max={75} value={swing}
-          onChange={(e) => setSwing(Number(e.target.value))}
-          className="w-12 h-1 accent-[var(--ed-accent-orange)]"
-        />
-        <span className="text-[9px] font-mono text-[var(--ed-text-secondary)] w-5">{swing}</span>
-      </div>
-
-      {/* Tap Tempo */}
+      <input
+        type="number" min={30} max={300} value={bpm}
+        onChange={(e) => setBpm(Number(e.target.value))}
+        className="w-11 h-6 px-1 text-center text-[11px] font-mono bg-black/40 border border-white/8 rounded text-white/90 focus:border-[var(--ed-accent-orange)]/50 focus:outline-none"
+      />
       <button
         onClick={handleTap}
-        className="px-1.5 h-6 rounded text-[8px] font-bold bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-[var(--ed-text-primary)] hover:bg-[var(--ed-bg-elevated)] transition-colors"
+        className="h-5 px-1.5 text-[7px] font-bold tracking-wider text-white/30 hover:text-white/60 transition-colors"
       >
         TAP
       </button>
 
-      {/* Pattern Length */}
-      <div className="flex items-center gap-1">
-        <span className="text-[8px] text-[var(--ed-text-muted)] uppercase">Len</span>
+      {/* Swing */}
+      <div className="flex items-center gap-0.5">
+        <span className="text-[7px] text-white/25 uppercase">Swg</span>
+        <input type="range" min={50} max={75} value={swing}
+          onChange={(e) => setSwing(Number(e.target.value))}
+          className="w-10 h-[3px] accent-white/40" />
+        <span className="text-[8px] font-mono text-white/30 w-4">{swing}</span>
+      </div>
+
+      {/* Length */}
+      <div className="flex items-center gap-0.5">
+        <span className="text-[7px] text-white/25 uppercase">Len</span>
         <select
           value={pattern.length}
           onChange={(e) => {
             const len = Number(e.target.value);
-            useDrumStore.setState((s) => ({
-              pattern: { ...s.pattern, length: len },
-            }));
+            useDrumStore.setState((s) => ({ pattern: { ...s.pattern, length: len } }));
           }}
-          className="h-6 px-1 text-[10px] bg-[var(--ed-bg-primary)] border border-[var(--ed-border)] rounded text-[var(--ed-text-primary)] focus:outline-none"
+          className="h-5 px-0.5 text-[9px] bg-black/40 border border-white/8 rounded text-white/70 focus:outline-none"
         >
           {[4, 8, 12, 16, 24, 32, 48, 64].map((l) => (
             <option key={l} value={l}>{l}</option>
@@ -125,56 +108,55 @@ export function Transport({
         </select>
       </div>
 
-      <div className="w-px h-5 bg-[var(--ed-border)]" />
+      <Sep />
 
-      {/* ── Pattern Group ── */}
-      <div className="flex items-center gap-1">
-        <button onClick={prevPreset} className="w-5 h-5 rounded text-[10px] bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-[var(--ed-text-primary)] transition-colors">◀</button>
-        <span className="text-[11px] font-medium text-[var(--ed-text-primary)] min-w-[70px] text-center truncate">
-          {pattern.name}
-        </span>
-        <button onClick={nextPreset} className="w-5 h-5 rounded text-[10px] bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-[var(--ed-text-primary)] transition-colors">▶</button>
-        <button
-          onClick={clearPattern}
-          className="px-1.5 h-5 rounded text-[8px] text-[var(--ed-text-muted)] hover:text-[var(--ed-accent-red)] transition-colors"
-        >
-          CLR
-        </button>
-      </div>
+      {/* ── Pattern ── */}
+      <button onClick={prevPreset} className="w-4 h-4 text-[8px] text-white/30 hover:text-white/70 transition-colors">◀</button>
+      <span className="text-[10px] font-medium text-white/80 min-w-[60px] text-center truncate">{pattern.name}</span>
+      <button onClick={nextPreset} className="w-4 h-4 text-[8px] text-white/30 hover:text-white/70 transition-colors">▶</button>
+      <button onClick={clearPattern} className="text-[7px] text-white/20 hover:text-red-400/60 transition-colors ml-0.5">CLR</button>
 
-      {/* Spacer */}
+      {/* ── Spacer ── */}
       <div className="flex-1" />
 
-      {/* ── Tools Group ── */}
-      <div className="flex items-center gap-1">
-        <ToolButton onClick={onOpenKits} color="#d97706" label="KITS" />
-        <ToolButton onClick={onOpenEuclidean} color="var(--ed-pad-hybrid)" label="EUCLID" />
-        <ToolButton onClick={onOpenSong} color="var(--ed-accent-green)" label="SONG" />
-        <ToolButton onClick={onOpenMixer} color="var(--ed-accent-orange)" label="MIXER" />
-        <ToolButton onClick={onOpenBrowser} color="var(--ed-accent-blue)" label="SAVE" />
-        <ToolButton onClick={() => downloadMidi(pattern, bpm)} color="#6366f1" label="MIDI" />
-        <ToolButton onClick={() => exportPatternAsWav(pattern, bpm, 4)} color="#10b981" label="WAV" />
-        <ToolButton onClick={() => { sharePattern(pattern, bpm); alert("Pattern URL copied!"); }} color="#06b6d4" label="SHARE" />
+      {/* ── Tools (monochrome, subtle) ── */}
+      <div className="flex items-center gap-[3px]">
+        <ToolBtn onClick={onOpenKits} label="KITS" />
+        <ToolBtn onClick={onOpenEuclidean} label="EUCLID" />
+        <ToolBtn onClick={onOpenSong} label="SONG" />
+        <ToolBtn onClick={onOpenMixer} label="MIXER" accent />
 
-        <div className="w-px h-5 bg-[var(--ed-border)] mx-0.5" />
+        <Sep />
 
-        <button
-          onClick={onToggleHelp}
-          className="w-5 h-5 rounded text-[10px] bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-[var(--ed-text-primary)] hover:bg-[var(--ed-bg-elevated)] transition-colors"
-        >
-          ?
-        </button>
+        <ToolBtn onClick={onOpenBrowser} label="SAVE" />
+        <ToolBtn onClick={() => downloadMidi(pattern, bpm)} label="MIDI" />
+        <ToolBtn onClick={() => exportPatternAsWav(pattern, bpm, 4)} label="WAV" />
+        <ToolBtn onClick={() => { sharePattern(pattern, bpm); }} label="SHARE" />
+
+        <Sep />
+
+        <button onClick={onToggleHelp}
+          className="w-5 h-5 rounded text-[9px] text-white/20 hover:text-white/50 transition-colors">?</button>
       </div>
     </header>
   );
 }
 
-function ToolButton({ onClick, color, label }: { onClick: () => void; color: string; label: string }) {
+// ─── Sub-components ──────────────────────────────────────
+
+function Sep() {
+  return <div className="w-px h-4 bg-white/8 mx-0.5" />;
+}
+
+function ToolBtn({ onClick, label, accent }: { onClick: () => void; label: string; accent?: boolean }) {
   return (
     <button
       onClick={onClick}
-      className="px-2 h-6 rounded text-[9px] font-bold text-white hover:brightness-125 transition-all"
-      style={{ backgroundColor: color }}
+      className={`h-5 px-2 rounded text-[8px] font-bold tracking-wider transition-all ${
+        accent
+          ? "bg-white/8 text-[var(--ed-accent-orange)]/80 hover:bg-white/12 hover:text-[var(--ed-accent-orange)]"
+          : "text-white/35 hover:text-white/70 hover:bg-white/5"
+      }`}
     >
       {label}
     </button>
@@ -183,16 +165,15 @@ function ToolButton({ onClick, color, label }: { onClick: () => void; color: str
 
 function FillButton() {
   const [active, setActive] = useState(false);
-
   return (
     <button
       onMouseDown={() => { setActive(true); setFillMode(true); }}
       onMouseUp={() => { setActive(false); setFillMode(false); }}
       onMouseLeave={() => { setActive(false); setFillMode(false); }}
-      className={`px-2 h-6 rounded text-[9px] font-bold transition-all ${
+      className={`h-5 px-1.5 rounded text-[7px] font-bold tracking-wider transition-all ${
         active
-          ? "bg-yellow-400 text-black"
-          : "bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-[var(--ed-text-primary)]"
+          ? "bg-yellow-400/20 text-yellow-300"
+          : "text-white/20 hover:text-white/40"
       }`}
     >
       FILL
