@@ -182,10 +182,80 @@ const PRESET_PATTERNS: PatternData[] = [
 
   // Reggaeton
   createPresetPattern("Dembow", 16, 50, {
-    0: { steps: [0, 7], vel: [127, 100] },                     // Kick
-    1: { steps: [3, 7, 11, 15], vel: [120, 80, 110, 80] },    // Snare
-    6: { steps: [0, 2, 4, 6, 8, 10, 12, 14] },                // HH Cl
-    10: { steps: [2, 6, 10, 14], vel: [70, 60, 70, 60] },     // Perc
+    0: { steps: [0, 7], vel: [127, 100] },
+    1: { steps: [3, 7, 11, 15], vel: [120, 80, 110, 80] },
+    6: { steps: [0, 2, 4, 6, 8, 10, 12, 14] },
+    10: { steps: [2, 6, 10, 14], vel: [70, 60, 70, 60] },
+  }),
+
+  // Lo-Fi Hip Hop
+  createPresetPattern("Lo-Fi", 16, 58, {
+    0: { steps: [0, 5, 10], vel: [110, 80, 95] },
+    1: { steps: [4, 12], vel: [100, 90] },
+    6: { steps: [0, 2, 4, 6, 8, 10, 12, 14], vel: [80, 40, 65, 40, 80, 40, 65, 40] },
+    10: { steps: [7, 15], vel: [50, 45] },
+  }),
+
+  // Deep House
+  createPresetPattern("Deep House", 16, 52, {
+    0: { steps: [0, 4, 8, 12], vel: [120, 115, 120, 115] },
+    2: { steps: [4, 12], vel: [90, 85] },
+    6: { steps: [2, 6, 10, 14], vel: [90, 70, 90, 70] },
+    7: { steps: [4, 12], vel: [60, 55] },
+    10: { steps: [0, 3, 8, 11], vel: [50, 40, 50, 40] },
+  }),
+
+  // Techno — minimal
+  createPresetPattern("Techno", 16, 50, {
+    0: { steps: [0, 4, 8, 12], vel: [127, 127, 127, 127] },
+    6: { steps: [0, 2, 4, 6, 8, 10, 12, 14], vel: [100, 60, 90, 60, 100, 60, 90, 60] },
+    7: { steps: [4, 10], vel: [80, 75] },
+    2: { steps: [8], vel: [70] },
+    11: { steps: [3, 7, 11, 15], vel: [40, 35, 40, 35] },
+  }),
+
+  // Afrobeats
+  createPresetPattern("Afrobeats", 16, 55, {
+    0: { steps: [0, 5, 10], vel: [120, 90, 100] },
+    1: { steps: [4, 12], vel: [110, 105] },
+    6: { steps: [0, 1, 3, 4, 6, 7, 9, 10, 12, 13, 15], vel: [90, 50, 70, 90, 50, 70, 90, 50, 90, 50, 70] },
+    10: { steps: [2, 6, 8, 14], vel: [80, 60, 70, 60] },
+    11: { steps: [3, 7, 11, 15], vel: [50, 45, 50, 45] },
+  }),
+
+  // Amapiano
+  createPresetPattern("Amapiano", 16, 50, {
+    0: { steps: [0, 4, 8, 12], vel: [110, 100, 110, 100] },
+    3: { steps: [2, 6, 10, 14], vel: [90, 70, 85, 70] },
+    6: { steps: [0, 2, 4, 6, 8, 10, 12, 14], vel: [70, 40, 60, 40, 70, 40, 60, 40] },
+    10: { steps: [3, 7, 11, 15], vel: [80, 60, 75, 60] },
+  }),
+
+  // Synthwave / 80s
+  createPresetPattern("Synthwave", 16, 50, {
+    0: { steps: [0, 4, 8, 12], vel: [120, 110, 120, 110] },
+    1: { steps: [4, 12], vel: [127, 120] },
+    4: { steps: [6, 14], vel: [80, 75] },
+    6: { steps: [0, 2, 4, 6, 8, 10, 12, 14] },
+    8: { steps: [0, 8], vel: [50, 45] },
+  }),
+
+  // IDM / Glitch
+  createPresetPattern("IDM Glitch", 16, 50, {
+    0: { steps: [0, 3, 5, 8, 11, 13], vel: [127, 70, 90, 110, 60, 85] },
+    1: { steps: [2, 7, 9, 14], vel: [100, 80, 110, 70] },
+    6: { steps: [0, 1, 3, 5, 6, 8, 9, 11, 13, 14], vel: [90, 40, 70, 50, 90, 40, 70, 50, 90, 40] },
+    10: { steps: [4, 10, 12], vel: [60, 50, 55] },
+    11: { steps: [1, 6, 11], vel: [40, 50, 35] },
+  }),
+
+  // Acoustic / Brush
+  createPresetPattern("Acoustic", 16, 56, {
+    0: { steps: [0, 8], vel: [100, 90] },
+    1: { steps: [4, 12], vel: [90, 85] },
+    9: { steps: [0, 2, 4, 6, 8, 10, 12, 14], vel: [70, 50, 65, 50, 70, 50, 65, 50] },
+    7: { steps: [6, 14], vel: [50, 45] },
+    3: { steps: [10], vel: [60] },
   }),
 ];
 
