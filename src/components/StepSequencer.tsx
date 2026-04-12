@@ -161,18 +161,15 @@ export function StepSequencer() {
           {Array.from({ length: 16 }, (_, i) => {
             const absIdx = pageOffset + i;
             const isCurrent = isPlaying && currentStep === absIdx;
-            const beyondLen = absIdx >= pattern.length;
             return (
               <div
                 key={i}
                 className={`text-center text-[9px] font-mono pb-0.5 transition-colors ${
-                  beyondLen
-                    ? "text-[var(--ed-text-muted)] opacity-20"
-                    : isCurrent
-                      ? "text-[var(--ed-accent-orange)] font-bold"
-                      : i % 4 === 0
-                        ? "text-[var(--ed-text-secondary)]"
-                        : "text-[var(--ed-text-muted)]"
+                  isCurrent
+                    ? "text-[var(--ed-accent-orange)] font-bold"
+                    : i % 4 === 0
+                      ? "text-[var(--ed-text-secondary)]"
+                      : "text-[var(--ed-text-muted)]"
                 }`}
               >
                 {absIdx + 1}
@@ -263,21 +260,16 @@ export function StepSequencer() {
                       className={`h-[26px] rounded-[3px] transition-all relative overflow-hidden ${
                         isHeld ? "ring-2 ring-[var(--ed-accent-green)] z-10" : ""
                       } ${
-                        isBeyondLength
-                          ? "bg-[var(--ed-bg-surface)]/30 hover:bg-[var(--ed-bg-surface)]/50 cursor-pointer border border-dashed border-white/5"
-                          : isActive
-                            ? "hover:brightness-125"
-                            : isBeat
-                              ? "bg-[var(--ed-bg-elevated)] hover:bg-[var(--ed-bg-surface)]"
-                              : "bg-[var(--ed-bg-surface)]/60 hover:bg-[var(--ed-bg-surface)]"
+                        isActive
+                          ? "hover:brightness-125"
+                          : isBeat
+                            ? "bg-[var(--ed-bg-elevated)] hover:bg-[var(--ed-bg-surface)]"
+                            : "bg-[var(--ed-bg-surface)]/60 hover:bg-[var(--ed-bg-surface)]"
                       }`}
-                      style={
-                        isBeyondLength
-                          ? { opacity: 0.4 }
-                          : isActive
-                            ? { backgroundColor: trackColor, opacity: 0.35 + velNorm * 0.65 }
-                            : undefined
-                      }
+                      style={isActive ? {
+                        backgroundColor: trackColor,
+                        opacity: 0.35 + velNorm * 0.65,
+                      } : undefined}
                     >
                       {/* Playhead highlight */}
                       {isCurrent && (
