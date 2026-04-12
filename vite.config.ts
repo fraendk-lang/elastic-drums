@@ -10,10 +10,11 @@ export default defineConfig({
     },
   },
   server: {
-    headers: {
-      "Cross-Origin-Opener-Policy": "same-origin",
-      "Cross-Origin-Embedder-Policy": "require-corp",
-    },
+    // COOP/COEP headers needed for SharedArrayBuffer (enable when WASM is ready)
+    // headers: {
+    //   "Cross-Origin-Opener-Policy": "same-origin",
+    //   "Cross-Origin-Embedder-Policy": "require-corp",
+    // },
   },
   build: {
     target: "esnext",

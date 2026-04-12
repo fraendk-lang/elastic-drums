@@ -1,10 +1,51 @@
+import { useState, useCallback } from "react";
 import { PadGrid } from "./components/PadGrid";
 import { StepSequencer } from "./components/StepSequencer";
 import { Transport } from "./components/Transport";
 import { MixerStrip } from "./components/MixerStrip";
+import { MixerPanel } from "./components/MixerPanel";
 import { VoiceEditor } from "./components/VoiceEditor";
+import { audioEngine } from "./audio/AudioEngine";
+import { useKeyboard } from "./hooks/useKeyboard";
+import { useMidi } from "./hooks/useMidi";
 
 export function App() {
+  const [audioReady, setAudioReady] = useState(false);
+  const [mixerOpen, setMixerOpen] = useState(false);
+
+  // Keyboard + MIDI hooks (active after audio is ready)
+  useKeyboard();
+  useMidi();
+
+  const startAudio = useCallback(async () => {
+    await audioEngine.resume();
+    setAudioReady(true);
+  }, []);
+
+  if (!audioReady) {
+    return (
+      <div
+        className="flex items-center justify-center h-screen bg-[var(--ed-bg-primary)] cursor-pointer"
+        onClick={startAudio}
+      >
+        <div className="text-center">
+          <h1 className="text-3xl font-bold tracking-wider text-[var(--ed-accent-orange)] mb-4">
+            ELASTIC DRUMS
+          </h1>
+          <p className="text-[var(--ed-text-secondary)] text-sm mb-8">
+            Hybrid Drum Machine
+          </p>
+          <div className="w-20 h-20 mx-auto rounded-full bg-[var(--ed-bg-elevated)] border-2 border-[var(--ed-accent-orange)] flex items-center justify-center hover:bg-[var(--ed-accent-orange)] hover:text-black transition-all">
+            <span className="text-2xl ml-1">&#9654;</span>
+          </div>
+          <p className="text-[var(--ed-text-muted)] text-xs mt-4">
+            Click to start audio engine
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen bg-[var(--ed-bg-primary)]">
       {/* Header / Transport */}
@@ -23,11 +64,14 @@ export function App() {
           <StepSequencer />
         </div>
 
-        {/* Right: Mixer */}
-        <div className="w-64 border-l border-[var(--ed-border)]">
-          <MixerStrip />
+        {/* Right: Mini Mixer */}
+        <div className="w-48 border-l border-[var(--ed-border)]">
+          <MixerStrip onOpenMixer={() => setMixerOpen(true)} />
         </div>
       </div>
+
+      {/* Full Mixer Panel (overlay) */}
+      <MixerPanel isOpen={mixerOpen} onClose={() => setMixerOpen(false)} />
     </div>
   );
 }

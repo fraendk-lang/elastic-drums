@@ -1,3 +1,4 @@
+import React, { useCallback } from "react";
 import { useDrumStore } from "../store/drumStore";
 
 const VOICE_LABELS = [
@@ -6,15 +7,52 @@ const VOICE_LABELS = [
   "CYM", "RIDE", "PRC1", "PRC2",
 ];
 
+const VOICE_COLORS = [
+  "var(--ed-accent-orange)", "var(--ed-accent-orange)", "var(--ed-accent-orange)",
+  "var(--ed-accent-orange)", "var(--ed-accent-orange)", "var(--ed-accent-orange)",
+  "var(--ed-accent-blue)", "var(--ed-accent-blue)",
+  "var(--ed-accent-blue)", "var(--ed-accent-blue)",
+  "var(--ed-pad-hybrid)", "var(--ed-pad-hybrid)",
+];
+
 export function StepSequencer() {
-  const { pattern, currentStep, isPlaying, selectedPage, setSelectedPage, toggleStep } =
-    useDrumStore();
+  const {
+    pattern, currentStep, isPlaying, selectedPage, heldStep,
+    setSelectedPage, toggleStep, setStepVelocity,
+    holdStep, releaseStep, setSelectedVoice,
+  } = useDrumStore();
 
   const pageOffset = selectedPage * 16;
 
+  // Right-click to cycle velocity
+  const handleContextMenu = useCallback((e: React.MouseEvent, track: number, absStep: number) => {
+    e.preventDefault();
+    const step = pattern.tracks[track]?.steps[absStep];
+    if (!step?.active) return;
+    const levels = [127, 100, 70, 40];
+    const current = step.velocity;
+    const idx = levels.findIndex((v) => v <= current);
+    const next = levels[(idx + 1) % levels.length]!;
+    setStepVelocity(track, absStep, next);
+  }, [pattern, setStepVelocity]);
+
+  // Hold step for P-Lock editing
+  const handleStepMouseDown = useCallback((e: React.MouseEvent, track: number, absStep: number) => {
+    const step = pattern.tracks[track]?.steps[absStep];
+    if (!step?.active) return;
+    // Only hold on left-click (not right-click context menu)
+    if (e.button !== 0) return;
+    holdStep(track, absStep);
+    setSelectedVoice(track);
+  }, [pattern, holdStep, setSelectedVoice]);
+
+  const handleStepMouseUp = useCallback(() => {
+    releaseStep();
+  }, [releaseStep]);
+
   return (
-    <div className="flex flex-col h-full p-3">
-      {/* Page Selector */}
+    <div className="flex flex-col h-full p-3" onMouseUp={handleStepMouseUp}>
+      {/* Page Selector + Help */}
       <div className="flex items-center gap-2 mb-3">
         {[0, 1, 2, 3].map((page) => (
           <button
@@ -29,11 +67,17 @@ export function StepSequencer() {
             {page * 16 + 1}–{(page + 1) * 16}
           </button>
         ))}
+        <span className="ml-auto text-[10px] text-[var(--ed-text-muted)]">
+          {heldStep
+            ? `P-LOCK: ${VOICE_LABELS[heldStep.track]} Step ${heldStep.step + 1} — move sliders`
+            : "hold step + move slider = P-Lock"
+          }
+        </span>
       </div>
 
       {/* Step Grid */}
       <div className="flex-1 overflow-auto">
-        <div className="grid gap-1" style={{ gridTemplateColumns: "56px repeat(16, 1fr)" }}>
+        <div className="grid gap-[3px]" style={{ gridTemplateColumns: "52px repeat(16, 1fr)" }}>
           {/* Header row – step numbers */}
           <div />
           {Array.from({ length: 16 }, (_, i) => (
@@ -41,7 +85,7 @@ export function StepSequencer() {
               key={i}
               className={`text-center text-[10px] font-mono pb-1 ${
                 isPlaying && currentStep === pageOffset + i
-                  ? "text-[var(--ed-accent-orange)]"
+                  ? "text-[var(--ed-accent-orange)] font-bold"
                   : "text-[var(--ed-text-muted)]"
               }`}
             >
@@ -51,12 +95,9 @@ export function StepSequencer() {
 
           {/* Track rows */}
           {VOICE_LABELS.map((label, track) => (
-            <>
+            <React.Fragment key={track}>
               {/* Track label */}
-              <div
-                key={`label-${track}`}
-                className="flex items-center text-[10px] font-medium text-[var(--ed-text-secondary)] pr-2"
-              >
+              <div className="flex items-center text-[10px] font-medium text-[var(--ed-text-secondary)] pr-2 h-7">
                 {label}
               </div>
 
@@ -66,26 +107,49 @@ export function StepSequencer() {
                 const step = pattern.tracks[track]?.steps[absoluteStep];
                 const isActive = step?.active ?? false;
                 const isCurrent = isPlaying && currentStep === absoluteStep;
+                const velocity = step?.velocity ?? 100;
+                const hasLocks = isActive && step !== undefined && Object.keys(step.paramLocks).length > 0;
+                const isHeld = heldStep?.track === track && heldStep?.step === absoluteStep;
+                const velOpacity = isActive ? 0.3 + (velocity / 127) * 0.7 : 1;
+                const color = VOICE_COLORS[track] ?? "var(--ed-accent-orange)";
 
                 return (
                   <button
                     key={`${track}-${stepIdx}`}
                     onClick={() => toggleStep(track, absoluteStep)}
-                    className={`h-6 rounded-sm transition-all ${
-                      isCurrent
-                        ? "ring-1 ring-[var(--ed-accent-orange)]"
-                        : ""
+                    onContextMenu={(e) => handleContextMenu(e, track, absoluteStep)}
+                    onMouseDown={(e) => handleStepMouseDown(e, track, absoluteStep)}
+                    className={`h-7 rounded-sm transition-all relative overflow-hidden ${
+                      isCurrent ? "ring-1 ring-white/50" : ""
+                    } ${
+                      isHeld ? "ring-2 ring-[var(--ed-accent-green)]" : ""
                     } ${
                       isActive
-                        ? "bg-[var(--ed-accent-orange)] hover:bg-[var(--ed-accent-amber)]"
+                        ? "hover:brightness-110"
                         : stepIdx % 4 === 0
                           ? "bg-[var(--ed-bg-elevated)] hover:bg-[var(--ed-bg-surface)]"
                           : "bg-[var(--ed-bg-surface)] hover:bg-[var(--ed-bg-elevated)]"
                     }`}
-                  />
+                    style={isActive ? {
+                      backgroundColor: color,
+                      opacity: velOpacity,
+                    } : undefined}
+                  >
+                    {/* Velocity bar */}
+                    {isActive && (
+                      <div
+                        className="absolute bottom-0 left-0 right-0 bg-black/20"
+                        style={{ height: `${100 - (velocity / 127) * 100}%` }}
+                      />
+                    )}
+                    {/* P-Lock indicator dot */}
+                    {hasLocks && (
+                      <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-[var(--ed-accent-green)]" />
+                    )}
+                  </button>
                 );
               })}
-            </>
+            </React.Fragment>
           ))}
         </div>
       </div>

@@ -1,7 +1,11 @@
 import { useDrumStore } from "../store/drumStore";
 
 export function Transport() {
-  const { bpm, isPlaying, setBpm, togglePlay } = useDrumStore();
+  const {
+    bpm, isPlaying, swing, pattern,
+    setBpm, setSwing, togglePlay,
+    nextPreset, prevPreset, clearPattern,
+  } = useDrumStore();
 
   return (
     <header className="flex items-center justify-between h-12 px-4 border-b border-[var(--ed-border)] bg-[var(--ed-bg-secondary)]">
@@ -13,36 +17,72 @@ export function Transport() {
       </div>
 
       {/* Transport Controls */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
+        {/* Play/Stop */}
         <button
           onClick={togglePlay}
-          className={`w-8 h-8 rounded flex items-center justify-center text-sm font-bold transition-colors ${
+          className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold transition-all ${
             isPlaying
-              ? "bg-[var(--ed-accent-red)] text-white"
-              : "bg-[var(--ed-bg-elevated)] text-[var(--ed-text-primary)] hover:bg-[var(--ed-accent-green)]"
+              ? "bg-[var(--ed-accent-red)] text-white shadow-lg shadow-red-500/20"
+              : "bg-[var(--ed-bg-elevated)] text-[var(--ed-text-primary)] hover:bg-[var(--ed-accent-green)] hover:shadow-lg hover:shadow-green-500/20"
           }`}
         >
           {isPlaying ? "■" : "▶"}
         </button>
 
         {/* BPM */}
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-[var(--ed-text-secondary)]">BPM</label>
+        <div className="flex items-center gap-1.5">
+          <label className="text-[10px] text-[var(--ed-text-muted)] uppercase">Bpm</label>
           <input
             type="number"
             min={30}
             max={300}
             value={bpm}
             onChange={(e) => setBpm(Number(e.target.value))}
-            className="w-16 h-7 px-2 text-center text-sm font-mono bg-[var(--ed-bg-primary)] border border-[var(--ed-border)] rounded text-[var(--ed-text-primary)] focus:border-[var(--ed-accent-orange)] focus:outline-none"
+            className="w-14 h-7 px-1.5 text-center text-sm font-mono bg-[var(--ed-bg-primary)] border border-[var(--ed-border)] rounded text-[var(--ed-text-primary)] focus:border-[var(--ed-accent-orange)] focus:outline-none"
           />
+        </div>
+
+        {/* Swing */}
+        <div className="flex items-center gap-1.5">
+          <label className="text-[10px] text-[var(--ed-text-muted)] uppercase">Swing</label>
+          <input
+            type="range"
+            min={50}
+            max={75}
+            value={swing}
+            onChange={(e) => setSwing(Number(e.target.value))}
+            className="w-16 h-1 accent-[var(--ed-accent-orange)]"
+          />
+          <span className="text-[10px] font-mono text-[var(--ed-text-secondary)] w-6">
+            {swing}%
+          </span>
         </div>
       </div>
 
-      {/* Pattern / Kit Info */}
-      <div className="flex items-center gap-4 text-xs text-[var(--ed-text-secondary)]">
-        <span>Pattern A01</span>
-        <span>Kit: 808 Classic</span>
+      {/* Pattern / Preset */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={prevPreset}
+          className="w-6 h-6 rounded text-xs bg-[var(--ed-bg-surface)] text-[var(--ed-text-secondary)] hover:text-[var(--ed-text-primary)] hover:bg-[var(--ed-bg-elevated)] transition-colors"
+        >
+          ◀
+        </button>
+        <span className="text-xs font-medium text-[var(--ed-text-primary)] min-w-[80px] text-center">
+          {pattern.name}
+        </span>
+        <button
+          onClick={nextPreset}
+          className="w-6 h-6 rounded text-xs bg-[var(--ed-bg-surface)] text-[var(--ed-text-secondary)] hover:text-[var(--ed-text-primary)] hover:bg-[var(--ed-bg-elevated)] transition-colors"
+        >
+          ▶
+        </button>
+        <button
+          onClick={clearPattern}
+          className="ml-1 px-2 h-6 rounded text-[10px] bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-[var(--ed-accent-red)] hover:bg-[var(--ed-bg-elevated)] transition-colors"
+        >
+          CLR
+        </button>
       </div>
     </header>
   );

@@ -1,10 +1,11 @@
 import { create } from "zustand";
+import { audioEngine } from "../audio/AudioEngine";
 
 export interface StepData {
   active: boolean;
-  velocity: number;
-  microTiming: number;
-  probability: number;
+  velocity: number;       // 0-127
+  microTiming: number;    // ±23 ticks
+  probability: number;    // 0-100
   paramLocks: Record<string, number>;
 }
 
@@ -14,12 +15,14 @@ export interface TrackData {
   solo: boolean;
   volume: number;
   pan: number;
+  length: number;         // Per-track length for polymetric
 }
 
 export interface PatternData {
   name: string;
   tracks: TrackData[];
   length: number;
+  swing: number;          // 50-75 (50 = no swing)
 }
 
 function createEmptyStep(): StepData {
@@ -39,6 +42,7 @@ function createEmptyTrack(): TrackData {
     solo: false,
     volume: 100,
     pan: 0,
+    length: 16,
   };
 }
 
@@ -47,49 +51,251 @@ function createEmptyPattern(): PatternData {
     name: "A01",
     tracks: Array.from({ length: 12 }, createEmptyTrack),
     length: 16,
+    swing: 50,
   };
 }
+
+// ─── Preset Patterns ─────────────────────────────────────
+
+function createPresetPattern(
+  name: string,
+  length: number,
+  swing: number,
+  data: Record<number, { steps: number[]; vel?: number[] }>,
+): PatternData {
+  const pattern = createEmptyPattern();
+  pattern.name = name;
+  pattern.length = length;
+  pattern.swing = swing;
+
+  for (const [track, info] of Object.entries(data)) {
+    const t = Number(track);
+    const trackData = pattern.tracks[t]!;
+    trackData.length = length;
+    for (let i = 0; i < info.steps.length; i++) {
+      const stepIdx = info.steps[i]!;
+      trackData.steps[stepIdx]!.active = true;
+      if (info.vel?.[i] !== undefined) {
+        trackData.steps[stepIdx]!.velocity = info.vel[i]!;
+      }
+    }
+  }
+  return pattern;
+}
+
+const PRESET_PATTERNS: PatternData[] = [
+  // 808 Classic — Boom Bap
+  createPresetPattern("808 Boom", 16, 54, {
+    0: { steps: [0, 6, 10], vel: [127, 90, 110] },           // Kick
+    1: { steps: [4, 12], vel: [120, 110] },                   // Snare
+    6: { steps: [0, 2, 4, 6, 8, 10, 12, 14], vel: [100, 60, 80, 60, 100, 60, 80, 60] }, // HH Cl
+    7: { steps: [3, 11] },                                    // HH Op
+  }),
+
+  // 909 House
+  createPresetPattern("909 House", 16, 50, {
+    0: { steps: [0, 4, 8, 12], vel: [127, 120, 127, 120] },  // Kick - four on the floor
+    2: { steps: [4, 12], vel: [110, 100] },                   // Clap
+    6: { steps: [0, 2, 4, 6, 8, 10, 12, 14], vel: [110, 70, 100, 70, 110, 70, 100, 70] }, // HH Cl
+    7: { steps: [2, 6, 10, 14], vel: [60, 80, 60, 80] },     // HH Op
+  }),
+
+  // Trap
+  createPresetPattern("Trap 808", 16, 50, {
+    0: { steps: [0, 3, 7, 10, 14], vel: [127, 100, 110, 90, 100] },  // Kick
+    1: { steps: [4, 12] },                                            // Snare
+    6: { steps: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+         vel: [100, 50, 70, 50, 100, 50, 70, 50, 100, 50, 70, 50, 100, 50, 70, 50] }, // HH rapid
+    7: { steps: [6, 14] },                                            // HH Op
+  }),
+
+  // Electro
+  createPresetPattern("Electro", 16, 50, {
+    0: { steps: [0, 3, 8, 11], vel: [127, 100, 120, 95] },   // Kick
+    1: { steps: [4, 12] },                                     // Snare
+    2: { steps: [7, 15], vel: [80, 90] },                      // Clap
+    6: { steps: [0, 2, 4, 6, 8, 10, 12, 14] },                // HH Cl
+    3: { steps: [6, 14], vel: [80, 70] },                      // Tom Lo
+  }),
+
+  // DnB — Amen-style
+  createPresetPattern("DnB Amen", 16, 50, {
+    0: { steps: [0, 4, 9, 10], vel: [127, 100, 110, 80] },   // Kick
+    1: { steps: [4, 10, 12], vel: [120, 100, 110] },          // Snare
+    6: { steps: [0, 2, 4, 5, 6, 8, 10, 12, 13, 14], vel: [100, 60, 90, 50, 80, 100, 60, 90, 50, 80] }, // HH
+    9: { steps: [0, 8], vel: [70, 60] },                       // Ride
+  }),
+
+  // Reggaeton
+  createPresetPattern("Dembow", 16, 50, {
+    0: { steps: [0, 7], vel: [127, 100] },                     // Kick
+    1: { steps: [3, 7, 11, 15], vel: [120, 80, 110, 80] },    // Snare
+    6: { steps: [0, 2, 4, 6, 8, 10, 12, 14] },                // HH Cl
+    10: { steps: [2, 6, 10, 14], vel: [70, 60, 70, 60] },     // Perc
+  }),
+];
+
+// ─── Sequencer Scheduler ─────────────────────────────────
+// Look-ahead scheduler with swing support
+
+let schedulerTimer: ReturnType<typeof setInterval> | null = null;
+let nextStepTime = 0;
+
+function startScheduler() {
+  nextStepTime = audioEngine.currentTime + 0.05;
+
+  if (schedulerTimer !== null) clearInterval(schedulerTimer);
+
+  schedulerTimer = setInterval(() => {
+    const state = useDrumStore.getState();
+    if (!state.isPlaying) return;
+
+    const secondsPerStep = 60.0 / state.bpm / 4; // 16th notes
+    const swingRatio = (state.pattern.swing - 50) / 100; // 0..0.25
+
+    // Schedule all steps that fall within the look-ahead window (100ms)
+    while (nextStepTime < audioEngine.currentTime + 0.1) {
+      const { pattern, currentStep } = useDrumStore.getState();
+
+      // Apply swing: off-beat steps (odd) are delayed
+      let stepDuration = secondsPerStep;
+      if (currentStep % 2 === 0 && swingRatio > 0) {
+        // Even step: slightly shorter
+        stepDuration = secondsPerStep * (1 - swingRatio);
+      } else if (currentStep % 2 === 1 && swingRatio > 0) {
+        // Odd step: slightly longer (swung)
+        stepDuration = secondsPerStep * (1 + swingRatio);
+      }
+
+      // Trigger active steps on all tracks, apply P-Locks
+      for (let track = 0; track < 12; track++) {
+        const trackData = pattern.tracks[track];
+        if (!trackData || trackData.mute) continue;
+
+        const trackStep = currentStep % trackData.length;
+        const step = trackData.steps[trackStep];
+        if (!step?.active) continue;
+
+        // Probability check
+        if (step.probability < 100 && Math.random() * 100 >= step.probability) continue;
+
+        // Apply P-Locks: temporarily override voice params for this step
+        const locks = step.paramLocks;
+        const lockKeys = Object.keys(locks);
+        const savedValues: Record<string, number> = {};
+
+        for (const key of lockKeys) {
+          savedValues[key] = audioEngine.getVoiceParam(track, key);
+          audioEngine.setVoiceParam(track, key, locks[key]!);
+        }
+
+        const vel = step.velocity / 127;
+        audioEngine.triggerVoiceAtTime(track, vel, nextStepTime);
+
+        // Restore original params after trigger
+        for (const key of lockKeys) {
+          audioEngine.setVoiceParam(track, key, savedValues[key]!);
+        }
+      }
+
+      // Advance step
+      const nextStep = (currentStep + 1) % pattern.length;
+      useDrumStore.setState({ currentStep: nextStep });
+
+      nextStepTime += stepDuration;
+    }
+  }, 25);
+}
+
+function stopScheduler() {
+  if (schedulerTimer !== null) {
+    clearInterval(schedulerTimer);
+    schedulerTimer = null;
+  }
+}
+
+// ─── Store ───────────────────────────────────────────────
 
 interface DrumStore {
   // Transport
   bpm: number;
+  swing: number;
   isPlaying: boolean;
   currentStep: number;
 
   // Selection
   selectedVoice: number;
   selectedPage: number;
+  currentPatternIndex: number;
+
+  // P-Lock editing: which step is being held (track, step) or null
+  heldStep: { track: number; step: number } | null;
 
   // Pattern
   pattern: PatternData;
 
   // Actions
   setBpm: (bpm: number) => void;
+  setSwing: (swing: number) => void;
   togglePlay: () => void;
   setCurrentStep: (step: number) => void;
   setSelectedVoice: (voice: number) => void;
   setSelectedPage: (page: number) => void;
   toggleStep: (track: number, step: number) => void;
+  setStepVelocity: (track: number, step: number, velocity: number) => void;
   triggerVoice: (voice: number) => void;
+  loadPreset: (index: number) => void;
+  nextPreset: () => void;
+  prevPreset: () => void;
+  clearPattern: () => void;
+
+  // P-Lock editing
+  holdStep: (track: number, step: number) => void;
+  releaseStep: () => void;
+  setParamLock: (track: number, step: number, paramId: string, value: number) => void;
+  clearParamLock: (track: number, step: number, paramId: string) => void;
+
+  // Copy/Paste
+  copyTrack: (track: number) => void;
+  pasteTrack: (track: number) => void;
+  clipboard: TrackData | null;
 }
 
-export const useDrumStore = create<DrumStore>((set) => ({
+export const useDrumStore = create<DrumStore>((set, get) => ({
   bpm: 120,
+  swing: 50,
+  clipboard: null,
   isPlaying: false,
   currentStep: 0,
   selectedVoice: 0,
   selectedPage: 0,
+  currentPatternIndex: -1, // -1 = empty/custom
+  heldStep: null,
   pattern: createEmptyPattern(),
 
   setBpm: (bpm) => set({ bpm: Math.max(30, Math.min(300, bpm)) }),
 
-  togglePlay: () =>
-    set((state) => ({ isPlaying: !state.isPlaying, currentStep: 0 })),
+  setSwing: (swing) => {
+    const clamped = Math.max(50, Math.min(75, swing));
+    set((state) => {
+      const newPattern = { ...state.pattern, swing: clamped };
+      return { swing: clamped, pattern: newPattern };
+    });
+  },
+
+  togglePlay: () => {
+    const wasPlaying = get().isPlaying;
+    if (wasPlaying) {
+      stopScheduler();
+      set({ isPlaying: false, currentStep: 0 });
+    } else {
+      set({ isPlaying: true, currentStep: 0 });
+      startScheduler();
+    }
+  },
 
   setCurrentStep: (currentStep) => set({ currentStep }),
-
   setSelectedVoice: (selectedVoice) => set({ selectedVoice }),
-
   setSelectedPage: (selectedPage) => set({ selectedPage }),
 
   toggleStep: (track, step) =>
@@ -97,10 +303,97 @@ export const useDrumStore = create<DrumStore>((set) => ({
       const newPattern = structuredClone(state.pattern);
       const s = newPattern.tracks[track]!.steps[step]!;
       s.active = !s.active;
+      if (s.active && s.velocity === 0) s.velocity = 100;
       return { pattern: newPattern };
     }),
 
-  triggerVoice: (_voice) => {
-    // TODO: Trigger audio engine voice
+  setStepVelocity: (track, step, velocity) =>
+    set((state) => {
+      const newPattern = structuredClone(state.pattern);
+      newPattern.tracks[track]!.steps[step]!.velocity = Math.max(1, Math.min(127, velocity));
+      return { pattern: newPattern };
+    }),
+
+  triggerVoice: (voice) => {
+    audioEngine.triggerVoice(voice, 0.8);
+  },
+
+  loadPreset: (index) => {
+    const wasPlaying = get().isPlaying;
+    if (wasPlaying) stopScheduler();
+
+    const preset = PRESET_PATTERNS[index];
+    if (!preset) return;
+
+    const pattern = structuredClone(preset);
+    set({
+      pattern,
+      currentPatternIndex: index,
+      swing: pattern.swing,
+      currentStep: 0,
+      isPlaying: false,
+    });
+  },
+
+  nextPreset: () => {
+    const { currentPatternIndex } = get();
+    const next = (currentPatternIndex + 1) % PRESET_PATTERNS.length;
+    get().loadPreset(next);
+  },
+
+  prevPreset: () => {
+    const { currentPatternIndex } = get();
+    const prev = currentPatternIndex <= 0 ? PRESET_PATTERNS.length - 1 : currentPatternIndex - 1;
+    get().loadPreset(prev);
+  },
+
+  clearPattern: () => {
+    const wasPlaying = get().isPlaying;
+    if (wasPlaying) stopScheduler();
+    set({
+      pattern: createEmptyPattern(),
+      currentPatternIndex: -1,
+      currentStep: 0,
+      isPlaying: false,
+    });
+  },
+
+  // ─── P-Lock editing ──────────────────────────────────────
+  holdStep: (track, step) => set({ heldStep: { track, step } }),
+
+  releaseStep: () => set({ heldStep: null }),
+
+  setParamLock: (track, step, paramId, value) =>
+    set((state) => {
+      const newPattern = structuredClone(state.pattern);
+      const s = newPattern.tracks[track]!.steps[step]!;
+      s.paramLocks[paramId] = value;
+      return { pattern: newPattern };
+    }),
+
+  clearParamLock: (track, step, paramId) =>
+    set((state) => {
+      const newPattern = structuredClone(state.pattern);
+      const s = newPattern.tracks[track]!.steps[step]!;
+      delete s.paramLocks[paramId];
+      return { pattern: newPattern };
+    }),
+
+  // ─── Copy/Paste ──────────────────────────────────────────
+  copyTrack: (track) => {
+    const trackData = get().pattern.tracks[track];
+    if (trackData) {
+      set({ clipboard: structuredClone(trackData) });
+    }
+  },
+
+  pasteTrack: (track) => {
+    const { clipboard } = get();
+    if (!clipboard) return;
+    set((state) => {
+      const newPattern = structuredClone(state.pattern);
+      newPattern.tracks[track] = structuredClone(clipboard);
+      return { pattern: newPattern };
+    });
   },
 }));

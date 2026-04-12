@@ -1,0 +1,23 @@
+[     320ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=77d298a4:20100
+[  131638ms] [ERROR] Each child in a list should have a unique "key" prop.%s%s See https://react.dev/link/warning-keys for more information. 
+
+Check the render method of `div`.  It was passed a child from StepSequencer. @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=77d298a4:18615
+[  508886ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/favicon.ico:0
+[  825462ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/src/components/StepSequencer.tsx?t=1775998356494:0
+[  825467ms] [ERROR] [vite] Failed to reload /src/components/StepSequencer.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:5173/@vite/client:881
+[  841591ms] ReferenceError: React is not defined
+    at http://localhost:5173/src/components/StepSequencer.tsx?t=1775998372649:89:50
+    at Array.map (<anonymous>)
+    at StepSequencer (http://localhost:5173/src/components/StepSequencer.tsx?t=1775998372649:88:20)
+    at Object.react_stack_bottom_frame (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=77d298a4:18507:20)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=77d298a4:5652:24)
+    at updateFunctionComponent (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=77d298a4:7473:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=77d298a4:8523:20)
+    at runWithFiberInDEV (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=77d298a4:995:72)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=77d298a4:12559:98)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=77d298a4:12422:43)
+[  841591ms] [WARNING] %s
+
+%s
+ An error occurred in the <StepSequencer> component. Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://react.dev/link/error-boundaries to learn more about error boundaries. @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=77d298a4:6963

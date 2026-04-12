@@ -1,43 +1,70 @@
-const CHANNELS = [
+/**
+ * Compact mixer sidebar — shows mini meters + toggle for full mixer panel
+ */
+
+import { useEffect, useRef, useState } from "react";
+import { audioEngine } from "../audio/AudioEngine";
+
+const CHANNEL_LABELS = [
   "KCK", "SNR", "CLP", "TL", "TM", "TH",
   "HHC", "HHO", "CYM", "RDE", "P1", "P2",
 ];
 
-export function MixerStrip() {
+interface MixerStripProps {
+  onOpenMixer: () => void;
+}
+
+export function MixerStrip({ onOpenMixer }: MixerStripProps) {
+  const [levels, setLevels] = useState<number[]>(new Array(12).fill(0));
+  const rafRef = useRef<number>(0);
+
+  useEffect(() => {
+    const update = () => {
+      const newLevels: number[] = [];
+      for (let i = 0; i < 12; i++) {
+        newLevels.push(audioEngine.getChannelLevel(i));
+      }
+      setLevels(newLevels);
+      rafRef.current = requestAnimationFrame(update);
+    };
+    rafRef.current = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, []);
+
   return (
-    <div className="flex flex-col h-full p-3">
-      <h3 className="text-xs font-semibold text-[var(--ed-text-secondary)] mb-3">
+    <div className="flex flex-col h-full p-2">
+      {/* Header with expand button */}
+      <button
+        onClick={onOpenMixer}
+        className="text-xs font-semibold text-[var(--ed-text-secondary)] mb-2 hover:text-[var(--ed-accent-orange)] transition-colors text-left flex items-center gap-1"
+      >
         MIXER
-      </h3>
+        <span className="text-[var(--ed-text-muted)] text-[10px]">⬒</span>
+      </button>
 
-      <div className="flex-1 flex gap-1 overflow-x-auto">
-        {CHANNELS.map((ch, i) => (
-          <div key={i} className="flex flex-col items-center gap-1 min-w-[28px]">
-            {/* Meter placeholder */}
-            <div className="flex-1 w-3 rounded-full bg-[var(--ed-bg-surface)] relative overflow-hidden">
-              <div
-                className="absolute bottom-0 w-full rounded-full bg-[var(--ed-accent-green)]"
-                style={{ height: `${60 + Math.random() * 30}%` }}
-              />
+      {/* Mini meters */}
+      <div className="flex-1 flex gap-[3px] items-end">
+        {CHANNEL_LABELS.map((ch, i) => {
+          const level = levels[i] ?? 0;
+          return (
+            <div key={i} className="flex flex-col items-center flex-1 min-w-0">
+              {/* Meter bar */}
+              <div className="w-full h-28 rounded-sm bg-[var(--ed-bg-primary)] relative overflow-hidden border border-[var(--ed-border)]/30">
+                <div
+                  className="absolute bottom-0 left-0 right-0 transition-all duration-75"
+                  style={{
+                    height: `${Math.min(level * 100, 100)}%`,
+                    backgroundColor: level > 0.85 ? "#ef4444" : level > 0.5 ? "#eab308" : "#22c55e",
+                  }}
+                />
+              </div>
+              {/* Label */}
+              <span className="text-[7px] font-medium text-[var(--ed-text-muted)] mt-0.5">
+                {ch}
+              </span>
             </div>
-
-            {/* Fader */}
-            <input
-              type="range"
-              min={0}
-              max={127}
-              defaultValue={100}
-              orient="vertical"
-              className="h-20 accent-[var(--ed-text-primary)]"
-              style={{ writingMode: "vertical-lr", direction: "rtl" }}
-            />
-
-            {/* Label */}
-            <span className="text-[8px] font-medium text-[var(--ed-text-muted)]">
-              {ch}
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

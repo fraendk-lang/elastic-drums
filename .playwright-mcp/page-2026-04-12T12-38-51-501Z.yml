@@ -1,0 +1,5 @@
+- generic [ref=e4] [cursor=pointer]:
+  - heading "ELASTIC DRUMS" [level=1] [ref=e5]
+  - paragraph [ref=e6]: Hybrid Drum Machine
+  - generic [ref=e8]: ▶
+  - paragraph [ref=e9]: Click to start audio engine
