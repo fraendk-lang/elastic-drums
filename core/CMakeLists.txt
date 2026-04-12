@@ -13,6 +13,8 @@ set(CORE_SOURCES
     voices/ClapVoice.cpp
     voices/TomVoice.cpp
     voices/HiHatVoice.cpp
+    voices/CymbalVoice.cpp
+    voices/PercVoice.cpp
     voices/SampleVoice.cpp
     sequencer/Sequencer.cpp
     fx/Distortion.cpp

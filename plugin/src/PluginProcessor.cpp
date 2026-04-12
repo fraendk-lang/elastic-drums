@@ -16,22 +16,17 @@ void ElasticDrumsProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
 void ElasticDrumsProcessor::releaseResources() {}
 
 int ElasticDrumsProcessor::midiNoteToVoice(int note) const {
-    // GM Drum Map
-    switch (note) {
-        case 36: return 0;  // C1  → Kick
-        case 38: return 1;  // D1  → Snare
-        case 39: return 2;  // D#1 → Clap
-        case 41: return 3;  // F1  → Tom Lo
-        case 43: return 4;  // G1  → Tom Mid
-        case 45: return 5;  // A1  → Tom Hi
-        case 42: return 6;  // F#1 → HH Closed
-        case 46: return 7;  // A#1 → HH Open
-        case 49: return 8;  // C#2 → Cymbal
-        case 51: return 9;  // D#2 → Ride
-        case 37: return 10; // C#1 → Perc 1
-        case 40: return 11; // E1  → Perc 2
-        default: return -1;
-    }
+    // Chromatic mapping: C1-B1 (36-47) = all 12 voices in one octave
+    // Also repeats every octave (C0-B0, C1-B1, C2-B2, etc.)
+    if (note < 24 || note > 96) return -1;
+
+    int voiceIndex = (note - 36) % 12;
+    if (voiceIndex < 0) voiceIndex += 12;
+
+    // Map chromatic to voice order:
+    // C=Kick, C#=Snare, D=Clap, D#=TomL, E=TomM, F=TomH
+    // F#=HH Cl, G=HH Op, G#=Cymbal, A=Ride, A#=Perc1, B=Perc2
+    return (voiceIndex >= 0 && voiceIndex < 12) ? voiceIndex : -1;
 }
 
 void ElasticDrumsProcessor::processBlock(juce::AudioBuffer<float>& buffer,
