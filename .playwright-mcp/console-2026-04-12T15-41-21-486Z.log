@@ -159,3 +159,52 @@ Visit https://react.dev/link/error-boundaries to learn more about error boundari
 %s
  An error occurred in the <MixerPanel> component. Consider adding an error boundary to your tree to customize error handling behavior.
 Visit https://react.dev/link/error-boundaries to learn more about error boundaries. @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:6963
+[ 3529283ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 3529341ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776010725898:34
+[ 3529341ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776010725898:34
+[ 3529343ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0
+[ 3530562ms] [WARNING] WASM worklet error: TypeError: WebAssembly.instantiate(): Import #0 "a": module is not an object or function @ http://localhost:5173/src/audio/AudioEngine.ts?t=1776010725898:490
+[ 3531857ms] [ERROR] React has detected a change in the order of Hooks called by %s. This will lead to bugs and errors if not fixed. For more information, read the Rules of Hooks: https://react.dev/link/rules-of-hooks
+
+   Previous render            Next render
+   ------------------------------------------------------
+%s   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ MixerPanel 1. useState                   useState
+2. useState                   useState
+3. useState                   useState
+4. useState                   useState
+5. useState                   useState
+6. useState                   useState
+7. useState                   useState
+8. useState                   useState
+9. useState                   useState
+10. useState                  useState
+11. useState                  useState
+12. useRef                    useRef
+13. useEffect                 useEffect
+14. useCallback               useCallback
+15. useCallback               useCallback
+16. useCallback               useCallback
+17. useCallback               useCallback
+18. useCallback               useCallback
+19. useCallback               useCallback
+20. undefined                 useRef
+ @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:5591
+[ 3531882ms] Error: Rendered more hooks than during the previous render.
+    at updateWorkInProgressHook (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:5790:19)
+    at Object.useRef (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:18986:18)
+    at exports.useRef (http://localhost:5173/node_modules/.vite/deps/chunk-ODY6T4AV.js?v=665a8c76:978:36)
+    at MixerPanel (http://localhost:5173/src/components/MixerPanel.tsx?t=1776011314064:148:24)
+    at Object.react_stack_bottom_frame (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:18507:20)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:5652:24)
+    at updateFunctionComponent (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:7473:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:8523:20)
+    at runWithFiberInDEV (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:995:72)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:12559:98)
+[ 3531881ms] [WARNING] %s
+
+%s
+ An error occurred in the <MixerPanel> component. Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://react.dev/link/error-boundaries to learn more about error boundaries. @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:6963
+[ 3590463ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776010725898:34
+[ 3590463ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776010725898:34

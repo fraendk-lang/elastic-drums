@@ -142,8 +142,6 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
 
   if (!isOpen) return null;
 
-  const meterAreaRef = useRef<HTMLDivElement>(null);
-
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#08080a]">
       {/* Header */}
@@ -159,7 +157,7 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
       <div className="flex-1 flex min-h-0 px-1 py-1">
 
         {/* dB Scale ruler — positioned to match meter area */}
-        <div ref={meterAreaRef} className="w-10 shrink-0 relative">
+        <div className="w-10 shrink-0 relative">
           {DB_SCALE.map((mark) => {
             const pct = dbToPercent(mark.db);
             return (

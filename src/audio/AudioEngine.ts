@@ -614,7 +614,8 @@ export class AudioEngine {
         this.wasmMode = true;
         console.log("✅ WASM AudioWorklet active — C++ DSP running in audio thread");
       } else if (e.data.type === "error") {
-        console.warn("WASM worklet error:", e.data.message);
+        // WASM init failed — fall back to TS synthesis silently
+        console.log("WASM worklet init failed (using TS fallback):", e.data.message);
       }
     };
 
