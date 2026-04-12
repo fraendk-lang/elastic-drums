@@ -262,3 +262,7 @@ void ElasticDrumsProcessor::setStateInformation(const void* data, int sizeInByte
 juce::AudioProcessorEditor* ElasticDrumsProcessor::createEditor() {
     return new ElasticDrumsEditor(*this);
 }
+
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {
+    return new ElasticDrumsProcessor();
+}
