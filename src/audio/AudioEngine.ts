@@ -149,10 +149,13 @@ export class AudioEngine {
   private sendABus: GainNode | null = null;  // Reverb bus
   private sendBBus: GainNode | null = null;  // Delay bus
 
-  // Peak-hold with slow decay for smooth, accurate meters
-  private peakLevels = new Float32Array(12);
+  // Professional metering: FFT-based RMS + Peak with hold/decay
+  private peakLevels = new Float32Array(12);       // Peak hold (linear)
+  private rmsLevels = new Float32Array(12);         // RMS (linear)
   private masterPeakLevel = 0;
-  private readonly PEAK_DECAY = 0.92;  // Per-frame decay rate
+  private masterRmsLevel = 0;
+  private readonly PEAK_DECAY = 0.985;              // Slow peak decay (~300ms)
+  private readonly RMS_SMOOTH = 0.85;               // RMS smoothing factor
 
   private getContext(): AudioContext {
     if (!this.ctx) {
@@ -331,48 +334,102 @@ export class AudioEngine {
     return this.channelFilters[voice] ?? this.channelGains[voice] ?? this.masterGain!;
   }
 
-  /** Helper: read peak from an AnalyserNode */
-  private readPeak(analyser: AnalyserNode): number {
-    const data = new Uint8Array(analyser.fftSize);
-    analyser.getByteTimeDomainData(data);
+  /**
+   * Read RMS + Peak from an AnalyserNode using FFT frequency domain data.
+   * Returns { rms, peak } in linear amplitude (0..1+)
+   *
+   * Uses getFloatTimeDomainData for sample-accurate waveform analysis:
+   * - RMS = sqrt(mean(sample²)) — true signal power
+   * - Peak = max(abs(sample))   — instantaneous peak
+   */
+  private analyseLevel(analyser: AnalyserNode): { rms: number; peak: number } {
+    const data = new Float32Array(analyser.fftSize);
+    analyser.getFloatTimeDomainData(data);
+
+    let sumSquares = 0;
     let peak = 0;
+
     for (let i = 0; i < data.length; i++) {
-      const v = Math.abs(data[i]! / 128 - 1);
-      if (v > peak) peak = v;
+      const sample = data[i]!;
+      sumSquares += sample * sample;
+      const absSample = Math.abs(sample);
+      if (absSample > peak) peak = absSample;
     }
-    return peak;
+
+    const rms = Math.sqrt(sumSquares / data.length);
+    return { rms, peak };
   }
 
-  /** Read current level for a channel (0..1) with peak-hold */
-  getChannelLevel(channel: number): number {
+  /** Convert linear amplitude to dBFS */
+  static linearToDb(linear: number): number {
+    if (linear < 1e-10) return -Infinity;
+    return 20 * Math.log10(linear);
+  }
+
+  /** Convert dBFS to linear amplitude */
+  static dbToLinear(db: number): number {
+    return Math.pow(10, db / 20);
+  }
+
+  /**
+   * Get channel meter readings
+   * Returns { rmsDb, peakDb, rmsLinear, peakLinear }
+   */
+  getChannelMeter(channel: number): { rmsDb: number; peakDb: number; rmsLinear: number; peakLinear: number } {
     const analyser = this.channelAnalysers[channel];
-    if (!analyser) return 0;
+    if (!analyser) return { rmsDb: -Infinity, peakDb: -Infinity, rmsLinear: 0, peakLinear: 0 };
 
-    const instantPeak = this.readPeak(analyser) * 2.5; // Boost for visual clarity
+    const { rms, peak } = this.analyseLevel(analyser);
 
-    // Peak-hold with decay: rises instantly, falls slowly
-    if (instantPeak > this.peakLevels[channel]!) {
-      this.peakLevels[channel] = instantPeak;
+    // Smooth RMS (exponential moving average)
+    this.rmsLevels[channel] = this.RMS_SMOOTH * (this.rmsLevels[channel] ?? 0) + (1 - this.RMS_SMOOTH) * rms;
+
+    // Peak hold with slow decay
+    if (peak > (this.peakLevels[channel] ?? 0)) {
+      this.peakLevels[channel] = peak;
     } else {
       this.peakLevels[channel]! *= this.PEAK_DECAY;
     }
 
-    return Math.min(this.peakLevels[channel]!, 1);
+    const smoothRms = this.rmsLevels[channel]!;
+    const holdPeak = this.peakLevels[channel]!;
+
+    return {
+      rmsDb: AudioEngine.linearToDb(smoothRms),
+      peakDb: AudioEngine.linearToDb(holdPeak),
+      rmsLinear: smoothRms,
+      peakLinear: holdPeak,
+    };
   }
 
-  /** Read master output level (0..1) with peak-hold */
-  getMasterLevel(): number {
-    if (!this.masterAnalyser) return 0;
+  /** Get master meter readings */
+  getMasterMeter(): { rmsDb: number; peakDb: number; rmsLinear: number; peakLinear: number } {
+    if (!this.masterAnalyser) return { rmsDb: -Infinity, peakDb: -Infinity, rmsLinear: 0, peakLinear: 0 };
 
-    const instantPeak = this.readPeak(this.masterAnalyser) * 2.5;
+    const { rms, peak } = this.analyseLevel(this.masterAnalyser);
 
-    if (instantPeak > this.masterPeakLevel) {
-      this.masterPeakLevel = instantPeak;
+    this.masterRmsLevel = this.RMS_SMOOTH * this.masterRmsLevel + (1 - this.RMS_SMOOTH) * rms;
+
+    if (peak > this.masterPeakLevel) {
+      this.masterPeakLevel = peak;
     } else {
       this.masterPeakLevel *= this.PEAK_DECAY;
     }
 
-    return Math.min(this.masterPeakLevel, 1);
+    return {
+      rmsDb: AudioEngine.linearToDb(this.masterRmsLevel),
+      peakDb: AudioEngine.linearToDb(this.masterPeakLevel),
+      rmsLinear: this.masterRmsLevel,
+      peakLinear: this.masterPeakLevel,
+    };
+  }
+
+  // Legacy compat (for MixerStrip sidebar)
+  getChannelLevel(channel: number): number {
+    return this.getChannelMeter(channel).rmsLinear * 2;
+  }
+  getMasterLevel(): number {
+    return this.getMasterMeter().rmsLinear * 2;
   }
 
   /** Expose AudioContext for sample decoding */
