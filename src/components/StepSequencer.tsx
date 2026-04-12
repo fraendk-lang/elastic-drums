@@ -236,7 +236,18 @@ export function StepSequencer() {
                     <button
                       key={`${track}-${stepIdx}`}
                       onClick={(e) => {
-                        if (isBeyondLength) return; // Can't edit beyond pattern length
+                        // Click beyond length → auto-extend pattern
+                        if (isBeyondLength) {
+                          const newLen = absoluteStep + 1;
+                          // Snap to next valid length
+                          const VALID = [4, 8, 12, 16, 24, 32, 48, 64];
+                          const snapped = VALID.find((l) => l >= newLen) ?? 64;
+                          useDrumStore.setState((s) => ({
+                            pattern: { ...s.pattern, length: snapped },
+                          }));
+                          toggleStep(track, absoluteStep);
+                          return;
+                        }
                         if (e.shiftKey && step?.active) {
                           const levels = [127, 100, 70, 40];
                           const current = step.velocity;
@@ -253,7 +264,7 @@ export function StepSequencer() {
                         isHeld ? "ring-2 ring-[var(--ed-accent-green)] z-10" : ""
                       } ${
                         isBeyondLength
-                          ? "bg-[var(--ed-bg-primary)]/50 cursor-default"
+                          ? "bg-[var(--ed-bg-surface)]/30 hover:bg-[var(--ed-bg-surface)]/50 cursor-pointer border border-dashed border-white/5"
                           : isActive
                             ? "hover:brightness-125"
                             : isBeat
@@ -262,7 +273,7 @@ export function StepSequencer() {
                       }`}
                       style={
                         isBeyondLength
-                          ? { opacity: 0.2 }
+                          ? { opacity: 0.4 }
                           : isActive
                             ? { backgroundColor: trackColor, opacity: 0.35 + velNorm * 0.65 }
                             : undefined

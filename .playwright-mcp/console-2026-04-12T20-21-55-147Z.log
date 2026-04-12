@@ -111,3 +111,13 @@
 [ 3429931ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776027926743:34
 [ 3429931ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776027926743:34
 [ 3429940ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0
+[ 3447068ms] [LOG] WASM worklet init failed (using TS fallback): TypeError: WebAssembly.instantiate(): Import #0 "a": module is not an object or function @ http://localhost:5173/src/audio/AudioEngine.ts?t=1776027926743:685
+[ 3533862ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 3533887ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776027926743:34
+[ 3533887ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776027926743:34
+[ 3533890ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0
+[ 3534729ms] [LOG] WASM worklet init failed (using TS fallback): TypeError: WebAssembly.instantiate(): Import #0 "a": module is not an object or function @ http://localhost:5173/src/audio/AudioEngine.ts?t=1776027926743:685
+[ 3561389ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 3561412ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776027926743:34
+[ 3561412ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776027926743:34
+[ 3561430ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0
