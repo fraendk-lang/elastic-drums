@@ -22,25 +22,37 @@ export function KitBrowser({ isOpen, onClose }: KitBrowserProps) {
     });
   }, [selectedCategory, searchQuery]);
 
-  const loadKit = useCallback((kitId: string) => {
+  const loadKit = useCallback((kitId: string, autoPlay = true) => {
     const kit = FACTORY_KITS.find((k) => k.id === kitId);
     if (!kit) return;
 
-    // Apply voice parameters
+    const { isPlaying, togglePlay } = useDrumStore.getState();
+
+    // Stop if playing (to reset step)
+    if (isPlaying) togglePlay();
+
+    // Apply voice parameters + mix + FX
     applyKit(kit);
 
     // Load pattern if available
     const pattern = kitToPattern(kit);
     if (pattern) {
-      const wasPlaying = useDrumStore.getState().isPlaying;
-      if (wasPlaying) useDrumStore.getState().togglePlay();
-
       useDrumStore.setState({
         pattern,
         bpm: Math.round((kit.bpmRange[0] + kit.bpmRange[1]) / 2),
         currentStep: 0,
         currentPatternIndex: -1,
       });
+    }
+
+    // Auto-play for instant preview
+    if (autoPlay && pattern) {
+      // Small delay to let state settle
+      setTimeout(() => {
+        if (!useDrumStore.getState().isPlaying) {
+          useDrumStore.getState().togglePlay();
+        }
+      }, 50);
     }
   }, []);
 
