@@ -3,6 +3,8 @@ import { useDrumStore } from "../store/drumStore";
 import { audioEngine, VOICE_PARAM_DEFS } from "../audio/AudioEngine";
 import { Knob } from "./Knob";
 
+const PERC_TYPE_NAMES = ["CONGA", "BONGO", "RIM", "COWBELL", "SHAKER", "CLAVES", "TAMB", "TRIANGLE"];
+
 const VOICE_LABELS = [
   "KICK", "SNARE", "CLAP", "TOM LO",
   "TOM MID", "TOM HI", "HH CL", "HH OP",
@@ -58,6 +60,11 @@ export function VoiceEditor() {
         <h3 className="text-xs font-semibold tracking-wide flex items-center gap-2">
           <span className="text-[var(--ed-text-secondary)]">
             {VOICE_LABELS[selectedVoice]}
+            {(selectedVoice === 10 || selectedVoice === 11) && (
+              <span className="text-[var(--ed-pad-hybrid)] ml-1 text-[9px]">
+                {PERC_TYPE_NAMES[Math.round(values.type ?? 0)] ?? ""}
+              </span>
+            )}
           </span>
           {isLockMode ? (
             <span className="text-[var(--ed-accent-green)] text-[10px] font-bold animate-pulse">

@@ -74,12 +74,16 @@ export const VOICE_PARAM_DEFS: Record<number, VoiceParamDef[]> = {
     { id: "decay", label: "DECAY", min: 200, max: 2000, default: 800 },
   ],
   10: [ // Perc 1
-    { id: "tune", label: "TUNE", min: 200, max: 3000, default: 800 },
-    { id: "decay", label: "DECAY", min: 30, max: 500, default: 120 },
+    { id: "type", label: "TYPE", min: 0, max: 7, default: 0, step: 1 },
+    { id: "tune", label: "TUNE", min: 100, max: 4000, default: 800 },
+    { id: "decay", label: "DECAY", min: 20, max: 800, default: 120 },
+    { id: "tone", label: "TONE", min: 0, max: 100, default: 50 },
   ],
   11: [ // Perc 2
-    { id: "tune", label: "TUNE", min: 200, max: 3000, default: 1200 },
-    { id: "decay", label: "DECAY", min: 30, max: 500, default: 120 },
+    { id: "type", label: "TYPE", min: 0, max: 7, default: 3, step: 1 },
+    { id: "tune", label: "TUNE", min: 100, max: 4000, default: 1200 },
+    { id: "decay", label: "DECAY", min: 20, max: 800, default: 120 },
+    { id: "tone", label: "TONE", min: 0, max: 100, default: 50 },
   ],
 };
 
@@ -1290,44 +1294,171 @@ export class AudioEngine {
     ng.connect(hpf);
   }
 
-  // ─── PERCUSSION ────────────────────────────────────────
-  // Resonant filtered noise hit (conga/bongo/shaker character)
+  // ─── PERCUSSION (Multi-Mode) ────────────────────────────
+  // TYPE 0=Conga, 1=Bongo, 2=Rim/Sidestick, 3=Cowbell,
+  //      4=Shaker, 5=Claves, 6=Tambourine, 7=Triangle
   private perc(ctx: AudioContext, t: number, vel: number, freq: number, out: AudioNode, p: VoiceParams): void {
-    const vol = vel * 0.65;
+    const type = Math.round(p.type ?? 0);
+    const tune = p.tune ?? freq;
     const decaySec = (p.decay ?? 120) / 1000;
+    const toneAmt = (p.tone ?? 50) / 100;
+    const vol = vel * 0.65;
 
     const master = ctx.createGain();
     master.gain.setValueAtTime(vol, t);
-    master.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
+    master.gain.exponentialRampToValueAtTime(0.001, t + decaySec + 0.02);
     master.connect(out);
 
-    // Resonant bandpass — gives tonal character
-    const bpf = ctx.createBiquadFilter();
-    bpf.type = "bandpass";
-    bpf.frequency.setValueAtTime(freq, t);
-    bpf.Q.value = 12;
-    bpf.connect(master);
+    switch (type) {
+      case 0: // ── CONGA: resonant body, pitch drop, warm
+      case 1: { // ── BONGO: higher, tighter, sharper attack
+        const isBongo = type === 1;
+        const bodyFreq = isBongo ? tune * 1.3 : tune;
+        const bodyDecay = isBongo ? decaySec * 0.6 : decaySec;
 
-    const noise = this.getNoise(ctx, decaySec, t);
-    const ng = ctx.createGain();
-    ng.gain.setValueAtTime(1.0, t);
-    ng.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
-    noise.connect(ng);
-    ng.connect(bpf);
+        const osc = ctx.createOscillator();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(bodyFreq * 1.6, t);
+        osc.frequency.exponentialRampToValueAtTime(bodyFreq, t + (isBongo ? 0.008 : 0.015));
 
-    // Sine transient for body
-    const osc = ctx.createOscillator();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(freq * 0.8, t);
-    osc.frequency.exponentialRampToValueAtTime(freq * 0.4, t + 0.02);
+        const bodyG = ctx.createGain();
+        bodyG.gain.setValueAtTime(0.7, t);
+        bodyG.gain.exponentialRampToValueAtTime(0.001, t + bodyDecay);
+        osc.connect(bodyG); bodyG.connect(master);
+        osc.start(t); osc.stop(t + bodyDecay + 0.02);
 
-    const og = ctx.createGain();
-    og.gain.setValueAtTime(0.3, t);
-    og.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
-    osc.connect(og);
-    og.connect(master);
-    osc.start(t);
-    osc.stop(t + 0.08);
+        // Slap noise (short)
+        const slap = this.getNoise(ctx, 0.008, t);
+        const slapG = ctx.createGain();
+        slapG.gain.setValueAtTime(toneAmt * 0.4, t);
+        slapG.gain.exponentialRampToValueAtTime(0.001, t + 0.008);
+        const slapBpf = ctx.createBiquadFilter();
+        slapBpf.type = "bandpass"; slapBpf.frequency.value = bodyFreq * 3; slapBpf.Q.value = 3;
+        slap.connect(slapBpf); slapBpf.connect(slapG); slapG.connect(master);
+        break;
+      }
+
+      case 2: { // ── RIM / SIDESTICK: short click + resonance (1-3kHz)
+        // Click
+        const click = this.getNoise(ctx, 0.003, t);
+        const clickG = ctx.createGain();
+        clickG.gain.setValueAtTime(0.8, t);
+        clickG.gain.exponentialRampToValueAtTime(0.001, t + 0.003);
+        click.connect(clickG); clickG.connect(master);
+
+        // Resonant ring
+        const osc = ctx.createOscillator();
+        osc.type = "sine";
+        osc.frequency.value = tune;
+        const ringG = ctx.createGain();
+        ringG.gain.setValueAtTime(0.4, t);
+        ringG.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+        osc.connect(ringG); ringG.connect(master);
+        osc.start(t); osc.stop(t + 0.05);
+        break;
+      }
+
+      case 3: { // ── COWBELL: two detuned oscillators, metallic (500Hz-2kHz)
+        const f1 = tune * 0.7;
+        const f2 = tune;
+
+        for (const f of [f1, f2]) {
+          const osc = ctx.createOscillator();
+          osc.type = "square";
+          osc.frequency.value = f;
+          const g = ctx.createGain();
+          g.gain.setValueAtTime(0.35, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
+          // Bandpass to remove harsh harmonics
+          const bp = ctx.createBiquadFilter();
+          bp.type = "bandpass"; bp.frequency.value = f * 2; bp.Q.value = 2;
+          osc.connect(bp); bp.connect(g); g.connect(master);
+          osc.start(t); osc.stop(t + decaySec + 0.02);
+        }
+        break;
+      }
+
+      case 4: { // ── SHAKER: rhythmic noise, highpassed
+        const noise = this.getNoise(ctx, decaySec, t);
+        const hpf = ctx.createBiquadFilter();
+        hpf.type = "highpass"; hpf.frequency.value = Math.max(4000, tune);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.6, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
+        noise.connect(hpf); hpf.connect(ng); ng.connect(master);
+        break;
+      }
+
+      case 5: { // ── CLAVES: short, sharp pitched click (dry)
+        const osc = ctx.createOscillator();
+        osc.type = "sine";
+        osc.frequency.value = tune;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.8, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.025);
+        osc.connect(g); g.connect(master);
+        osc.start(t); osc.stop(t + 0.03);
+        break;
+      }
+
+      case 6: { // ── TAMBOURINE: metallic jingles + noise
+        // Metallic oscillators (like hi-hat but higher)
+        for (const ratio of [1.0, 1.47, 2.09]) {
+          const osc = ctx.createOscillator();
+          osc.type = "square";
+          osc.frequency.value = tune * ratio;
+          const g = ctx.createGain();
+          g.gain.setValueAtTime(0.12, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 0.7);
+          const hp = ctx.createBiquadFilter();
+          hp.type = "highpass"; hp.frequency.value = 6000;
+          osc.connect(hp); hp.connect(g); g.connect(master);
+          osc.start(t); osc.stop(t + decaySec + 0.02);
+        }
+        // Noise jingle
+        const noise = this.getNoise(ctx, decaySec, t);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.3, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 0.5);
+        const hp = ctx.createBiquadFilter();
+        hp.type = "highpass"; hp.frequency.value = 8000;
+        noise.connect(hp); hp.connect(ng); ng.connect(master);
+        break;
+      }
+
+      case 7: { // ── TRIANGLE: metallic ring, long sustain
+        const osc = ctx.createOscillator();
+        osc.type = "sine";
+        osc.frequency.value = tune;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.5, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
+        osc.connect(g); g.connect(master);
+        osc.start(t); osc.stop(t + decaySec + 0.02);
+
+        // Harmonics for metallic character
+        const h2 = ctx.createOscillator();
+        h2.type = "sine"; h2.frequency.value = tune * 2.76; // Inharmonic
+        const hg = ctx.createGain();
+        hg.gain.setValueAtTime(0.15, t);
+        hg.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 0.6);
+        h2.connect(hg); hg.connect(master);
+        h2.start(t); h2.stop(t + decaySec + 0.02);
+        break;
+      }
+
+      default: { // Fallback: basic resonant noise
+        const bpf = ctx.createBiquadFilter();
+        bpf.type = "bandpass"; bpf.frequency.value = tune; bpf.Q.value = 12;
+        bpf.connect(master);
+        const noise = this.getNoise(ctx, decaySec, t);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(1.0, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
+        noise.connect(ng); ng.connect(bpf);
+        break;
+      }
+    }
   }
 
   get isInitialized(): boolean {
