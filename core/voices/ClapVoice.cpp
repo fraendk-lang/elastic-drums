@@ -1,11 +1,10 @@
 #include "ClapVoice.h"
 #include <cmath>
-#include <cstdlib>
 
 namespace elastic {
 
 ClapVoice::ClapVoice() {
-    setParam(ParamID::Decay, 300.0f);
+    setParam(ParamID::Decay, 350.0f);
     setParam(ParamID::Tone, 50.0f);
     setParam(ParamID::Volume, 100.0f);
     setParam(ParamID::Pan, 0.0f);
@@ -24,29 +23,40 @@ void ClapVoice::process(float* left, float* right, int numSamples) {
     if (!active_) return;
 
     const float decayMs = getParam(ParamID::Decay);
-    const float volume = getParam(ParamID::Volume) * 0.01f * velocity_;
+    const float volume = getParam(ParamID::Volume) * 0.01f * velocity_ * 0.75f;
     const float ampRate = std::exp(-1.0f / (decayMs * 0.001f * sampleRate_));
 
-    // 808 clap: 4 short noise bursts followed by decay tail
-    const int burstInterval = static_cast<int>(sampleRate_ * 0.015f); // 15ms between bursts
+    // Burst timing: 4 bursts with increasing spacing (0, 8ms, 19ms, 33ms)
+    const int burstSpacing[4] = {
+        0,
+        static_cast<int>(sampleRate_ * 0.008f),
+        static_cast<int>(sampleRate_ * 0.011f),
+        static_cast<int>(sampleRate_ * 0.014f),
+    };
+
+    static unsigned int noiseState = 98765;
 
     for (int i = 0; i < numSamples; ++i) {
-        float noise = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.0f - 1.0f;
+        noiseState = noiseState * 1664525u + 1013904223u;
+        float noise = static_cast<float>(static_cast<int>(noiseState)) / 2147483648.0f;
 
         float env = ampEnv_;
+
+        // During burst phase: gate the noise
         if (burstCount_ < 4) {
-            // During bursts: short on/off pattern
             burstSamples_++;
-            if (burstSamples_ >= burstInterval) {
-                burstSamples_ = 0;
+            int nextBurst = burstCount_ < 3 ? burstSpacing[burstCount_ + 1] : 9999;
+            if (burstSamples_ >= nextBurst) {
                 burstCount_++;
                 burstEnv_ = 1.0f;
+                burstSamples_ = 0;
             }
-            float burstGate = burstEnv_ > 0.3f ? 1.0f : 0.0f;
+            float burstGate = burstEnv_ > 0.2f ? 1.0f : 0.3f;
             env *= burstGate;
-            burstEnv_ *= std::exp(-1.0f / (0.004f * sampleRate_));
+            burstEnv_ *= std::exp(-1.0f / (0.005f * sampleRate_));
         }
 
+        // Bandpass character (simple)
         float sample = noise * env * volume;
 
         left[i] += sample;

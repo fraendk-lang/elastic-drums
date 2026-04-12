@@ -296,3 +296,47 @@ Visit https://react.dev/link/error-boundaries to learn more about error boundari
 [ 6784352ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
 [ 6784352ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
 [ 6784358ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0
+[ 7192192ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 7192276ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7192276ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7192280ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0
+[ 7222118ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 7222137ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7222138ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7222157ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0
+[ 7247379ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 7247412ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7247412ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7247419ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0
+[ 7270183ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 7270204ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7270204ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7270209ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0
+[ 7322937ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 7322978ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7322978ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7322982ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0
+[ 7345008ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 7345131ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7345131ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7345135ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0
+[ 7630846ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 7630924ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7630924ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7630934ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0
+[ 7663409ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 7663423ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7663424ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7663425ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0
+[ 7736252ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 7736270ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7736270ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7736276ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0
+[ 7739653ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 7739676ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7739676ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7739682ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0
+[ 7740028ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 7740046ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7740046ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 7740050ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0

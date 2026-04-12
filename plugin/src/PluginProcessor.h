@@ -19,7 +19,7 @@ public:
 
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.0; }
+    double getTailLengthSeconds() const override { return 2.0; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -30,15 +30,38 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
-    // Access to DSP core
+    // DSP core
     elastic::DrumCore& getDrumCore() { return drumCore_; }
+
+    // Parameter tree
+    juce::AudioProcessorValueTreeState& getAPVTS() { return apvts_; }
+
+    // Sequencer state
+    struct SeqState {
+        bool playing = false;
+        int currentStep = 0;
+        float bpm = 120.0f;
+    };
+    SeqState seqState;
 
 private:
     elastic::DrumCore drumCore_;
+    juce::AudioProcessorValueTreeState apvts_;
 
-    // GM Drum Map: MIDI note → voice index
-    static constexpr int kMidiNoteMap[128] = {};
+    // Sequencer timing
+    double sampleCounter_ = 0.0;
+    double samplesPerStep_ = 0.0;
+    int internalStep_ = 0;
+
+    // Simple pattern storage (16 steps × 12 tracks)
+    bool stepPattern_[12][64] = {};
+    int stepVelocity_[12][64] = {};
+    int patternLength_ = 16;
+
+    void syncParamsToCore();
     int midiNoteToVoice(int note) const;
+
+    static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ElasticDrumsProcessor)
 };
