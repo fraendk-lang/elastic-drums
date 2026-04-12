@@ -108,24 +108,38 @@ export function StepSequencer() {
 
         {/* Length +/- */}
         <div className="flex items-center gap-1 ml-2">
-          <button
-            onClick={() => {
-              const newLen = Math.max(4, pattern.length - 4);
-              useDrumStore.setState((s) => ({ pattern: { ...s.pattern, length: newLen } }));
-            }}
-            className="w-5 h-5 rounded text-[10px] font-bold bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-white transition-colors"
-          >−</button>
-          <span className="text-[9px] font-mono text-[var(--ed-accent-orange)] min-w-[24px] text-center">
-            {pattern.length}
-          </span>
-          <button
-            onClick={() => {
-              const newLen = Math.min(64, pattern.length + 4);
-              useDrumStore.setState((s) => ({ pattern: { ...s.pattern, length: newLen } }));
-            }}
-            className="w-5 h-5 rounded text-[10px] font-bold bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-white transition-colors"
-          >+</button>
-          <span className="text-[7px] text-[var(--ed-text-muted)]">STEPS</span>
+          {(() => {
+            const VALID_LENGTHS = [4, 8, 12, 16, 24, 32, 48, 64];
+            const currentIdx = VALID_LENGTHS.indexOf(pattern.length);
+            // Snap to nearest valid length if current isn't standard
+            const snapIdx = currentIdx >= 0 ? currentIdx
+              : VALID_LENGTHS.findIndex((l) => l >= pattern.length);
+
+            return (<>
+              <button
+                onClick={() => {
+                  const idx = Math.max(0, (snapIdx >= 0 ? snapIdx : 3) - 1);
+                  useDrumStore.setState((s) => ({
+                    pattern: { ...s.pattern, length: VALID_LENGTHS[idx]! },
+                  }));
+                }}
+                className="w-5 h-5 rounded text-[10px] font-bold bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-white transition-colors"
+              >−</button>
+              <span className="text-[9px] font-mono text-[var(--ed-accent-orange)] min-w-[24px] text-center">
+                {pattern.length}
+              </span>
+              <button
+                onClick={() => {
+                  const idx = Math.min(VALID_LENGTHS.length - 1, (snapIdx >= 0 ? snapIdx : 3) + 1);
+                  useDrumStore.setState((s) => ({
+                    pattern: { ...s.pattern, length: VALID_LENGTHS[idx]! },
+                  }));
+                }}
+                className="w-5 h-5 rounded text-[10px] font-bold bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-white transition-colors"
+              >+</button>
+              <span className="text-[7px] text-[var(--ed-text-muted)]">STEPS</span>
+            </>);
+          })()}
         </div>
 
         <div className="flex-1" />
