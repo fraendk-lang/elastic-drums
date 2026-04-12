@@ -230,3 +230,12 @@ Visit https://react.dev/link/error-boundaries to learn more about error boundari
 Visit https://react.dev/link/error-boundaries to learn more about error boundaries. @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:6963
 [ 4610800ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776012159690:34
 [ 4610800ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776012159690:34
+[ 4856663ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 4856681ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 4856681ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 4856747ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0
+[ 4991850ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 5221639ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[ 5221717ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 5221717ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5173/src/hooks/useMidi.ts?t=1776013325361:34
+[ 5221722ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5173/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5173/:0

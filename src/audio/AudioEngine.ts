@@ -437,6 +437,11 @@ export class AudioEngine {
     return this.ctx;
   }
 
+  /** Get analyser node for a channel (for waveform display) */
+  getChannelAnalyser(channel: number): AnalyserNode | null {
+    return this.channelAnalysers[channel] ?? null;
+  }
+
   /** Play a sample buffer through a voice channel */
   playSampleAtTime(buffer: AudioBuffer, voice: number, velocity: number, time: number, tune = 0): void {
     const ctx = this.getContext();

@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { useDrumStore } from "../store/drumStore";
 import { sampleManager } from "../audio/SampleManager";
+import { WaveformPreview } from "./WaveformPreview";
 
 const VOICE_LABELS = [
   "KICK", "SNARE", "CLAP", "TOM LO",
@@ -129,6 +130,9 @@ export function PadGrid() {
                 borderStyle: "solid",
               }}
             >
+              {/* Waveform oscilloscope */}
+              <WaveformPreview voiceIndex={i} width={72} height={56} color={color} active={isSelected || isTriggered} />
+
               {/* Trigger flash overlay */}
               {isTriggered && (
                 <div

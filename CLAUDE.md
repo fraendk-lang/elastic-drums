@@ -15,116 +15,110 @@ C++ DrumCore (core/)
 └── wasm/            Emscripten bindings → AudioWorklet
 
 React UI (src/)
-├── components/      PadGrid, StepSequencer, Transport, VoiceEditor, MixerPanel,
-│                    MixerStrip, Knob, EuclideanGenerator, SongEditor, PatternBrowser
-├── audio/           AudioEngine.ts (12 TS voices + WASM bridge), SampleManager, MuLaw
-├── store/           Zustand store (drumStore.ts) — pattern, sequencer, P-Locks, conditions
-├── hooks/           useKeyboard, useMidi, useMotionRecording
-├── storage/         patternStorage.ts (IndexedDB)
+├── components/      PadGrid (waveform preview), StepSequencer, Transport, VoiceEditor (knobs),
+│                    MixerPanel (FFT meters), MixerStrip, Knob, EuclideanGenerator,
+│                    SongEditor, PatternBrowser, KitBrowser, WaveformPreview
+├── audio/           AudioEngine (12 TS voices + WASM bridge + FFT metering), SampleManager, MuLaw
+├── store/           Zustand store — pattern, sequencer, 16 conditional trigs, song mode
+├── hooks/           useKeyboard, useMidi, useMotionRecording, useUndoRedo
+├── storage/         patternStorage (IndexedDB)
+├── kits/            KitManager + 24 factory kits (11 categories)
+├── utils/           midiExport (.mid), patternShare (URL encoding)
 └── types/           TypeScript declarations
 
 Plugin (plugin/)
 ├── CMakeLists.txt   JUCE 8 FetchContent (VST3/AU/Standalone)
-└── src/             PluginProcessor (DrumCore + MIDI), PluginEditor (placeholder)
+└── src/             PluginProcessor (DrumCore + MIDI), PluginEditor
 ```
 
-## Tech Stack
-
-| Layer        | Browser                           | Plugin                    |
-|-------------|-----------------------------------|---------------------------|
-| DSP         | C++ → WASM (Emscripten 5.0.5)    | C++ nativ (DrumCore)      |
-| Audio       | AudioWorklet + Web Audio API      | JUCE processBlock         |
-| UI          | React 19 + TypeScript + Tailwind  | JUCE WebBrowserComponent  |
-| State       | Zustand ↔ WASM MessagePort       | APVTS ↔ WebView           |
-| Build       | Vite + Emscripten                 | CMake + JUCE 8            |
-| Storage     | IndexedDB + OPFS                  | Filesystem                |
-
-## Features Implemented
+## Complete Feature List
 
 ### Sound Engine
-- 12 VA drum voices (Kick, Snare, Clap, 3 Toms, 2 HiHats, Cymbal, Ride, 2 Perc)
-- Per-voice parametric control (Tune, Decay, Drive, Click, Sub, Tone, Snap, etc.)
-- Sample drag & drop on pads (WAV/MP3/OGG/FLAC)
-- µ-Law vintage mode (8-bit companding for LinnDrum character)
-- Rotary knob UI with drag-to-turn and double-click reset
+- 12 VA drum voices with parametric knob control
+- Sample drag & drop (WAV/MP3/OGG/FLAC)
+- µ-Law vintage mode (8-bit companding)
+- Per-voice insert FX: Filter (LP/HP/BP) + Distortion
+- Waveform oscilloscope preview on pads
 
 ### Sequencer
-- 64 steps (4 pages × 16), per-track polymetric length
-- Parameter Locks (hold step + turn knob = per-step override)
-- 16 Conditional Trig types (prob, fill, pre, nei, 1st, x:y cycle, etc.)
-- Ratchet/Retrig (1-8x per step with velocity ramp)
-- Swing (50-75%)
-- Motion Recording (REC mode: knob changes → P-Locks in real-time)
-- Euclidean Rhythm Generator (Bjorklund's algorithm with presets)
-- Fill Mode (hold FILL button for conditional fill patterns)
+- 64 steps (4 pages), per-track polymetric length
+- Parameter Locks (hold step + turn knob)
+- 16 Conditional Trig types (prob, fill, pre, nei, 1st, x:y cycle)
+- Ratchet/Retrig (1-8x with velocity ramp)
+- Swing (50-75%), Fill Mode (hold button)
+- Motion Recording (REC: knob changes → P-Locks live)
+- Euclidean Rhythm Generator (Bjorklund + presets)
 - Song Mode (pattern chain with repeats)
+- Undo/Redo (Ctrl+Z / Ctrl+Shift+Z)
 
-### Effects
-- Per-voice insert FX: Filter (LP/HP/BP) + Distortion (tanh waveshaper)
-- Send A: Algorithmic Reverb (ConvolverNode, generated impulse response)
-- Send B: Feedback Delay (LP-filtered, BPM-syncable)
-- Master Chain: 3-Band EQ → Bus Compressor → Brick-wall Limiter
+### Effects & Mixer
+- Send A: Algorithmic Reverb (ConvolverNode)
+- Send B: Feedback Delay (LP-filtered, syncable)
+- Master: 3-Band EQ → Bus Compressor → Brick-wall Limiter
+- Fullscreen Ableton-style mixer with:
+  - FFT-based RMS + Peak metering (IEC 60268 scale)
+  - Logarithmic fader law (0.75 = unity)
+  - Per-channel Insert FX controls (Filter + Drive)
+  - Per-channel REV/DLY send knobs
+  - Compressor gain reduction meter
+  - Master EQ (Lo/Mid/Hi) controls
 
-### Mixer
-- Fullscreen Ableton-style layout
-- 12 channel strips + Master with real-time peak meters
-- Volume faders, Mute/Solo buttons, REV/DLY send knobs per channel
-- Global Reverb/Delay controls
+### Input & Output
+- QWERTY keyboard (Q-V = pads, Space = play, 1-6 = presets)
+- Web MIDI API (GM drum map, hot-plug, MIDI Learn)
+- MIDI file export (.mid download)
+- Pattern URL sharing (Base64 in hash)
 
-### Input
-- QWERTY keyboard mapping (Q-V = 12 pads, Space = Play, 1-6 = Presets)
-- Web MIDI API (GM drum map, hot-plug, MIDI Learn infrastructure)
-
-### Pattern Management
-- 14 genre preset patterns (808, 909, Trap, DnB, House, Techno, etc.)
-- Save/Load via IndexedDB (Pattern Browser)
-- Track Copy/Paste
+### Sound Library
+- 24 factory kits across 11 categories
+- 14 genre preset patterns
+- Kit Browser with category filter + search
+- Pattern Browser (save/load/delete via IndexedDB)
 
 ### Platform
-- C++ DSP → WASM (Emscripten 5.0.5, 21KB binary)
-- WASM AudioWorklet processor with pattern sync
-- PWA: manifest, favicon, service worker (offline-capable)
-- JUCE plugin wrapper: VST3/AU/Standalone with MIDI input
+- C++ DSP → WASM (Emscripten 5.0.5, 21KB)
+- WASM AudioWorklet processor
+- JUCE plugin wrapper (VST3/AU/Standalone)
+- PWA (manifest, favicon, service worker)
+- Responsive layout (desktop/tablet/mobile)
 
 ## Build Commands
 
 ```bash
-npm install          # Install dependencies
-npm run dev          # Dev server (Vite)
-npm run build        # Production build
-npm run build:wasm   # Build C++ to WASM (requires Emscripten)
-npm test             # Run tests
+npm install              # Install dependencies
+npm run dev              # Dev server (Vite)
+npm run build            # Production build
+npm run build:wasm       # Build C++ to WASM
+npm test                 # Run tests
 
-# Plugin build (requires JUCE 8 via CMake FetchContent)
+# WASM build (requires Emscripten)
+source ~/emsdk/emsdk_env.sh
+cd core/build-wasm && emcmake cmake .. && emmake make
+
+# Plugin build (requires CMake + JUCE)
 cmake -B plugin/build plugin
 cmake --build plugin/build
 ```
 
+## Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| Q W E R / A S D F / Z X C V | Trigger pads (3 rows × 4) |
+| Space | Play / Stop |
+| 1-6 | Load preset pattern |
+| ← → | Previous / Next preset |
+| Ctrl+Z | Undo pattern edit |
+| Ctrl+Shift+Z | Redo |
+| Right-click step | Cycle velocity |
+| Shift+right-click | Cycle ratchet |
+| Alt+right-click | Cycle condition |
+| Hold step + turn knob | Set P-Lock |
+
 ## Conventions
 
-- **C++**: C++20, snake_case for files, PascalCase for classes, camelCase for methods
-- **TypeScript**: strict mode, no `any`, named exports
-- **CSS**: Tailwind utility classes, CSS variables for theme colors
-- **Git**: Conventional commits (feat:, fix:, refactor:, etc.)
-
-## Audio Thread Rules (Real-Time Safety)
-
-- **NO dynamic allocations** (malloc/new) in processBlock
-- **NO mutex locks** — use atomics for UI→DSP parameters
-- **NO file I/O** in audio thread
-- **NO exceptions** in DSP code (-fno-exceptions)
-- DSP graph is static — toggle via bypass/parameter, never create/destroy nodes
-
-## Current Status
-
-All 8 phases from the concept document completed. Open items:
-- Sound Library content (400+ kits — content creation task)
-- JUCE WebBrowserComponent integration for plugin UI
-- pluginval certification
-- MIDI drag & drop export
-- Pattern URL sharing
-
-## Reference Documents
-
-- Konzept: `/Users/frankkrumsdorf/Downloads/Elastic-Drums-Konzept.docx`
-- Technische Analyse: `/Users/frankkrumsdorf/Downloads/Drumcomputer als Browser-App und VST_AU.pdf`
+- **C++**: C++20, PascalCase classes, camelCase methods, -fno-exceptions
+- **TypeScript**: strict mode, no `any`, named exports, React.memo for expensive components
+- **CSS**: Tailwind utilities, CSS custom properties for theme
+- **Git**: Conventional commits (feat:, fix:, refactor:, polish:)
+- **Audio**: No allocations in audio thread, atomics for params, static DSP graph

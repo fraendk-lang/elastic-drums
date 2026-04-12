@@ -13,6 +13,7 @@ import { audioEngine } from "./audio/AudioEngine";
 import { useDrumStore } from "./store/drumStore";
 import { useKeyboard } from "./hooks/useKeyboard";
 import { useMidi } from "./hooks/useMidi";
+import { useUndoRedo } from "./hooks/useUndoRedo";
 import { loadSharedPattern } from "./utils/patternShare";
 
 export function App() {
@@ -26,6 +27,7 @@ export function App() {
 
   useKeyboard();
   useMidi();
+  useUndoRedo();
 
   // Load shared pattern from URL hash on mount
   useEffect(() => {

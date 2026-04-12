@@ -77,6 +77,9 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
   const [delayTime, setDelayTime] = useState(375);
   const [delayFB, setDelayFB] = useState(40);
   const [delayLevel, setDelayLvl] = useState(30);
+  const [eqLow, setEqLow] = useState(0);
+  const [eqMid, setEqMid] = useState(0);
+  const [eqHigh, setEqHigh] = useState(0);
   const [muted, setMuted] = useState<Set<number>>(new Set());
   const [soloed, setSoloed] = useState<Set<number>>(new Set());
   const rafRef = useRef<number>(0);
@@ -238,8 +241,19 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
       </div>
 
       {/* FX Bar */}
-      <div className="h-11 flex items-center gap-6 px-5 border-t border-[var(--ed-border)] bg-[var(--ed-bg-secondary)] shrink-0">
-        <div className="flex items-center gap-2">
+      <div className="h-11 flex items-center gap-6 px-5 border-t border-[var(--ed-border)] bg-[var(--ed-bg-secondary)] shrink-0 overflow-x-auto">
+        {/* Master EQ */}
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[9px] font-bold text-[var(--ed-accent-green)] tracking-wider">EQ</span>
+          <FxSlider value={eqLow + 12} max={24} label="Lo" suffix="" color="#22c55e"
+            onChange={(v) => { const db = v - 12; setEqLow(db); audioEngine.setMasterEQ(db, eqMid, eqHigh); }} />
+          <FxSlider value={eqMid + 12} max={24} label="Mid" suffix="" color="#22c55e"
+            onChange={(v) => { const db = v - 12; setEqMid(db); audioEngine.setMasterEQ(eqLow, db, eqHigh); }} />
+          <FxSlider value={eqHigh + 12} max={24} label="Hi" suffix="" color="#22c55e"
+            onChange={(v) => { const db = v - 12; setEqHigh(db); audioEngine.setMasterEQ(eqLow, eqMid, db); }} />
+        </div>
+        <div className="w-px h-5 bg-[var(--ed-border)] shrink-0" />
+        <div className="flex items-center gap-2 shrink-0">
           <span className="text-[9px] font-bold text-[var(--ed-accent-blue)] tracking-wider">REVERB</span>
           <FxSlider value={reverbLevel} max={100} label="Lvl" color="#3b82f6"
             onChange={(v) => { setReverbLvl(v); audioEngine.setReverbLevel(v / 100); }} />
