@@ -80,6 +80,10 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
   const [eqLow, setEqLow] = useState(0);
   const [eqMid, setEqMid] = useState(0);
   const [eqHigh, setEqHigh] = useState(0);
+  const [saturation, setSaturation] = useState(0);
+  const [pumpDepth, setPumpDepth] = useState(0);
+  const [pumpRate, setPumpRate] = useState(50);
+  const [selectedChannels, setSelectedChannels] = useState<Set<number>>(new Set());
   const [muted, setMuted] = useState<Set<number>>(new Set());
   const [soloed, setSoloed] = useState<Set<number>>(new Set());
   const rafRef = useRef<number>(0);
@@ -180,6 +184,15 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
             color={ch.color}
             meter={meters[i]!}
             faderValue={faders[i] ?? 750}
+            isSelected={selectedChannels.has(i)}
+            group={audioEngine.getChannelGroup(i)}
+            onSelect={() => {
+              setSelectedChannels((prev) => {
+                const next = new Set(prev);
+                if (next.has(i)) next.delete(i); else next.add(i);
+                return next;
+              });
+            }}
             sendA={sends.a[i] ?? 0}
             sendB={sends.b[i] ?? 0}
             isMuted={muted.has(i)}
@@ -268,6 +281,22 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
           <FxSlider value={delayLevel} max={100} label="Wet" color="#f59e0b"
             onChange={(v) => { setDelayLvl(v); audioEngine.setDelayLevel(v / 100); }} />
         </div>
+        <div className="w-px h-5 bg-[var(--ed-border)] shrink-0" />
+        {/* Saturation */}
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[9px] font-bold text-[#ef4444] tracking-wider">SAT</span>
+          <FxSlider value={saturation} max={100} label="Drive" color="#ef4444"
+            onChange={(v) => { setSaturation(v); audioEngine.setMasterSaturation(v / 100); }} />
+        </div>
+        <div className="w-px h-5 bg-[var(--ed-border)] shrink-0" />
+        {/* Pump / Sidechain */}
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[9px] font-bold text-[#a855f7] tracking-wider">PUMP</span>
+          <FxSlider value={pumpDepth} max={100} label="Depth" color="#a855f7"
+            onChange={(v) => { setPumpDepth(v); audioEngine.setPump((pumpRate / 100) * 4 + 0.5, v / 100); }} />
+          <FxSlider value={pumpRate} max={100} label="Rate" color="#a855f7"
+            onChange={(v) => { setPumpRate(v); audioEngine.setPump((v / 100) * 4 + 0.5, pumpDepth / 100); }} />
+        </div>
       </div>
     </div>
   );
@@ -276,24 +305,42 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
 // ─── Channel Strip ───────────────────────────────────────
 
 function ChannelStrip({ label, color, meter, faderValue, sendA, sendB, isMuted, isSoloed,
-  onFader, onSendA, onSendB, onMute, onSolo, channelIndex,
+  onFader, onSendA, onSendB, onMute, onSolo, channelIndex, isSelected, group, onSelect,
 }: {
   label: string; color: string; meter: MeterData; faderValue: number;
   sendA: number; sendB: number; isMuted: boolean; isSoloed: boolean;
   onFader: (v: number) => void; onSendA: (v: number) => void; onSendB: (v: number) => void;
   onMute: () => void; onSolo: () => void; channelIndex: number;
+  isSelected?: boolean; group?: string; onSelect?: () => void;
 }) {
   const [filterFreq, setFilterFreq] = useState(1000);
   const [filterType, setFilterType] = useState<BiquadFilterType>("allpass");
   const [drive, setDrive] = useState(0);
+
+  const GROUP_COLORS: Record<string, string> = {
+    drums: "#f59e0b", hats: "#3b82f6", perc: "#8b5cf6", master: "#666",
+  };
   const faderDb = faderValue <= 5 ? -Infinity : AudioEngine.linearToDb(faderToGain(faderValue / 1000));
 
   return (
     <div className="flex-1 flex flex-col bg-[var(--ed-bg-secondary)] rounded border border-[var(--ed-border)] overflow-hidden min-w-0">
-      {/* Label */}
-      <div className="h-6 flex items-center justify-center" style={{ backgroundColor: color + "10", borderBottom: `1px solid ${color}20` }}>
+      {/* Label — click to select */}
+      <button
+        onClick={onSelect}
+        className={`h-7 flex flex-col items-center justify-center w-full transition-all ${isSelected ? "ring-1 ring-white/30" : ""}`}
+        style={{
+          backgroundColor: isSelected ? color + "25" : color + "10",
+          borderBottom: `1px solid ${color}20`,
+        }}
+      >
         <span className="text-[9px] font-bold tracking-wider" style={{ color: isMuted ? "#555" : color }}>{label}</span>
-      </div>
+        {group && group !== "master" && (
+          <span className="text-[5px] font-bold px-1 rounded-sm mt-[-1px]" style={{
+            color: GROUP_COLORS[group] ?? "#666",
+            backgroundColor: (GROUP_COLORS[group] ?? "#666") + "20",
+          }}>{group.toUpperCase()}</span>
+        )}
+      </button>
 
       {/* Sends */}
       <div className="px-1 py-1 space-y-0.5 border-b border-[var(--ed-border)]">

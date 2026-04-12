@@ -137,6 +137,19 @@ export class AudioEngine {
   private masterEqHigh: BiquadFilterNode | null = null;
   private masterLimiter: DynamicsCompressorNode | null = null;
 
+  // Master FX: Bitcrusher, Saturation, Pump
+  private masterSaturation: WaveShaperNode | null = null;
+  private masterSaturationDry: GainNode | null = null;
+  private masterSaturationWet: GainNode | null = null;
+  private pumpGain: GainNode | null = null;
+  private pumpLfo: OscillatorNode | null = null;
+  private pumpDepth: GainNode | null = null;
+
+  // Bus Groups: channels can be assigned to groups
+  // Group routing: channel → group bus → master
+  private groupBuses: Map<string, { gain: GainNode; analyser: AnalyserNode }> = new Map();
+  private channelGroupAssignment: string[] = new Array(12).fill("master");
+
   // Send FX
   private sendAGains: GainNode[] = [];       // Per-channel reverb send amount
   private sendBGains: GainNode[] = [];       // Per-channel delay send amount
@@ -209,14 +222,63 @@ export class AudioEngine {
       this.masterLimiter.attack.value = 0.001;
       this.masterLimiter.release.value = 0.05;
 
-      // Routing
+      // === Master Saturation (parallel wet/dry) ===
+      this.masterSaturation = this.ctx.createWaveShaper();
+      this.masterSaturationDry = this.ctx.createGain();
+      this.masterSaturationWet = this.ctx.createGain();
+      this.masterSaturationDry.gain.value = 1.0; // Start bypassed
+      this.masterSaturationWet.gain.value = 0.0;
+      // Default: clean (no curve)
+
+      // === Pump (sidechain-style LFO on master gain) ===
+      this.pumpGain = this.ctx.createGain();
+      this.pumpGain.gain.value = 1.0;
+
+      this.pumpDepth = this.ctx.createGain();
+      this.pumpDepth.gain.value = 0; // Start off
+
+      this.pumpLfo = this.ctx.createOscillator();
+      this.pumpLfo.type = "sine";
+      this.pumpLfo.frequency.value = 2.0; // Default: 120 BPM quarter note
+      this.pumpLfo.connect(this.pumpDepth);
+      this.pumpDepth.connect(this.pumpGain.gain);
+      this.pumpLfo.start();
+
+      // === Routing ===
+      // masterGain → EQ → Saturation(parallel) → Pump → Compressor → Limiter → Analyser → Output
       this.masterGain.connect(this.masterEqLow);
       this.masterEqLow.connect(this.masterEqMid);
       this.masterEqMid.connect(this.masterEqHigh);
-      this.masterEqHigh.connect(this.masterCompressor);
+
+      // Saturation: dry path
+      this.masterEqHigh.connect(this.masterSaturationDry);
+      // Saturation: wet path
+      this.masterEqHigh.connect(this.masterSaturation);
+      this.masterSaturation.connect(this.masterSaturationWet);
+
+      // Both paths → pump
+      this.masterSaturationDry.connect(this.pumpGain);
+      this.masterSaturationWet.connect(this.pumpGain);
+
+      // Pump → compressor → limiter → out
+      this.pumpGain.connect(this.masterCompressor);
       this.masterCompressor.connect(this.masterLimiter);
       this.masterLimiter.connect(this.masterAnalyser);
       this.masterAnalyser.connect(this.ctx.destination);
+
+      // === Default Bus Groups ===
+      this.createBusGroup("drums", this.ctx);    // Kick, Snare, Clap, Toms
+      this.createBusGroup("hats", this.ctx);     // HH, Cymbal, Ride
+      this.createBusGroup("perc", this.ctx);     // Perc 1, 2
+
+      // Default group assignments
+      this.channelGroupAssignment = [
+        "drums", "drums", "drums",    // Kick, Snare, Clap
+        "drums", "drums", "drums",    // Toms
+        "hats", "hats",               // HH Cl, HH Op
+        "hats", "hats",               // Cymbal, Ride
+        "perc", "perc",               // Perc 1, 2
+      ];
 
       // Create 12 channel strips with insert FX
       for (let i = 0; i < 12; i++) {
@@ -541,6 +603,105 @@ export class AudioEngine {
   setChannelVolume(channel: number, volume: number): void {
     const gain = this.channelGains[channel];
     if (gain) gain.gain.value = volume;
+  }
+
+  /** Create a bus group */
+  private createBusGroup(name: string, ctx: AudioContext): void {
+    const gain = ctx.createGain();
+    gain.gain.value = 1.0;
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.3;
+    gain.connect(analyser);
+    analyser.connect(this.masterGain!);
+    this.groupBuses.set(name, { gain, analyser });
+  }
+
+  /** Assign a channel to a bus group */
+  setChannelGroup(channel: number, group: string): void {
+    this.channelGroupAssignment[channel] = group;
+    // Reconnect: channel analyser → group bus (instead of direct to master)
+    const chAnalyser = this.channelAnalysers[channel];
+    if (!chAnalyser) return;
+
+    chAnalyser.disconnect();
+    const bus = this.groupBuses.get(group);
+    if (bus) {
+      chAnalyser.connect(bus.gain);
+    } else {
+      chAnalyser.connect(this.masterGain!);
+    }
+  }
+
+  /** Get bus group level */
+  getGroupLevel(group: string): number {
+    const bus = this.groupBuses.get(group);
+    if (!bus) return 0;
+    const data = new Float32Array(bus.analyser.fftSize);
+    bus.analyser.getFloatTimeDomainData(data);
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) sum += data[i]! * data[i]!;
+    return Math.sqrt(sum / data.length) * 2;
+  }
+
+  /** Set bus group volume */
+  setGroupVolume(group: string, volume: number): void {
+    const bus = this.groupBuses.get(group);
+    if (bus) bus.gain.gain.value = volume;
+  }
+
+  /** Get all group names */
+  getGroupNames(): string[] {
+    return Array.from(this.groupBuses.keys());
+  }
+
+  /** Get channel's group assignment */
+  getChannelGroup(channel: number): string {
+    return this.channelGroupAssignment[channel] ?? "master";
+  }
+
+  // ─── Master FX Controls ─────────────────────────────────
+
+  /** Set master saturation (0=off, 1=heavy) */
+  setMasterSaturation(amount: number): void {
+    if (!this.masterSaturation || !this.masterSaturationDry || !this.masterSaturationWet) return;
+
+    if (amount < 0.01) {
+      this.masterSaturationDry.gain.value = 1.0;
+      this.masterSaturationWet.gain.value = 0.0;
+      this.masterSaturation.curve = null;
+      return;
+    }
+
+    // Generate saturation curve
+    const curve = new Float32Array(1024);
+    const gain = 1 + amount * 6;
+    for (let i = 0; i < 1024; i++) {
+      const x = (i / 512 - 1) * gain;
+      // Tube-style saturation: asymmetric soft clip
+      curve[i] = Math.tanh(x) * 0.9 + Math.tanh(x * 0.5) * 0.1;
+    }
+    this.masterSaturation.curve = curve;
+    this.masterSaturation.oversample = "4x";
+
+    // Wet/dry mix
+    this.masterSaturationDry.gain.value = 1 - amount * 0.7;
+    this.masterSaturationWet.gain.value = amount * 0.7;
+  }
+
+  /** Set pump effect (sidechain-style) */
+  setPump(rate: number, depth: number): void {
+    // rate: Hz (e.g., BPM/60 for quarter notes)
+    // depth: 0-1
+    if (this.pumpLfo) this.pumpLfo.frequency.value = rate;
+    if (this.pumpDepth) this.pumpDepth.gain.value = depth * 0.5; // Max 50% gain reduction
+  }
+
+  /** Sync pump to BPM */
+  syncPumpToBpm(bpm: number, division = 1): void {
+    // division: 1 = quarter, 0.5 = eighth, 2 = half
+    const rate = (bpm / 60) * division;
+    if (this.pumpLfo) this.pumpLfo.frequency.value = rate;
   }
 
   /** Set master volume (0..1) */
