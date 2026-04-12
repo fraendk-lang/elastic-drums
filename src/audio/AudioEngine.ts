@@ -127,6 +127,18 @@ export class AudioEngine {
   private masterGain: GainNode | null = null;
   private masterAnalyser: AnalyserNode | null = null;
 
+  // Send FX
+  private sendAGains: GainNode[] = [];       // Per-channel reverb send amount
+  private sendBGains: GainNode[] = [];       // Per-channel delay send amount
+  private reverbNode: ConvolverNode | null = null;
+  private reverbGain: GainNode | null = null;
+  private delayNode: DelayNode | null = null;
+  private delayFeedback: GainNode | null = null;
+  private delayFilter: BiquadFilterNode | null = null;
+  private delayGain: GainNode | null = null;
+  private sendABus: GainNode | null = null;  // Reverb bus
+  private sendBBus: GainNode | null = null;  // Delay bus
+
   // Peak-hold with slow decay for smooth, accurate meters
   private peakLevels = new Float32Array(12);
   private masterPeakLevel = 0;
@@ -185,11 +197,82 @@ export class AudioEngine {
         this.channelAnalysers.push(analyser);
       }
 
+      // ─── Send FX Buses ──────────────────────────────────
+      // Send A: Reverb (ConvolverNode with generated impulse)
+      this.sendABus = this.ctx.createGain();
+      this.sendABus.gain.value = 1.0;
+
+      this.reverbGain = this.ctx.createGain();
+      this.reverbGain.gain.value = 0.35;
+
+      this.reverbNode = this.ctx.createConvolver();
+      this.reverbNode.buffer = this.generateReverbIR(this.ctx, 2.0, 2.5);
+
+      this.sendABus.connect(this.reverbNode);
+      this.reverbNode.connect(this.reverbGain);
+      this.reverbGain.connect(this.masterGain);
+
+      // Send B: Stereo Delay (ping-pong style)
+      this.sendBBus = this.ctx.createGain();
+      this.sendBBus.gain.value = 1.0;
+
+      this.delayNode = this.ctx.createDelay(2.0);
+      this.delayNode.delayTime.value = 0.375; // 3/16 at 120 BPM
+
+      this.delayFeedback = this.ctx.createGain();
+      this.delayFeedback.gain.value = 0.4;
+
+      this.delayFilter = this.ctx.createBiquadFilter();
+      this.delayFilter.type = "lowpass";
+      this.delayFilter.frequency.value = 4000;
+
+      this.delayGain = this.ctx.createGain();
+      this.delayGain.gain.value = 0.3;
+
+      // Delay routing: bus → delay → filter → feedback → delay (loop)
+      //                                    → delayGain → master
+      this.sendBBus.connect(this.delayNode);
+      this.delayNode.connect(this.delayFilter);
+      this.delayFilter.connect(this.delayFeedback);
+      this.delayFeedback.connect(this.delayNode); // Feedback loop
+      this.delayFilter.connect(this.delayGain);
+      this.delayGain.connect(this.masterGain);
+
+      // Create per-channel send gains
+      for (let i = 0; i < 12; i++) {
+        const sendA = this.ctx.createGain();
+        sendA.gain.value = 0; // Default: no reverb send
+        this.channelGains[i]!.connect(sendA);
+        sendA.connect(this.sendABus);
+        this.sendAGains.push(sendA);
+
+        const sendB = this.ctx.createGain();
+        sendB.gain.value = 0; // Default: no delay send
+        this.channelGains[i]!.connect(sendB);
+        sendB.connect(this.sendBBus);
+        this.sendBGains.push(sendB);
+      }
+
       // Initialize peak-hold buffers
       this.peakLevels = new Float32Array(12);
       this.masterPeakLevel = 0;
     }
     return this.ctx;
+  }
+
+  /** Generate algorithmic reverb impulse response */
+  private generateReverbIR(ctx: AudioContext, duration: number, decay: number): AudioBuffer {
+    const length = Math.ceil(ctx.sampleRate * duration);
+    const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
+
+    for (let ch = 0; ch < 2; ch++) {
+      const data = buffer.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        // Exponentially decaying noise
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * decay / 6));
+      }
+    }
+    return buffer;
   }
 
   /** Get the output node for a voice channel (routes into insert FX chain) */
@@ -304,6 +387,43 @@ export class AudioEngine {
       curve[i] = Math.tanh(x);
     }
     shaper.curve = curve;
+  }
+
+  // ─── Send FX Controls ─────────────────────────────────
+
+  /** Set per-channel reverb send amount (0..1) */
+  setChannelReverbSend(channel: number, amount: number): void {
+    const send = this.sendAGains[channel];
+    if (send) send.gain.value = amount;
+  }
+
+  /** Set per-channel delay send amount (0..1) */
+  setChannelDelaySend(channel: number, amount: number): void {
+    const send = this.sendBGains[channel];
+    if (send) send.gain.value = amount;
+  }
+
+  /** Set reverb wet level */
+  setReverbLevel(level: number): void {
+    if (this.reverbGain) this.reverbGain.gain.value = level;
+  }
+
+  /** Set delay parameters */
+  setDelayParams(time: number, feedback: number, filterFreq: number): void {
+    if (this.delayNode) this.delayNode.delayTime.value = Math.max(0.01, Math.min(2, time));
+    if (this.delayFeedback) this.delayFeedback.gain.value = Math.max(0, Math.min(0.95, feedback));
+    if (this.delayFilter) this.delayFilter.frequency.value = filterFreq;
+  }
+
+  /** Set delay wet level */
+  setDelayLevel(level: number): void {
+    if (this.delayGain) this.delayGain.gain.value = level;
+  }
+
+  /** Sync delay time to BPM (note division: 1/4, 1/8, 3/16, 1/16) */
+  syncDelayToBpm(bpm: number, division: number = 0.375): void {
+    const beatSec = 60 / bpm;
+    if (this.delayNode) this.delayNode.delayTime.value = beatSec * division;
   }
 
   /** Set channel volume (0..1) */

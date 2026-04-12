@@ -26,6 +26,13 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
   const [masterLevel, setMasterLevel] = useState(0);
   const [volumes, setVolumes] = useState<number[]>(new Array(12).fill(100));
   const [masterVol, setMasterVol] = useState(85);
+  const [sends, setSends] = useState<{ a: number[]; b: number[] }>({
+    a: new Array(12).fill(0), b: new Array(12).fill(0),
+  });
+  const [reverbLevel, setReverbLevel] = useState(35);
+  const [delayTime, setDelayTime] = useState(375);
+  const [delayFeedback, setDelayFeedback] = useState(40);
+  const [delayLevel, setDelayLevel] = useState(30);
   const [muted, setMuted] = useState<Set<number>>(new Set());
   const [soloed, setSoloed] = useState<Set<number>>(new Set());
   const rafRef = useRef<number>(0);
@@ -89,6 +96,24 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
     audioEngine.setMasterVolume(value / 100);
   }, []);
 
+  const handleSendA = useCallback((ch: number, value: number) => {
+    setSends((prev) => {
+      const next = { ...prev, a: [...prev.a] };
+      next.a[ch] = value;
+      return next;
+    });
+    audioEngine.setChannelReverbSend(ch, value / 100);
+  }, []);
+
+  const handleSendB = useCallback((ch: number, value: number) => {
+    setSends((prev) => {
+      const next = { ...prev, b: [...prev.b] };
+      next.b[ch] = value;
+      return next;
+    });
+    audioEngine.setChannelDelaySend(ch, value / 100);
+  }, []);
+
   const toggleMute = useCallback((ch: number) => {
     setMuted((prev) => {
       const next = new Set(prev);
@@ -133,7 +158,7 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
 
       {/* Panel */}
-      <div className="relative w-full max-w-4xl bg-[var(--ed-bg-secondary)] border-t border-[var(--ed-border)] rounded-t-xl shadow-2xl p-4 pb-6">
+      <div className="relative w-full max-w-6xl bg-[var(--ed-bg-secondary)] border-t border-[var(--ed-border)] rounded-t-xl shadow-2xl p-6 pb-8">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-bold text-[var(--ed-text-primary)] tracking-wider">MIXER</h2>
@@ -146,7 +171,7 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
         </div>
 
         {/* Channel Strips */}
-        <div className="flex gap-2 justify-center">
+        <div className="flex gap-3 justify-center">
           {CHANNELS.map((ch, i) => (
             <ChannelStrip
               key={ch.id}
@@ -155,9 +180,13 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
               level={levels[i] ?? 0}
               peakLevel={peakHold.current[i] ?? 0}
               volume={volumes[i] ?? 100}
+              sendA={sends.a[i] ?? 0}
+              sendB={sends.b[i] ?? 0}
               isMuted={muted.has(i)}
               isSoloed={soloed.has(i)}
               onVolumeChange={(v) => handleVolume(i, v)}
+              onSendAChange={(v) => handleSendA(i, v)}
+              onSendBChange={(v) => handleSendB(i, v)}
               onMute={() => toggleMute(i)}
               onSolo={() => toggleSolo(i)}
             />
@@ -179,6 +208,55 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
             isMaster
           />
         </div>
+
+        {/* Global FX Controls */}
+        <div className="flex gap-6 mt-4 pt-3 border-t border-[var(--ed-border)] justify-center">
+          {/* Reverb */}
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-bold text-[var(--ed-accent-blue)] tracking-wider">REVERB</span>
+            <div className="flex items-center gap-1">
+              <span className="text-[9px] text-[var(--ed-text-muted)]">Level</span>
+              <input
+                type="range" min={0} max={100} value={reverbLevel}
+                onChange={(e) => { setReverbLevel(Number(e.target.value)); audioEngine.setReverbLevel(Number(e.target.value) / 100); }}
+                className="w-20 h-1 accent-[var(--ed-accent-blue)]"
+              />
+              <span className="text-[9px] font-mono text-[var(--ed-text-secondary)] w-6">{reverbLevel}</span>
+            </div>
+          </div>
+
+          {/* Delay */}
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-bold text-[var(--ed-accent-orange)] tracking-wider">DELAY</span>
+            <div className="flex items-center gap-1">
+              <span className="text-[9px] text-[var(--ed-text-muted)]">Time</span>
+              <input
+                type="range" min={50} max={1000} value={delayTime}
+                onChange={(e) => { setDelayTime(Number(e.target.value)); audioEngine.setDelayParams(Number(e.target.value) / 1000, delayFeedback / 100, 4000); }}
+                className="w-16 h-1 accent-[var(--ed-accent-orange)]"
+              />
+              <span className="text-[9px] font-mono text-[var(--ed-text-secondary)] w-8">{delayTime}ms</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-[9px] text-[var(--ed-text-muted)]">FB</span>
+              <input
+                type="range" min={0} max={90} value={delayFeedback}
+                onChange={(e) => { setDelayFeedback(Number(e.target.value)); audioEngine.setDelayParams(delayTime / 1000, Number(e.target.value) / 100, 4000); }}
+                className="w-12 h-1 accent-[var(--ed-accent-orange)]"
+              />
+              <span className="text-[9px] font-mono text-[var(--ed-text-secondary)] w-6">{delayFeedback}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-[9px] text-[var(--ed-text-muted)]">Level</span>
+              <input
+                type="range" min={0} max={100} value={delayLevel}
+                onChange={(e) => { setDelayLevel(Number(e.target.value)); audioEngine.setDelayLevel(Number(e.target.value) / 100); }}
+                className="w-12 h-1 accent-[var(--ed-accent-orange)]"
+              />
+              <span className="text-[9px] font-mono text-[var(--ed-text-secondary)] w-6">{delayLevel}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -192,22 +270,26 @@ interface ChannelStripProps {
   level: number;
   peakLevel: number;
   volume: number;
+  sendA?: number;
+  sendB?: number;
   isMuted: boolean;
   isSoloed: boolean;
   onVolumeChange: (v: number) => void;
+  onSendAChange?: (v: number) => void;
+  onSendBChange?: (v: number) => void;
   onMute?: () => void;
   onSolo?: () => void;
   isMaster?: boolean;
 }
 
 function ChannelStrip({
-  label, color, level, peakLevel, volume, isMuted, isSoloed,
-  onVolumeChange, onMute, onSolo, isMaster,
+  label, color, level, peakLevel, volume, sendA, sendB, isMuted, isSoloed,
+  onVolumeChange, onSendAChange, onSendBChange, onMute, onSolo, isMaster,
 }: ChannelStripProps) {
   return (
-    <div className={`flex flex-col items-center gap-1 ${isMaster ? "min-w-[52px]" : "min-w-[42px]"}`}>
+    <div className={`flex flex-col items-center gap-1 ${isMaster ? "min-w-[60px]" : "min-w-[50px]"}`}>
       {/* Meter */}
-      <div className={`relative ${isMaster ? "w-5" : "w-3"} h-36 rounded-full bg-[var(--ed-bg-primary)] overflow-hidden border border-[var(--ed-border)]`}>
+      <div className={`relative ${isMaster ? "w-6" : "w-4"} h-48 rounded-full bg-[var(--ed-bg-primary)] overflow-hidden border border-[var(--ed-border)]`}>
         {/* Level fill */}
         <div
           className="absolute bottom-0 left-0 right-0 rounded-full transition-all duration-75"
@@ -243,6 +325,28 @@ function ChannelStrip({
         {level > 0.001 ? `${(20 * Math.log10(level)).toFixed(0)}` : "-∞"}
       </span>
 
+      {/* Send knobs (only for channels, not master) */}
+      {!isMaster && onSendAChange && onSendBChange && (
+        <div className="flex gap-1 my-0.5">
+          <div className="flex flex-col items-center">
+            <input
+              type="range" min={0} max={100} value={sendA ?? 0}
+              onChange={(e) => onSendAChange(Number(e.target.value))}
+              className="w-8 h-1 accent-[var(--ed-accent-blue)]"
+            />
+            <span className="text-[6px] text-[var(--ed-accent-blue)]">REV</span>
+          </div>
+          <div className="flex flex-col items-center">
+            <input
+              type="range" min={0} max={100} value={sendB ?? 0}
+              onChange={(e) => onSendBChange(Number(e.target.value))}
+              className="w-8 h-1 accent-[var(--ed-accent-orange)]"
+            />
+            <span className="text-[6px] text-[var(--ed-accent-orange)]">DLY</span>
+          </div>
+        </div>
+      )}
+
       {/* Volume fader */}
       <input
         type="range"
@@ -250,8 +354,8 @@ function ChannelStrip({
         max={127}
         value={volume}
         onChange={(e) => onVolumeChange(Number(e.target.value))}
-        className="h-16 accent-[var(--ed-text-primary)]"
-        style={{ writingMode: "vertical-lr", direction: "rtl", width: "18px" }}
+        className="h-24 accent-[var(--ed-text-primary)]"
+        style={{ writingMode: "vertical-lr", direction: "rtl", width: "20px" }}
       />
 
       {/* Mute / Solo buttons */}
