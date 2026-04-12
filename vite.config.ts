@@ -16,6 +16,7 @@ export default defineConfig({
     //   "Cross-Origin-Embedder-Policy": "require-corp",
     // },
   },
+  base: "./",  // Relative paths for plugin WebView resource provider
   build: {
     target: "esnext",
   },
