@@ -2,10 +2,11 @@ import { useDrumStore } from "../store/drumStore";
 
 interface TransportProps {
   onOpenBrowser: () => void;
+  onOpenEuclidean: () => void;
   onToggleHelp: () => void;
 }
 
-export function Transport({ onOpenBrowser, onToggleHelp }: TransportProps) {
+export function Transport({ onOpenBrowser, onOpenEuclidean, onToggleHelp }: TransportProps) {
   const {
     bpm, isPlaying, swing, pattern,
     setBpm, setSwing, togglePlay,
@@ -89,10 +90,18 @@ export function Transport({ onOpenBrowser, onToggleHelp }: TransportProps) {
           CLR
         </button>
 
+        {/* Euclidean */}
+        <button
+          onClick={onOpenEuclidean}
+          className="ml-2 px-2 h-6 rounded text-[10px] font-bold bg-[var(--ed-pad-hybrid)] text-white hover:brightness-110 transition-all"
+        >
+          EUCLID
+        </button>
+
         {/* Save/Load */}
         <button
           onClick={onOpenBrowser}
-          className="ml-2 px-2 h-6 rounded text-[10px] font-bold bg-[var(--ed-accent-blue)] text-white hover:brightness-110 transition-all"
+          className="px-2 h-6 rounded text-[10px] font-bold bg-[var(--ed-accent-blue)] text-white hover:brightness-110 transition-all"
         >
           SAVE/LOAD
         </button>

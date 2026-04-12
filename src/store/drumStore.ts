@@ -6,8 +6,17 @@ export interface StepData {
   velocity: number;       // 0-127
   microTiming: number;    // ±23 ticks
   probability: number;    // 0-100
+  ratchetCount: number;   // 1-8 (1 = normal, 2+ = retrig/roll)
   paramLocks: Record<string, number>;
 }
+
+// Song Mode
+export interface SongChainEntry {
+  patternIndex: number;   // Index into pattern bank
+  repeats: number;        // How many times to play (1-16)
+}
+
+export type SongMode = "pattern" | "song";
 
 export interface TrackData {
   steps: StepData[];
@@ -31,8 +40,53 @@ function createEmptyStep(): StepData {
     velocity: 100,
     microTiming: 0,
     probability: 100,
+    ratchetCount: 1,
     paramLocks: {},
   };
+}
+
+// ─── Euclidean Rhythm Generator ──────────────────────────
+// Bjorklund's algorithm: distributes k pulses evenly across n steps
+export function generateEuclidean(pulses: number, steps: number, rotation = 0): boolean[] {
+  if (pulses >= steps) return new Array(steps).fill(true);
+  if (pulses <= 0) return new Array(steps).fill(false);
+
+  let pattern: number[][] = [];
+  let remainder: number[][] = [];
+
+  for (let i = 0; i < steps; i++) {
+    if (i < pulses) {
+      pattern.push([1]);
+    } else {
+      remainder.push([0]);
+    }
+  }
+
+  while (remainder.length > 1) {
+    const newPattern: number[][] = [];
+    const minLen = Math.min(pattern.length, remainder.length);
+
+    for (let i = 0; i < minLen; i++) {
+      newPattern.push([...pattern[i]!, ...remainder[i]!]);
+    }
+
+    const leftoverPattern = pattern.slice(minLen);
+    const leftoverRemainder = remainder.slice(minLen);
+
+    pattern = newPattern;
+    remainder = leftoverPattern.length > 0 ? leftoverPattern : leftoverRemainder;
+  }
+
+  // Flatten
+  const flat = [...pattern, ...remainder].flat();
+
+  // Apply rotation
+  const result: boolean[] = [];
+  for (let i = 0; i < flat.length; i++) {
+    result.push(flat[(i + rotation) % flat.length]! === 1);
+  }
+
+  return result;
 }
 
 function createEmptyTrack(): TrackData {
@@ -190,7 +244,20 @@ function startScheduler() {
         }
 
         const vel = step.velocity / 127;
-        audioEngine.triggerVoiceAtTime(track, vel, nextStepTime);
+        const ratchets = step.ratchetCount ?? 1;
+
+        if (ratchets <= 1) {
+          // Normal single trigger
+          audioEngine.triggerVoiceAtTime(track, vel, nextStepTime);
+        } else {
+          // Ratchet: multiple triggers within this step
+          const ratchetInterval = stepDuration / ratchets;
+          for (let r = 0; r < ratchets; r++) {
+            // Velocity ramp: each retrig slightly quieter
+            const rVel = vel * (1 - r * 0.15);
+            audioEngine.triggerVoiceAtTime(track, Math.max(rVel, 0.1), nextStepTime + r * ratchetInterval);
+          }
+        }
 
         // Restore original params after trigger
         for (const key of lockKeys) {
@@ -234,6 +301,13 @@ interface DrumStore {
   // Pattern
   pattern: PatternData;
 
+  // Song Mode
+  songMode: SongMode;
+  songChain: SongChainEntry[];
+  songPosition: number;       // Current index in song chain
+  songRepeatCount: number;    // Current repeat within chain entry
+  patternBank: PatternData[]; // All available patterns (presets + user)
+
   // Actions
   setBpm: (bpm: number) => void;
   setSwing: (swing: number) => void;
@@ -255,6 +329,18 @@ interface DrumStore {
   setParamLock: (track: number, step: number, paramId: string, value: number) => void;
   clearParamLock: (track: number, step: number, paramId: string) => void;
 
+  // Song Mode
+  setSongMode: (mode: SongMode) => void;
+  addToSongChain: (patternIndex: number, repeats?: number) => void;
+  removeFromSongChain: (index: number) => void;
+  clearSongChain: () => void;
+
+  // Euclidean generator
+  applyEuclidean: (track: number, pulses: number, steps: number, rotation?: number) => void;
+
+  // Ratchet
+  setStepRatchet: (track: number, step: number, count: number) => void;
+
   // Copy/Paste
   copyTrack: (track: number) => void;
   pasteTrack: (track: number) => void;
@@ -267,6 +353,11 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   clipboard: null,
   isPlaying: false,
   currentStep: 0,
+  songMode: "pattern" as SongMode,
+  songChain: [],
+  songPosition: 0,
+  songRepeatCount: 0,
+  patternBank: [...PRESET_PATTERNS],
   selectedVoice: 0,
   selectedPage: 0,
   currentPatternIndex: -1, // -1 = empty/custom
@@ -396,4 +487,44 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
       return { pattern: newPattern };
     });
   },
+
+  // ─── Song Mode ───────────────────────────────────────────
+  setSongMode: (mode) => set({ songMode: mode }),
+
+  addToSongChain: (patternIndex, repeats = 1) =>
+    set((state) => ({
+      songChain: [...state.songChain, { patternIndex, repeats }],
+    })),
+
+  removeFromSongChain: (index) =>
+    set((state) => ({
+      songChain: state.songChain.filter((_, i) => i !== index),
+    })),
+
+  clearSongChain: () => set({ songChain: [], songPosition: 0, songRepeatCount: 0 }),
+
+  // ─── Euclidean Generator ─────────────────────────────────
+  applyEuclidean: (track, pulses, steps, rotation = 0) =>
+    set((state) => {
+      const newPattern = structuredClone(state.pattern);
+      const trackData = newPattern.tracks[track]!;
+      const euclid = generateEuclidean(pulses, steps, rotation);
+
+      // Apply to track steps
+      for (let i = 0; i < trackData.length; i++) {
+        trackData.steps[i]!.active = i < euclid.length ? euclid[i]! : false;
+      }
+      trackData.length = steps;
+      newPattern.length = Math.max(newPattern.length, steps);
+
+      return { pattern: newPattern };
+    }),
+
+  // ─── Ratchet ─────────────────────────────────────────────
+  setStepRatchet: (track, step, count) =>
+    set((state) => {
+      const newPattern = structuredClone(state.pattern);
+      newPattern.tracks[track]!.steps[step]!.ratchetCount = Math.max(1, Math.min(8, count));
+      return { pattern: newPattern };
+    }),
 }));

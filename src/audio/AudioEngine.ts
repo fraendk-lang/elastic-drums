@@ -118,9 +118,12 @@ export class AudioEngine {
     return this.voiceParams[voice] ?? {};
   }
 
-  // Per-voice channel strips: GainNode (volume) → AnalyserNode (meter) → master
+  // Per-voice channel strips:
+  //   voice audio → channelInsertFilter → channelInsertShaper → channelGain → analyser → master
   private channelGains: GainNode[] = [];
   private channelAnalysers: AnalyserNode[] = [];
+  private channelFilters: BiquadFilterNode[] = [];
+  private channelShapers: WaveShaperNode[] = [];
   private masterGain: GainNode | null = null;
   private masterAnalyser: AnalyserNode | null = null;
 
@@ -151,18 +154,33 @@ export class AudioEngine {
       this.masterGain.connect(this.masterAnalyser);
       this.masterAnalyser.connect(this.ctx.destination);
 
-      // Create 12 channel strips
+      // Create 12 channel strips with insert FX
       for (let i = 0; i < 12; i++) {
+        // Insert filter (bypass by default: allpass)
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = "allpass";
+        filter.frequency.value = 1000;
+
+        // Insert distortion (bypass by default: null curve)
+        const shaper = this.ctx.createWaveShaper();
+
+        // Channel gain (volume fader)
         const gain = this.ctx.createGain();
         gain.gain.value = 1.0;
 
+        // Analyser (meter)
         const analyser = this.ctx.createAnalyser();
-        analyser.fftSize = 2048;          // ~46ms window — catches short percussive hits
-        analyser.smoothingTimeConstant = 0.3;  // Fast response
+        analyser.fftSize = 2048;
+        analyser.smoothingTimeConstant = 0.3;
 
+        // Routing: filter → shaper → gain → analyser → master
+        filter.connect(shaper);
+        shaper.connect(gain);
         gain.connect(analyser);
         analyser.connect(this.masterGain);
 
+        this.channelFilters.push(filter);
+        this.channelShapers.push(shaper);
         this.channelGains.push(gain);
         this.channelAnalysers.push(analyser);
       }
@@ -174,10 +192,11 @@ export class AudioEngine {
     return this.ctx;
   }
 
-  /** Get the output node for a voice channel (for routing voice audio) */
+  /** Get the output node for a voice channel (routes into insert FX chain) */
   getChannelOutput(voice: number): AudioNode {
     this.getContext();
-    return this.channelGains[voice] ?? this.masterGain!;
+    // Route to filter input (filter → shaper → gain → analyser → master)
+    return this.channelFilters[voice] ?? this.channelGains[voice] ?? this.masterGain!;
   }
 
   /** Helper: read peak from an AnalyserNode */
@@ -253,6 +272,38 @@ export class AudioEngine {
     src.connect(gain);
     gain.connect(out);
     src.start(time);
+  }
+
+  /** Set per-voice insert filter */
+  setChannelFilter(channel: number, type: BiquadFilterType, frequency: number, q: number): void {
+    const filter = this.channelFilters[channel];
+    if (!filter) return;
+    filter.type = type;
+    filter.frequency.value = frequency;
+    filter.Q.value = q;
+  }
+
+  /** Bypass per-voice filter */
+  bypassChannelFilter(channel: number): void {
+    const filter = this.channelFilters[channel];
+    if (filter) filter.type = "allpass";
+  }
+
+  /** Set per-voice insert distortion (drive 0..1) */
+  setChannelDrive(channel: number, drive: number): void {
+    const shaper = this.channelShapers[channel];
+    if (!shaper) return;
+    if (drive < 0.01) {
+      shaper.curve = null;
+      return;
+    }
+    const curve = new Float32Array(256);
+    const gain = 1 + drive * 8;
+    for (let i = 0; i < 256; i++) {
+      const x = (i / 128 - 1) * gain;
+      curve[i] = Math.tanh(x);
+    }
+    shaper.curve = curve;
   }
 
   /** Set channel volume (0..1) */

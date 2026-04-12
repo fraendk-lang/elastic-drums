@@ -18,23 +18,34 @@ const VOICE_COLORS = [
 export function StepSequencer() {
   const {
     pattern, currentStep, isPlaying, selectedPage, heldStep,
-    setSelectedPage, toggleStep, setStepVelocity,
+    setSelectedPage, toggleStep, setStepVelocity, setStepRatchet,
     holdStep, releaseStep, setSelectedVoice,
   } = useDrumStore();
 
   const pageOffset = selectedPage * 16;
 
-  // Right-click to cycle velocity
+  // Right-click: velocity cycle, Shift+right-click: ratchet cycle
   const handleContextMenu = useCallback((e: React.MouseEvent, track: number, absStep: number) => {
     e.preventDefault();
     const step = pattern.tracks[track]?.steps[absStep];
     if (!step?.active) return;
-    const levels = [127, 100, 70, 40];
-    const current = step.velocity;
-    const idx = levels.findIndex((v) => v <= current);
-    const next = levels[(idx + 1) % levels.length]!;
-    setStepVelocity(track, absStep, next);
-  }, [pattern, setStepVelocity]);
+
+    if (e.shiftKey) {
+      // Cycle ratchet: 1→2→3→4→6→8→1
+      const ratchetLevels = [1, 2, 3, 4, 6, 8];
+      const current = step.ratchetCount ?? 1;
+      const idx = ratchetLevels.indexOf(current);
+      const next = ratchetLevels[(idx + 1) % ratchetLevels.length]!;
+      setStepRatchet(track, absStep, next);
+    } else {
+      // Cycle velocity
+      const levels = [127, 100, 70, 40];
+      const current = step.velocity;
+      const idx = levels.findIndex((v) => v <= current);
+      const next = levels[(idx + 1) % levels.length]!;
+      setStepVelocity(track, absStep, next);
+    }
+  }, [pattern, setStepVelocity, setStepRatchet]);
 
   // Hold step for P-Lock editing
   const handleStepMouseDown = useCallback((e: React.MouseEvent, track: number, absStep: number) => {
@@ -70,7 +81,7 @@ export function StepSequencer() {
         <span className="ml-auto text-[10px] text-[var(--ed-text-muted)]">
           {heldStep
             ? `P-LOCK: ${VOICE_LABELS[heldStep.track]} Step ${heldStep.step + 1} — move sliders`
-            : "hold step + move slider = P-Lock"
+            : "hold=P-Lock · right-click=velocity · shift+right=ratchet"
           }
         </span>
       </div>
@@ -109,6 +120,8 @@ export function StepSequencer() {
                 const isCurrent = isPlaying && currentStep === absoluteStep;
                 const velocity = step?.velocity ?? 100;
                 const hasLocks = isActive && step !== undefined && Object.keys(step.paramLocks).length > 0;
+                const ratchetCount = step?.ratchetCount ?? 1;
+                const hasRatchet = isActive && ratchetCount > 1;
                 const isHeld = heldStep?.track === track && heldStep?.step === absoluteStep;
                 const velOpacity = isActive ? 0.3 + (velocity / 127) * 0.7 : 1;
                 const color = VOICE_COLORS[track] ?? "var(--ed-accent-orange)";
@@ -145,6 +158,12 @@ export function StepSequencer() {
                     {/* P-Lock indicator dot */}
                     {hasLocks && (
                       <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-[var(--ed-accent-green)]" />
+                    )}
+                    {/* Ratchet indicator */}
+                    {hasRatchet && (
+                      <span className="absolute bottom-0 left-0.5 text-[7px] font-bold text-black/60">
+                        ×{ratchetCount}
+                      </span>
                     )}
                   </button>
                 );

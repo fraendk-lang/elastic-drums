@@ -5,6 +5,7 @@ import { Transport } from "./components/Transport";
 import { MixerStrip } from "./components/MixerStrip";
 import { MixerPanel } from "./components/MixerPanel";
 import { PatternBrowser } from "./components/PatternBrowser";
+import { EuclideanGenerator } from "./components/EuclideanGenerator";
 import { VoiceEditor } from "./components/VoiceEditor";
 import { audioEngine } from "./audio/AudioEngine";
 import { useKeyboard } from "./hooks/useKeyboard";
@@ -14,6 +15,7 @@ export function App() {
   const [audioReady, setAudioReady] = useState(false);
   const [mixerOpen, setMixerOpen] = useState(false);
   const [browserOpen, setBrowserOpen] = useState(false);
+  const [euclideanOpen, setEuclideanOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
   useKeyboard();
@@ -53,6 +55,7 @@ export function App() {
       {/* Header / Transport */}
       <Transport
         onOpenBrowser={() => setBrowserOpen(true)}
+        onOpenEuclidean={() => setEuclideanOpen(true)}
         onToggleHelp={() => setShowHelp((h) => !h)}
       />
 
@@ -89,6 +92,7 @@ export function App() {
       {/* Overlays */}
       <MixerPanel isOpen={mixerOpen} onClose={() => setMixerOpen(false)} />
       <PatternBrowser isOpen={browserOpen} onClose={() => setBrowserOpen(false)} />
+      <EuclideanGenerator isOpen={euclideanOpen} onClose={() => setEuclideanOpen(false)} />
     </div>
   );
 }
