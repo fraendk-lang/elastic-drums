@@ -383,16 +383,51 @@ export class AudioEngine {
 
   /** Generate algorithmic reverb impulse response */
   private generateReverbIR(ctx: AudioContext, duration: number, decay: number): AudioBuffer {
-    const length = Math.ceil(ctx.sampleRate * duration);
-    const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
+    const sr = ctx.sampleRate;
+    const length = Math.ceil(sr * duration);
+    const buffer = ctx.createBuffer(2, length, sr);
+
+    // Pre-delay: 12ms of silence
+    const preDelay = Math.ceil(sr * 0.012);
+
+    // Early reflections: 6-8 discrete taps simulating room walls
+    const earlyTaps = [
+      { time: 0.018, gain: 0.7 },   // First reflection
+      { time: 0.025, gain: 0.55 },
+      { time: 0.033, gain: 0.45 },
+      { time: 0.041, gain: 0.35 },
+      { time: 0.052, gain: 0.25 },
+      { time: 0.067, gain: 0.18 },
+    ];
 
     for (let ch = 0; ch < 2; ch++) {
       const data = buffer.getChannelData(ch);
-      for (let i = 0; i < length; i++) {
-        // Exponentially decaying noise
-        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * decay / 6));
+
+      // Early reflections (discrete taps with slight stereo offset)
+      for (const tap of earlyTaps) {
+        const offset = ch === 0 ? 0 : Math.ceil(sr * 0.003); // 3ms stereo spread
+        const idx = preDelay + Math.ceil(sr * tap.time) + offset;
+        if (idx < length) {
+          // Short noise burst at each reflection point
+          for (let j = 0; j < Math.ceil(sr * 0.004); j++) {
+            if (idx + j < length) {
+              data[idx + j] = (data[idx + j] ?? 0) + (Math.random() * 2 - 1) * tap.gain * Math.exp(-j / (sr * 0.002));
+            }
+          }
+        }
+      }
+
+      // Late diffuse tail (exponentially decaying noise, starts after early reflections)
+      const tailStart = preDelay + Math.ceil(sr * 0.08);
+      for (let i = tailStart; i < length; i++) {
+        const t = (i - tailStart) / sr;
+        const envelope = Math.exp(-t * 6 / decay);
+        // Slight filtering: multiply by a lowpass-like envelope for warmer tail
+        const warmth = Math.exp(-t * 2);
+        data[i] = (data[i] ?? 0) + (Math.random() * 2 - 1) * envelope * (0.5 + warmth * 0.5);
       }
     }
+
     return buffer;
   }
 
@@ -866,8 +901,12 @@ export class AudioEngine {
     return this.ctx?.currentTime ?? 0;
   }
 
-  // Sample lookup callback — set by SampleManager to avoid circular imports
+  // Sample lookup callback
   private sampleLookup: ((voice: number) => AudioBuffer | null) | null = null;
+
+  // HiHat choke: store the master gain of the last triggered hat
+  private lastHHClosedGain: GainNode | null = null;
+  private lastHHOpenGain: GainNode | null = null;
 
   /** Register sample lookup function */
   setSampleLookup(fn: (voice: number) => AudioBuffer | null): void {
@@ -895,8 +934,16 @@ export class AudioEngine {
       case 3:
       case 4:
       case 5: this.tom(ctx, t, velocity, p.tune ?? 140, out, p); break;
-      case 6: this.hihat(ctx, t, velocity, true, out, p); break;
-      case 7: this.hihat(ctx, t, velocity, false, out, p); break;
+      case 6:
+        // Closed hat chokes open hat
+        if (this.lastHHOpenGain) { this.lastHHOpenGain.gain.setValueAtTime(0, t); this.lastHHOpenGain = null; }
+        this.lastHHClosedGain = this.hihat(ctx, t, velocity, true, out, p);
+        break;
+      case 7:
+        // Open hat chokes closed hat
+        if (this.lastHHClosedGain) { this.lastHHClosedGain.gain.setValueAtTime(0, t); this.lastHHClosedGain = null; }
+        this.lastHHOpenGain = this.hihat(ctx, t, velocity, false, out, p);
+        break;
       case 8:
       case 9: this.cymbal(ctx, t, velocity, p.tune ?? 400, out, p); break;
       case 10:
@@ -1066,24 +1113,25 @@ export class AudioEngine {
   // 808 multi-burst noise with reverb-like tail
   private clap(ctx: AudioContext, t: number, vel: number, out: AudioNode, p: VoiceParams): void {
     const levelBoost = (p.level ?? 100) / 100;
-    const vol = vel * 0.75 * levelBoost;  // Boosted from 0.55
+    const vol = vel * 0.75 * levelBoost;
     const decaySec = (p.decay ?? 350) / 1000;
     const toneFreq = p.tone ?? 1800;
+    const spread = (p.spread ?? 50) / 100; // 0=tight bursts, 1=wide
 
     const master = ctx.createGain();
     master.gain.setValueAtTime(vol, t);
     master.gain.exponentialRampToValueAtTime(0.001, t + decaySec + 0.1);
     master.connect(out);
 
-    // Bandpass for clap character
     const bpf = ctx.createBiquadFilter();
     bpf.type = "bandpass";
     bpf.frequency.value = toneFreq;
     bpf.Q.value = 0.8;
     bpf.connect(master);
 
-    // 4 stochastic noise bursts with increasing spacing
-    const burstTimes = [0, 0.008, 0.019, 0.033];
+    // 4 noise bursts — spread controls spacing (tight → wide)
+    const baseSpacing = 0.005 + spread * 0.015; // 5ms → 20ms
+    const burstTimes = [0, baseSpacing, baseSpacing * 2.3, baseSpacing * 3.8];
     for (const offset of burstTimes) {
       const burst = this.getNoise(ctx, 0.006, t + offset);
       const g = ctx.createGain();
@@ -1139,7 +1187,7 @@ export class AudioEngine {
 
   // ─── HIHAT ─────────────────────────────────────────────
   // 909-style: 6 metallic square oscillators + filtered noise
-  private hihat(ctx: AudioContext, t: number, vel: number, closed: boolean, out: AudioNode, p: VoiceParams): void {
+  private hihat(ctx: AudioContext, t: number, vel: number, closed: boolean, out: AudioNode, p: VoiceParams): GainNode {
     const vol = vel * (closed ? 0.32 : 0.38);
     const decaySec = (p.decay ?? (closed ? 45 : 250)) / 1000;
 
@@ -1179,6 +1227,8 @@ export class AudioEngine {
     ng.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 0.8);
     noise.connect(ng);
     ng.connect(hpf);
+
+    return master; // For choke group
   }
 
   // ─── CYMBAL / RIDE ─────────────────────────────────────

@@ -535,6 +535,10 @@ interface DrumStore {
   copyPage: (page: number) => void;
   pastePage: (page: number) => void;
   pageClipboard: Array<StepData[]> | null;
+
+  // Mixer mute/solo (persistent in store)
+  toggleTrackMute: (track: number) => void;
+  toggleTrackSolo: (track: number) => void;
 }
 
 export const useDrumStore = create<DrumStore>((set, get) => ({
@@ -759,6 +763,21 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     set((state) => {
       const newPattern = structuredClone(state.pattern);
       newPattern.tracks[track]!.steps[step]!.condition = condition;
+      return { pattern: newPattern };
+    }),
+
+  // ─── Mixer Mute/Solo (persistent in store) ───────────────
+  toggleTrackMute: (track) =>
+    set((state) => {
+      const newPattern = structuredClone(state.pattern);
+      newPattern.tracks[track]!.mute = !newPattern.tracks[track]!.mute;
+      return { pattern: newPattern };
+    }),
+
+  toggleTrackSolo: (track) =>
+    set((state) => {
+      const newPattern = structuredClone(state.pattern);
+      newPattern.tracks[track]!.solo = !newPattern.tracks[track]!.solo;
       return { pattern: newPattern };
     }),
 }));
