@@ -530,12 +530,18 @@ interface DrumStore {
   copyTrack: (track: number) => void;
   pasteTrack: (track: number) => void;
   clipboard: TrackData | null;
+
+  // Page Copy/Paste (16 steps across all tracks)
+  copyPage: (page: number) => void;
+  pastePage: (page: number) => void;
+  pageClipboard: Array<StepData[]> | null;
 }
 
 export const useDrumStore = create<DrumStore>((set, get) => ({
   bpm: 120,
   swing: 50,
   clipboard: null,
+  pageClipboard: null,
   isPlaying: false,
   currentStep: 0,
   songMode: "pattern" as SongMode,
@@ -669,6 +675,42 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     set((state) => {
       const newPattern = structuredClone(state.pattern);
       newPattern.tracks[track] = structuredClone(clipboard);
+      return { pattern: newPattern };
+    });
+  },
+
+  // ─── Page Copy/Paste ──────────────────────────────────────
+  copyPage: (page) => {
+    const { pattern } = get();
+    const start = page * 16;
+    // Copy 16 steps from all 12 tracks
+    const pageData = pattern.tracks.map((track) =>
+      structuredClone(track.steps.slice(start, start + 16))
+    );
+    set({ pageClipboard: pageData });
+  },
+
+  pastePage: (page) => {
+    const { pageClipboard } = get();
+    if (!pageClipboard) return;
+    set((state) => {
+      const newPattern = structuredClone(state.pattern);
+      const start = page * 16;
+      for (let t = 0; t < 12; t++) {
+        const src = pageClipboard[t];
+        if (!src) continue;
+        for (let s = 0; s < 16 && s < src.length; s++) {
+          newPattern.tracks[t]!.steps[start + s] = structuredClone(src[s]!);
+        }
+      }
+      // Extend pattern length if pasting beyond current length
+      const newEnd = start + 16;
+      if (newEnd > newPattern.length) {
+        newPattern.length = newEnd;
+        for (const track of newPattern.tracks) {
+          track.length = newEnd;
+        }
+      }
       return { pattern: newPattern };
     });
   },

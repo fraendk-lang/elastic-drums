@@ -1,0 +1,20 @@
+[      27ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[      46ms] [ERROR] WebSocket connection to 'ws://localhost:5174/?token=xTHbAjirvM9G' failed: Error during WebSocket handshake: Unexpected response code: 400 @ http://localhost:5174/@vite/client:801
+[      74ms] [ERROR] WebSocket connection to 'ws://localhost:5173/?token=xTHbAjirvM9G' failed: Error during WebSocket handshake: Unexpected response code: 400 @ http://localhost:5174/@vite/client:814
+[      74ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5174/src/hooks/useMidi.ts:34
+[      74ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5174/src/hooks/useMidi.ts:34
+[      74ms] [ERROR] [vite] failed to connect to websocket.
+your current setup:
+  (browser) localhost:5174/ <--[HTTP]--> localhost:5173/ (server)
+  (browser) localhost:5174/ <--[WebSocket (failing)]--> localhost:5173/ (server)
+Check out your Vite / network configuration and https://vite.dev/config/server-options.html#server-hmr . @ http://localhost:5174/@vite/client:829
+[     107ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5174/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5174/:0
+[    1248ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[    1271ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5174/src/hooks/useMidi.ts:34
+[    1271ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5174/src/hooks/useMidi.ts:34
+[    1274ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5174/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5174/:0
+[    5523ms] [LOG] WASM worklet init failed (using TS fallback): TypeError: WebAssembly.instantiate(): Import #0 "a": module is not an object or function @ http://localhost:5174/src/audio/AudioEngine.ts:640
+[   55181ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=665a8c76:20100
+[   55248ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5174/src/hooks/useMidi.ts:34
+[   55248ms] [LOG] MIDI connected: 0 input(s) @ http://localhost:5174/src/hooks/useMidi.ts:34
+[   55262ms] [WARNING] Error while trying to use the following icon from the Manifest: http://localhost:5174/icon-192.png (Download error or resource isn't a valid image) @ http://localhost:5174/:0

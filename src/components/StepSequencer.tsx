@@ -20,6 +20,7 @@ export function StepSequencer() {
     pattern, currentStep, isPlaying, selectedPage, heldStep, selectedVoice,
     setSelectedPage, toggleStep, setStepVelocity, setStepRatchet, setStepCondition,
     holdStep, releaseStep, setSelectedVoice,
+    copyPage, pastePage, pageClipboard,
   } = useDrumStore();
 
   const pageOffset = selectedPage * 16;
@@ -84,12 +85,33 @@ export function StepSequencer() {
           </button>
         ))}
 
+        {/* Page Copy/Paste */}
+        <div className="flex items-center gap-1 ml-2">
+          <button
+            onClick={() => copyPage(selectedPage)}
+            className="px-2 py-0.5 text-[8px] font-bold rounded bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-[var(--ed-text-primary)] hover:bg-[var(--ed-bg-elevated)] transition-colors"
+          >
+            COPY
+          </button>
+          <button
+            onClick={() => pastePage(selectedPage)}
+            className={`px-2 py-0.5 text-[8px] font-bold rounded transition-colors ${
+              pageClipboard
+                ? "bg-[var(--ed-accent-blue)]/20 text-[var(--ed-accent-blue)] hover:bg-[var(--ed-accent-blue)]/30"
+                : "bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] opacity-40"
+            }`}
+            disabled={!pageClipboard}
+          >
+            PASTE
+          </button>
+        </div>
+
         <div className="flex-1" />
 
         <span className="text-[9px] text-[var(--ed-text-muted)]">
           {heldStep
             ? `⬤ P-LOCK: ${VOICE_LABELS[heldStep.track]} Step ${heldStep.step + 1}`
-            : "hold=P-Lock · rclick=vel · shift+rclick=ratchet · alt+rclick=condition"
+            : "shift+click=vel · hold=P-Lock · rclick=ratchet · alt+rclick=cond"
           }
         </span>
       </div>
