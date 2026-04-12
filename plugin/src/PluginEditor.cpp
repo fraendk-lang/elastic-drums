@@ -7,21 +7,22 @@ ElasticDrumsEditor::ElasticDrumsEditor(ElasticDrumsProcessor& p)
     setResizable(true, true);
     setResizeLimits(800, 500, 2560, 1600);
 
-    // Create WebBrowserComponent — loads the React UI
+    // Create WebBrowserComponent with default (native) backend
+    // macOS: WKWebView, Windows: WebView2
     webView_ = std::make_unique<juce::WebBrowserComponent>(
         juce::WebBrowserComponent::Options()
-            .withBackend(juce::WebBrowserComponent::Options::Backend::webview2)
             .withKeepPageLoadedWhenBrowserIsHidden()
     );
 
     addAndMakeVisible(*webView_);
 
-    // Load the React app (dev server or production build)
+    // Load the React app from dev server
     webView_->goToURL("http://localhost:5173");
 }
 
 ElasticDrumsEditor::~ElasticDrumsEditor() = default;
 
 void ElasticDrumsEditor::resized() {
-    webView_->setBounds(getLocalBounds());
+    if (webView_)
+        webView_->setBounds(getLocalBounds());
 }
