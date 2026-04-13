@@ -396,6 +396,17 @@ export const useBassStore = create<BassStore>((set, get) => ({
     const p = { ...get().params, [key]: value };
     set({ params: p });
     bassEngine.setParams({ [key]: value });
+
+    // Motion Recording: write automation on current step while playing
+    const { isPlaying, currentStep, length, automationData } = get();
+    if (isPlaying && typeof value === "number") {
+      const data = { ...automationData };
+      if (!data[key]) data[key] = new Array(length).fill(undefined);
+      const arr = [...data[key]!];
+      arr[currentStep % length] = value;
+      data[key] = arr;
+      set({ automationData: data });
+    }
   },
 
   setLength: (len) => set({ length: Math.max(4, Math.min(64, len)) }),

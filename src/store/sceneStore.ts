@@ -31,6 +31,10 @@ export interface Scene {
   melodyParams?: MelodyParams; // Synth parameters
   // Drum voice params per track
   drumVoiceParams?: Record<string, number>[]; // 12 tracks × param map
+  // Global key/scale for this scene
+  rootNote?: number;   // MIDI note (bass octave, e.g. 36=C2)
+  rootName?: string;   // "C", "D#", etc.
+  scaleName?: string;  // "Minor", "Dorian", etc.
 }
 
 interface SceneStore {
@@ -86,6 +90,10 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
       melodyLength: melody.length,
       melodyParams: deepClone(melody.params),
       drumVoiceParams,
+      // Save global key/scale (from bass store as reference)
+      rootNote: bass.rootNote,
+      rootName: bass.rootName,
+      scaleName: bass.scaleName,
     };
 
     // Preserve existing name if slot already has a scene
@@ -150,6 +158,13 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
       melodyEngine.setParams(scene.melodyParams);
     }
     useMelodyStore.setState(melodyUpdate);
+
+    // Restore global key/scale — sync across all synths via bassStore
+    if (scene.rootNote !== undefined && scene.rootName && scene.scaleName) {
+      // Use bass store's setRootNote/setScale which auto-syncs to chords + melody
+      useBassStore.getState().setRootNote(scene.rootNote, scene.rootName);
+      useBassStore.getState().setScale(scene.scaleName);
+    }
 
     set({ activeScene: slot, nextScene: null });
   },

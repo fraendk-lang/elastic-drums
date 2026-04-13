@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useDrumStore } from "../store/drumStore";
 import { audioEngine, VOICE_PARAM_DEFS } from "../audio/AudioEngine";
 import { Knob } from "./Knob";
@@ -17,7 +17,6 @@ export function VoiceEditor() {
 
   const [values, setValues] = useState<Record<string, number>>({});
   const [motionRec, setMotionRec] = useState(false);
-  const lastRecStep = useRef(-1);
 
   useEffect(() => {
     const params = audioEngine.getVoiceParams(selectedVoice);
@@ -31,13 +30,12 @@ export function VoiceEditor() {
   const handleChange = useCallback(
     (paramId: string, value: number) => {
       if (heldStep && heldStep.track === selectedVoice) {
+        // P-Lock mode: write to the held step
         setParamLock(heldStep.track, heldStep.step, paramId, value);
       } else if (motionRec && isPlaying) {
+        // Motion Recording: write to current step AND set engine param live
         const step = currentStep % pattern.length;
-        if (step !== lastRecStep.current) {
-          lastRecStep.current = step;
-          setParamLock(selectedVoice, step, paramId, value);
-        }
+        setParamLock(selectedVoice, step, paramId, value);
         audioEngine.setVoiceParam(selectedVoice, paramId, value);
       } else {
         audioEngine.setVoiceParam(selectedVoice, paramId, value);
