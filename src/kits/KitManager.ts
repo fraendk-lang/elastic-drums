@@ -115,7 +115,7 @@ export function kitToPattern(kit: DrumKit): PatternData | null {
   const tracks = Array.from({ length: 12 }, () => ({
     steps: Array.from({ length: 64 }, () => ({
       active: false, velocity: 100, microTiming: 0, probability: 100,
-      ratchetCount: 1, condition: "always" as const, paramLocks: {},
+      ratchetCount: 1, condition: "always" as const, gateLength: 1, paramLocks: {},
     })),
     mute: false, solo: false, volume: 100, pan: 0, length: kit.pattern!.length,
   }));

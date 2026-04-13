@@ -31,19 +31,15 @@ export function VoiceEditor() {
   const handleChange = useCallback(
     (paramId: string, value: number) => {
       if (heldStep && heldStep.track === selectedVoice) {
-        // P-Lock mode: write to held step
         setParamLock(heldStep.track, heldStep.step, paramId, value);
       } else if (motionRec && isPlaying) {
-        // Motion Recording: write to current step
         const step = currentStep % pattern.length;
         if (step !== lastRecStep.current) {
           lastRecStep.current = step;
           setParamLock(selectedVoice, step, paramId, value);
         }
-        // Also update global param
         audioEngine.setVoiceParam(selectedVoice, paramId, value);
       } else {
-        // Normal: update global param
         audioEngine.setVoiceParam(selectedVoice, paramId, value);
       }
       setValues((prev) => ({ ...prev, [paramId]: value }));
@@ -54,29 +50,29 @@ export function VoiceEditor() {
   const isLockMode = heldStep !== null && heldStep.track === selectedVoice;
 
   return (
-    <div className="flex-1 p-3 border-t border-[var(--ed-border)] overflow-auto">
+    <div className="flex-1 p-3 border-t border-[var(--ed-border)]/50 overflow-auto">
       {/* Header with Motion Rec toggle */}
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-xs font-semibold tracking-wide flex items-center gap-2">
-          <span className="text-[var(--ed-text-secondary)]">
+          <span className="text-[var(--ed-text-primary)]">
             {VOICE_LABELS[selectedVoice]}
             {(selectedVoice === 10 || selectedVoice === 11) && (
-              <span className="text-[var(--ed-pad-hybrid)] ml-1 text-[9px]">
+              <span className="text-[var(--ed-pad-hybrid)] ml-1.5 text-[9px] font-medium">
                 {PERC_TYPE_NAMES[Math.round(values.type ?? 0)] ?? ""}
               </span>
             )}
           </span>
           {isLockMode ? (
-            <span className="text-[var(--ed-accent-green)] text-[10px] font-bold animate-pulse">
+            <span className="text-[var(--ed-accent-green)] text-[9px] font-bold animate-pulse px-1.5 py-0.5 rounded bg-[var(--ed-accent-green)]/10">
               P-LOCK Step {heldStep.step + 1}
             </span>
           ) : motionRec && isPlaying ? (
-            <span className="text-[var(--ed-accent-red)] text-[10px] font-bold animate-pulse">
-              REC ●
+            <span className="text-[var(--ed-accent-red)] text-[9px] font-bold animate-pulse px-1.5 py-0.5 rounded bg-[var(--ed-accent-red)]/10">
+              REC
             </span>
           ) : (
-            <span className="text-[var(--ed-text-muted)] text-[10px]">
-              PARAMETERS
+            <span className="text-[var(--ed-text-muted)] text-[9px] font-medium">
+              PARAMS
             </span>
           )}
         </h3>
@@ -84,13 +80,13 @@ export function VoiceEditor() {
         {/* Motion Rec button */}
         <button
           onClick={() => setMotionRec((r) => !r)}
-          className={`px-2 py-0.5 text-[9px] font-bold rounded transition-colors ${
+          className={`px-2.5 py-1 text-[9px] font-bold rounded-md transition-all ${
             motionRec
-              ? "bg-[var(--ed-accent-red)] text-white"
-              : "bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-[var(--ed-text-primary)]"
+              ? "bg-[var(--ed-accent-red)] text-white shadow-[0_0_12px_rgba(239,68,68,0.2)]"
+              : "bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-[var(--ed-text-primary)] hover:bg-[var(--ed-bg-elevated)]"
           }`}
         >
-          {motionRec ? "REC ●" : "REC"}
+          {motionRec ? "REC" : "REC"}
         </button>
       </div>
 
@@ -108,7 +104,7 @@ export function VoiceEditor() {
               min={def.min}
               max={def.max}
               defaultValue={def.default}
-              label={hasLock ? `${def.label} ●` : def.label}
+              label={hasLock ? `${def.label} \u25CF` : def.label}
               color={
                 motionRec && isPlaying
                   ? "var(--ed-accent-red)"

@@ -1,82 +1,62 @@
 /**
- * Bass Synth Engine — TB-303 Style (Authentic)
+ * Melody Synth Engine — Monophonic Analog Lead
  *
  * Architecture:
- *   VCO (Saw/Square) + Sub-Osc → VCF (2x cascaded biquad = 24dB/oct) → VCA → Distortion → Output
+ *   VCO (Saw/Square/Triangle) + Sub-Osc → VCF (2x cascaded biquad = 24dB/oct) → VCA → Distortion → Output
  *
- * Authentic 303 behaviour:
- *   - Fast filter envelope attack (~3ms), sharp exponential decay
- *   - Accent dramatically boosts filter envelope depth AND shortens decay
+ * Lead synth behaviour:
+ *   - Filter envelope attack ~5ms (slightly softer than 303 for lead character)
+ *   - Sharp exponential decay
+ *   - Accent boosts filter envelope depth AND shortens decay
  *   - Self-oscillating resonance near max Q
  *   - Slide glides BOTH pitch AND filter cutoff
  *   - Note tie holds VCA open (no re-trigger) while gliding pitch/filter
+ *   - Legato mode: always slides between notes regardless of step.slide flag
  *   - Sub-oscillator one octave below main VCO
  *   - Cascaded dual biquad for proper 24dB/oct rolloff
+ *   - Filter cutoff range up to 12000 Hz for bright lead tones
  */
 
-export type FilterMode = "lowpass" | "highpass" | "bandpass" | "notch";
+import { scaleNote } from "./BassEngine";
 
-export interface BassParams {
-  waveform: "sawtooth" | "square";
-  filterType: FilterMode;
-  cutoff: number;      // Filter cutoff Hz (200-8000)
+export { scaleNote };
+
+export interface MelodyParams {
+  waveform: "sawtooth" | "square" | "triangle";
+  cutoff: number;      // Filter cutoff Hz (200-12000)
   resonance: number;   // Filter Q (0-30)
   envMod: number;      // Filter envelope depth (0-1)
-  decay: number;       // Filter envelope decay ms (50-1000)
+  decay: number;       // Filter envelope decay ms (50-800)
   accent: number;      // Accent intensity (0-1)
   slideTime: number;   // Portamento time ms (0-200)
+  legato: boolean;     // When true, always slides between notes
   distortion: number;  // Drive amount (0-1)
   volume: number;      // Output level (0-1)
   subOsc: number;      // Sub-oscillator level (0-1), 0 = off
+  filterType: "lowpass" | "highpass" | "bandpass" | "notch";
 }
 
-export const DEFAULT_BASS_PARAMS: BassParams = {
+export const DEFAULT_MELODY_PARAMS: MelodyParams = {
   waveform: "sawtooth",
+  cutoff: 2000,
+  resonance: 8,
+  envMod: 0.4,
+  decay: 150,
+  accent: 0.4,
+  slideTime: 40,
+  legato: false,
+  distortion: 0.15,
+  volume: 0.5,
+  subOsc: 0.1,
   filterType: "lowpass",
-  cutoff: 600,
-  resonance: 12,
-  envMod: 0.6,
-  decay: 200,
-  accent: 0.5,
-  slideTime: 60,
-  distortion: 0.3,
-  volume: 0.7,
-  subOsc: 0,
 };
-
-// Musical scales
-export const SCALES: Record<string, number[]> = {
-  "Chromatic":   [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-  "Major":       [0, 2, 4, 5, 7, 9, 11],
-  "Minor":       [0, 2, 3, 5, 7, 8, 10],
-  "Dorian":      [0, 2, 3, 5, 7, 9, 10],
-  "Phrygian":    [0, 1, 3, 5, 7, 8, 10],
-  "Mixolydian":  [0, 2, 4, 5, 7, 9, 10],
-  "Minor Pent":  [0, 3, 5, 7, 10],
-  "Major Pent":  [0, 2, 4, 7, 9],
-  "Blues":        [0, 3, 5, 6, 7, 10],
-  "Harmonic Min": [0, 2, 3, 5, 7, 8, 11],
-  "Melodic Min":  [0, 2, 3, 5, 7, 9, 11],
-  "Whole Tone":  [0, 2, 4, 6, 8, 10],
-  "Diminished":  [0, 2, 3, 5, 6, 8, 9, 11],
-};
-
-export const ROOT_NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-
-// Get MIDI note number for scale degree
-export function scaleNote(rootMidi: number, scaleName: string, degree: number, octaveOffset = 0): number {
-  const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
-  const octave = Math.floor(degree / scale.length);
-  const idx = ((degree % scale.length) + scale.length) % scale.length;
-  return rootMidi + (scale[idx] ?? 0) + (octave + octaveOffset) * 12;
-}
 
 // MIDI note to frequency
 function midiToFreq(midi: number): number {
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
-export interface BassStep {
+export interface MelodyStep {
   active: boolean;
   note: number;      // Scale degree (0-based)
   octave: number;    // -1, 0, +1
@@ -85,7 +65,7 @@ export interface BassStep {
   tie: boolean;       // Hold note across to next step (no re-trigger)
 }
 
-export class BassEngine {
+export class MelodyEngine {
   private ctx: AudioContext | null = null;
 
   // VCO
@@ -106,7 +86,7 @@ export class BassEngine {
   private isRunning = false;
   private noteIsOn = false;
 
-  params: BassParams = { ...DEFAULT_BASS_PARAMS };
+  params: MelodyParams = { ...DEFAULT_MELODY_PARAMS };
 
   init(audioCtx: AudioContext): void {
     this.ctx = audioCtx;
@@ -114,12 +94,12 @@ export class BassEngine {
     // --- VCO (main) ---
     this.osc = audioCtx.createOscillator();
     this.osc.type = this.params.waveform;
-    this.osc.frequency.value = 130.81; // C3
+    this.osc.frequency.value = 261.63; // C3 (MIDI 48)
 
     // --- Sub-oscillator (one octave below) ---
     this.subOsc = audioCtx.createOscillator();
     this.subOsc.type = "square"; // Sub is always square for weight
-    this.subOsc.frequency.value = 130.81 / 2;
+    this.subOsc.frequency.value = 261.63 / 2;
 
     this.subGain = audioCtx.createGain();
     this.subGain.gain.value = this.params.subOsc;
@@ -137,7 +117,7 @@ export class BassEngine {
     this.filter2 = audioCtx.createBiquadFilter();
     this.filter2.type = "lowpass";
     this.filter2.frequency.value = this.params.cutoff;
-    // Second stage: higher Q coupling for authentic self-oscillation at extreme settings
+    // Second stage has lower Q to avoid runaway but still adds slope
     this.filter2.Q.value = Math.max(0, this.params.resonance * 0.85);
 
     // --- VCA ---
@@ -180,18 +160,17 @@ export class BassEngine {
       this.distNode.curve = null;
       return;
     }
-    // Warm analog-style soft-clip with tube-like asymmetry
-    const samples = 2048;
+    // Asymmetric soft-clip for more analog character
+    const samples = 1024;
     const curve = new Float32Array(samples);
-    const gain = 1 + drive * 12;
+    const gain = 1 + drive * 15;
     for (let i = 0; i < samples; i++) {
       const x = (i / (samples / 2) - 1) * gain;
-      // Two-stage: gentle saturation + asymmetric clip
-      const soft = x / (1 + Math.abs(x) * 0.5); // gentle pre-saturation
-      if (soft >= 0) {
-        curve[i] = Math.tanh(soft);
+      // Asymmetric: slightly different positive vs negative clipping
+      if (x >= 0) {
+        curve[i] = Math.tanh(x);
       } else {
-        curve[i] = Math.tanh(soft * 1.15) * 0.92; // asymmetric warmth
+        curve[i] = Math.tanh(x * 1.2) * 0.9;
       }
     }
     this.distNode.curve = curve;
@@ -199,8 +178,8 @@ export class BassEngine {
   }
 
   /**
-   * Schedule the 303 filter envelope on both cascaded filters.
-   * The 303 has a very fast attack (~2-3ms) and a sharp exponential decay.
+   * Schedule the filter envelope on both cascaded filters.
+   * Fast attack (~5ms for lead character) and sharp exponential decay.
    * Accent dramatically increases the envelope depth and peak.
    */
   private scheduleFilterEnvelope(time: number, accent: boolean, slide: boolean): void {
@@ -211,8 +190,8 @@ export class BassEngine {
     const envDepth = p.envMod * accentAmount;
 
     // Filter peak: cutoff + envelope sweep range
-    // 303 sweeps from high freq down to cutoff
-    const filterPeak = Math.min(p.cutoff + envDepth * 8000, 18000);
+    // Sweeps from high freq down to cutoff
+    const filterPeak = Math.min(p.cutoff + envDepth * 12000, 20000);
     const filterBase = Math.max(p.cutoff, 20);
 
     // Decay time: accent makes it snappier
@@ -220,8 +199,8 @@ export class BassEngine {
     // Time constant for exponential decay (~3x faster than linear)
     const decayTau = decaySec / 3.5;
 
-    // Attack time: ~3ms (characteristic 303 snap)
-    const attackTime = 0.003;
+    // Attack time: ~5ms (slightly softer than 303 for lead character)
+    const attackTime = 0.005;
 
     // -- Filter 1 (main) --
     this.filter1.frequency.cancelScheduledValues(time);
@@ -247,7 +226,7 @@ export class BassEngine {
     this.filter2.frequency.setTargetAtTime(filterBase, time + attackTime, decayTau);
   }
 
-  /** Trigger a bass note */
+  /** Trigger a melody note */
   triggerNote(midiNote: number, time: number, accent: boolean, slide: boolean, tie: boolean): void {
     if (!this.ctx || !this.osc || !this.subOsc || !this.filter1 || !this.filter2 || !this.vca) return;
 
@@ -255,8 +234,11 @@ export class BassEngine {
     const subFreq = freq / 2; // One octave below
     const p = this.params;
 
+    // Legato mode: always slide between notes
+    const useSlide = p.legato || slide;
+
     // --- Pitch ---
-    if (slide && p.slideTime > 0) {
+    if (useSlide && p.slideTime > 0) {
       // Slide: exponential glide to target frequency
       const slideTau = p.slideTime / 1000 / 3;
       this.osc.frequency.setTargetAtTime(freq, time, slideTau);
@@ -273,14 +255,14 @@ export class BassEngine {
       this.scheduleFilterEnvelope(time, accent, true);
     } else {
       // Normal trigger or first note
-      // VCA: fast attack
+      // VCA: fast attack (5ms for lead character)
       this.vca.gain.cancelScheduledValues(time);
       const level = accent ? 1.0 : 0.75;
       this.vca.gain.setValueAtTime(0.001, time);
-      this.vca.gain.linearRampToValueAtTime(level, time + 0.003);
+      this.vca.gain.linearRampToValueAtTime(level, time + 0.005);
 
-      // Filter envelope: the heart of the 303 sound
-      this.scheduleFilterEnvelope(time, accent, slide);
+      // Filter envelope: the heart of the lead sound
+      this.scheduleFilterEnvelope(time, accent, useSlide);
     }
 
     this.noteIsOn = true;
@@ -290,7 +272,7 @@ export class BassEngine {
   releaseNote(time: number): void {
     if (!this.vca) return;
     this.vca.gain.cancelScheduledValues(time);
-    // 303-style release: fairly fast but not instant
+    // Fairly fast release but not instant
     this.vca.gain.setTargetAtTime(0, time, 0.015);
     this.noteIsOn = false;
   }
@@ -301,15 +283,11 @@ export class BassEngine {
   }
 
   /** Update parameters live */
-  setParams(p: Partial<BassParams>): void {
+  setParams(p: Partial<MelodyParams>): void {
     Object.assign(this.params, p);
 
     if (this.osc && p.waveform) this.osc.type = p.waveform;
     if (this.filter1) {
-      if (p.filterType) {
-        this.filter1.type = p.filterType;
-        if (this.filter2) this.filter2.type = p.filterType;
-      }
       if (p.cutoff !== undefined) {
         this.filter1.frequency.value = p.cutoff;
         if (this.filter2) this.filter2.frequency.value = p.cutoff;
@@ -321,6 +299,7 @@ export class BassEngine {
     }
     if (this.subGain && p.subOsc !== undefined) this.subGain.gain.value = p.subOsc;
     if (this.output && p.volume !== undefined) this.output.gain.value = p.volume;
+    if (p.filterType) { if (this.filter1) this.filter1.type = p.filterType; if (this.filter2) this.filter2.type = p.filterType; }
     if (p.distortion !== undefined) this.updateDistortion();
   }
 
@@ -334,4 +313,4 @@ export class BassEngine {
   }
 }
 
-export const bassEngine = new BassEngine();
+export const melodyEngine = new MelodyEngine();

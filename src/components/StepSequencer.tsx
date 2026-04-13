@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { useDrumStore } from "../store/drumStore";
 
 const VOICE_LABELS = [
@@ -19,13 +19,17 @@ export function StepSequencer() {
   const {
     pattern, currentStep, isPlaying, selectedPage, heldStep, selectedVoice,
     setSelectedPage, toggleStep, setStepVelocity, setStepRatchet, setStepCondition,
-    holdStep, releaseStep, setSelectedVoice,
+    setStepGateLength, holdStep, releaseStep, setSelectedVoice,
     copyPage, pastePage, pageClipboard,
   } = useDrumStore();
 
   const pageOffset = selectedPage * 16;
 
-  // All available conditions for cycling
+  // ─── Gate-Length Drag State ─────────────────────────────
+  const [gateDrag, setGateDrag] = useState<{ track: number; startStep: number } | null>(null);
+  const [gateDragEnd, setGateDragEnd] = useState<number>(0);
+  const stepRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+
   const CONDITIONS: import("../store/drumStore").ConditionType[] = [
     "always", "prob", "fill", "!fill", "pre", "!pre", "nei", "!nei",
     "1st", "!1st", "2:2", "3:3", "4:4", "2:3", "2:4", "3:4",
@@ -37,7 +41,6 @@ export function StepSequencer() {
     if (!step?.active) return;
 
     if (e.altKey || e.metaKey) {
-      // Alt+right-click: cycle conditional trig
       const current = step.condition ?? "always";
       const idx = CONDITIONS.indexOf(current);
       const next = CONDITIONS[(idx + 1) % CONDITIONS.length]!;
@@ -67,38 +70,87 @@ export function StepSequencer() {
     setSelectedVoice(track);
   }, [pattern, holdStep, setSelectedVoice]);
 
+  // ─── Gate-Length Drag Handlers ──────────────────────────
+  // Right edge of an active step: drag right to extend gate length
+
+  const handleGateDragStart = useCallback((e: React.PointerEvent, track: number, absStep: number) => {
+    const step = pattern.tracks[track]?.steps[absStep];
+    if (!step?.active) return;
+
+    // Check if pointer is near the right edge of the step button (last 8px)
+    const rect = e.currentTarget.getBoundingClientRect();
+    const offsetX = e.clientX - rect.left;
+    if (offsetX < rect.width - 8) return; // Not near right edge
+
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setGateDrag({ track, startStep: absStep });
+    setGateDragEnd(absStep);
+  }, [pattern]);
+
+  const handleGateDragMove = useCallback((e: React.PointerEvent) => {
+    if (!gateDrag) return;
+    // Find which step column the pointer is over
+    const pageSteps = Array.from({ length: 16 }, (_, i) => pageOffset + i);
+    for (const absStep of pageSteps) {
+      const key = `${gateDrag.track}-${absStep - pageOffset}`;
+      const el = stepRefs.current.get(key);
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (e.clientX >= rect.left && e.clientX < rect.right) {
+        if (absStep >= gateDrag.startStep) {
+          setGateDragEnd(absStep);
+        }
+        break;
+      }
+    }
+  }, [gateDrag, pageOffset]);
+
+  const handleGateDragEnd = useCallback(() => {
+    if (!gateDrag) return;
+    const gateLen = gateDragEnd - gateDrag.startStep + 1;
+    if (gateLen >= 1) {
+      setStepGateLength(gateDrag.track, gateDrag.startStep, gateLen);
+    }
+    setGateDrag(null);
+  }, [gateDrag, gateDragEnd, setStepGateLength]);
+
   return (
-    <div className="flex flex-col h-full p-3" onMouseUp={() => releaseStep()}>
+    <div className="flex flex-col h-full p-3" onMouseUp={() => { releaseStep(); handleGateDragEnd(); }} onPointerMove={handleGateDragMove}>
       {/* Header: Pages + Status */}
-      <div className="flex items-center gap-2 mb-2">
-        {[0, 1, 2, 3].map((page) => (
-          <button
-            key={page}
-            onClick={() => setSelectedPage(page)}
-            className={`px-2.5 py-1 text-[10px] font-medium rounded transition-colors ${
-              selectedPage === page
-                ? "bg-[var(--ed-accent-orange)] text-black font-bold"
-                : "bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-[var(--ed-text-secondary)]"
-            }`}
-          >
-            {page * 16 + 1}-{(page + 1) * 16}
-          </button>
-        ))}
+      <div className="flex items-center gap-2 mb-2.5">
+        {/* Page buttons */}
+        <div className="flex gap-1">
+          {[0, 1, 2, 3].map((page) => (
+            <button
+              key={page}
+              onClick={() => setSelectedPage(page)}
+              className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-all ${
+                selectedPage === page
+                  ? "bg-[var(--ed-accent-orange)] text-black font-bold shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+                  : "bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-[var(--ed-text-secondary)] hover:bg-[var(--ed-bg-elevated)]"
+              }`}
+            >
+              {page * 16 + 1}-{(page + 1) * 16}
+            </button>
+          ))}
+        </div>
 
         {/* Page Copy/Paste */}
-        <div className="flex items-center gap-1 ml-2">
+        <div className="flex items-center gap-1 ml-1">
           <button
             onClick={() => copyPage(selectedPage)}
-            className="px-2 py-0.5 text-[8px] font-bold rounded bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-[var(--ed-text-primary)] hover:bg-[var(--ed-bg-elevated)] transition-colors"
+            className="px-2 py-0.5 text-[8px] font-bold rounded-md bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-[var(--ed-text-primary)] hover:bg-[var(--ed-bg-elevated)] transition-all"
           >
             COPY
           </button>
           <button
             onClick={() => pastePage(selectedPage)}
-            className={`px-2 py-0.5 text-[8px] font-bold rounded transition-colors ${
+            className={`px-2 py-0.5 text-[8px] font-bold rounded-md transition-all ${
               pageClipboard
-                ? "bg-[var(--ed-accent-blue)]/20 text-[var(--ed-accent-blue)] hover:bg-[var(--ed-accent-blue)]/30"
-                : "bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] opacity-40"
+                ? "bg-[var(--ed-accent-blue)]/15 text-[var(--ed-accent-blue)] hover:bg-[var(--ed-accent-blue)]/25"
+                : "bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] opacity-30"
             }`}
             disabled={!pageClipboard}
           >
@@ -107,11 +159,10 @@ export function StepSequencer() {
         </div>
 
         {/* Length +/- */}
-        <div className="flex items-center gap-1 ml-2">
+        <div className="flex items-center gap-1 ml-1">
           {(() => {
             const VALID_LENGTHS = [4, 8, 12, 16, 24, 32, 48, 64];
             const currentIdx = VALID_LENGTHS.indexOf(pattern.length);
-            // Snap to nearest valid length if current isn't standard
             const snapIdx = currentIdx >= 0 ? currentIdx
               : VALID_LENGTHS.findIndex((l) => l >= pattern.length);
 
@@ -123,9 +174,9 @@ export function StepSequencer() {
                     pattern: { ...s.pattern, length: VALID_LENGTHS[idx]! },
                   }));
                 }}
-                className="w-5 h-5 rounded text-[10px] font-bold bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-white transition-colors"
+                className="w-5 h-5 rounded-md text-[10px] font-bold bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-white hover:bg-[var(--ed-bg-elevated)] transition-all"
               >−</button>
-              <span className="text-[9px] font-mono text-[var(--ed-accent-orange)] min-w-[24px] text-center">
+              <span className="text-[10px] font-mono text-[var(--ed-accent-orange)] min-w-[24px] text-center font-bold tabular-nums">
                 {pattern.length}
               </span>
               <button
@@ -135,26 +186,26 @@ export function StepSequencer() {
                     pattern: { ...s.pattern, length: VALID_LENGTHS[idx]! },
                   }));
                 }}
-                className="w-5 h-5 rounded text-[10px] font-bold bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-white transition-colors"
+                className="w-5 h-5 rounded-md text-[10px] font-bold bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-white hover:bg-[var(--ed-bg-elevated)] transition-all"
               >+</button>
-              <span className="text-[7px] text-[var(--ed-text-muted)]">STEPS</span>
+              <span className="text-[7px] text-[var(--ed-text-muted)] font-bold">STEPS</span>
             </>);
           })()}
         </div>
 
         <div className="flex-1" />
 
-        <span className="text-[9px] text-[var(--ed-text-muted)]">
+        <span className="text-[9px] text-[var(--ed-text-muted)] hidden lg:block truncate max-w-[300px]">
           {heldStep
-            ? `⬤ P-LOCK: ${VOICE_LABELS[heldStep.track]} Step ${heldStep.step + 1}`
-            : "shift+click=vel · hold=P-Lock · rclick=ratchet · alt+rclick=cond"
+            ? <span className="text-[var(--ed-accent-green)]">P-LOCK: {VOICE_LABELS[heldStep.track]} Step {heldStep.step + 1}</span>
+            : <span className="opacity-40">hold step = P-Lock &middot; rclick = vel &middot; shift+rclick = ratchet &middot; drag edge = gate</span>
           }
         </span>
       </div>
 
       {/* Step Grid */}
       <div className="flex-1 overflow-auto">
-        <div className="grid gap-[2px]" style={{ gridTemplateColumns: "48px repeat(16, 1fr)" }}>
+        <div className="grid gap-[2px]" style={{ gridTemplateColumns: "52px repeat(16, 1fr)" }}>
 
           {/* Header: step numbers */}
           <div />
@@ -169,7 +220,7 @@ export function StepSequencer() {
                     ? "text-[var(--ed-accent-orange)] font-bold"
                     : i % 4 === 0
                       ? "text-[var(--ed-text-secondary)]"
-                      : "text-[var(--ed-text-muted)]"
+                      : "text-[var(--ed-text-muted)]/60"
                 }`}
               >
                 {absIdx + 1}
@@ -182,10 +233,8 @@ export function StepSequencer() {
           {Array.from({ length: 16 }, (_, i) => {
             const isCurrent = isPlaying && currentStep === pageOffset + i;
             return (
-              <div key={`ph-${i}`} className="h-[3px] rounded-full mx-0.5" style={{
+              <div key={`ph-${i}`} className={`h-[3px] rounded-full mx-0.5 transition-all duration-[40ms] ${isCurrent ? "ed-playhead-glow" : ""}`} style={{
                 backgroundColor: isCurrent ? "var(--ed-accent-orange)" : "transparent",
-                boxShadow: isCurrent ? "0 0 6px var(--ed-accent-orange)" : "none",
-                transition: "all 50ms",
               }} />
             );
           })}
@@ -200,14 +249,15 @@ export function StepSequencer() {
                 {/* Track label */}
                 <button
                   onClick={() => setSelectedVoice(track)}
-                  className={`flex items-center text-[9px] font-medium pr-1 h-[26px] rounded-l transition-colors ${
+                  className={`flex items-center text-[9px] font-semibold pr-1 h-[28px] rounded-l transition-all ${
                     isSelectedTrack
                       ? "text-[var(--ed-text-primary)]"
                       : "text-[var(--ed-text-muted)] hover:text-[var(--ed-text-secondary)]"
                   }`}
                 >
-                  <div className="w-1 h-3 rounded-full mr-1.5 shrink-0" style={{
-                    backgroundColor: isSelectedTrack ? trackColor : trackColor + "40",
+                  <div className="w-[3px] h-3.5 rounded-full mr-1.5 shrink-0 transition-all" style={{
+                    backgroundColor: isSelectedTrack ? trackColor : trackColor + "30",
+                    boxShadow: isSelectedTrack ? `0 0 6px ${trackColor}30` : "none",
                   }} />
                   {label}
                 </button>
@@ -227,10 +277,35 @@ export function StepSequencer() {
                   const isHeld = heldStep?.track === track && heldStep?.step === absoluteStep;
                   const velNorm = velocity / 127;
                   const isBeat = stepIdx % 4 === 0;
+                  const gateLength = step?.gateLength ?? 1;
+                  const hasGate = isActive && gateLength > 1;
+
+                  // Check if this step is a "tied" continuation of a previous gate
+                  let isTiedStep = false;
+                  if (!isActive) {
+                    for (let g = 1; g <= 16; g++) {
+                      const prevAbsStep = absoluteStep - g;
+                      if (prevAbsStep < 0) break;
+                      const prev = pattern.tracks[track]?.steps[prevAbsStep];
+                      if (prev?.active && (prev.gateLength ?? 1) > g) { isTiedStep = true; break; }
+                      if (prev?.active) break;
+                    }
+                  }
+
+                  // Gate drag preview: highlight steps in drag range
+                  const isInGateDragRange = gateDrag?.track === track
+                    && absoluteStep > gateDrag.startStep
+                    && absoluteStep <= gateDragEnd;
+
                   return (
                     <button
                       key={`${track}-${stepIdx}`}
+                      ref={(el) => {
+                        if (el) stepRefs.current.set(`${track}-${stepIdx}`, el);
+                        else stepRefs.current.delete(`${track}-${stepIdx}`);
+                      }}
                       onClick={(e) => {
+                        if (gateDrag) return; // Don't toggle during gate drag
                         if (e.shiftKey && step?.active) {
                           const levels = [127, 100, 70, 40];
                           const current = step.velocity;
@@ -243,48 +318,73 @@ export function StepSequencer() {
                       }}
                       onContextMenu={(e) => handleContextMenu(e, track, absoluteStep)}
                       onMouseDown={(e) => handleStepMouseDown(e, track, absoluteStep)}
-                      className={`h-[26px] rounded-[3px] transition-all relative overflow-hidden ${
+                      onPointerDown={(e) => handleGateDragStart(e, track, absoluteStep)}
+                      className={`ed-step-btn h-[28px] rounded-[3px] relative overflow-hidden ${
                         isHeld ? "ring-2 ring-[var(--ed-accent-green)] z-10" : ""
                       } ${
                         isActive
                           ? "hover:brightness-125"
                           : isBeat
                             ? "bg-[var(--ed-bg-elevated)] hover:bg-[var(--ed-bg-surface)]"
-                            : "bg-[var(--ed-bg-surface)]/60 hover:bg-[var(--ed-bg-surface)]"
+                            : "bg-[var(--ed-bg-surface)]/50 hover:bg-[var(--ed-bg-surface)]"
                       }`}
                       style={isActive ? {
                         backgroundColor: trackColor,
                         opacity: 0.35 + velNorm * 0.65,
+                        boxShadow: isCurrent ? `0 0 8px ${trackColor}40` : "none",
+                      } : (isTiedStep || isInGateDragRange) ? {
+                        backgroundColor: trackColor,
+                        opacity: 0.2,
                       } : undefined}
                     >
                       {/* Playhead highlight */}
                       {isCurrent && (
-                        <div className="absolute inset-0 bg-white/10 rounded-[3px]" />
+                        <div className="absolute inset-0 bg-white/15 rounded-[3px]" />
                       )}
 
                       {/* Velocity bar */}
                       {isActive && (
                         <div
-                          className="absolute bottom-0 left-0 right-0 bg-black/15"
+                          className="absolute bottom-0 left-0 right-0 bg-black/20"
                           style={{ height: `${100 - velNorm * 100}%` }}
                         />
                       )}
 
+                      {/* Gate-length bar (bottom stripe showing tied duration) */}
+                      {hasGate && (
+                        <div
+                          className="absolute bottom-0 left-0 h-[3px] rounded-full"
+                          style={{ backgroundColor: "#fff", opacity: 0.5, width: "100%" }}
+                        />
+                      )}
+
+                      {/* Tied step indicator (striped fill) */}
+                      {isTiedStep && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="w-2 h-[2px] rounded-full bg-white/40" />
+                        </div>
+                      )}
+
+                      {/* Gate drag handle — right edge (visible on hover for active steps) */}
+                      {isActive && (
+                        <div className="absolute right-0 top-0 bottom-0 w-[6px] cursor-e-resize opacity-0 hover:opacity-100 transition-opacity bg-white/30 rounded-r-[3px]" />
+                      )}
+
                       {/* P-Lock dot */}
                       {hasLocks && (
-                        <div className="absolute top-[2px] right-[2px] w-[5px] h-[5px] rounded-full bg-[var(--ed-accent-green)] shadow-sm shadow-green-500/50" />
+                        <div className="absolute top-[2px] right-[8px] w-[5px] h-[5px] rounded-full bg-[var(--ed-accent-green)] shadow-[0_0_4px_rgba(34,197,94,0.5)]" />
                       )}
 
                       {/* Ratchet indicator */}
                       {hasRatchet && (
-                        <span className="absolute bottom-[1px] left-[2px] text-[6px] font-bold leading-none" style={{ color: "rgba(0,0,0,0.4)" }}>
+                        <span className="absolute bottom-[1px] left-[2px] text-[6px] font-bold leading-none text-black/50">
                           {ratchetCount}×
                         </span>
                       )}
 
                       {/* Condition indicator */}
                       {hasCondition && (
-                        <span className="absolute top-[1px] left-[2px] text-[5px] font-bold leading-none text-yellow-300/80">
+                        <span className="absolute top-[1px] left-[2px] text-[5px] font-bold leading-none text-yellow-200/80">
                           {condition}
                         </span>
                       )}

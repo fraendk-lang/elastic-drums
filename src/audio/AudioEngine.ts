@@ -6,6 +6,16 @@
  * Voice parameters are stored per-voice and controlled from the UI.
  */
 
+// Delay sync divisions: name → beat multiplier (1 = quarter note)
+export const DELAY_DIVISIONS: Record<string, number> = {
+  "1/4": 1, "1/8": 0.5, "1/16": 0.25,
+  "1/8D": 0.75, "1/8T": 0.333, "1/4D": 1.5, "1/16T": 0.167,
+};
+
+export const DELAY_DIVISION_NAMES = Object.keys(DELAY_DIVISIONS);
+
+export const REVERB_TYPES = ["room", "hall", "plate", "ambient"] as const;
+
 // Parameter definitions per voice type
 export interface VoiceParams {
   [key: string]: number;
@@ -43,17 +53,20 @@ export const VOICE_PARAM_DEFS: Record<number, VoiceParamDef[]> = {
     { id: "spread", label: "SPREAD", min: 0, max: 100, default: 50 },
     { id: "level", label: "LEVEL", min: 0, max: 150, default: 100 },
   ],
-  3: [ // Tom Lo
-    { id: "tune", label: "TUNE", min: 50, max: 200, default: 100 },
-    { id: "decay", label: "DECAY", min: 50, max: 600, default: 300 },
+  3: [ // Tom Lo — 808 style, ~166 Hz
+    { id: "tune", label: "TUNE", min: 80, max: 300, default: 166 },
+    { id: "decay", label: "DECAY", min: 80, max: 800, default: 350 },
+    { id: "click", label: "CLICK", min: 0, max: 100, default: 40 },
   ],
-  4: [ // Tom Mid
-    { id: "tune", label: "TUNE", min: 80, max: 280, default: 140 },
-    { id: "decay", label: "DECAY", min: 50, max: 600, default: 250 },
+  4: [ // Tom Mid — 808 style, ~220 Hz
+    { id: "tune", label: "TUNE", min: 120, max: 400, default: 220 },
+    { id: "decay", label: "DECAY", min: 60, max: 600, default: 280 },
+    { id: "click", label: "CLICK", min: 0, max: 100, default: 45 },
   ],
-  5: [ // Tom Hi
-    { id: "tune", label: "TUNE", min: 120, max: 400, default: 200 },
-    { id: "decay", label: "DECAY", min: 50, max: 500, default: 200 },
+  5: [ // Tom Hi — 808 style, ~310 Hz
+    { id: "tune", label: "TUNE", min: 180, max: 600, default: 310 },
+    { id: "decay", label: "DECAY", min: 40, max: 500, default: 220 },
+    { id: "click", label: "CLICK", min: 0, max: 100, default: 50 },
   ],
   6: [ // HH Closed
     { id: "tune", label: "TUNE", min: 200, max: 600, default: 330 },
@@ -133,7 +146,8 @@ export class AudioEngine {
   private channelAnalysers: AnalyserNode[] = [];
   private channelFilters: BiquadFilterNode[] = [];
   private channelShapers: WaveShaperNode[] = [];
-  private channelPanners: StereoPannerNode[] = [];
+  private channelPanners: PannerNode[] = [];
+  private binauralMode = false;
   private masterGain: GainNode | null = null;
   private masterAnalyser: AnalyserNode | null = null;
   private masterCompressor: DynamicsCompressorNode | null = null;
@@ -143,9 +157,26 @@ export class AudioEngine {
   private masterLimiter: DynamicsCompressorNode | null = null;
 
   // Master FX: Bitcrusher, Saturation, Pump
+  private masterFilter: BiquadFilterNode | null = null;  // Performance FX master filter
   private masterSaturation: WaveShaperNode | null = null;
   private masterSaturationDry: GainNode | null = null;
   private masterSaturationWet: GainNode | null = null;
+  private activeNoiseSource: AudioBufferSourceNode | null = null;
+  private activeNoiseGain: GainNode | null = null;
+  private stutterLfo: OscillatorNode | null = null;
+  private stutterGain: GainNode | null = null;
+
+  // Dedicated Flanger FX (independent from global delay)
+  private flangerDelay: DelayNode | null = null;
+  private flangerLfo: OscillatorNode | null = null;
+  private flangerLfoGain: GainNode | null = null;
+  private flangerFeedback: GainNode | null = null;
+  private flangerWet: GainNode | null = null;
+  private flangerDry: GainNode | null = null;
+  private flangerInput: GainNode | null = null;
+  private flangerOutput: GainNode | null = null;
+  private flangerActive = false;
+
   private pumpGain: GainNode | null = null;
   private pumpLfo: OscillatorNode | null = null;
   private pumpDepth: GainNode | null = null;
@@ -160,10 +191,20 @@ export class AudioEngine {
   private sendBGains: GainNode[] = [];       // Per-channel delay send amount
   private reverbNode: ConvolverNode | null = null;
   private reverbGain: GainNode | null = null;
+  private reverbDamping: BiquadFilterNode | null = null;  // Post-reverb lowpass
+  private reverbPreDelay: DelayNode | null = null;        // Pre-delay before reverb
+  private reverbType: "room" | "hall" | "plate" | "ambient" = "hall";
+  private reverbSize = 2.0;
+  private reverbDecayVal = 2.5;
   private delayNode: DelayNode | null = null;
   private delayFeedback: GainNode | null = null;
   private delayFilter: BiquadFilterNode | null = null;
   private delayGain: GainNode | null = null;
+  private delayPanner: StereoPannerNode | null = null;    // For ping-pong spread
+  private delayType: "stereo" | "pingpong" | "tape" = "stereo";
+  private delayDivision = "1/8";
+  private delayTapeLfo: OscillatorNode | null = null;     // Tape wow/flutter
+  private delayTapeLfoGain: GainNode | null = null;
   private sendABus: GainNode | null = null;  // Reverb bus
   private sendBBus: GainNode | null = null;  // Delay bus
 
@@ -172,8 +213,8 @@ export class AudioEngine {
   private rmsLevels = new Float32Array(12);         // RMS (linear)
   private masterPeakLevel = 0;
   private masterRmsLevel = 0;
-  private readonly PEAK_DECAY = 0.985;              // Slow peak decay (~300ms)
-  private readonly RMS_SMOOTH = 0.85;               // RMS smoothing factor
+  private readonly PEAK_DECAY = 0.995;              // Longer peak hold (~1s visible)
+  private readonly RMS_SMOOTH = 0.5;                // Snappier RMS response (was 0.85)
 
   private getContext(): AudioContext {
     if (!this.ctx) {
@@ -191,8 +232,8 @@ export class AudioEngine {
       this.masterGain.gain.value = 0.85;
 
       this.masterAnalyser = this.ctx.createAnalyser();
-      this.masterAnalyser.fftSize = 2048;
-      this.masterAnalyser.smoothingTimeConstant = 0.3;
+      this.masterAnalyser.fftSize = 4096;
+      this.masterAnalyser.smoothingTimeConstant = 0.15;
 
       // Master chain: masterGain → EQ → Compressor → Limiter → Analyser → Output
       // 3-Band EQ
@@ -255,10 +296,20 @@ export class AudioEngine {
       this.masterEqLow.connect(this.masterEqMid);
       this.masterEqMid.connect(this.masterEqHigh);
 
+      // Performance FX master filter (default: allpass = bypassed)
+      this.masterFilter = this.ctx.createBiquadFilter();
+      this.masterFilter.type = "allpass";
+      this.masterFilter.frequency.value = 1000;
+      this.masterFilter.Q.value = 1;
+      this.masterEqHigh.connect(this.masterFilter);
+
+      // Pre-generate noise buffer for performance FX
+      this.noiseBuffer = this.generateNoiseBuffer(this.ctx, 2.0);
+
       // Saturation: dry path
-      this.masterEqHigh.connect(this.masterSaturationDry);
+      this.masterFilter.connect(this.masterSaturationDry);
       // Saturation: wet path
-      this.masterEqHigh.connect(this.masterSaturation);
+      this.masterFilter.connect(this.masterSaturation);
       this.masterSaturation.connect(this.masterSaturationWet);
 
       // Both paths → pump
@@ -283,10 +334,13 @@ export class AudioEngine {
         "hats", "hats",               // HH Cl, HH Op
         "hats", "hats",               // Cymbal, Ride
         "perc", "perc",               // Perc 1, 2
+        "bass",                        // Bass 303
+        "chords",                      // Chords Pad
+        "melody",                      // Melody Lead
       ];
 
-      // Create 12 channel strips with insert FX
-      for (let i = 0; i < 12; i++) {
+      // Create 13 channel strips (12 drums + 1 bass) with insert FX
+      for (let i = 0; i < 15; i++) {
         // Insert filter (bypass by default: allpass)
         const filter = this.ctx.createBiquadFilter();
         filter.type = "allpass";
@@ -299,14 +353,20 @@ export class AudioEngine {
         const gain = this.ctx.createGain();
         gain.gain.value = 1.0;
 
-        // Channel panner
-        const panner = this.ctx.createStereoPanner();
-        panner.pan.value = 0; // Center
+        // Channel panner (3D / HRTF capable)
+        const panner = this.ctx.createPanner();
+        panner.panningModel = "equalpower"; // default; switch to "HRTF" for binaural
+        panner.distanceModel = "inverse";
+        panner.refDistance = 1;
+        panner.maxDistance = 10;
+        panner.positionX.value = 0; // center
+        panner.positionY.value = 0;
+        panner.positionZ.value = -1; // in front of listener
 
         // Analyser (meter)
         const analyser = this.ctx.createAnalyser();
-        analyser.fftSize = 2048;
-        analyser.smoothingTimeConstant = 0.3;
+        analyser.fftSize = 4096;
+        analyser.smoothingTimeConstant = 0.15;
 
         // Routing: filter → shaper → gain → panner → analyser → master
         filter.connect(shaper);
@@ -330,11 +390,22 @@ export class AudioEngine {
       this.reverbGain = this.ctx.createGain();
       this.reverbGain.gain.value = 0.35;
 
-      this.reverbNode = this.ctx.createConvolver();
-      this.reverbNode.buffer = this.generateReverbIR(this.ctx, 2.0, 2.5);
+      this.reverbPreDelay = this.ctx.createDelay(0.2);
+      this.reverbPreDelay.delayTime.value = 0.012;
 
-      this.sendABus.connect(this.reverbNode);
-      this.reverbNode.connect(this.reverbGain);
+      this.reverbNode = this.ctx.createConvolver();
+      this.reverbNode.buffer = this.generateReverbIR(this.ctx, 2.0, 2.5, "hall");
+
+      this.reverbDamping = this.ctx.createBiquadFilter();
+      this.reverbDamping.type = "lowpass";
+      this.reverbDamping.frequency.value = 8000;
+      this.reverbDamping.Q.value = 0.5;
+
+      // Reverb chain: bus → pre-delay → convolver → damping → gain → master
+      this.sendABus.connect(this.reverbPreDelay);
+      this.reverbPreDelay.connect(this.reverbNode);
+      this.reverbNode.connect(this.reverbDamping);
+      this.reverbDamping.connect(this.reverbGain);
       this.reverbGain.connect(this.masterGain);
 
       // Send B: Stereo Delay (ping-pong style)
@@ -354,17 +425,80 @@ export class AudioEngine {
       this.delayGain = this.ctx.createGain();
       this.delayGain.gain.value = 0.3;
 
+      this.delayPanner = this.ctx.createStereoPanner();
+      this.delayPanner.pan.value = 0;
+
+      // Tape mode LFO (wow/flutter): modulates delay time subtly
+      this.delayTapeLfo = this.ctx.createOscillator();
+      this.delayTapeLfo.type = "sine";
+      this.delayTapeLfo.frequency.value = 0.6; // Slow wobble
+      this.delayTapeLfoGain = this.ctx.createGain();
+      this.delayTapeLfoGain.gain.value = 0; // Off by default
+      this.delayTapeLfo.connect(this.delayTapeLfoGain);
+      this.delayTapeLfoGain.connect(this.delayNode.delayTime);
+      this.delayTapeLfo.start();
+
       // Delay routing: bus → delay → filter → feedback → delay (loop)
-      //                                    → delayGain → master
+      //                                    → panner → delayGain → master
       this.sendBBus.connect(this.delayNode);
       this.delayNode.connect(this.delayFilter);
       this.delayFilter.connect(this.delayFeedback);
       this.delayFeedback.connect(this.delayNode); // Feedback loop
-      this.delayFilter.connect(this.delayGain);
+      this.delayFilter.connect(this.delayPanner);
+      this.delayPanner.connect(this.delayGain);
       this.delayGain.connect(this.masterGain);
 
-      // Create per-channel send gains
-      for (let i = 0; i < 12; i++) {
+      // === Dedicated Flanger FX ===
+      // Flanger uses its OWN short delay (1–10ms) + LFO sweep, NOT the global delay
+      this.flangerInput = this.ctx.createGain();
+      this.flangerInput.gain.value = 1.0;
+      this.flangerOutput = this.ctx.createGain();
+      this.flangerOutput.gain.value = 1.0;
+
+      this.flangerDelay = this.ctx.createDelay(0.02); // Max 20ms
+      this.flangerDelay.delayTime.value = 0.005;      // 5ms center
+
+      this.flangerLfo = this.ctx.createOscillator();
+      this.flangerLfo.type = "sine";
+      this.flangerLfo.frequency.value = 0.3; // Slow sweep
+
+      this.flangerLfoGain = this.ctx.createGain();
+      this.flangerLfoGain.gain.value = 0.004; // ±4ms sweep depth
+
+      this.flangerFeedback = this.ctx.createGain();
+      this.flangerFeedback.gain.value = 0.6;
+
+      this.flangerWet = this.ctx.createGain();
+      this.flangerWet.gain.value = 0; // Off by default
+      this.flangerDry = this.ctx.createGain();
+      this.flangerDry.gain.value = 1.0;
+
+      // LFO → delay time modulation
+      this.flangerLfo.connect(this.flangerLfoGain);
+      this.flangerLfoGain.connect(this.flangerDelay.delayTime);
+      this.flangerLfo.start();
+
+      // Routing: input → dry → output
+      //          input → delay → wet → output
+      //                  delay → feedback → delay (loop)
+      this.flangerInput.connect(this.flangerDry);
+      this.flangerInput.connect(this.flangerDelay);
+      this.flangerDelay.connect(this.flangerWet);
+      this.flangerDelay.connect(this.flangerFeedback);
+      this.flangerFeedback.connect(this.flangerDelay);
+      this.flangerDry.connect(this.flangerOutput);
+      this.flangerWet.connect(this.flangerOutput);
+
+      // Insert flanger into master chain: masterFilter → flangerInput → flangerOutput → saturation
+      // Rewire: disconnect masterFilter → saturation paths, route through flanger
+      this.masterFilter.disconnect(this.masterSaturationDry);
+      this.masterFilter.disconnect(this.masterSaturation);
+      this.masterFilter.connect(this.flangerInput);
+      this.flangerOutput.connect(this.masterSaturationDry);
+      this.flangerOutput.connect(this.masterSaturation);
+
+      // Create per-channel send gains (13 channels)
+      for (let i = 0; i < 15; i++) {
         const sendA = this.ctx.createGain();
         sendA.gain.value = 0; // Default: no reverb send
         this.channelGains[i]!.connect(sendA);
@@ -378,42 +512,49 @@ export class AudioEngine {
         this.sendBGains.push(sendB);
       }
 
-      // Initialize peak-hold buffers
-      this.peakLevels = new Float32Array(12);
+      // Initialize peak-hold buffers (13 channels)
+      this.peakLevels = new Float32Array(15);
+      this.rmsLevels = new Float32Array(15);
       this.masterPeakLevel = 0;
     }
     return this.ctx;
   }
 
-  /** Generate algorithmic reverb impulse response */
-  private generateReverbIR(ctx: AudioContext, duration: number, decay: number): AudioBuffer {
+  /** Generate algorithmic reverb impulse response by type */
+  private generateReverbIR(ctx: AudioContext, duration: number, decay: number, type: string): AudioBuffer {
     const sr = ctx.sampleRate;
     const length = Math.ceil(sr * duration);
     const buffer = ctx.createBuffer(2, length, sr);
 
-    // Pre-delay: 12ms of silence
-    const preDelay = Math.ceil(sr * 0.012);
+    // Type-specific parameters
+    const profiles: Record<string, { preDelayMs: number; earlyDensity: number; earlySpread: number; tailDecayMul: number; brightness: number }> = {
+      room:    { preDelayMs: 5,  earlyDensity: 8,  earlySpread: 2,  tailDecayMul: 1.0, brightness: 0.7 },
+      hall:    { preDelayMs: 15, earlyDensity: 6,  earlySpread: 5,  tailDecayMul: 1.0, brightness: 0.5 },
+      plate:   { preDelayMs: 1,  earlyDensity: 0,  earlySpread: 1,  tailDecayMul: 0.8, brightness: 0.9 },
+      ambient: { preDelayMs: 25, earlyDensity: 4,  earlySpread: 10, tailDecayMul: 1.5, brightness: 0.3 },
+    };
+    const p = profiles[type] ?? profiles.hall!;
+    const preDelay = Math.ceil(sr * p.preDelayMs / 1000);
 
-    // Early reflections: 6-8 discrete taps simulating room walls
-    const earlyTaps = [
-      { time: 0.018, gain: 0.7 },   // First reflection
-      { time: 0.025, gain: 0.55 },
-      { time: 0.033, gain: 0.45 },
-      { time: 0.041, gain: 0.35 },
-      { time: 0.052, gain: 0.25 },
-      { time: 0.067, gain: 0.18 },
-    ];
+    // Early reflections
+    const earlyTaps: { time: number; gain: number }[] = [];
+    for (let i = 0; i < p.earlyDensity; i++) {
+      earlyTaps.push({
+        time: 0.012 + (i + 1) * 0.008 * (1 + Math.random() * 0.3),
+        gain: 0.7 * Math.exp(-i * 0.35),
+      });
+    }
 
     for (let ch = 0; ch < 2; ch++) {
       const data = buffer.getChannelData(ch);
 
-      // Early reflections (discrete taps with slight stereo offset)
+      // Early reflections (discrete taps with stereo offset)
       for (const tap of earlyTaps) {
-        const offset = ch === 0 ? 0 : Math.ceil(sr * 0.003); // 3ms stereo spread
+        const offset = ch === 0 ? 0 : Math.ceil(sr * p.earlySpread / 1000);
         const idx = preDelay + Math.ceil(sr * tap.time) + offset;
         if (idx < length) {
-          // Short noise burst at each reflection point
-          for (let j = 0; j < Math.ceil(sr * 0.004); j++) {
+          const burstLen = Math.ceil(sr * 0.004);
+          for (let j = 0; j < burstLen; j++) {
             if (idx + j < length) {
               data[idx + j] = (data[idx + j] ?? 0) + (Math.random() * 2 - 1) * tap.gain * Math.exp(-j / (sr * 0.002));
             }
@@ -421,14 +562,13 @@ export class AudioEngine {
         }
       }
 
-      // Late diffuse tail (exponentially decaying noise, starts after early reflections)
-      const tailStart = preDelay + Math.ceil(sr * 0.08);
+      // Late diffuse tail
+      const tailStart = preDelay + Math.ceil(sr * (type === "plate" ? 0.005 : 0.08));
       for (let i = tailStart; i < length; i++) {
         const t = (i - tailStart) / sr;
-        const envelope = Math.exp(-t * 6 / decay);
-        // Slight filtering: multiply by a lowpass-like envelope for warmer tail
-        const warmth = Math.exp(-t * 2);
-        data[i] = (data[i] ?? 0) + (Math.random() * 2 - 1) * envelope * (0.5 + warmth * 0.5);
+        const envelope = Math.exp(-t * 6 / (decay * p.tailDecayMul));
+        const warmth = Math.exp(-t * (1 + p.brightness * 4));
+        data[i] = (data[i] ?? 0) + (Math.random() * 2 - 1) * envelope * (p.brightness + warmth * (1 - p.brightness));
       }
     }
 
@@ -645,22 +785,251 @@ export class AudioEngine {
     if (this.delayGain) this.delayGain.gain.value = level;
   }
 
-  /** Sync delay time to BPM (note division: 1/4, 1/8, 3/16, 1/16) */
-  syncDelayToBpm(bpm: number, division: number = 0.375): void {
+  /** Sync delay time to BPM with named division */
+  syncDelayToBpm(bpm: number, division?: number): void {
     const beatSec = 60 / bpm;
-    if (this.delayNode) this.delayNode.delayTime.value = beatSec * division;
+    const div = division ?? DELAY_DIVISIONS[this.delayDivision] ?? 0.5;
+    if (this.delayNode) this.delayNode.delayTime.value = Math.min(2, beatSec * div);
   }
 
-  /** Set channel pan (-1=left, 0=center, 1=right) */
+  /** Set delay sync division and apply */
+  setDelayDivision(divName: string, bpm: number): void {
+    this.delayDivision = divName;
+    this.syncDelayToBpm(bpm);
+  }
+
+  /** Set delay type: stereo (normal), pingpong (L/R spread), tape (wow/flutter) */
+  setDelayType(type: "stereo" | "pingpong" | "tape"): void {
+    this.delayType = type;
+    // Ping-pong: spread the delay output across stereo field
+    if (this.delayPanner) {
+      this.delayPanner.pan.value = type === "pingpong" ? 0.7 : 0;
+    }
+    // Tape: enable LFO modulation on delay time + lower filter
+    if (this.delayTapeLfoGain) {
+      this.delayTapeLfoGain.gain.value = type === "tape" ? 0.002 : 0;
+    }
+    if (this.delayFilter) {
+      this.delayFilter.frequency.value = type === "tape" ? 2500 : 4000;
+    }
+  }
+
+  /** Get current delay type */
+  getDelayType(): string { return this.delayType; }
+  getDelayDivision(): string { return this.delayDivision; }
+
+  /** Set reverb type — regenerates IR */
+  setReverbType(type: "room" | "hall" | "plate" | "ambient"): void {
+    if (!this.ctx || !this.reverbNode) return;
+    this.reverbType = type;
+    // Adjust duration based on type
+    const durations: Record<string, number> = { room: 1.0, hall: 2.5, plate: 1.8, ambient: 4.0 };
+    const decays: Record<string, number> = { room: 1.5, hall: 2.5, plate: 2.0, ambient: 5.0 };
+    this.reverbSize = durations[type] ?? 2.0;
+    this.reverbDecayVal = decays[type] ?? 2.5;
+    this.reverbNode.buffer = this.generateReverbIR(this.ctx, this.reverbSize, this.reverbDecayVal, type);
+  }
+
+  /** Set reverb size (IR duration multiplier) */
+  setReverbSize(size: number): void {
+    if (!this.ctx || !this.reverbNode) return;
+    this.reverbSize = Math.max(0.3, Math.min(6, size));
+    this.reverbNode.buffer = this.generateReverbIR(this.ctx, this.reverbSize, this.reverbDecayVal, this.reverbType);
+  }
+
+  /** Set reverb decay rate */
+  setReverbDecay(decay: number): void {
+    if (!this.ctx || !this.reverbNode) return;
+    this.reverbDecayVal = Math.max(0.5, Math.min(8, decay));
+    this.reverbNode.buffer = this.generateReverbIR(this.ctx, this.reverbSize, this.reverbDecayVal, this.reverbType);
+  }
+
+  /** Set post-reverb damping (lowpass cutoff) */
+  setReverbDamping(freq: number): void {
+    if (this.reverbDamping) this.reverbDamping.frequency.value = Math.max(500, Math.min(16000, freq));
+  }
+
+  /** Set reverb pre-delay */
+  setReverbPreDelay(ms: number): void {
+    if (this.reverbPreDelay) this.reverbPreDelay.delayTime.value = Math.max(0, Math.min(150, ms)) / 1000;
+  }
+
+  /** Get reverb type */
+  getReverbType(): string { return this.reverbType; }
+
+  /** Set channel pan (-1=left, 0=center, 1=right) — maps to 3D position */
   setChannelPan(channel: number, pan: number): void {
     const panner = this.channelPanners[channel];
-    if (panner) panner.pan.value = Math.max(-1, Math.min(1, pan));
+    if (panner) {
+      // Map -1..+1 to X position (-5..+5) for spatial width
+      panner.positionX.value = Math.max(-1, Math.min(1, pan)) * 5;
+    }
   }
 
-  /** Set channel volume (0..1) */
+  /** Set channel elevation (-1=below, 0=level, 1=above) for spatial audio */
+  setChannelElevation(channel: number, elevation: number): void {
+    const panner = this.channelPanners[channel];
+    if (panner) panner.positionY.value = Math.max(-1, Math.min(1, elevation)) * 3;
+  }
+
+  /** Toggle binaural (HRTF) mode for all channels */
+  setBinauralMode(enabled: boolean): void {
+    this.binauralMode = enabled;
+    const model = enabled ? "HRTF" : "equalpower";
+    for (const panner of this.channelPanners) {
+      panner.panningModel = model as PanningModelType;
+    }
+  }
+
+  /** Get binaural mode state */
+  getBinauralMode(): boolean { return this.binauralMode; }
+
+  // ─── Performance FX Methods ────────────────────────────
+
+  /** Set master filter (for XY-Pad filter mode) */
+  setMasterFilter(type: BiquadFilterType, freq: number, q: number): void {
+    if (!this.masterFilter) return;
+    this.masterFilter.type = type;
+    this.masterFilter.frequency.value = Math.max(20, Math.min(20000, freq));
+    this.masterFilter.Q.value = Math.max(0.1, Math.min(30, q));
+  }
+
+  /** Bypass master filter (reset to allpass) */
+  bypassMasterFilter(): void {
+    if (!this.masterFilter) return;
+    this.masterFilter.type = "allpass";
+    this.masterFilter.frequency.value = 1000;
+    this.masterFilter.Q.value = 1;
+  }
+
+  /** Generate white noise buffer */
+  private generateNoiseBuffer(ctx: AudioContext, duration: number): AudioBuffer {
+    const sr = ctx.sampleRate;
+    const len = Math.ceil(sr * duration);
+    const buf = ctx.createBuffer(1, len, sr);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    return buf;
+  }
+
+  /** Start noise burst (hold to play) */
+  startNoise(volume = 0.3): void {
+    if (!this.ctx || !this.noiseBuffer || !this.masterGain) return;
+    this.stopNoise(); // Clean up any previous
+    this.activeNoiseSource = this.ctx.createBufferSource();
+    this.activeNoiseSource.buffer = this.noiseBuffer;
+    this.activeNoiseSource.loop = true;
+    this.activeNoiseGain = this.ctx.createGain();
+    this.activeNoiseGain.gain.value = volume;
+    this.activeNoiseSource.connect(this.activeNoiseGain);
+    this.activeNoiseGain.connect(this.masterGain);
+    this.activeNoiseSource.start();
+  }
+
+  /** Stop noise burst */
+  stopNoise(): void {
+    if (this.activeNoiseSource) {
+      try { this.activeNoiseSource.stop(); } catch { /* already stopped */ }
+      this.activeNoiseSource.disconnect();
+      this.activeNoiseSource = null;
+    }
+    if (this.activeNoiseGain) {
+      this.activeNoiseGain.disconnect();
+      this.activeNoiseGain = null;
+    }
+  }
+
+  /** Start stutter/gate effect — inserts a gain gate between pump and compressor */
+  startStutter(rate: number): void {
+    if (!this.ctx || !this.pumpGain || !this.masterCompressor) return;
+    this.stopStutter();
+
+    // Create a gate gain node and insert it into the signal chain
+    this.stutterGain = this.ctx.createGain();
+    this.stutterGain.gain.value = 1.0;
+
+    // Disconnect pumpGain → compressor and re-route through gate
+    this.pumpGain.disconnect(this.masterCompressor);
+    this.pumpGain.connect(this.stutterGain);
+    this.stutterGain.connect(this.masterCompressor);
+
+    // LFO modulates the gate gain: 0→1 at the specified rate
+    this.stutterLfo = this.ctx.createOscillator();
+    this.stutterLfo.type = "square";
+    this.stutterLfo.frequency.value = rate;
+
+    // Scale LFO output (±1) to gain range (0→1) via gain node
+    const lfoScale = this.ctx.createGain();
+    lfoScale.gain.value = 0.5; // Scale ±1 to ±0.5
+    this.stutterLfo.connect(lfoScale);
+    lfoScale.connect(this.stutterGain.gain); // Adds ±0.5 to base 0.5 → range 0..1
+
+    // Set base gain to 0.5 so the LFO swings between 0 and 1
+    this.stutterGain.gain.value = 0.5;
+
+    this.stutterLfo.start();
+  }
+
+  /** Stop stutter effect — restore direct connection */
+  stopStutter(): void {
+    if (this.stutterLfo) {
+      try { this.stutterLfo.stop(); } catch { /* */ }
+      this.stutterLfo.disconnect();
+      this.stutterLfo = null;
+    }
+    if (this.stutterGain && this.pumpGain && this.masterCompressor) {
+      // Restore direct connection
+      this.stutterGain.disconnect();
+      try { this.pumpGain.disconnect(this.stutterGain); } catch { /* */ }
+      this.pumpGain.connect(this.masterCompressor);
+    }
+    if (this.stutterGain) {
+      this.stutterGain.disconnect();
+      this.stutterGain = null;
+    }
+  }
+
+  // ─── Flanger FX Controls ────────────────────────────────
+
+  /** Activate flanger with sweep position (x) and feedback/depth (y) */
+  startFlanger(sweepRate: number, depth: number, feedback: number): void {
+    if (!this.flangerLfo || !this.flangerLfoGain || !this.flangerFeedback || !this.flangerWet || !this.flangerDry) return;
+    this.flangerActive = true;
+    this.flangerLfo.frequency.value = sweepRate;               // 0.1–5 Hz
+    this.flangerLfoGain.gain.value = 0.001 + depth * 0.008;   // Sweep depth 1–9ms
+    this.flangerFeedback.gain.value = Math.min(0.95, feedback); // Resonance
+    this.flangerWet.gain.value = 0.7;                          // Wet mix on
+    this.flangerDry.gain.value = 0.6;                          // Slight dry reduction for effect
+  }
+
+  /** Update flanger parameters live (for XY pad movement) */
+  setFlangerParams(sweepRate: number, depth: number, feedback: number): void {
+    if (!this.flangerActive) return;
+    if (this.flangerLfo) this.flangerLfo.frequency.value = sweepRate;
+    if (this.flangerLfoGain) this.flangerLfoGain.gain.value = 0.001 + depth * 0.008;
+    if (this.flangerFeedback) this.flangerFeedback.gain.value = Math.min(0.95, feedback);
+  }
+
+  /** Deactivate flanger — restore dry signal */
+  stopFlanger(): void {
+    this.flangerActive = false;
+    if (this.flangerWet) this.flangerWet.gain.value = 0;
+    if (this.flangerDry) this.flangerDry.gain.value = 1.0;
+    if (this.flangerFeedback) this.flangerFeedback.gain.value = 0;
+  }
+
+  /** Get master gain node for external FX routing */
+  getMasterGainNode(): GainNode | null { return this.masterGain; }
+
+  /** Set channel volume (0..1) — smooth ramp to prevent clicks */
   setChannelVolume(channel: number, volume: number): void {
     const gain = this.channelGains[channel];
-    if (gain) gain.gain.value = volume;
+    if (gain && this.ctx) {
+      const now = this.ctx.currentTime;
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.linearRampToValueAtTime(volume, now + 0.015); // 15ms fade
+    }
   }
 
   /** Create a bus group */
@@ -668,8 +1037,8 @@ export class AudioEngine {
     const gain = ctx.createGain();
     gain.gain.value = 1.0;
     const analyser = ctx.createAnalyser();
-    analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.3;
+    analyser.fftSize = 4096;
+    analyser.smoothingTimeConstant = 0.15;
     gain.connect(analyser);
     analyser.connect(this.masterGain!);
     this.groupBuses.set(name, { gain, analyser });
@@ -940,8 +1309,8 @@ export class AudioEngine {
     if (this.sampleLookup) {
       const buffer = this.sampleLookup(voice);
       if (buffer) {
-        const p = this.voiceParams[voice] ?? {};
-        this.playSampleAtTime(buffer, voice, velocity, t, p.tune ?? 0);
+        // Note: tune param is 0 for samples (drum tune is a frequency, not semitones)
+        this.playSampleAtTime(buffer, voice, velocity, t, 0);
         return;
       }
     }
@@ -976,24 +1345,26 @@ export class AudioEngine {
   // ─── KICK ──────────────────────────────────────────────
   // TR-808 Bridged-T: deep sine sweep + click transient + sub layer + soft drive
   private kick(ctx: AudioContext, t: number, vel: number, out: AudioNode, p: VoiceParams): void {
-    const vol = vel * 0.9;
+    const vol = vel * 1.0; // Louder base level for punch
     const baseFreq = p.tune ?? 52;
     const decaySec = (p.decay ?? 550) / 1000;
     const clickAmt = (p.click ?? 50) / 100;
     const driveAmt = (p.drive ?? 40) / 100;
     const subAmt = (p.sub ?? 60) / 100;
-    const pitchSweep = (p.pitch ?? 45) / 10; // multiplier for pitch envelope
+    const pitchSweep = (p.pitch ?? 45) / 10;
 
     // Master output with soft-clip waveshaper
     const master = ctx.createGain();
-    master.gain.setValueAtTime(vol, t);
-    master.gain.setValueAtTime(vol, t + decaySec * 0.9);
+    // Punchy envelope: fast attack, hold, then decay
+    master.gain.setValueAtTime(0, t);
+    master.gain.linearRampToValueAtTime(vol, t + 0.001); // 1ms attack — instant punch
+    master.gain.setValueAtTime(vol, t + decaySec * 0.85);
     master.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
 
     const shaper = ctx.createWaveShaper();
     if (driveAmt > 0.05) {
       const curve = new Float32Array(1024);
-      const driveGain = 1 + driveAmt * 4;
+      const driveGain = 1 + driveAmt * 5; // More drive range
       for (let i = 0; i < 1024; i++) {
         const x = (i / 512 - 1) * driveGain;
         curve[i] = Math.tanh(x);
@@ -1002,27 +1373,34 @@ export class AudioEngine {
       shaper.oversample = "4x";
     }
 
-    // Low-shelf EQ boost for warmth
-    const eq = ctx.createBiquadFilter();
-    eq.type = "lowshelf";
-    eq.frequency.value = 120;
-    eq.gain.value = 4;
+    // Low-shelf EQ boost for weight + slight mid cut for clarity
+    const eqLow = ctx.createBiquadFilter();
+    eqLow.type = "lowshelf";
+    eqLow.frequency.value = 100;
+    eqLow.gain.value = 5;
 
-    shaper.connect(eq);
-    eq.connect(master);
+    const eqMidCut = ctx.createBiquadFilter();
+    eqMidCut.type = "peaking";
+    eqMidCut.frequency.value = 300;
+    eqMidCut.Q.value = 1.5;
+    eqMidCut.gain.value = -3; // Cut boxiness
+
+    shaper.connect(eqLow);
+    eqLow.connect(eqMidCut);
+    eqMidCut.connect(master);
     master.connect(out);
 
-    // Main body oscillator — pitch sweep controlled by PITCH param
+    // Main body oscillator — 808-style 3-stage pitch sweep
     const osc = ctx.createOscillator();
     osc.type = "sine";
-    osc.frequency.setValueAtTime(baseFreq * pitchSweep, t);
-    osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.8, t + 0.012);
-    osc.frequency.exponentialRampToValueAtTime(baseFreq, t + 0.06);
-    osc.frequency.setTargetAtTime(baseFreq * 0.95, t + 0.1, 0.2);
+    osc.frequency.setValueAtTime(baseFreq * pitchSweep * 2, t);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * pitchSweep * 0.6, t + 0.003);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.15, t + 0.012);
+    osc.frequency.setTargetAtTime(baseFreq * 0.98, t + 0.012, decaySec * 0.25);
 
     const bodyGain = ctx.createGain();
-    bodyGain.gain.setValueAtTime(0.85, t);
-    bodyGain.gain.setValueAtTime(0.85, t + 0.02);
+    bodyGain.gain.setValueAtTime(0.9, t);
+    bodyGain.gain.setValueAtTime(0.9, t + 0.015);
     bodyGain.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
 
     osc.connect(bodyGain);
@@ -1035,39 +1413,45 @@ export class AudioEngine {
       const sub = ctx.createOscillator();
       sub.type = "sine";
       sub.frequency.setValueAtTime(baseFreq * 2, t);
-      sub.frequency.exponentialRampToValueAtTime(baseFreq * 0.5, t + 0.05);
+      sub.frequency.exponentialRampToValueAtTime(baseFreq * 0.5, t + 0.04);
 
       const subGain = ctx.createGain();
       subGain.gain.setValueAtTime(0.0, t);
-      subGain.gain.linearRampToValueAtTime(subAmt * 0.7, t + 0.015);
-      subGain.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 1.1);
+      subGain.gain.linearRampToValueAtTime(subAmt * 0.8, t + 0.01);
+      subGain.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 1.2);
 
       sub.connect(subGain);
       subGain.connect(shaper);
       sub.start(t);
-      sub.stop(t + decaySec * 1.1 + 0.05);
+      sub.stop(t + decaySec * 1.2 + 0.05);
     }
 
-    // Click transient — filtered noise burst
+    // Click transient — filtered noise burst (sharper, louder)
     if (clickAmt > 0.05) {
-      const click = this.getNoise(ctx, 0.012, t);
+      const click = this.getNoise(ctx, 0.015, t);
       const clickHpf = ctx.createBiquadFilter();
       clickHpf.type = "highpass";
-      clickHpf.frequency.value = 3500;
+      clickHpf.frequency.value = 3000;
+      const clickBpf = ctx.createBiquadFilter();
+      clickBpf.type = "peaking";
+      clickBpf.frequency.value = 4500;
+      clickBpf.Q.value = 3;
+      clickBpf.gain.value = 8; // Boost click presence
       const clickGain = ctx.createGain();
-      clickGain.gain.setValueAtTime(clickAmt * 0.5, t);
-      clickGain.gain.exponentialRampToValueAtTime(0.001, t + 0.012);
+      clickGain.gain.setValueAtTime(clickAmt * 0.7, t);
+      clickGain.gain.exponentialRampToValueAtTime(0.001, t + 0.015);
 
-    click.connect(clickHpf);
-      clickHpf.connect(clickGain);
+      click.connect(clickHpf);
+      clickHpf.connect(clickBpf);
+      clickBpf.connect(clickGain);
       clickGain.connect(master);
     }
   }
 
   // ─── SNARE ─────────────────────────────────────────────
-  // 808 dual-oscillator + snappy noise with body resonance
+  // 808/909 hybrid: dual-oscillator body + crisp noise snap + transient click
   private snare(ctx: AudioContext, t: number, vel: number, out: AudioNode, p: VoiceParams): void {
-    const vol = vel * 0.65;
+    const vol = vel * 0.75; // Louder for presence
     const tune = p.tune ?? 180;
     const decaySec = (p.decay ?? 220) / 1000;
     const toneMix = (p.tone ?? 55) / 100;
@@ -1079,27 +1463,27 @@ export class AudioEngine {
     master.gain.exponentialRampToValueAtTime(0.001, t + decaySec + 0.05);
     master.connect(out);
 
-    // Body — two detuned sine oscillators for thickness
+    // Body — two detuned oscillators with pitch envelope for crack
     const osc1 = ctx.createOscillator();
     osc1.type = "triangle";
-    osc1.frequency.setValueAtTime(tune * 1.45, t);
-    osc1.frequency.exponentialRampToValueAtTime(tune, t + 0.015);
+    osc1.frequency.setValueAtTime(tune * 1.8, t);    // Higher start → more crack
+    osc1.frequency.exponentialRampToValueAtTime(tune, t + 0.01);
 
     const osc2 = ctx.createOscillator();
     osc2.type = "sine";
-    osc2.frequency.setValueAtTime(tune * 2.2, t);
-    osc2.frequency.exponentialRampToValueAtTime(tune * 0.9, t + 0.02);
+    osc2.frequency.setValueAtTime(tune * 2.8, t);    // More harmonic spread
+    osc2.frequency.exponentialRampToValueAtTime(tune * 0.85, t + 0.015);
 
     const bodyGain = ctx.createGain();
-    bodyGain.gain.setValueAtTime(toneMix * bodyAmt, t);
-    bodyGain.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 0.7);
+    bodyGain.gain.setValueAtTime(toneMix * bodyAmt * 0.9, t);
+    bodyGain.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 0.6);
 
-    // Resonant body filter
+    // Resonant body filter — tighter, more focused
     const bodyBpf = ctx.createBiquadFilter();
     bodyBpf.type = "peaking";
-    bodyBpf.frequency.value = 200;
-    bodyBpf.Q.value = 2;
-    bodyBpf.gain.value = 6;
+    bodyBpf.frequency.value = 220;
+    bodyBpf.Q.value = 2.5;
+    bodyBpf.gain.value = 5;
 
     osc1.connect(bodyGain);
     osc2.connect(bodyGain);
@@ -1110,119 +1494,225 @@ export class AudioEngine {
     osc1.stop(t + decaySec + 0.05);
     osc2.stop(t + decaySec + 0.05);
 
-    // Snappy noise — bandpass filtered with fast decay
+    // Transient click — very short noise burst for initial snap
+    const click = this.getNoise(ctx, 0.004, t);
+    const clickGain = ctx.createGain();
+    clickGain.gain.setValueAtTime(snap * 0.6, t);
+    clickGain.gain.exponentialRampToValueAtTime(0.001, t + 0.004);
+    click.connect(clickGain);
+    clickGain.connect(master);
+
+    // Snappy noise — broader spectrum, more sizzle
     const noise = this.getNoise(ctx, decaySec, t);
     const noiseBpf = ctx.createBiquadFilter();
     noiseBpf.type = "highpass";
-    noiseBpf.frequency.value = 2000;
+    noiseBpf.frequency.value = 1500;
+
+    const noisePresence = ctx.createBiquadFilter();
+    noisePresence.type = "peaking";
+    noisePresence.frequency.value = 5000;
+    noisePresence.Q.value = 1.5;
+    noisePresence.gain.value = 4; // Presence boost for air
 
     const noiseHpf = ctx.createBiquadFilter();
     noiseHpf.type = "lowpass";
-    noiseHpf.frequency.setValueAtTime(12000, t);
-    noiseHpf.frequency.exponentialRampToValueAtTime(4000, t + decaySec * 0.5);
+    noiseHpf.frequency.setValueAtTime(14000, t);
+    noiseHpf.frequency.exponentialRampToValueAtTime(3500, t + decaySec * 0.5);
 
     const noiseGain = ctx.createGain();
-    noiseGain.gain.setValueAtTime(snap * 0.9, t);
+    noiseGain.gain.setValueAtTime(snap * 1.0, t);
     noiseGain.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 0.55);
 
     noise.connect(noiseBpf);
-    noiseBpf.connect(noiseHpf);
+    noiseBpf.connect(noisePresence);
+    noisePresence.connect(noiseHpf);
     noiseHpf.connect(noiseGain);
     noiseGain.connect(master);
   }
 
   // ─── CLAP ──────────────────────────────────────────────
-  // 808 multi-burst noise with reverb-like tail
+  // 808 multi-burst noise with reverb-like tail + body resonance
   private clap(ctx: AudioContext, t: number, vel: number, out: AudioNode, p: VoiceParams): void {
     const levelBoost = (p.level ?? 100) / 100;
-    const vol = vel * 0.75 * levelBoost;
+    const vol = vel * 0.85 * levelBoost;
     const decaySec = (p.decay ?? 350) / 1000;
     const toneFreq = p.tone ?? 1800;
-    const spread = (p.spread ?? 50) / 100; // 0=tight bursts, 1=wide
+    const spread = (p.spread ?? 50) / 100;
 
     const master = ctx.createGain();
     master.gain.setValueAtTime(vol, t);
     master.gain.exponentialRampToValueAtTime(0.001, t + decaySec + 0.1);
     master.connect(out);
 
+    // Dual bandpass for wider, warmer character
     const bpf = ctx.createBiquadFilter();
     bpf.type = "bandpass";
     bpf.frequency.value = toneFreq;
-    bpf.Q.value = 0.8;
-    bpf.connect(master);
+    bpf.Q.value = 1.0;
 
-    // 4 noise bursts — spread controls spacing (tight → wide)
-    const baseSpacing = 0.005 + spread * 0.015; // 5ms → 20ms
+    const warmth = ctx.createBiquadFilter();
+    warmth.type = "peaking";
+    warmth.frequency.value = toneFreq * 0.6;
+    warmth.Q.value = 1.5;
+    warmth.gain.value = 4; // Body warmth
+
+    bpf.connect(warmth);
+    warmth.connect(master);
+
+    // 4 noise bursts — spread controls spacing
+    const baseSpacing = 0.005 + spread * 0.015;
     const burstTimes = [0, baseSpacing, baseSpacing * 2.3, baseSpacing * 3.8];
-    for (const offset of burstTimes) {
-      const burst = this.getNoise(ctx, 0.006, t + offset);
+    for (let i = 0; i < burstTimes.length; i++) {
+      const offset = burstTimes[i]!;
+      const burst = this.getNoise(ctx, 0.008, t + offset);
       const g = ctx.createGain();
-      g.gain.setValueAtTime(0.9, t + offset);
-      g.gain.exponentialRampToValueAtTime(0.01, t + offset + 0.006);
+      // Each burst slightly quieter for natural feel
+      const burstVol = 1.0 - i * 0.08;
+      g.gain.setValueAtTime(burstVol, t + offset);
+      g.gain.exponentialRampToValueAtTime(0.01, t + offset + 0.008);
       burst.connect(g);
       g.connect(bpf);
     }
 
-    // Decay tail
-    const tail = this.getNoise(ctx, decaySec, t + 0.04);
+    // Decay tail — longer, more reverb-like
+    const tail = this.getNoise(ctx, decaySec, t + 0.035);
     const tailGain = ctx.createGain();
-    tailGain.gain.setValueAtTime(0.5, t + 0.04);
+    tailGain.gain.setValueAtTime(0.55, t + 0.035);
     tailGain.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
     tail.connect(tailGain);
     tailGain.connect(bpf);
   }
 
   // ─── TOM ───────────────────────────────────────────────
-  // 909-style: sine with pitch envelope, variable tune
+  // 808-style: warm sine body + overtone + click, deep pitch sweep
   private tom(ctx: AudioContext, t: number, vel: number, tune: number, out: AudioNode, p: VoiceParams): void {
-    const vol = vel * 0.6;
+    const vol = vel * 0.8; // Louder for presence
     const decaySec = (p.decay ?? 300) / 1000;
+    const clickAmt = (p.click ?? 40) / 100;
 
+    // Master VCA — punchy envelope with sustain
     const master = ctx.createGain();
-    master.gain.setValueAtTime(vol, t);
-    master.gain.exponentialRampToValueAtTime(0.001, t + decaySec + 0.05);
+    master.gain.setValueAtTime(0, t);
+    master.gain.linearRampToValueAtTime(vol, t + 0.001); // Instant attack
+    master.gain.setValueAtTime(vol, t + 0.005);
+    master.gain.exponentialRampToValueAtTime(vol * 0.5, t + decaySec * 0.35);
+    master.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
+
+    // Low-shelf warmth boost
+    const warmth = ctx.createBiquadFilter();
+    warmth.type = "lowshelf";
+    warmth.frequency.value = tune * 1.5;
+    warmth.gain.value = 4;
+
+    warmth.connect(master);
     master.connect(out);
 
+    // Main tone — deeper pitch sweep for more character
     const osc = ctx.createOscillator();
     osc.type = "sine";
-    osc.frequency.setValueAtTime(tune * 2.2, t);
-    osc.frequency.exponentialRampToValueAtTime(tune, t + 0.035);
-
-    // Second harmonic for body
-    const osc2 = ctx.createOscillator();
-    osc2.type = "sine";
-    osc2.frequency.setValueAtTime(tune * 3.5, t);
-    osc2.frequency.exponentialRampToValueAtTime(tune * 1.5, t + 0.02);
+    osc.frequency.setValueAtTime(tune * 2.0, t);      // Higher start = more punch
+    osc.frequency.exponentialRampToValueAtTime(tune * 1.15, t + 0.006);
+    osc.frequency.exponentialRampToValueAtTime(tune, t + 0.025);
+    osc.frequency.setTargetAtTime(tune * 0.97, t + 0.03, decaySec * 0.35);
 
     const bodyGain = ctx.createGain();
-    bodyGain.gain.setValueAtTime(0.25, t);
-    bodyGain.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 0.4);
+    bodyGain.gain.setValueAtTime(0.9, t);
+    bodyGain.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
 
-    osc.connect(master);
-    osc2.connect(bodyGain);
-    bodyGain.connect(master);
+    osc.connect(bodyGain);
+    bodyGain.connect(warmth);
     osc.start(t);
-    osc2.start(t);
     osc.stop(t + decaySec + 0.05);
+
+    // Second partial — minor 7th above for tonal color (808 character)
+    const osc2 = ctx.createOscillator();
+    osc2.type = "sine";
+    osc2.frequency.setValueAtTime(tune * 3.2, t);
+    osc2.frequency.exponentialRampToValueAtTime(tune * 1.78, t + 0.012);
+
+    const overtoneGain = ctx.createGain();
+    overtoneGain.gain.setValueAtTime(0.35, t);
+    overtoneGain.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 0.2);
+
+    osc2.connect(overtoneGain);
+    overtoneGain.connect(warmth);
+    osc2.start(t);
     osc2.stop(t + decaySec + 0.05);
+
+    // Third partial — sub octave for weight
+    const sub = ctx.createOscillator();
+    sub.type = "sine";
+    sub.frequency.setValueAtTime(tune * 0.5, t);
+
+    const subGain = ctx.createGain();
+    subGain.gain.setValueAtTime(0.0, t);
+    subGain.gain.linearRampToValueAtTime(0.25, t + 0.008);
+    subGain.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 0.8);
+
+    sub.connect(subGain);
+    subGain.connect(warmth);
+    sub.start(t);
+    sub.stop(t + decaySec + 0.05);
+
+    // Click transient — sharper, tuned to the tom
+    if (clickAmt > 0.05) {
+      const clickBuf = this.noiseBuffer;
+      if (clickBuf) {
+        const clickSrc = ctx.createBufferSource();
+        clickSrc.buffer = clickBuf;
+        const clickGain = ctx.createGain();
+        clickGain.gain.setValueAtTime(clickAmt * 0.5, t);
+        clickGain.gain.exponentialRampToValueAtTime(0.001, t + 0.01);
+        const clickFilter = ctx.createBiquadFilter();
+        clickFilter.type = "bandpass";
+        clickFilter.frequency.value = tune * 3;
+        clickFilter.Q.value = 3;
+        clickSrc.connect(clickFilter);
+        clickFilter.connect(clickGain);
+        clickGain.connect(master);
+        clickSrc.start(t);
+        clickSrc.stop(t + 0.012);
+      }
+    }
   }
 
   // ─── HIHAT ─────────────────────────────────────────────
-  // 909-style: 6 metallic square oscillators + filtered noise
+  // 909-style: 6 metallic square oscillators + filtered noise + tone shaping
   private hihat(ctx: AudioContext, t: number, vel: number, closed: boolean, out: AudioNode, p: VoiceParams): GainNode {
-    const vol = vel * (closed ? 0.55 : 0.6);
+    const vol = vel * (closed ? 0.6 : 0.65);
     const decaySec = (p.decay ?? (closed ? 45 : 250)) / 1000;
+    const toneAmt = (p.tone ?? 60) / 100; // 0=dark, 1=bright
 
     const master = ctx.createGain();
-    master.gain.setValueAtTime(vol, t);
-    master.gain.exponentialRampToValueAtTime(0.001, t + decaySec + 0.01);
+    // Tighter envelope for closed hat
+    if (closed) {
+      master.gain.setValueAtTime(vol, t);
+      master.gain.setValueAtTime(vol * 0.8, t + decaySec * 0.3);
+      master.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
+    } else {
+      master.gain.setValueAtTime(vol, t);
+      master.gain.exponentialRampToValueAtTime(vol * 0.3, t + decaySec * 0.4);
+      master.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
+    }
     master.connect(out);
 
-    // Highpass for metallic shimmer
+    // Highpass for metallic shimmer — tone-dependent
     const hpf = ctx.createBiquadFilter();
     hpf.type = "highpass";
-    hpf.frequency.value = closed ? 8000 : 6500;
-    hpf.connect(master);
+    hpf.frequency.value = closed
+      ? 6000 + toneAmt * 4000    // 6k–10k based on tone
+      : 4500 + toneAmt * 3000;   // 4.5k–7.5k
+    hpf.Q.value = 0.5;
+
+    // Presence peak for shimmer/air
+    const presence = ctx.createBiquadFilter();
+    presence.type = "peaking";
+    presence.frequency.value = 10000 + toneAmt * 3000;
+    presence.Q.value = 1.2;
+    presence.gain.value = 3 + toneAmt * 3;
+
+    hpf.connect(presence);
+    presence.connect(master);
 
     // 6 square-wave oscillators at 909 metallic ratios
     const baseFreq = p.tune ?? 330;
@@ -1233,7 +1723,7 @@ export class AudioEngine {
       osc.frequency.value = baseFreq * r;
 
       const g = ctx.createGain();
-      g.gain.setValueAtTime(0.09, t);
+      g.gain.setValueAtTime(0.1, t);
       g.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
 
       osc.connect(g);
@@ -1242,55 +1732,89 @@ export class AudioEngine {
       osc.stop(t + decaySec + 0.02);
     }
 
-    // Noise layer for sizzle
+    // Noise layer — more sizzle with tone-shaped bandwidth
     const noise = this.getNoise(ctx, decaySec, t);
+    const noiseLpf = ctx.createBiquadFilter();
+    noiseLpf.type = "lowpass";
+    noiseLpf.frequency.value = 12000 + toneAmt * 6000; // Up to 18kHz for bright
     const ng = ctx.createGain();
-    ng.gain.setValueAtTime(0.18, t);
-    ng.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 0.8);
-    noise.connect(ng);
+    ng.gain.setValueAtTime(0.22, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 0.75);
+    noise.connect(noiseLpf);
+    noiseLpf.connect(ng);
     ng.connect(hpf);
 
     return master; // For choke group
   }
 
   // ─── CYMBAL / RIDE ─────────────────────────────────────
-  // Extended metallic oscillator bank with long decay
+  // Extended metallic oscillator bank with bell character + shimmer
   private cymbal(ctx: AudioContext, t: number, vel: number, baseFreq: number, out: AudioNode, p: VoiceParams): void {
-    const vol = vel * 0.55;
+    const vol = vel * 0.6;
     const decaySec = (p.decay ?? 800) / 1000;
+    const toneAmt = (p.tone ?? 60) / 100;
 
     const master = ctx.createGain();
+    // Two-stage decay: fast initial, slow sustain (like real cymbal)
     master.gain.setValueAtTime(vol, t);
+    master.gain.exponentialRampToValueAtTime(vol * 0.35, t + decaySec * 0.15);
     master.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
     master.connect(out);
 
+    // Highpass — tone-dependent
     const hpf = ctx.createBiquadFilter();
     hpf.type = "highpass";
-    hpf.frequency.value = 4500;
-    hpf.connect(master);
+    hpf.frequency.value = 3500 + toneAmt * 2000;
+    hpf.Q.value = 0.3;
 
-    const ratios = [1.0, 1.4471, 1.7409, 1.9307, 2.5377, 2.7616, 3.1415];
-    for (const r of ratios) {
+    // Bell presence peak
+    const bell = ctx.createBiquadFilter();
+    bell.type = "peaking";
+    bell.frequency.value = 8000 + toneAmt * 4000;
+    bell.Q.value = 2;
+    bell.gain.value = 3 + toneAmt * 3;
+
+    // Air/shimmer shelf
+    const air = ctx.createBiquadFilter();
+    air.type = "highshelf";
+    air.frequency.value = 12000;
+    air.gain.value = 2 + toneAmt * 4;
+
+    hpf.connect(bell);
+    bell.connect(air);
+    air.connect(master);
+
+    // 8 metallic oscillators — wider ratio spread for richer spectrum
+    const ratios = [1.0, 1.4471, 1.7409, 1.9307, 2.5377, 2.7616, 3.1415, 3.7135];
+    for (let i = 0; i < ratios.length; i++) {
+      const r = ratios[i]!;
       const osc = ctx.createOscillator();
       osc.type = "square";
       osc.frequency.value = baseFreq * r;
 
       const g = ctx.createGain();
-      g.gain.setValueAtTime(0.055, t);
-      g.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
+      // Higher partials decay faster (natural)
+      const partialDecay = decaySec * (1 - i * 0.06);
+      g.gain.setValueAtTime(0.06, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + partialDecay);
 
       osc.connect(g);
       g.connect(hpf);
       osc.start(t);
-      osc.stop(t + decaySec + 0.05);
+      osc.stop(t + partialDecay + 0.05);
     }
 
-    // Noise shimmer
+    // Noise shimmer — broader, with envelope matching
     const noise = this.getNoise(ctx, decaySec, t);
+    const noiseLpf = ctx.createBiquadFilter();
+    noiseLpf.type = "lowpass";
+    noiseLpf.frequency.value = 14000 + toneAmt * 4000;
     const ng = ctx.createGain();
-    ng.gain.setValueAtTime(0.1, t);
-    ng.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 0.7);
-    noise.connect(ng);
+    ng.gain.setValueAtTime(0.14, t);
+    ng.gain.exponentialRampToValueAtTime(0.06, t + decaySec * 0.2);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 0.8);
+    noise.connect(noiseLpf);
+    noiseLpf.connect(ng);
     ng.connect(hpf);
   }
 
@@ -1302,7 +1826,7 @@ export class AudioEngine {
     const tune = p.tune ?? freq;
     const decaySec = (p.decay ?? 120) / 1000;
     const toneAmt = (p.tone ?? 50) / 100;
-    const vol = vel * 0.65;
+    const vol = vel * 0.75;
 
     const master = ctx.createGain();
     master.gain.setValueAtTime(vol, t);
@@ -1316,138 +1840,195 @@ export class AudioEngine {
         const bodyFreq = isBongo ? tune * 1.3 : tune;
         const bodyDecay = isBongo ? decaySec * 0.6 : decaySec;
 
+        // Main body — sine with deeper pitch sweep
         const osc = ctx.createOscillator();
         osc.type = "sine";
-        osc.frequency.setValueAtTime(bodyFreq * 1.6, t);
-        osc.frequency.exponentialRampToValueAtTime(bodyFreq, t + (isBongo ? 0.008 : 0.015));
+        osc.frequency.setValueAtTime(bodyFreq * 2.0, t);
+        osc.frequency.exponentialRampToValueAtTime(bodyFreq * 1.05, t + (isBongo ? 0.006 : 0.012));
+        osc.frequency.setTargetAtTime(bodyFreq * 0.98, t + 0.015, bodyDecay * 0.3);
+
+        // Warmth filter
+        const warmth = ctx.createBiquadFilter();
+        warmth.type = "lowshelf";
+        warmth.frequency.value = bodyFreq * 2;
+        warmth.gain.value = 4;
 
         const bodyG = ctx.createGain();
-        bodyG.gain.setValueAtTime(0.7, t);
+        bodyG.gain.setValueAtTime(0.85, t);
         bodyG.gain.exponentialRampToValueAtTime(0.001, t + bodyDecay);
-        osc.connect(bodyG); bodyG.connect(master);
+        osc.connect(bodyG); bodyG.connect(warmth); warmth.connect(master);
         osc.start(t); osc.stop(t + bodyDecay + 0.02);
 
-        // Slap noise (short)
-        const slap = this.getNoise(ctx, 0.008, t);
+        // Sub resonance for body weight
+        const sub = ctx.createOscillator();
+        sub.type = "sine";
+        sub.frequency.value = bodyFreq * 0.5;
+        const subG = ctx.createGain();
+        subG.gain.setValueAtTime(0, t);
+        subG.gain.linearRampToValueAtTime(0.2, t + 0.005);
+        subG.gain.exponentialRampToValueAtTime(0.001, t + bodyDecay * 0.7);
+        sub.connect(subG); subG.connect(master);
+        sub.start(t); sub.stop(t + bodyDecay + 0.02);
+
+        // Slap noise — louder, tuned
+        const slap = this.getNoise(ctx, 0.01, t);
         const slapG = ctx.createGain();
-        slapG.gain.setValueAtTime(toneAmt * 0.4, t);
-        slapG.gain.exponentialRampToValueAtTime(0.001, t + 0.008);
+        slapG.gain.setValueAtTime(toneAmt * 0.55, t);
+        slapG.gain.exponentialRampToValueAtTime(0.001, t + 0.01);
         const slapBpf = ctx.createBiquadFilter();
-        slapBpf.type = "bandpass"; slapBpf.frequency.value = bodyFreq * 3; slapBpf.Q.value = 3;
+        slapBpf.type = "bandpass"; slapBpf.frequency.value = bodyFreq * 3; slapBpf.Q.value = 4;
         slap.connect(slapBpf); slapBpf.connect(slapG); slapG.connect(master);
         break;
       }
 
-      case 2: { // ── RIM / SIDESTICK: short click + resonance (1-3kHz)
-        // Click
+      case 2: { // ── RIM / SIDESTICK: sharp click + tuned ring
+        // Click transient
         const click = this.getNoise(ctx, 0.003, t);
         const clickG = ctx.createGain();
-        clickG.gain.setValueAtTime(0.8, t);
+        clickG.gain.setValueAtTime(0.9, t);
         clickG.gain.exponentialRampToValueAtTime(0.001, t + 0.003);
         click.connect(clickG); clickG.connect(master);
 
-        // Resonant ring
+        // Resonant ring — two partials for woody character
         const osc = ctx.createOscillator();
         osc.type = "sine";
         osc.frequency.value = tune;
         const ringG = ctx.createGain();
-        ringG.gain.setValueAtTime(0.4, t);
-        ringG.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+        ringG.gain.setValueAtTime(0.5, t);
+        ringG.gain.exponentialRampToValueAtTime(0.001, t + 0.035);
         osc.connect(ringG); ringG.connect(master);
-        osc.start(t); osc.stop(t + 0.05);
+        osc.start(t); osc.stop(t + 0.04);
+
+        // Second partial for body
+        const osc2 = ctx.createOscillator();
+        osc2.type = "sine";
+        osc2.frequency.value = tune * 1.71; // Inharmonic for wood
+        const ring2G = ctx.createGain();
+        ring2G.gain.setValueAtTime(0.25, t);
+        ring2G.gain.exponentialRampToValueAtTime(0.001, t + 0.025);
+        osc2.connect(ring2G); ring2G.connect(master);
+        osc2.start(t); osc2.stop(t + 0.03);
         break;
       }
 
-      case 3: { // ── COWBELL: two detuned oscillators, metallic (500Hz-2kHz)
+      case 3: { // ── COWBELL: 808-style, two detuned squares + bandpass
         const f1 = tune * 0.7;
         const f2 = tune;
+
+        // Tight bandpass for that classic 808 cowbell tone
+        const cowbellBpf = ctx.createBiquadFilter();
+        cowbellBpf.type = "bandpass";
+        cowbellBpf.frequency.value = (f1 + f2);
+        cowbellBpf.Q.value = 3;
+        cowbellBpf.connect(master);
 
         for (const f of [f1, f2]) {
           const osc = ctx.createOscillator();
           osc.type = "square";
           osc.frequency.value = f;
           const g = ctx.createGain();
-          g.gain.setValueAtTime(0.35, t);
+          // Two-stage decay like real 808
+          g.gain.setValueAtTime(0.4, t);
+          g.gain.exponentialRampToValueAtTime(0.15, t + 0.015);
           g.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
-          // Bandpass to remove harsh harmonics
-          const bp = ctx.createBiquadFilter();
-          bp.type = "bandpass"; bp.frequency.value = f * 2; bp.Q.value = 2;
-          osc.connect(bp); bp.connect(g); g.connect(master);
+          osc.connect(g); g.connect(cowbellBpf);
           osc.start(t); osc.stop(t + decaySec + 0.02);
         }
         break;
       }
 
-      case 4: { // ── SHAKER: rhythmic noise, highpassed
+      case 4: { // ── SHAKER: rhythmic noise, shaped spectrum
         const noise = this.getNoise(ctx, decaySec, t);
         const hpf = ctx.createBiquadFilter();
         hpf.type = "highpass"; hpf.frequency.value = Math.max(4000, tune);
+        // Presence peak for sparkle
+        const presence = ctx.createBiquadFilter();
+        presence.type = "peaking"; presence.frequency.value = 8000; presence.Q.value = 2; presence.gain.value = 4;
         const ng = ctx.createGain();
-        ng.gain.setValueAtTime(0.6, t);
+        // Shaped envelope: fast attack, medium release
+        ng.gain.setValueAtTime(0.7, t);
+        ng.gain.exponentialRampToValueAtTime(0.3, t + decaySec * 0.2);
         ng.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
-        noise.connect(hpf); hpf.connect(ng); ng.connect(master);
+        noise.connect(hpf); hpf.connect(presence); presence.connect(ng); ng.connect(master);
         break;
       }
 
-      case 5: { // ── CLAVES: short, sharp pitched click (dry)
+      case 5: { // ── CLAVES: sharp tuned click with ring
         const osc = ctx.createOscillator();
         osc.type = "sine";
         osc.frequency.value = tune;
         const g = ctx.createGain();
-        g.gain.setValueAtTime(0.8, t);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.025);
+        g.gain.setValueAtTime(0.9, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
         osc.connect(g); g.connect(master);
-        osc.start(t); osc.stop(t + 0.03);
+        osc.start(t); osc.stop(t + 0.035);
+
+        // Subtle second harmonic for wood character
+        const h2 = ctx.createOscillator();
+        h2.type = "sine";
+        h2.frequency.value = tune * 3;
+        const hg = ctx.createGain();
+        hg.gain.setValueAtTime(0.2, t);
+        hg.gain.exponentialRampToValueAtTime(0.001, t + 0.015);
+        h2.connect(hg); hg.connect(master);
+        h2.start(t); h2.stop(t + 0.02);
         break;
       }
 
-      case 6: { // ── TAMBOURINE: metallic jingles + noise
-        // Metallic oscillators (like hi-hat but higher)
-        for (const ratio of [1.0, 1.47, 2.09]) {
+      case 6: { // ── TAMBOURINE: metallic jingles + noise shimmer
+        // More metallic oscillators with wider spread
+        for (const ratio of [1.0, 1.47, 2.09, 2.83]) {
           const osc = ctx.createOscillator();
           osc.type = "square";
           osc.frequency.value = tune * ratio;
           const g = ctx.createGain();
-          g.gain.setValueAtTime(0.12, t);
-          g.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 0.7);
+          g.gain.setValueAtTime(0.1, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 0.65);
           const hp = ctx.createBiquadFilter();
-          hp.type = "highpass"; hp.frequency.value = 6000;
+          hp.type = "highpass"; hp.frequency.value = 5500;
           osc.connect(hp); hp.connect(g); g.connect(master);
           osc.start(t); osc.stop(t + decaySec + 0.02);
         }
-        // Noise jingle
+        // Noise shimmer — brighter, longer
         const noise = this.getNoise(ctx, decaySec, t);
         const ng = ctx.createGain();
-        ng.gain.setValueAtTime(0.3, t);
-        ng.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 0.5);
+        ng.gain.setValueAtTime(0.35, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 0.55);
         const hp = ctx.createBiquadFilter();
-        hp.type = "highpass"; hp.frequency.value = 8000;
-        noise.connect(hp); hp.connect(ng); ng.connect(master);
+        hp.type = "highpass"; hp.frequency.value = 7000;
+        const air = ctx.createBiquadFilter();
+        air.type = "highshelf"; air.frequency.value = 10000; air.gain.value = 4;
+        noise.connect(hp); hp.connect(air); air.connect(ng); ng.connect(master);
         break;
       }
 
-      case 7: { // ── TRIANGLE: metallic ring, long sustain
+      case 7: { // ── TRIANGLE: pure metallic ring, long sustain, inharmonic overtones
         const osc = ctx.createOscillator();
         osc.type = "sine";
         osc.frequency.value = tune;
         const g = ctx.createGain();
-        g.gain.setValueAtTime(0.5, t);
+        g.gain.setValueAtTime(0.55, t);
         g.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
         osc.connect(g); g.connect(master);
         osc.start(t); osc.stop(t + decaySec + 0.02);
 
-        // Harmonics for metallic character
-        const h2 = ctx.createOscillator();
-        h2.type = "sine"; h2.frequency.value = tune * 2.76; // Inharmonic
-        const hg = ctx.createGain();
-        hg.gain.setValueAtTime(0.15, t);
-        hg.gain.exponentialRampToValueAtTime(0.001, t + decaySec * 0.6);
-        h2.connect(hg); hg.connect(master);
-        h2.start(t); h2.stop(t + decaySec + 0.02);
+        // Three inharmonic partials for metallic shimmer
+        const partials = [2.76, 5.404, 8.933];
+        const partialVols = [0.18, 0.08, 0.04];
+        for (let i = 0; i < partials.length; i++) {
+          const h = ctx.createOscillator();
+          h.type = "sine";
+          h.frequency.value = tune * partials[i]!;
+          const hg = ctx.createGain();
+          hg.gain.setValueAtTime(partialVols[i]!, t);
+          hg.gain.exponentialRampToValueAtTime(0.001, t + decaySec * (0.7 - i * 0.15));
+          h.connect(hg); hg.connect(master);
+          h.start(t); h.stop(t + decaySec + 0.02);
+        }
         break;
       }
 
-      default: { // Fallback: basic resonant noise
+      default: { // Fallback: resonant noise
         const bpf = ctx.createBiquadFilter();
         bpf.type = "bandpass"; bpf.frequency.value = tune; bpf.Q.value = 12;
         bpf.connect(master);
@@ -1463,6 +2044,22 @@ export class AudioEngine {
 
   get isInitialized(): boolean {
     return this.ctx !== null && this.ctx.state === "running";
+  }
+
+  /** Create a MediaStream from the master output for recording */
+  createRecordingStream(): MediaStreamAudioDestinationNode | null {
+    if (!this.ctx || !this.masterAnalyser) return null;
+    const dest = this.ctx.createMediaStreamDestination();
+    // Tap after the final analyser (which connects to ctx.destination)
+    this.masterAnalyser.connect(dest);
+    return dest;
+  }
+
+  /** Disconnect a recording stream */
+  disconnectRecordingStream(dest: MediaStreamAudioDestinationNode): void {
+    if (this.masterAnalyser) {
+      try { this.masterAnalyser.disconnect(dest); } catch { /* already disconnected */ }
+    }
   }
 }
 

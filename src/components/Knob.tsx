@@ -4,7 +4,7 @@
  * Hardware-feel rotary encoder with:
  * - Drag up/down to change value
  * - Double-click to reset to default
- * - Visual arc indicator
+ * - Visual arc indicator with glow
  * - Value display on hover
  */
 
@@ -43,7 +43,7 @@ export const Knob = memo(function Knob({
     const handleMove = (me: MouseEvent) => {
       const deltaY = dragStartY.current - me.clientY;
       const range = max - min;
-      const sensitivity = range / 150; // 150px = full range
+      const sensitivity = range / 150;
       const newVal = Math.max(min, Math.min(max, dragStartVal.current + deltaY * sensitivity));
       onChange(Math.round(newVal));
     };
@@ -84,7 +84,7 @@ export const Knob = memo(function Knob({
       onMouseLeave={() => setShowValue(false)}
     >
       {/* Value tooltip */}
-      <span className={`text-[9px] font-mono tabular-nums h-3 transition-opacity ${showValue || isDragging ? "opacity-100" : "opacity-0"}`}
+      <span className={`text-[9px] font-mono tabular-nums h-3 transition-opacity duration-100 ${showValue || isDragging ? "opacity-100" : "opacity-0"}`}
         style={{ color }}
       >
         {Math.round(value)}
@@ -100,48 +100,65 @@ export const Knob = memo(function Knob({
       >
         <svg width={size} height={size} className="absolute inset-0">
           {/* Background track */}
-          <circle cx={cx} cy={cy} r={arcRadius} fill="none" stroke="var(--ed-bg-primary)" strokeWidth={2.5}
+          <circle cx={cx} cy={cy} r={arcRadius} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={2.5}
             strokeDasharray={`${arcRadius * 2 * Math.PI * 0.75} ${arcRadius * 2 * Math.PI * 0.25}`}
             strokeDashoffset={arcRadius * 2 * Math.PI * 0.375}
             strokeLinecap="round"
           />
 
-          {/* Value arc */}
-          {normalized > 0.005 && (
+          {/* Value arc with glow */}
+          {normalized > 0.005 && (<>
+            {/* Glow layer */}
+            <path
+              d={`M ${arcStartX} ${arcStartY} A ${arcRadius} ${arcRadius} 0 ${largeArc} 1 ${arcEndX} ${arcEndY}`}
+              fill="none" stroke={color} strokeWidth={4} strokeLinecap="round"
+              opacity={isDragging ? 0.2 : 0.08}
+            />
+            {/* Crisp line */}
             <path
               d={`M ${arcStartX} ${arcStartY} A ${arcRadius} ${arcRadius} 0 ${largeArc} 1 ${arcEndX} ${arcEndY}`}
               fill="none" stroke={color} strokeWidth={2.5} strokeLinecap="round"
             />
-          )}
+          </>)}
         </svg>
 
         {/* Knob body */}
         <div
-          className="absolute rounded-full bg-[var(--ed-bg-elevated)] border border-[var(--ed-border)] shadow-inner"
+          className="absolute rounded-full shadow-inner transition-shadow duration-100"
           style={{
             width: radius * 2,
             height: radius * 2,
             top: (size - radius * 2) / 2,
             left: (size - radius * 2) / 2,
+            background: isDragging
+              ? "linear-gradient(180deg, #2a2a32 0%, #1e1e26 100%)"
+              : "linear-gradient(180deg, #252530 0%, #1a1a22 100%)",
+            border: `1px solid ${isDragging ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.05)"}`,
+            boxShadow: isDragging
+              ? `inset 0 1px 0 rgba(255,255,255,0.05), 0 2px 8px rgba(0,0,0,0.4)`
+              : `inset 0 1px 0 rgba(255,255,255,0.03), 0 1px 4px rgba(0,0,0,0.3)`,
           }}
         >
           {/* Indicator line */}
           <div
             className="absolute w-0.5 rounded-full"
             style={{
-              height: radius * 0.5,
+              height: radius * 0.45,
               backgroundColor: color,
               top: 3,
               left: radius - 1,
               transformOrigin: `center ${radius - 3}px`,
               transform: `rotate(${angle}deg)`,
+              boxShadow: isDragging ? `0 0 6px ${color}` : "none",
             }}
           />
         </div>
       </div>
 
       {/* Label */}
-      <span className="text-[8px] font-medium text-[var(--ed-text-muted)]">{label}</span>
+      <span className={`text-[8px] font-semibold transition-colors duration-100 ${
+        isDragging ? "text-[var(--ed-text-secondary)]" : "text-[var(--ed-text-muted)]"
+      }`}>{label}</span>
     </div>
   );
 });

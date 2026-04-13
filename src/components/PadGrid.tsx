@@ -60,9 +60,9 @@ export function PadGrid() {
     if (files.length === 0) return;
 
     const file = files[0]!;
-    // Check if it's an audio file
-    if (!file.type.startsWith("audio/") && !file.name.match(/\.(wav|mp3|aiff|ogg|flac|m4a)$/i)) {
-      console.warn("Not an audio file:", file.name);
+    const isAudio = file.type.startsWith("audio/") || file.name.match(/\.(wav|mp3|ogg|flac|m4a|aac|webm)$/i);
+    if (!isAudio) {
+      console.warn("Not a supported audio file:", file.name);
       return;
     }
 
@@ -70,14 +70,15 @@ export function PadGrid() {
       const sample = await sampleManager.loadFromFile(file, voiceIndex);
       setSampleNames((prev) => new Map(prev).set(voiceIndex, sample.name));
       setSelectedVoice(voiceIndex);
-      // Trigger to preview
       triggerVoice(voiceIndex);
     } catch (err) {
-      console.error("Failed to load sample:", err);
+      console.error("Failed to decode audio:", file.name, err);
+      // Brief visual feedback — flash the pad red (reuse trigger animation)
+      setDragOver(voiceIndex);
+      setTimeout(() => setDragOver(null), 500);
     }
   }, [setSelectedVoice, triggerVoice]);
 
-  // Clear sample on right-click when sample is loaded
   const handleContextMenu = useCallback((e: React.MouseEvent, i: number) => {
     if (sampleManager.hasSample(i)) {
       e.preventDefault();
@@ -92,7 +93,7 @@ export function PadGrid() {
 
   return (
     <div className="p-3">
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-4 gap-1.5">
         {VOICE_LABELS.map((label, i) => {
           const isSelected = selectedVoice === i;
           const isTriggered = triggered.has(i);
@@ -108,24 +109,27 @@ export function PadGrid() {
               onDragLeave={handleDragLeave}
               onDrop={(e) => handleDrop(e, i)}
               onContextMenu={(e) => handleContextMenu(e, i)}
-              className={`relative flex flex-col items-center justify-center h-16 rounded-lg transition-all ${
-                isTriggered ? "scale-95" : "scale-100"
-              } ${
+              className={`ed-pad-press relative flex flex-col items-center justify-center h-[68px] rounded-lg overflow-hidden ${
                 isDragTarget
-                  ? "ring-2 ring-[var(--ed-accent-green)] bg-[var(--ed-accent-green)]/10"
+                  ? "ring-2 ring-[var(--ed-accent-green)]"
                   : isSelected
-                    ? "ring-2 bg-[var(--ed-bg-elevated)]"
-                    : "bg-[var(--ed-bg-surface)] hover:bg-[var(--ed-bg-elevated)]"
+                    ? "ring-1"
+                    : ""
               }`}
               style={{
+                background: isTriggered
+                  ? `linear-gradient(135deg, ${color}20, ${color}10)`
+                  : isSelected
+                    ? `linear-gradient(180deg, var(--ed-bg-elevated) 0%, var(--ed-bg-surface) 100%)`
+                    : `linear-gradient(180deg, var(--ed-bg-surface) 0%, #151519 100%)`,
                 boxShadow: isDragTarget
-                  ? "0 0 20px rgba(34,197,94,0.3)"
+                  ? `0 0 20px rgba(34,197,94,0.3), inset 0 1px 0 rgba(255,255,255,0.03)`
                   : isTriggered
-                    ? `0 0 20px ${color}40, inset 0 0 15px ${color}30`
+                    ? `0 0 24px ${color}30, inset 0 0 20px ${color}15`
                     : isSelected
-                      ? `0 0 8px ${color}20, inset 0 0 0 2px ${color}`
-                      : "none",
-                borderColor: isDragTarget ? "var(--ed-accent-green)" : isSelected ? color : "transparent",
+                      ? `0 0 12px ${color}15, inset 0 1px 0 rgba(255,255,255,0.04)`
+                      : `inset 0 1px 0 rgba(255,255,255,0.03), inset 0 -1px 0 rgba(0,0,0,0.3)`,
+                borderColor: isDragTarget ? "var(--ed-accent-green)" : isSelected ? color + "80" : "var(--ed-border)",
                 borderWidth: "1px",
                 borderStyle: "solid",
               }}
@@ -136,37 +140,43 @@ export function PadGrid() {
               {/* Trigger flash overlay */}
               {isTriggered && (
                 <div
-                  className="absolute inset-0 rounded-lg opacity-30"
-                  style={{ backgroundColor: color }}
+                  className="absolute inset-0 rounded-lg"
+                  style={{
+                    background: `radial-gradient(circle at center, ${color}30, transparent 70%)`,
+                  }}
                 />
               )}
 
               {/* Drop hint */}
               {isDragTarget && (
-                <div className="absolute inset-0 rounded-lg flex items-center justify-center">
+                <div className="absolute inset-0 rounded-lg flex items-center justify-center bg-[var(--ed-accent-green)]/5">
                   <span className="text-[10px] font-bold text-[var(--ed-accent-green)]">DROP</span>
                 </div>
               )}
 
-              {/* Color dot — filled circle if sample loaded */}
-              <div
-                className={`${hasSample ? "w-3 h-3" : "w-2.5 h-2.5"} rounded-full mb-1 transition-all`}
-                style={{
-                  backgroundColor: hasSample ? "#22c55e" : color,
+              {/* Color indicator — sample=green dot, VA=colored line */}
+              {hasSample ? (
+                <div className="w-2.5 h-2.5 rounded-full bg-[var(--ed-accent-green)] mb-0.5"
+                  style={{ boxShadow: "0 0 6px rgba(34,197,94,0.4)" }} />
+              ) : (
+                <div className="w-4 h-[2px] rounded-full mb-1" style={{
+                  backgroundColor: isSelected ? color : color + "60",
                   boxShadow: isTriggered ? `0 0 8px ${color}` : "none",
-                }}
-              />
+                }} />
+              )}
 
-              {/* Label — show sample name or voice label */}
-              <span className="text-[10px] font-medium text-[var(--ed-text-secondary)] truncate max-w-full px-1">
+              {/* Label */}
+              <span className={`text-[9px] font-semibold truncate max-w-full px-1 transition-colors ${
+                isSelected ? "text-[var(--ed-text-primary)]" : "text-[var(--ed-text-secondary)]"
+              }`}>
                 {hasSample ? sampleNames.get(i) : label}
               </span>
             </button>
           );
         })}
       </div>
-      <p className="text-[9px] text-[var(--ed-text-muted)] mt-2 text-center">
-        drop audio files on pads • right-click to clear sample
+      <p className="text-[8px] text-[var(--ed-text-muted)] mt-2 text-center opacity-60">
+        drop audio &middot; right-click to clear
       </p>
     </div>
   );

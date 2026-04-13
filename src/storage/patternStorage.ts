@@ -6,11 +6,13 @@
  */
 
 import type { PatternData } from "../store/drumStore";
+import type { BassStep, BassParams } from "../audio/BassEngine";
 
 const DB_NAME = "elastic-drums";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const PATTERNS_STORE = "patterns";
 const SONGS_STORE = "songs";
+const BASS_PATTERNS_STORE = "bass-patterns";
 
 export interface StoredPattern {
   id: string;          // e.g. "user-001"
@@ -23,6 +25,19 @@ export interface StoredPattern {
 export interface SongStep {
   patternId: string;   // Reference to stored pattern
   repeats: number;     // How many times to play
+}
+
+export interface StoredBassPattern {
+  id: string;
+  name: string;
+  steps: BassStep[];
+  length: number;
+  params: BassParams;
+  rootNote: number;
+  rootName: string;
+  scaleName: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface StoredSong {
@@ -44,6 +59,9 @@ function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(SONGS_STORE)) {
         db.createObjectStore(SONGS_STORE, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(BASS_PATTERNS_STORE)) {
+        db.createObjectStore(BASS_PATTERNS_STORE, { keyPath: "id" });
       }
     };
 
@@ -157,6 +175,58 @@ export async function deleteSong(id: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(SONGS_STORE, "readwrite");
     tx.objectStore(SONGS_STORE).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// ─── Bass Pattern CRUD ──────────────────────────────────
+
+export async function saveBassPattern(
+  name: string,
+  data: { steps: BassStep[]; length: number; params: BassParams; rootNote: number; rootName: string; scaleName: string },
+): Promise<StoredBassPattern> {
+  const db = await openDB();
+  const now = Date.now();
+  const stored: StoredBassPattern = {
+    id: `bass-${now}`,
+    name,
+    steps: structuredClone(data.steps),
+    length: data.length,
+    params: structuredClone(data.params),
+    rootNote: data.rootNote,
+    rootName: data.rootName,
+    scaleName: data.scaleName,
+    createdAt: now,
+    updatedAt: now,
+  };
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(BASS_PATTERNS_STORE, "readwrite");
+    tx.objectStore(BASS_PATTERNS_STORE).put(stored);
+    tx.oncomplete = () => resolve(stored);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function listBassPatterns(): Promise<StoredBassPattern[]> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(BASS_PATTERNS_STORE, "readonly");
+    const req = tx.objectStore(BASS_PATTERNS_STORE).getAll();
+    req.onsuccess = () => {
+      const patterns = req.result as StoredBassPattern[];
+      patterns.sort((a, b) => b.updatedAt - a.updatedAt);
+      resolve(patterns);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function deleteBassPattern(id: string): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(BASS_PATTERNS_STORE, "readwrite");
+    tx.objectStore(BASS_PATTERNS_STORE).delete(id);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });

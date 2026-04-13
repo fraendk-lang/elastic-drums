@@ -17,9 +17,11 @@ C++ DrumCore (core/)
 React UI (src/)
 ├── components/      PadGrid (waveform preview), StepSequencer, Transport, VoiceEditor (knobs),
 │                    MixerPanel (FFT meters), MixerStrip, Knob, EuclideanGenerator,
-│                    SongEditor, PatternBrowser, KitBrowser, WaveformPreview
-├── audio/           AudioEngine (12 TS voices + WASM bridge + FFT metering), SampleManager, MuLaw
-├── store/           Zustand store — pattern, sequencer, 16 conditional trigs, song mode
+│                    SongEditor, PatternBrowser, KitBrowser, WaveformPreview,
+│                    Bass303 (piano-roll sequencer, drag-to-pitch)
+├── audio/           AudioEngine (12 TS voices + WASM bridge + FFT metering), BassEngine (TB-303),
+│                    SampleManager, MuLaw, BassScheduler
+├── store/           Zustand store — pattern, sequencer, 16 conditional trigs, song mode, bass303
 ├── hooks/           useKeyboard, useMidi, useMotionRecording, useUndoRedo
 ├── storage/         patternStorage (IndexedDB)
 ├── kits/            KitManager + 24 factory kits (11 categories)
@@ -35,10 +37,24 @@ Plugin (plugin/)
 
 ### Sound Engine
 - 12 VA drum voices with parametric knob control
+- Multi-mode Percussion Synthesizer: 8 types per Perc voice (Clave, Rimshot, Cowbell, Shaker, Maracas, Tambourine, Woodblock, Agogo)
 - Sample drag & drop (WAV/MP3/OGG/FLAC)
 - µ-Law vintage mode (8-bit companding)
 - Per-voice insert FX: Filter (LP/HP/BP) + Distortion
 - Waveform oscilloscope preview on pads
+- Voice volume balancing (calibrated HH/Cymbal/Perc levels)
+
+### Bass 303 Synth
+- Authentic TB-303 acid bass synthesizer
+- VCO (saw/square) + sub-oscillator (-1 octave)
+- Dual cascaded biquad VCF (24dB/oct, self-oscillating resonance Q up to 30)
+- Fast attack (~3ms) + exponential decay filter envelope
+- Accent boosts filter envelope depth + shortens decay
+- Distortion with asymmetric soft-clipping
+- Slide/portamento glides both pitch and filter cutoff
+- 16-step piano-roll sequencer with per-step: note, octave, accent, slide, tie
+- 12 scale modes (Chromatic, Major, Minor, Dorian, Phrygian, Mixolydian, Pentatonics, Blues, Harmonic Minor, etc.)
+- Drag-to-pitch editing in piano roll
 
 ### Sequencer
 - 64 steps (4 pages), per-track polymetric length
@@ -50,11 +66,16 @@ Plugin (plugin/)
 - Euclidean Rhythm Generator (Bjorklund + presets)
 - Song Mode (pattern chain with repeats)
 - Undo/Redo (Ctrl+Z / Ctrl+Shift+Z)
+- Page copy/paste (copy steps 1-16 to 17-32 etc.)
+- Pattern length resize (snaps to 4/8/12/16/24/32/48/64)
+- Auto-extend pattern length when editing beyond current length
+- Auto-play on kit select for instant preview
 
 ### Effects & Mixer
 - Send A: Algorithmic Reverb (ConvolverNode)
 - Send B: Feedback Delay (LP-filtered, syncable)
-- Master: 3-Band EQ → Bus Compressor → Brick-wall Limiter
+- Master: 3-Band EQ → Bus Compressor → Saturation → Brick-wall Limiter (toggleable)
+- Bus groups (low/mid/hi frequency grouping)
 - Fullscreen Ableton-style mixer with:
   - FFT-based RMS + Peak metering (IEC 60268 scale)
   - Logarithmic fader law (0.75 = unity)
@@ -66,21 +87,46 @@ Plugin (plugin/)
 ### Input & Output
 - QWERTY keyboard (Q-V = pads, Space = play, 1-6 = presets)
 - Web MIDI API (GM drum map, hot-plug, MIDI Learn)
-- MIDI file export (.mid download)
+- MIDI file export (.mid download, includes bass sequencer)
+- WAV audio export (mixdown)
 - Pattern URL sharing (Base64 in hash)
 
 ### Sound Library
-- 24 factory kits across 11 categories
+- 24 factory kits across 11 categories (808, 909, Trap, DnB, Electro, World, Ambient, Retro, Acoustic, Cinematic)
 - 14 genre preset patterns
 - Kit Browser with category filter + search
 - Pattern Browser (save/load/delete via IndexedDB)
 
 ### Platform
 - C++ DSP → WASM (Emscripten 5.0.5, 21KB)
-- WASM AudioWorklet processor
-- JUCE plugin wrapper (VST3/AU/Standalone)
+- WASM AudioWorklet processor (prepared, Phase 1 uses Web Audio API)
+- JUCE plugin wrapper (VST3/AU/Standalone) with WebView ResourceProvider
 - PWA (manifest, favicon, service worker)
 - Responsive layout (desktop/tablet/mobile)
+- Monochrome toolbar design
+
+## Current Sprint Status (updated April 2026)
+
+### Recently Completed
+- Bass 303 acid synth with piano-roll sequencer
+- Multi-mode percussion synthesizer (8 types)
+- Pattern page copy/paste, auto-extend, length resize
+- Voice volume balancing fix
+- Monochrome toolbar redesign
+- Auto-play on kit select
+- JUCE WebView with ResourceProvider (matching Elastic Synth M4 pattern)
+
+### Known Issues
+- Rollup ARM64 native module error may affect production builds on some environments
+- BassScheduler uses window.__drumStore (functional but hacky)
+- WASM DSP not yet active (Phase 1 pure Web Audio)
+
+### Suggested Next Steps
+1. Fix production build pipeline (rollup ARM64 dependency)
+2. More factory kits + bass presets
+3. WASM DSP migration (AudioWorklet with real C++ core)
+4. Visual P-Lock indicators in step grid
+5. Error boundaries for audio context failures
 
 ## Build Commands
 

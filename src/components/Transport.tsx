@@ -3,18 +3,21 @@ import { useDrumStore, setFillMode } from "../store/drumStore";
 import { downloadMidi } from "../utils/midiExport";
 import { sharePattern } from "../utils/patternShare";
 import { exportPatternAsWav } from "../utils/audioExport";
+import { startSongRecording, stopSongRecording, isRecording, type ExportState } from "../utils/songExport";
 
 interface TransportProps {
   onOpenBrowser: () => void;
   onOpenEuclidean: () => void;
   onOpenSong: () => void;
+  onOpenScenes: () => void;
+  onOpenFx: () => void;
   onOpenMixer: () => void;
   onOpenKits: () => void;
   onToggleHelp: () => void;
 }
 
 export function Transport({
-  onOpenBrowser, onOpenEuclidean, onOpenSong, onOpenMixer, onOpenKits, onToggleHelp,
+  onOpenBrowser, onOpenEuclidean, onOpenSong, onOpenScenes, onOpenFx, onOpenMixer, onOpenKits, onToggleHelp,
 }: TransportProps) {
   const {
     bpm, isPlaying, swing, pattern,
@@ -45,10 +48,10 @@ export function Transport({
   }, [setBpm]);
 
   return (
-    <header className="flex items-center h-10 px-3 border-b border-[var(--ed-border)] bg-[#0e0e12] gap-1.5">
+    <header className="flex items-center h-11 px-3 border-b border-[var(--ed-border)]/70 bg-gradient-to-b from-[#111116] to-[#0d0d11] gap-1.5 relative z-20">
 
       {/* ── Brand ── */}
-      <span className="text-[10px] font-black tracking-[0.25em] text-[var(--ed-accent-orange)] mr-1 hidden lg:block">
+      <span className="text-[10px] font-black tracking-[0.25em] text-[var(--ed-accent-orange)] mr-1.5 hidden lg:block">
         ELASTIC DRUMS
       </span>
       <span className="text-[10px] font-black tracking-[0.25em] text-[var(--ed-accent-orange)] mr-1 lg:hidden">ED</span>
@@ -58,10 +61,10 @@ export function Transport({
       {/* ── Transport ── */}
       <button
         onClick={togglePlay}
-        className={`w-7 h-7 rounded flex items-center justify-center text-xs font-bold transition-all ${
+        className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold transition-all ed-pad-press ${
           isPlaying
-            ? "bg-white/10 text-red-400 border border-red-400/30"
-            : "bg-white/5 text-white/70 border border-white/10 hover:bg-white/10 hover:text-white"
+            ? "bg-red-500/15 text-red-400 border border-red-500/30 shadow-[0_0_12px_rgba(239,68,68,0.15)]"
+            : "bg-white/5 text-white/70 border border-white/10 hover:bg-white/10 hover:text-white hover:shadow-[0_0_10px_rgba(255,255,255,0.05)]"
         }`}
       >
         {isPlaying ? "■" : "▶"}
@@ -70,37 +73,39 @@ export function Transport({
       <FillButton />
 
       {/* BPM */}
-      <input
-        type="number" min={30} max={300} value={bpm}
-        onChange={(e) => setBpm(Number(e.target.value))}
-        className="w-11 h-6 px-1 text-center text-[11px] font-mono bg-black/40 border border-white/8 rounded text-white/90 focus:border-[var(--ed-accent-orange)]/50 focus:outline-none"
-      />
-      <button
-        onClick={handleTap}
-        className="h-5 px-1.5 text-[7px] font-bold tracking-wider text-white/30 hover:text-white/60 transition-colors"
-      >
-        TAP
-      </button>
+      <div className="flex items-center bg-black/30 rounded-md border border-white/6 px-0.5">
+        <input
+          type="number" min={30} max={300} value={bpm}
+          onChange={(e) => setBpm(Number(e.target.value))}
+          className="w-11 h-7 px-1 text-center text-[12px] font-mono bg-transparent text-[var(--ed-accent-orange)] focus:outline-none font-bold tabular-nums"
+        />
+        <button
+          onClick={handleTap}
+          className="h-5 px-1.5 text-[7px] font-bold tracking-wider text-white/25 hover:text-white/60 transition-colors border-l border-white/6"
+        >
+          TAP
+        </button>
+      </div>
 
       {/* Swing */}
-      <div className="flex items-center gap-0.5">
-        <span className="text-[7px] text-white/25 uppercase">Swg</span>
+      <div className="flex items-center gap-1 ml-0.5">
+        <span className="text-[7px] text-white/25 uppercase font-bold">Swg</span>
         <input type="range" min={50} max={75} value={swing}
           onChange={(e) => setSwing(Number(e.target.value))}
           className="w-10 h-[3px] accent-white/40" />
-        <span className="text-[8px] font-mono text-white/30 w-4">{swing}</span>
+        <span className="text-[9px] font-mono text-white/35 w-4 tabular-nums">{swing}</span>
       </div>
 
       {/* Length */}
-      <div className="flex items-center gap-0.5">
-        <span className="text-[7px] text-white/25 uppercase">Len</span>
+      <div className="flex items-center gap-1">
+        <span className="text-[7px] text-white/25 uppercase font-bold">Len</span>
         <select
           value={pattern.length}
           onChange={(e) => {
             const len = Number(e.target.value);
             useDrumStore.setState((s) => ({ pattern: { ...s.pattern, length: len } }));
           }}
-          className="h-5 px-0.5 text-[9px] bg-black/40 border border-white/8 rounded text-white/70 focus:outline-none"
+          className="h-5 px-0.5 text-[9px] bg-black/30 border border-white/8 rounded text-white/70 focus:outline-none"
         >
           {[4, 8, 12, 16, 24, 32, 48, 64].map((l) => (
             <option key={l} value={l}>{l}</option>
@@ -111,19 +116,23 @@ export function Transport({
       <Sep />
 
       {/* ── Pattern ── */}
-      <button onClick={prevPreset} className="w-4 h-4 text-[8px] text-white/30 hover:text-white/70 transition-colors">◀</button>
-      <span className="text-[10px] font-medium text-white/80 min-w-[60px] text-center truncate">{pattern.name}</span>
-      <button onClick={nextPreset} className="w-4 h-4 text-[8px] text-white/30 hover:text-white/70 transition-colors">▶</button>
-      <button onClick={clearPattern} className="text-[7px] text-white/20 hover:text-red-400/60 transition-colors ml-0.5">CLR</button>
+      <div className="flex items-center gap-1">
+        <button onClick={prevPreset} className="w-5 h-5 rounded text-[9px] text-white/30 hover:text-white/70 hover:bg-white/5 transition-all">&lsaquo;</button>
+        <span className="text-[10px] font-medium text-white/80 min-w-[65px] text-center truncate px-1">{pattern.name}</span>
+        <button onClick={nextPreset} className="w-5 h-5 rounded text-[9px] text-white/30 hover:text-white/70 hover:bg-white/5 transition-all">&rsaquo;</button>
+        <button onClick={clearPattern} className="text-[7px] text-white/15 hover:text-red-400/60 transition-colors ml-0.5 font-bold tracking-wider">CLR</button>
+      </div>
 
       {/* ── Spacer ── */}
       <div className="flex-1" />
 
-      {/* ── Tools (monochrome, subtle) ── */}
-      <div className="flex items-center gap-[3px]">
+      {/* ── Tools ── */}
+      <div className="flex items-center gap-[2px]">
         <ToolBtn onClick={onOpenKits} label="KITS" />
         <ToolBtn onClick={onOpenEuclidean} label="EUCLID" />
         <ToolBtn onClick={onOpenSong} label="SONG" />
+        <ToolBtn onClick={onOpenScenes} label="SCENE" />
+        <ToolBtn onClick={onOpenFx} label="FX" accent />
         <ToolBtn onClick={onOpenMixer} label="MIXER" accent />
 
         <Sep />
@@ -131,12 +140,13 @@ export function Transport({
         <ToolBtn onClick={onOpenBrowser} label="SAVE" />
         <ToolBtn onClick={() => downloadMidi(pattern, bpm)} label="MIDI" />
         <ToolBtn onClick={() => exportPatternAsWav(pattern, bpm, 4)} label="WAV" />
+        <RecordButton />
         <ToolBtn onClick={() => { sharePattern(pattern, bpm); }} label="SHARE" />
 
         <Sep />
 
         <button onClick={onToggleHelp}
-          className="w-5 h-5 rounded text-[9px] text-white/20 hover:text-white/50 transition-colors">?</button>
+          className="w-6 h-6 rounded-md text-[10px] text-white/20 hover:text-white/50 hover:bg-white/5 transition-all">?</button>
       </div>
     </header>
   );
@@ -144,18 +154,63 @@ export function Transport({
 
 // ─── Sub-components ──────────────────────────────────────
 
+function RecordButton() {
+  const [state, setState] = useState<ExportState>("idle");
+  const [elapsed, setElapsed] = useState(0);
+
+  const handleClick = useCallback(async () => {
+    if (isRecording()) {
+      await stopSongRecording({
+        onStateChange: setState,
+      });
+      setElapsed(0);
+    } else {
+      startSongRecording({
+        onStateChange: setState,
+        onProgress: (s) => setElapsed(Math.floor(s)),
+      });
+    }
+  }, []);
+
+  const recording = state === "recording";
+  const processing = state === "processing";
+
+  const formatTime = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={processing}
+      className={`h-6 px-2.5 rounded-md text-[8px] font-bold tracking-wider transition-all flex items-center gap-1 ${
+        recording
+          ? "bg-red-500/20 text-red-400 shadow-[0_0_12px_rgba(239,68,68,0.2)] border border-red-500/30"
+          : processing
+            ? "bg-yellow-500/15 text-yellow-400 border border-yellow-500/20"
+            : "text-white/30 hover:text-white/70 hover:bg-white/5"
+      }`}
+    >
+      {recording && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
+      {recording ? formatTime(elapsed) : processing ? "..." : "REC"}
+    </button>
+  );
+}
+
 function Sep() {
-  return <div className="w-px h-4 bg-white/8 mx-0.5" />;
+  return <div className="w-px h-4 bg-white/6 mx-1" />;
 }
 
 function ToolBtn({ onClick, label, accent }: { onClick: () => void; label: string; accent?: boolean }) {
   return (
     <button
       onClick={onClick}
-      className={`h-5 px-2 rounded text-[8px] font-bold tracking-wider transition-all ${
+      className={`h-6 px-2.5 rounded-md text-[8px] font-bold tracking-wider transition-all ed-tool-btn ${
         accent
-          ? "bg-white/8 text-[var(--ed-accent-orange)]/80 hover:bg-white/12 hover:text-[var(--ed-accent-orange)]"
-          : "text-white/35 hover:text-white/70 hover:bg-white/5"
+          ? "bg-[var(--ed-accent-orange)]/8 text-[var(--ed-accent-orange)]/80 hover:bg-[var(--ed-accent-orange)]/15 hover:text-[var(--ed-accent-orange)]"
+          : "text-white/30 hover:text-white/70 hover:bg-white/5"
       }`}
     >
       {label}
@@ -170,10 +225,10 @@ function FillButton() {
       onMouseDown={() => { setActive(true); setFillMode(true); }}
       onMouseUp={() => { setActive(false); setFillMode(false); }}
       onMouseLeave={() => { setActive(false); setFillMode(false); }}
-      className={`h-5 px-1.5 rounded text-[7px] font-bold tracking-wider transition-all ${
+      className={`h-6 px-2 rounded-md text-[7px] font-bold tracking-wider transition-all ${
         active
-          ? "bg-yellow-400/20 text-yellow-300"
-          : "text-white/20 hover:text-white/40"
+          ? "bg-yellow-400/20 text-yellow-300 shadow-[0_0_10px_rgba(250,204,21,0.15)]"
+          : "text-white/20 hover:text-white/40 hover:bg-white/5"
       }`}
     >
       FILL

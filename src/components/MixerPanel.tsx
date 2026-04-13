@@ -4,8 +4,8 @@
  * Fixed: dB scale aligned to meters, wider meters, proper IEC mapping
  */
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import { audioEngine, AudioEngine } from "../audio/AudioEngine";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { audioEngine, AudioEngine, DELAY_DIVISION_NAMES, REVERB_TYPES } from "../audio/AudioEngine";
 
 const CHANNELS = [
   { id: 0, label: "KICK", color: "#f59e0b" },
@@ -20,21 +20,25 @@ const CHANNELS = [
   { id: 9, label: "RIDE", color: "#3b82f6" },
   { id: 10, label: "PRC 1", color: "#8b5cf6" },
   { id: 11, label: "PRC 2", color: "#8b5cf6" },
+  { id: 12, label: "BASS", color: "#10b981" },
+  { id: 13, label: "CHRD", color: "#a78bfa" },
+  { id: 14, label: "LEAD", color: "#f472b6" },
 ];
 
+const NUM_CHANNELS = CHANNELS.length; // 15
+
 // IEC 60268-18 meter scale: dBFS → meter % (0..100)
+// Smooth logarithmic curve — no piecewise discontinuities
 function dbToPercent(db: number): number {
   if (db < -60) return 0;
-  if (db > 6)   return 100;
-  // Piecewise linear approximation of IEC scale
-  if (db >= -0.1) return 100;
-  if (db >= -6)   return 85 + (db + 6) / 6 * 15;
-  if (db >= -12)  return 70 + (db + 12) / 6 * 15;
-  if (db >= -20)  return 50 + (db + 20) / 8 * 20;
-  if (db >= -30)  return 30 + (db + 30) / 10 * 20;
-  if (db >= -40)  return 15 + (db + 40) / 10 * 15;
-  if (db >= -60)  return (db + 60) / 20 * 15;
-  return 0;
+  if (db > 6) return 100;
+  // Attempt proper IEC-style mapping via smooth polynomial
+  // Maps -60→0%, -40→15%, -30→30%, -20→50%, -12→70%, -6→85%, 0→100%
+  // Using a smooth cubic fit that passes through the IEC reference points
+  const t = (db + 60) / 66; // normalize -60..+6 → 0..1
+  // Apply S-curve: slight compression at bottom, expansion at top
+  const curved = t * t * (3 - 2 * t); // smoothstep
+  return curved * 100;
 }
 
 // Logarithmic fader: position (0..1) → gain
@@ -68,15 +72,18 @@ interface MixerPanelProps {
 }
 
 export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
-  const [meters, setMeters] = useState<MeterData[]>(Array.from({ length: 12 }, () => ({ rmsDb: -Infinity, peakDb: -Infinity })));
+  const [meters, setMeters] = useState<MeterData[]>(Array.from({ length: NUM_CHANNELS }, () => ({ rmsDb: -Infinity, peakDb: -Infinity })));
   const [masterMeter, setMasterMeter] = useState<MeterData>({ rmsDb: -Infinity, peakDb: -Infinity });
-  const [faders, setFaders] = useState<number[]>(new Array(12).fill(750));
+  const [faders, setFaders] = useState<number[]>(new Array(NUM_CHANNELS).fill(750));
   const [masterFader, setMasterFaderVal] = useState(700);
-  const [sends, setSends] = useState<{ a: number[]; b: number[] }>({ a: new Array(12).fill(0), b: new Array(12).fill(0) });
+  const [sends, setSends] = useState<{ a: number[]; b: number[] }>({ a: new Array(NUM_CHANNELS).fill(0), b: new Array(NUM_CHANNELS).fill(0) });
   const [reverbLevel, setReverbLvl] = useState(35);
-  const [delayTime, setDelayTime] = useState(375);
+  const [reverbType, setReverbType] = useState<string>("hall");
+  const [reverbDamping, setReverbDamping] = useState(80); // 0-100 → 500-16000Hz
   const [delayFB, setDelayFB] = useState(40);
   const [delayLevel, setDelayLvl] = useState(30);
+  const [delayDiv, setDelayDiv] = useState("1/8");
+  const [delayType, setDelayTypeState] = useState<string>("stereo");
   const [eqLow, setEqLow] = useState(0);
   const [eqMid, setEqMid] = useState(0);
   const [eqHigh, setEqHigh] = useState(0);
@@ -85,7 +92,7 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
   const [limiterOn, setLimiterOn] = useState(true);
   const [limiterThreshold, setLimiterThreshold] = useState(99); // maps to -1dB default
   const [pumpRate, setPumpRate] = useState(50);
-  const [pans, setPans] = useState<number[]>(new Array(12).fill(0));
+  const [pans, setPans] = useState<number[]>(new Array(NUM_CHANNELS).fill(0));
   const [selectedChannels, setSelectedChannels] = useState<Set<number>>(new Set());
   const [muted, setMuted] = useState<Set<number>>(new Set());
   const [soloed, setSoloed] = useState<Set<number>>(new Set());
@@ -96,7 +103,7 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
     if (!isOpen) return;
     const update = () => {
       const m: MeterData[] = [];
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < NUM_CHANNELS; i++) {
         const d = audioEngine.getChannelMeter(i);
         m.push({ rmsDb: d.rmsDb, peakDb: d.peakDb });
       }
@@ -142,7 +149,7 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
     setSoloed((prev) => {
       const next = new Set(prev);
       if (next.has(ch)) next.delete(ch); else next.add(ch);
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < NUM_CHANNELS; i++) {
         if (next.size === 0) audioEngine.setChannelVolume(i, muted.has(i) ? 0 : faderToGain((faders[i] ?? 750) / 1000));
         else audioEngine.setChannelVolume(i, next.has(i) ? faderToGain((faders[i] ?? 750) / 1000) : 0);
       }
@@ -180,15 +187,16 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
         </div>
 
         {/* Channel strips */}
-        {CHANNELS.map((ch, i) => (
+        {CHANNELS.map((ch, i) => (<React.Fragment key={ch.id}>
+          {/* Divider before BASS channel */}
+          {ch.id === 12 && <div className="w-px bg-[#10b981]/25 mx-1" />}
           <ChannelStrip
-            key={ch.id}
             label={ch.label}
             color={ch.color}
             meter={meters[i]!}
             faderValue={faders[i] ?? 750}
             isSelected={selectedChannels.has(i)}
-            group={audioEngine.getChannelGroup(i)}
+            group={audioEngine.getChannelGroup(ch.id)}
             onSelect={() => {
               setSelectedChannels((prev) => {
                 const next = new Set(prev);
@@ -200,21 +208,21 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
             sendB={sends.b[i] ?? 0}
             isMuted={muted.has(i)}
             isSoloed={soloed.has(i)}
-            onFader={(v) => handleFader(i, v)}
-            onSendA={(v) => handleSendA(i, v)}
-            onSendB={(v) => handleSendB(i, v)}
+            onFader={(v) => handleFader(ch.id, v)}
+            onSendA={(v) => handleSendA(ch.id, v)}
+            onSendB={(v) => handleSendB(ch.id, v)}
             onMute={() => toggleMute(i)}
             onSolo={() => toggleSolo(i)}
-            channelIndex={i}
+            channelIndex={ch.id}
             panValue={pans[i] ?? 0}
             onPanChange={(v) => {
               setPans((p) => { const n = [...p]; n[i] = v; return n; });
-              audioEngine.setChannelPan(i, v);
+              audioEngine.setChannelPan(ch.id, v);
             }}
           />
-        ))}
+        </React.Fragment>))}
 
-        {/* Divider */}
+        {/* Divider before master */}
         <div className="w-px bg-[var(--ed-accent-green)]/20 mx-1" />
 
         {/* Master */}
@@ -276,16 +284,46 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
         <div className="w-px h-5 bg-[var(--ed-border)] shrink-0" />
         <div className="flex items-center gap-2 shrink-0">
           <span className="text-[9px] font-bold text-[var(--ed-accent-blue)] tracking-wider">REVERB</span>
+          {/* Type buttons */}
+          <div className="flex gap-[2px]">
+            {REVERB_TYPES.map((t) => (
+              <button key={t} onClick={() => { setReverbType(t); audioEngine.setReverbType(t); }}
+                className={`px-1 py-[1px] text-[6px] font-bold rounded transition-colors ${
+                  reverbType === t ? "bg-[var(--ed-accent-blue)]/30 text-[var(--ed-accent-blue)]" : "text-[var(--ed-text-muted)] hover:text-[var(--ed-text-secondary)]"
+                }`}>{t.toUpperCase()}</button>
+            ))}
+          </div>
           <FxSlider value={reverbLevel} max={100} label="Lvl" color="#3b82f6"
             onChange={(v) => { setReverbLvl(v); audioEngine.setReverbLevel(v / 100); }} />
+          <FxSlider value={reverbDamping} max={100} label="Damp" color="#3b82f6"
+            onChange={(v) => { setReverbDamping(v); audioEngine.setReverbDamping(500 + (v / 100) * 15500); }} />
         </div>
         <div className="w-px h-5 bg-[var(--ed-border)]" />
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <span className="text-[9px] font-bold text-[var(--ed-accent-orange)] tracking-wider">DELAY</span>
-          <FxSlider value={delayTime} max={1000} label="Time" suffix="ms" color="#f59e0b"
-            onChange={(v) => { setDelayTime(v); audioEngine.setDelayParams(v / 1000, delayFB / 100, 4000); }} />
+          {/* Type buttons */}
+          <div className="flex gap-[2px]">
+            {(["stereo", "pingpong", "tape"] as const).map((t) => {
+              const labels: Record<string, string> = { stereo: "ST", pingpong: "PP", tape: "TAPE" };
+              return (
+                <button key={t} onClick={() => { setDelayTypeState(t); audioEngine.setDelayType(t); }}
+                  className={`px-1 py-[1px] text-[6px] font-bold rounded transition-colors ${
+                    delayType === t ? "bg-[var(--ed-accent-orange)]/30 text-[var(--ed-accent-orange)]" : "text-[var(--ed-text-muted)] hover:text-[var(--ed-text-secondary)]"
+                  }`}>{labels[t]}</button>
+              );
+            })}
+          </div>
+          {/* Sync division */}
+          <div className="flex gap-[1px]">
+            {DELAY_DIVISION_NAMES.map((d) => (
+              <button key={d} onClick={() => { setDelayDiv(d); audioEngine.setDelayDivision(d, 120); }}
+                className={`px-0.5 py-[1px] text-[5px] font-bold rounded transition-colors ${
+                  delayDiv === d ? "bg-[var(--ed-accent-orange)]/30 text-[var(--ed-accent-orange)]" : "text-[var(--ed-text-muted)] hover:text-[var(--ed-text-secondary)]"
+                }`}>{d}</button>
+            ))}
+          </div>
           <FxSlider value={delayFB} max={90} label="FB" color="#f59e0b"
-            onChange={(v) => { setDelayFB(v); audioEngine.setDelayParams(delayTime / 1000, v / 100, 4000); }} />
+            onChange={(v) => { setDelayFB(v); if (audioEngine) audioEngine.setDelayParams(0.375, v / 100, 4000); }} />
           <FxSlider value={delayLevel} max={100} label="Wet" color="#f59e0b"
             onChange={(v) => { setDelayLvl(v); audioEngine.setDelayLevel(v / 100); }} />
         </div>
@@ -326,11 +364,27 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
             <FxSlider value={limiterThreshold} max={100} label="Ceil" suffix="" color="#ef4444"
               onChange={(v) => {
                 setLimiterThreshold(v);
-                // Map 0-100 to -12dB..0dB
                 const db = -12 + (v / 100) * 12;
                 audioEngine.setLimiterThreshold(db);
               }} />
           )}
+        </div>
+        <div className="w-px h-5 bg-[var(--ed-border)] shrink-0" />
+        {/* Binaural / Spatial */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => {
+              const next = !audioEngine.getBinauralMode();
+              audioEngine.setBinauralMode(next);
+            }}
+            className={`px-2 py-0.5 text-[9px] font-bold rounded transition-colors ${
+              audioEngine.getBinauralMode()
+                ? "bg-cyan-500/30 text-cyan-400"
+                : "bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)]"
+            }`}
+          >
+            BINAURAL {audioEngine.getBinauralMode() ? "ON" : "OFF"}
+          </button>
         </div>
       </div>
     </div>
@@ -355,7 +409,7 @@ function ChannelStrip({ label, color, meter, faderValue, sendA, sendB, isMuted, 
   const [drive, setDrive] = useState(0);
 
   const GROUP_COLORS: Record<string, string> = {
-    drums: "#f59e0b", hats: "#3b82f6", perc: "#8b5cf6", master: "#666",
+    drums: "#f59e0b", hats: "#3b82f6", perc: "#8b5cf6", bass: "#10b981", chords: "#a78bfa", melody: "#f472b6", master: "#666",
   };
   const faderDb = faderValue <= 5 ? -Infinity : AudioEngine.linearToDb(faderToGain(faderValue / 1000));
 

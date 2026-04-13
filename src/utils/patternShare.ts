@@ -61,7 +61,7 @@ export function decodePattern(encoded: string): { pattern: PatternData; bpm: num
     const tracks = compact.t.map((ct) => {
       const steps = Array.from({ length: 64 }, () => ({
         active: false, velocity: 100, microTiming: 0, probability: 100,
-        ratchetCount: 1, condition: "always" as const, paramLocks: {},
+        ratchetCount: 1, condition: "always" as const, gateLength: 1, paramLocks: {},
       }));
 
       for (const cs of ct.s) {
@@ -84,7 +84,7 @@ export function decodePattern(encoded: string): { pattern: PatternData; bpm: num
       tracks.push({
         steps: Array.from({ length: 64 }, () => ({
           active: false, velocity: 100, microTiming: 0, probability: 100,
-          ratchetCount: 1, condition: "always" as const, paramLocks: {},
+          ratchetCount: 1, condition: "always" as const, gateLength: 1, paramLocks: {},
         })),
         mute: false, solo: false, volume: 100, pan: 0, length: compact.l,
       });
