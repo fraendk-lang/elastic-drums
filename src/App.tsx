@@ -102,67 +102,19 @@ export function App() {
     return unsub;
   }, []);
 
-  // ─── Splash Screen ──────────────────────────────────────
+  // ─── Audio Init Overlay ──────────────────────────────────
   if (!audioReady) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[var(--ed-bg-primary)] overflow-hidden relative ed-noise">
-        {/* Background grid pattern */}
-        <div className="absolute inset-0 opacity-[0.025]" style={{
-          backgroundImage: "linear-gradient(var(--ed-text-muted) 1px, transparent 1px), linear-gradient(90deg, var(--ed-text-muted) 1px, transparent 1px)",
-          backgroundSize: "24px 24px",
-        }} />
-
-        {/* Radial glow behind logo */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full opacity-[0.06]" style={{
-          background: "radial-gradient(circle, var(--ed-accent-orange), transparent 70%)",
-        }} />
-
-        <div className="relative text-center z-10">
-          {/* Logo dots */}
-          <div className="flex items-center justify-center gap-1.5 mb-3">
-            {[
-              "var(--ed-accent-orange)", "var(--ed-accent-orange)",
-              "var(--ed-accent-blue)", "var(--ed-pad-hybrid)",
-            ].map((c, i) => (
-              <div key={i} className="w-2.5 h-2.5 rounded-sm" style={{
-                backgroundColor: c,
-                boxShadow: `0 0 10px ${c}40`,
-              }} />
-            ))}
-          </div>
-
-          <h1 className="text-4xl font-black tracking-[0.3em] ed-shimmer-text mb-1">
-            ELASTIC DRUMS
-          </h1>
-          <p className="text-[var(--ed-text-muted)] text-[11px] tracking-[0.2em] uppercase mb-10">
-            Groovebox &middot; VA Synth &middot; Samples &middot; 3 Synths &middot; Sequencer
-          </p>
-
-          {/* Start button */}
-          <button
-            onClick={startAudio}
-            className="group relative w-24 h-24 mx-auto rounded-full bg-[var(--ed-bg-elevated)] border-2 border-[var(--ed-accent-orange)]/40 flex items-center justify-center hover:border-[var(--ed-accent-orange)] hover:bg-[var(--ed-accent-orange)] transition-all duration-300 cursor-pointer hover:shadow-[0_0_40px_rgba(245,158,11,0.3)]"
-          >
-            <span className="text-3xl text-[var(--ed-accent-orange)] group-hover:text-black transition-colors ml-1">
-              &#9654;
-            </span>
-            {/* Pulse ring */}
-            <div className="absolute inset-0 rounded-full border-2 border-[var(--ed-accent-orange)]/20 animate-ping" />
-          </button>
-
-          <p className="text-[var(--ed-text-muted)] text-[10px] mt-6 tracking-wide">
-            Click to initialize audio engine
-          </p>
-
-          {/* Feature tags */}
-          <div className="flex gap-2 justify-center mt-8 flex-wrap max-w-sm mx-auto">
-            {["12 Drums", "Bass 303", "Chords", "Melody", "P-Locks", "Euclidean", "15ch Mixer", "MIDI"].map((tag) => (
-              <span key={tag} className="px-2.5 py-0.5 text-[9px] rounded-full bg-[var(--ed-bg-surface)]/80 text-[var(--ed-text-muted)] border border-[var(--ed-border)]/50 backdrop-blur-sm">
-                {tag}
-              </span>
-            ))}
-          </div>
-        </div>
+      <div className="flex items-center justify-center h-screen bg-[var(--ed-bg-primary)] ed-noise">
+        <button
+          onClick={startAudio}
+          className="group relative w-20 h-20 rounded-full bg-[var(--ed-bg-elevated)] border-2 border-[var(--ed-accent-orange)]/40 flex items-center justify-center hover:border-[var(--ed-accent-orange)] hover:bg-[var(--ed-accent-orange)] transition-all duration-300 cursor-pointer hover:shadow-[0_0_40px_rgba(245,158,11,0.3)]"
+        >
+          <span className="text-2xl text-[var(--ed-accent-orange)] group-hover:text-black transition-colors ml-1">
+            &#9654;
+          </span>
+          <div className="absolute inset-0 rounded-full border-2 border-[var(--ed-accent-orange)]/20 animate-ping" />
+        </button>
       </div>
     );
   }

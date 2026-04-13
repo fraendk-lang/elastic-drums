@@ -92,7 +92,7 @@ export async function stopSongRecording(opts?: SongExportOptions): Promise<void>
         const a = document.createElement("a");
         a.href = url;
         const duration = Math.round((performance.now() - _startTime) / 1000);
-        a.download = opts?.filename ?? `elastic-drums-song-${duration}s.wav`;
+        a.download = opts?.filename ?? `elastic-groove-song-${duration}s.wav`;
         a.click();
         URL.revokeObjectURL(url);
       } catch {
@@ -100,7 +100,7 @@ export async function stopSongRecording(opts?: SongExportOptions): Promise<void>
         const url = URL.createObjectURL(webmBlob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = opts?.filename?.replace(".wav", ".webm") ?? "elastic-drums-song.webm";
+        a.download = opts?.filename?.replace(".wav", ".webm") ?? "elastic-groove-song.webm";
         a.click();
         URL.revokeObjectURL(url);
       }

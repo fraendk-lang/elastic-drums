@@ -1,7 +1,7 @@
 {
-  "name": "Elastic Drums",
-  "short_name": "Elastic Drums",
-  "description": "Hybrid Drum Machine — VA Synth + Samples + Elektron Sequencer",
+  "name": "Elastic Groove",
+  "short_name": "Elastic Groove",
+  "description": "Browser Groovebox — VA Synth + Samples + Elektron Sequencer",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0a0c",
