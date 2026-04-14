@@ -1,6 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useDrumStore } from "../store/drumStore";
 import { useTransportStore } from "../store/transportStore";
+import { audioEngine } from "../audio/AudioEngine";
+import { bassEngine } from "../audio/BassEngine";
+import { chordsEngine } from "../audio/ChordsEngine";
+import { melodyEngine } from "../audio/MelodyEngine";
+import { soundFontEngine } from "../audio/SoundFontEngine";
 
 interface PianoRollNote {
   id: string;
@@ -14,6 +19,8 @@ interface PianoRollProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+type SoundTarget = "bass" | "chords" | "melody" | "drums";
 
 const OCTAVE_PATTERN = [
   { note: "C", black: false },
@@ -30,383 +37,431 @@ const OCTAVE_PATTERN = [
   { note: "B", black: false },
 ];
 
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const ROW_HEIGHT = 18;
-const PIANO_WIDTH = 48;
-const GRID_CELL_WIDTH = 30; // 30px per 1/16 note
+const PIANO_WIDTH = 52;
+const CELL_W = 30;
+
+const TARGET_COLORS: Record<SoundTarget, string> = {
+  bass: "var(--ed-accent-bass, #10b981)",
+  chords: "var(--ed-accent-chords, #a78bfa)",
+  melody: "var(--ed-accent-melody, #f472b6)",
+  drums: "var(--ed-accent-orange, #f59e0b)",
+};
+
+// GM Drum names for drum target
+// GM Drum names available for future drum-mode labeling
+// const DRUM_NAMES: Record<number, string> = { 36: "Kick", 38: "Snare", 42: "HH Cl", ... };
+
+/** Play a note preview through the selected sound target */
+function previewNote(midi: number, velocity: number, target: SoundTarget): void {
+  const time = audioEngine.currentTime;
+  switch (target) {
+    case "drums":
+      audioEngine.triggerVoice(Math.max(0, Math.min(11, midi - 36)));
+      break;
+    case "bass":
+      if (soundFontEngine.isLoaded("bass")) {
+        soundFontEngine.playNote("bass", midi, time, velocity, 0.3);
+      } else {
+        bassEngine.triggerNote(midi, time, false, false, false);
+        setTimeout(() => bassEngine.releaseNote(time + 0.3), 300);
+      }
+      break;
+    case "chords":
+      if (soundFontEngine.isLoaded("chords")) {
+        soundFontEngine.playNote("chords", midi, time, velocity, 0.3);
+      } else {
+        chordsEngine.triggerChord([midi], time, false, false);
+        setTimeout(() => chordsEngine.releaseChord(time + 0.3), 300);
+      }
+      break;
+    case "melody":
+      if (soundFontEngine.isLoaded("melody")) {
+        soundFontEngine.playNote("melody", midi, time, velocity, 0.3);
+      } else {
+        melodyEngine.triggerNote(midi, time, false, false, false);
+        setTimeout(() => melodyEngine.releaseNote(time + 0.3), 300);
+      }
+      break;
+  }
+}
+
+function midiNoteName(midi: number): string {
+  return (NOTE_NAMES[midi % 12] ?? "?") + (Math.floor(midi / 12) - 1);
+}
 
 export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
-  const drumStore = useDrumStore();
-  const transportStore = useTransportStore();
+  const bpm = useDrumStore((s) => s.bpm);
+  const currentStep = useTransportStore((s) => s.currentStep);
 
-  // Local state for piano roll
   const [notes, setNotes] = useState<PianoRollNote[]>([
-    { id: "1", midi: 60, start: 0, duration: 0.5, velocity: 0.8 },
-    { id: "2", midi: 64, start: 1, duration: 0.5, velocity: 0.8 },
-    { id: "3", midi: 67, start: 2, duration: 0.5, velocity: 0.8 },
+    { id: "1", midi: 60, start: 0, duration: 1, velocity: 0.8 },
+    { id: "2", midi: 64, start: 1, duration: 0.5, velocity: 0.7 },
+    { id: "3", midi: 67, start: 2, duration: 1.5, velocity: 0.9 },
+    { id: "4", midi: 63, start: 4, duration: 0.5, velocity: 0.6 },
+    { id: "5", midi: 60, start: 5, duration: 2, velocity: 0.85 },
   ]);
 
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
-  const [gridResolution, setGridResolution] = useState(0.25); // 1/16
-  const [snapEnabled, setSnapEnabled] = useState(true);
-  const [scrollY] = useState(36); // Start at C4 (MIDI 60)
-  const [scrollX] = useState(0);
+  const [gridRes, setGridRes] = useState(0.25);
+  const [snap, setSnap] = useState(true);
+  const [target, setTarget] = useState<SoundTarget>("melody");
+  const [dragMode, setDragMode] = useState<"none" | "move" | "resize" | "velocity">("none");
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const gridContainerRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const dragStartRef = useRef<{ x: number; y: number; note: PianoRollNote } | null>(null);
 
-  // Note creation and manipulation
-  const createNote = useCallback((midi: number, start: number) => {
-    const id = Date.now().toString();
-    const snappedStart = snapEnabled ? Math.round(start / gridResolution) * gridResolution : start;
-    setNotes((prev) => [
-      ...prev,
-      { id, midi, start: snappedStart, duration: gridResolution, velocity: 0.8 },
-    ]);
-  }, [gridResolution, snapEnabled]);
+  const totalRows = 48; // 4 octaves
+  const baseNote = 36; // C2
+  const totalBeats = 16;
+  const gridW = totalBeats * CELL_W;
+  const gridH = totalRows * ROW_HEIGHT;
+  const accentColor = TARGET_COLORS[target];
 
-  const deleteNote = useCallback((id: string) => {
+  // ─── Note actions ─────────────────────────────────────
+
+  const addNote = useCallback((midi: number, startBeat: number) => {
+    const start = snap ? Math.round(startBeat / gridRes) * gridRes : startBeat;
+    const note: PianoRollNote = {
+      id: `n${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      midi, start: Math.max(0, start), duration: gridRes, velocity: 0.8,
+    };
+    setNotes((prev) => [...prev, note]);
+    setSelectedNoteId(note.id);
+    previewNote(midi, 0.8, target);
+  }, [gridRes, snap, target]);
+
+  const removeNote = useCallback((id: string) => {
     setNotes((prev) => prev.filter((n) => n.id !== id));
-    setSelectedNoteId(null);
+    if (selectedNoteId === id) setSelectedNoteId(null);
+  }, [selectedNoteId]);
+
+  const patchNote = useCallback((id: string, patch: Partial<PianoRollNote>) => {
+    setNotes((prev) => prev.map((n) => n.id === id ? { ...n, ...patch } : n));
   }, []);
 
-  const updateNote = useCallback((id: string, updates: Partial<PianoRollNote>) => {
-    setNotes((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, ...updates } : n))
-    );
-  }, []);
+  // ─── Grid click → create note ─────────────────────────
 
-  // Grid interaction handlers
-  const handleGridClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return; // Only left-click
-
-    const rect = gridContainerRef.current?.getBoundingClientRect();
+  const handleGridPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const rect = gridRef.current?.getBoundingClientRect();
     if (!rect) return;
 
-    const x = e.clientX - rect.left + scrollX;
-    const y = e.clientY - rect.top;
-    const rowIndex = Math.floor(y / ROW_HEIGHT);
+    const x = e.clientX - rect.left + gridRef.current!.scrollLeft;
+    const y = e.clientY - rect.top + gridRef.current!.scrollTop;
+    const row = Math.floor(y / ROW_HEIGHT);
+    const midi = baseNote + (totalRows - row - 1);
+    const beat = x / CELL_W;
 
-    // Get MIDI note from row
-    const totalRows = OCTAVE_PATTERN.length * 4; // 4 octaves
-    const midiNote = Math.max(0, Math.min(127, scrollY + (totalRows - rowIndex - 1)));
-
-    // Get start beat from x position
-    const beatStart = x / GRID_CELL_WIDTH;
-
-    // Check if clicking on existing note
-    const clickedNote = notes.find(
-      (n) =>
-        n.midi === midiNote &&
-        n.start <= beatStart &&
-        beatStart < n.start + n.duration
-    );
-
-    if (clickedNote) {
-      setSelectedNoteId(clickedNote.id);
-    } else {
-      setSelectedNoteId(null);
-      createNote(midiNote, beatStart);
+    // Check if clicking on a note
+    const hit = notes.find((n) => n.midi === midi && beat >= n.start && beat < n.start + n.duration);
+    if (hit) {
+      setSelectedNoteId(hit.id);
+      return; // note drag handled by note's own handler
     }
-  }, [scrollX, scrollY, notes, createNote]);
 
-  const handleNoteMouseDown = useCallback((e: React.MouseEvent, noteId: string) => {
+    setSelectedNoteId(null);
+    addNote(midi, beat);
+  }, [notes, addNote, baseNote]);
+
+  // ─── Note pointer down → move / resize / velocity ─────
+
+  const handleNotePointerDown = useCallback((e: React.PointerEvent, noteId: string) => {
     e.preventDefault();
     e.stopPropagation();
-
     setSelectedNoteId(noteId);
 
-    const rect = gridContainerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    const startX = e.clientX;
     const note = notes.find((n) => n.id === noteId);
     if (!note) return;
 
-    const isResizeHandle = (e.target as HTMLElement).classList.contains("resize-handle");
+    const el = e.currentTarget as HTMLElement;
+    const rect = el.getBoundingClientRect();
+    const relX = e.clientX - rect.left;
+    const relY = e.clientY - rect.top;
+    const h = rect.height;
+    const w = rect.width;
 
-    const handleMouseMove = (moveE: MouseEvent) => {
-      const deltaX = moveE.clientX - startX;
+    // Bottom 5px = velocity drag
+    let mode: "move" | "resize" | "velocity" = "move";
+    if (relY > h - 5) mode = "velocity";
+    else if (relX > w - 6) mode = "resize";
 
-      if (isResizeHandle) {
-        // Resize duration
-        const beatDelta = deltaX / GRID_CELL_WIDTH;
-        const newDuration = Math.max(gridResolution, note.duration + beatDelta);
-        updateNote(noteId, { duration: newDuration });
-      } else {
-        // Move note
-        const beatDelta = deltaX / GRID_CELL_WIDTH;
-        const newStart = Math.max(0, note.start + beatDelta);
+    setDragMode(mode);
+    dragStartRef.current = { x: e.clientX, y: e.clientY, note: { ...note } };
+    el.setPointerCapture(e.pointerId);
+  }, [notes]);
 
-        // Snap to grid if enabled
-        const snappedStart = snapEnabled
-          ? Math.round(newStart / gridResolution) * gridResolution
-          : newStart;
+  const handleNotePointerMove = useCallback((e: React.PointerEvent) => {
+    if (dragMode === "none" || !dragStartRef.current) return;
+    const { x: sx, y: sy, note: orig } = dragStartRef.current;
+    const dx = e.clientX - sx;
+    const dy = e.clientY - sy;
 
-        updateNote(noteId, { start: snappedStart });
+    switch (dragMode) {
+      case "move": {
+        const beatDelta = dx / CELL_W;
+        const pitchDelta = -Math.round(dy / ROW_HEIGHT);
+        let newStart = orig.start + beatDelta;
+        if (snap) newStart = Math.round(newStart / gridRes) * gridRes;
+        patchNote(orig.id, {
+          start: Math.max(0, newStart),
+          midi: Math.max(0, Math.min(127, orig.midi + pitchDelta)),
+        });
+        break;
       }
-    };
+      case "resize": {
+        const beatDelta = dx / CELL_W;
+        let newDur = orig.duration + beatDelta;
+        if (snap) newDur = Math.round(newDur / gridRes) * gridRes;
+        patchNote(orig.id, { duration: Math.max(gridRes, newDur) });
+        break;
+      }
+      case "velocity": {
+        const velDelta = -dy / 80; // 80px = full range
+        patchNote(orig.id, { velocity: Math.max(0.05, Math.min(1, orig.velocity + velDelta)) });
+        break;
+      }
+    }
+  }, [dragMode, gridRes, snap, patchNote]);
 
-    const handleMouseUp = () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
+  const handleNotePointerUp = useCallback((e: React.PointerEvent) => {
+    if (dragMode === "move" && dragStartRef.current) {
+      // Preview new pitch after move
+      const note = notes.find((n) => n.id === dragStartRef.current?.note.id);
+      if (note && note.midi !== dragStartRef.current.note.midi) {
+        previewNote(note.midi, note.velocity, target);
+      }
+    }
+    setDragMode("none");
+    dragStartRef.current = null;
+    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+  }, [dragMode, notes, target]);
 
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-  }, [notes, gridResolution, snapEnabled, updateNote]);
+  // ─── Right-click = delete ─────────────────────────────
 
-  const handleNoteContextMenu = useCallback((e: React.MouseEvent, noteId: string) => {
+  const handleNoteContext = useCallback((e: React.MouseEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
-    deleteNote(noteId);
-  }, [deleteNote]);
+    removeNote(id);
+  }, [removeNote]);
 
-  // Keyboard shortcut: Delete selected note
+  // ─── Piano key click = preview ────────────────────────
+
+  const handleKeyClick = useCallback((midi: number) => {
+    previewNote(midi, 0.8, target);
+  }, [target]);
+
+  // ─── Keyboard: Delete ─────────────────────────────────
+
   useEffect(() => {
     if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handler = (e: KeyboardEvent) => {
       if ((e.key === "Delete" || e.key === "Backspace") && selectedNoteId) {
         e.preventDefault();
-        deleteNote(selectedNoteId);
+        removeNote(selectedNoteId);
       }
     };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, selectedNoteId, deleteNote]);
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [isOpen, selectedNoteId, removeNote]);
 
   if (!isOpen) return null;
 
-  // ─── Render ─────────────────────────────────────────────
-  const visibleBeats = 16;
-  const visibleRows = Math.ceil(window.innerHeight / ROW_HEIGHT) - 4;
-  const totalRows = OCTAVE_PATTERN.length * 4;
-
-  // Playhead position (in beats)
-  const playheadBeat = transportStore.currentStep / 4; // Assuming 16 steps per bar
+  const playheadBeat = currentStep / 4;
+  const selectedNote = notes.find((n) => n.id === selectedNoteId);
 
   return (
-    <div
-      ref={containerRef}
-      className="fixed inset-0 z-50 bg-[var(--ed-bg-primary)] flex flex-col"
-    >
-      {/* ─── Toolbar ─────────────────────────────────────────── */}
-      <div className="flex items-center justify-between gap-4 px-4 py-2 border-b border-[var(--ed-border)] bg-[var(--ed-bg-secondary)]/50">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-bold tracking-wider text-[var(--ed-text-secondary)]">
-            PIANO ROLL
-          </span>
-          <span className="text-[9px] text-[var(--ed-text-muted)]">
-            {notes.length} NOTES
-          </span>
-        </div>
+    <div className="fixed inset-0 z-50 bg-[var(--ed-bg-primary)] flex flex-col">
+      {/* ─── Toolbar ──────────────────────────────────────── */}
+      <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--ed-border)] bg-[var(--ed-bg-secondary)]/60">
+        <span className="text-[10px] font-black tracking-[0.15em]" style={{ color: accentColor }}>PIANO ROLL</span>
 
-        <div className="flex items-center gap-4 text-[9px]">
-          {/* Grid resolution selector */}
-          <div className="flex items-center gap-1.5">
-            <label className="text-[var(--ed-text-muted)]">GRID:</label>
-            <select
-              value={gridResolution}
-              onChange={(e) => setGridResolution(parseFloat(e.target.value))}
-              className="bg-[var(--ed-bg-elevated)] border border-[var(--ed-border)]/50 rounded px-2 py-1 text-[var(--ed-text-secondary)] font-bold tracking-wider cursor-pointer hover:border-[var(--ed-border)] transition-colors"
+        {/* Sound target selector */}
+        <div className="flex gap-[2px] bg-black/20 rounded-md p-[2px]">
+          {(["melody", "chords", "bass", "drums"] as SoundTarget[]).map((t) => (
+            <button key={t} onClick={() => setTarget(t)}
+              className="px-2.5 py-1 text-[8px] font-bold tracking-wider rounded transition-all"
+              style={{
+                backgroundColor: target === t ? TARGET_COLORS[t] : "transparent",
+                color: target === t ? "#000" : TARGET_COLORS[t],
+                opacity: target === t ? 1 : 0.5,
+              }}
             >
-              <option value={0.25}>1/16</option>
-              <option value={0.5}>1/8</option>
-              <option value={1}>1/4</option>
-              <option value={2}>1/2</option>
-            </select>
-          </div>
-
-          {/* Snap toggle */}
-          <button
-            onClick={() => setSnapEnabled(!snapEnabled)}
-            className={`px-2 py-1 rounded border font-bold tracking-wider transition-colors ${
-              snapEnabled
-                ? "bg-[var(--ed-accent-orange)]/10 border-[var(--ed-accent-orange)]/50 text-[var(--ed-accent-orange)]"
-                : "bg-[var(--ed-bg-elevated)] border-[var(--ed-border)]/50 text-[var(--ed-text-muted)] hover:border-[var(--ed-border)]"
-            }`}
-          >
-            SNAP
-          </button>
-
-          {/* BPM display */}
-          <span className="text-[var(--ed-text-secondary)] px-2 py-1 bg-[var(--ed-bg-elevated)] rounded border border-[var(--ed-border)]/50">
-            {drumStore.bpm} BPM
-          </span>
+              {t.toUpperCase()}
+            </button>
+          ))}
         </div>
 
-        {/* Close button */}
-        <button
-          onClick={onClose}
-          className="px-3 py-1 rounded border border-[var(--ed-border)]/50 text-[var(--ed-text-muted)] hover:text-[var(--ed-text-primary)] hover:bg-[var(--ed-bg-elevated)] transition-colors font-bold tracking-wider"
-        >
+        <div className="w-px h-4 bg-white/10" />
+
+        {/* Grid resolution */}
+        <div className="flex items-center gap-1">
+          <span className="text-[8px] text-white/25 font-bold">GRID</span>
+          <select value={gridRes} onChange={(e) => setGridRes(parseFloat(e.target.value))}
+            className="h-6 px-1.5 text-[9px] bg-black/30 border border-white/8 rounded text-white/70 cursor-pointer">
+            <option value={0.125}>1/32</option>
+            <option value={0.25}>1/16</option>
+            <option value={0.5}>1/8</option>
+            <option value={1}>1/4</option>
+          </select>
+        </div>
+
+        {/* Snap */}
+        <button onClick={() => setSnap(!snap)}
+          className="px-2 py-1 text-[8px] font-bold tracking-wider rounded transition-all"
+          style={{
+            backgroundColor: snap ? accentColor : "transparent",
+            color: snap ? "#000" : "white",
+            opacity: snap ? 1 : 0.3,
+            border: `1px solid ${snap ? accentColor : "rgba(255,255,255,0.1)"}`,
+          }}
+        >SNAP</button>
+
+        <span className="text-[9px] text-white/30 font-mono">{bpm} BPM</span>
+        <span className="text-[9px] text-white/20">{notes.length} notes</span>
+
+        <div className="flex-1" />
+
+        <button onClick={onClose}
+          className="px-3 py-1 text-[9px] font-bold tracking-wider text-white/40 hover:text-white/80 border border-white/10 hover:border-white/25 rounded transition-all">
           ← BACK
         </button>
       </div>
 
-      {/* ─── Piano Roll Canvas ──────────────────────────────── */}
-      <div className="flex flex-1 min-h-0 overflow-hidden bg-[var(--ed-bg-primary)]">
-        {/* Piano keyboard (left) */}
-        <div
-          className="w-12 border-r border-[var(--ed-border)] bg-[var(--ed-bg-surface)] flex flex-col overflow-y-auto"
-          style={{ width: PIANO_WIDTH }}
-        >
-          {/* Render piano keys */}
-          {Array.from({ length: totalRows }).map((_, rowIndex) => {
-            const noteIndex = rowIndex % OCTAVE_PATTERN.length;
-            const octave = Math.floor((totalRows - rowIndex - 1) / OCTAVE_PATTERN.length) + 2;
-            const octaveKey = OCTAVE_PATTERN[noteIndex]!;
-            const isBlackKey = octaveKey.black;
-            const midiNote = scrollY + (totalRows - rowIndex - 1);
-
-            const showLabel = noteIndex === 0;
+      {/* ─── Piano + Grid ─────────────────────────────────── */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        {/* Piano keys */}
+        <div className="shrink-0 overflow-y-auto border-r border-[var(--ed-border)]" style={{ width: PIANO_WIDTH }}>
+          {Array.from({ length: totalRows }, (_, i) => {
+            const midi = baseNote + (totalRows - i - 1);
+            const noteIdx = midi % 12;
+            const octave = Math.floor(midi / 12) - 1;
+            const isBlack = OCTAVE_PATTERN[noteIdx]?.black ?? false;
+            const isC = noteIdx === 0;
 
             return (
-              <div
-                key={rowIndex}
-                className={`flex items-center justify-center font-bold text-[7px] tracking-wider cursor-pointer select-none border-b border-[var(--ed-border)]/20 transition-colors ${
-                  isBlackKey
-                    ? "bg-[#151518] text-[var(--ed-text-muted)] hover:bg-[#1a1a1f]"
-                    : "bg-[#2a2a30] text-[var(--ed-text-muted)] hover:bg-[#323238]"
-                }`}
-                style={{ height: ROW_HEIGHT }}
-                title={`${octaveKey.note}${octave} (MIDI ${midiNote})`}
+              <div key={i} onClick={() => handleKeyClick(midi)}
+                className={`flex items-center px-1.5 text-[7px] font-bold tracking-wider cursor-pointer select-none border-b transition-colors ${
+                  isBlack
+                    ? "bg-[#131316] text-white/15 hover:bg-[#1c1c22] border-[#0a0a0c]"
+                    : "bg-[#24242a] text-white/25 hover:bg-[#2e2e36] border-[#1a1a1e]"
+                } ${isC ? "border-b-[var(--ed-border)]" : "border-b-[#1a1a1e]/50"}`}
+                style={{ height: ROW_HEIGHT, justifyContent: isBlack ? "flex-end" : "flex-start" }}
               >
-                {showLabel && (
-                  <span className="text-[var(--ed-text-secondary)]">
-                    {octaveKey.note}
-                    {octave}
-                  </span>
-                )}
+                {isC && <span className="text-white/40">C{octave}</span>}
               </div>
             );
           })}
         </div>
 
-        {/* Grid area (right) */}
-        <div
-          ref={gridContainerRef}
-          className="flex-1 bg-[var(--ed-bg-primary)] overflow-auto cursor-crosshair relative"
-          onClick={handleGridClick}
-        >
-          {/* SVG for grid background */}
-          <svg
-            className="absolute inset-0 pointer-events-none"
-            width={visibleBeats * GRID_CELL_WIDTH}
-            height={visibleRows * ROW_HEIGHT}
-          >
-            {/* Vertical lines (beat divisions) */}
-            {Array.from({ length: visibleBeats * 4 + 1 }).map((_, i) => {
-              const x = i * (GRID_CELL_WIDTH / 4);
-              const isBeatLine = i % 4 === 0;
-              const isBarLine = i % 16 === 0;
-
-              let opacity = 0.05;
-              let strokeWidth = 0.5;
-              if (isBeatLine) {
-                opacity = 0.12;
-                strokeWidth = 1;
-              }
-              if (isBarLine) {
-                opacity = 0.2;
-                strokeWidth = 1.5;
-              }
-
+        {/* Grid + notes */}
+        <div ref={gridRef} className="flex-1 overflow-auto relative" onPointerDown={handleGridPointerDown}>
+          {/* Background grid */}
+          <div className="relative" style={{ width: gridW, height: gridH }}>
+            {/* Row stripes (black key rows darker) */}
+            {Array.from({ length: totalRows }, (_, i) => {
+              const midi = baseNote + (totalRows - i - 1);
+              const isBlack = OCTAVE_PATTERN[midi % 12]?.black ?? false;
               return (
-                <line
-                  key={`v${i}`}
-                  x1={x}
-                  y1={0}
-                  x2={x}
-                  y2={visibleRows * ROW_HEIGHT}
-                  stroke="white"
-                  strokeWidth={strokeWidth}
-                  opacity={opacity}
+                <div key={`row-${i}`} className="absolute w-full border-b border-white/[0.03]"
+                  style={{ top: i * ROW_HEIGHT, height: ROW_HEIGHT, backgroundColor: isBlack ? "rgba(255,255,255,0.015)" : "transparent" }}
                 />
               );
             })}
 
-            {/* Horizontal lines (notes) */}
-            {Array.from({ length: visibleRows + 1 }).map((_, i) => {
-              const y = i * ROW_HEIGHT;
+            {/* Vertical beat lines */}
+            {Array.from({ length: totalBeats * 4 + 1 }, (_, i) => {
+              const x = i * (CELL_W / 4);
+              const isBar = i % 16 === 0;
+              const isBeat = i % 4 === 0;
               return (
-                <line
-                  key={`h${i}`}
-                  x1={0}
-                  y1={y}
-                  x2={visibleBeats * GRID_CELL_WIDTH}
-                  y2={y}
-                  stroke="white"
-                  strokeWidth="0.5"
-                  opacity="0.05"
+                <div key={`vl-${i}`} className="absolute top-0 bottom-0"
+                  style={{
+                    left: x, width: 1,
+                    backgroundColor: isBar ? "rgba(255,255,255,0.18)" : isBeat ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)",
+                  }}
                 />
               );
             })}
-          </svg>
 
-          {/* Note blocks */}
-          {notes.map((note) => {
-            const rowIndex = totalRows - (note.midi - scrollY) - 1;
-            if (rowIndex < 0 || rowIndex >= visibleRows) return null;
-
-            const y = rowIndex * ROW_HEIGHT;
-            const x = note.start * GRID_CELL_WIDTH - scrollX;
-            const width = Math.max(4, note.duration * GRID_CELL_WIDTH);
-            const isSelected = note.id === selectedNoteId;
-
-            return (
-              <div
-                key={note.id}
-                className={`absolute rounded cursor-move transition-all ${
-                  isSelected
-                    ? "ring-2 ring-[var(--ed-accent-orange)] shadow-[0_0_12px_rgba(245,158,11,0.5)]"
-                    : "hover:shadow-[0_0_8px_rgba(245,158,11,0.3)]"
-                }`}
-                style={{
-                  left: `${x}px`,
-                  top: `${y + 1}px`,
-                  width: `${width}px`,
-                  height: `${ROW_HEIGHT - 2}px`,
-                  backgroundColor: `var(--ed-accent-orange)`,
-                  opacity: 0.6 + note.velocity * 0.4,
-                  pointerEvents: "auto",
-                }}
-                onMouseDown={(e) => handleNoteMouseDown(e, note.id)}
-                onContextMenu={(e) => handleNoteContextMenu(e, note.id)}
-              >
-                {/* Resize handle (right edge) */}
-                <div
-                  className="resize-handle absolute top-0 right-0 h-full w-1 bg-[var(--ed-accent-orange)] opacity-0 hover:opacity-100 cursor-col-resize transition-opacity"
-                  onMouseDown={(e) => handleNoteMouseDown(e, note.id)}
-                />
+            {/* Bar numbers */}
+            {Array.from({ length: Math.ceil(totalBeats / 4) }, (_, i) => (
+              <div key={`bar-${i}`} className="absolute text-[8px] font-bold text-white/12" style={{ left: i * 4 * CELL_W + 4, top: 2 }}>
+                {i + 1}
               </div>
-            );
-          })}
+            ))}
 
-          {/* Playhead */}
-          <div
-            className="absolute top-0 bottom-0 w-0.5 bg-[var(--ed-accent-orange)] shadow-[0_0_12px_rgba(245,158,11,0.6)] pointer-events-none"
-            style={{
-              left: `${playheadBeat * GRID_CELL_WIDTH - scrollX}px`,
-            }}
-          />
+            {/* ─── Notes ──────────────────────────────────── */}
+            {notes.map((note) => {
+              const row = totalRows - (note.midi - baseNote) - 1;
+              if (row < 0 || row >= totalRows) return null;
+              const x = note.start * CELL_W;
+              const y = row * ROW_HEIGHT;
+              const w = Math.max(4, note.duration * CELL_W);
+              const isSel = note.id === selectedNoteId;
+
+              return (
+                <div key={note.id}
+                  onPointerDown={(e) => handleNotePointerDown(e, note.id)}
+                  onPointerMove={handleNotePointerMove}
+                  onPointerUp={handleNotePointerUp}
+                  onContextMenu={(e) => handleNoteContext(e, note.id)}
+                  className="absolute rounded-[3px] touch-none select-none"
+                  style={{
+                    left: x, top: y + 1, width: w, height: ROW_HEIGHT - 2,
+                    backgroundColor: accentColor,
+                    opacity: 0.5 + note.velocity * 0.5,
+                    outline: isSel ? `2px solid white` : "none",
+                    outlineOffset: "-1px",
+                    boxShadow: isSel ? `0 0 12px ${accentColor}60` : "none",
+                    zIndex: isSel ? 10 : 1,
+                    cursor: dragMode === "resize" ? "col-resize" : dragMode === "velocity" ? "ns-resize" : "grab",
+                  }}
+                >
+                  {/* Note name (if wide enough) */}
+                  {w > 28 && (
+                    <span className="absolute left-1 top-0 text-[7px] font-bold text-black/60 leading-none" style={{ top: 2 }}>
+                      {midiNoteName(note.midi)}
+                    </span>
+                  )}
+
+                  {/* Velocity bar (bottom) */}
+                  <div className="absolute bottom-0 left-0 right-0 h-[3px] rounded-b-[3px] cursor-ns-resize"
+                    style={{ backgroundColor: "rgba(0,0,0,0.3)" }}>
+                    <div className="h-full rounded-b-[3px]"
+                      style={{ width: `${note.velocity * 100}%`, backgroundColor: "rgba(255,255,255,0.4)" }} />
+                  </div>
+
+                  {/* Resize handle (right edge) */}
+                  <div className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize hover:bg-white/20 rounded-r-[3px] transition-colors" />
+                </div>
+              );
+            })}
+
+            {/* Playhead */}
+            <div className="absolute top-0 pointer-events-none" style={{
+              left: playheadBeat * CELL_W, width: 2, height: gridH,
+              backgroundColor: accentColor,
+              boxShadow: `0 0 8px ${accentColor}, 0 0 20px ${accentColor}40`,
+            }} />
+          </div>
         </div>
       </div>
 
-      {/* ─── Info Footer ─────────────────────────────────────── */}
-      <div className="px-4 py-1.5 border-t border-[var(--ed-border)] bg-[var(--ed-bg-secondary)]/50 text-[9px] text-[var(--ed-text-muted)]">
-        {selectedNoteId ? (
-          (() => {
-            const note = notes.find((n) => n.id === selectedNoteId);
-            if (!note) return "No selection";
-            const octave = Math.floor(note.midi / 12);
-            const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-            return `Selected: ${noteNames[note.midi % 12]}${octave} | Start: ${note.start.toFixed(2)}b | Duration: ${note.duration.toFixed(2)}b | Velocity: ${(note.velocity * 100).toFixed(0)}%`;
-          })()
-        ) : (
-          "Click to add notes • Right-click to delete • Drag to move • Drag right edge to resize"
-        )}
+      {/* ─── Footer ───────────────────────────────────────── */}
+      <div className="flex items-center justify-between px-4 py-1.5 border-t border-[var(--ed-border)] bg-[var(--ed-bg-secondary)]/60 text-[9px]">
+        <div className="text-white/30">
+          {selectedNote
+            ? `${midiNoteName(selectedNote.midi)} | Beat ${selectedNote.start.toFixed(2)} | Dur ${selectedNote.duration.toFixed(2)} | Vel ${Math.round(selectedNote.velocity * 100)}%`
+            : "Click = add note · Drag = move · Right edge = duration · Bottom edge = velocity · Right-click = delete"
+          }
+        </div>
+        <div className="flex items-center gap-2 text-white/20">
+          <span>Target: <strong style={{ color: accentColor }}>{target.toUpperCase()}</strong></span>
+          <span>·</span>
+          <span>Click piano keys to preview</span>
+        </div>
       </div>
     </div>
   );
