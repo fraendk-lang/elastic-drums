@@ -285,8 +285,9 @@ function pianoRollTick(currentStep: number, bpm: number): void {
     _pianoRollStepCounter = 0; // Reset on first tick
   }
 
-  const totalSteps = 16 * 4; // 16 beats × 4 steps per beat = 64 steps
-  const wrappedStep = _pianoRollStepCounter % totalSteps;
+  // Sync to drum pattern length (not fixed 64)
+  const patternLen = useDrumStore.getState().pattern.length; // e.g. 16, 32, 64
+  const wrappedStep = _pianoRollStepCounter % patternLen;
   const t = audioEngine.currentTime + 0.01;
   const secPerBeat = 60 / bpm; // seconds per quarter note
 
@@ -380,7 +381,9 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const [cellW, setCellW] = useState(DEFAULT_CELL_W);
   const [rowHeight, setRowHeight] = useState(DEFAULT_ROW_HEIGHT);
   const [scaleSnap, setScaleSnap] = useState(false);
-  const [totalBeats] = useState(16);
+  // Sync piano roll length to drum pattern (1 bar = 4 beats)
+  const patternLength = useDrumStore((s) => s.pattern.length);
+  const totalBeats = patternLength / 4; // 16 steps = 4 beats, 64 steps = 16 beats
 
   const [clipboard, setClipboard] = useState<PianoRollNote[]>([]);
   const [rubberBand, setRubberBand] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
