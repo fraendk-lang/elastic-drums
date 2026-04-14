@@ -45,9 +45,15 @@ const OCTAVE_PATTERN = [
 ];
 
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-const PIANO_WIDTH = 64;
+const PIANO_WIDTH = 68;
 const DEFAULT_CELL_W = 40;
 const DEFAULT_ROW_HEIGHT = 18;
+
+// Piano key colors
+const PIANO_WHITE_BG = "linear-gradient(180deg, #2a2a30 0%, #222228 100%)";
+const PIANO_WHITE_BG_C = "linear-gradient(180deg, #33333a 0%, #2b2b32 100%)";
+const PIANO_BLACK_BG = "#0d0d10";
+const PIANO_BLACK_BG_HOVER = "#191920";
 
 const TARGET_COLORS: Record<SoundTarget, string> = {
   bass: "var(--ed-accent-bass, #10b981)",
@@ -758,24 +764,25 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   return (
     <div className="fixed inset-0 z-50 bg-[var(--ed-bg-primary)] flex flex-col">
       {/* ─── TOOLBAR ──────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--ed-border)] bg-[var(--ed-bg-secondary)]/60 overflow-x-auto">
+      <div className="flex items-center gap-2.5 px-3 py-2 border-b border-[var(--ed-border)] bg-[var(--ed-bg-secondary)]/60 overflow-x-auto">
         <span className="text-[10px] font-black tracking-[0.15em] shrink-0" style={{ color: accentColor }}>
           PIANO ROLL
         </span>
 
-        <div className="w-px h-4 bg-white/10 shrink-0" />
+        <div className="w-px h-4 bg-white/15 shrink-0" />
 
         {/* Sound target */}
-        <div className="flex gap-[2px] bg-black/20 rounded-md p-[2px] shrink-0">
+        <div className="flex gap-px bg-black/30 rounded p-0.5 shrink-0">
           {(["melody", "chords", "bass", "drums"] as SoundTarget[]).map((t) => (
             <button
               key={t}
               onClick={() => setTarget(t)}
-              className="px-2 py-0.5 text-[8px] font-bold tracking-wider rounded transition-all"
+              className="px-2 py-0.5 text-[7px] font-bold tracking-wider rounded-sm transition-all hover:brightness-110"
               style={{
-                backgroundColor: target === t ? TARGET_COLORS[t] : "transparent",
+                backgroundColor: target === t ? TARGET_COLORS[t] : "rgba(255,255,255,0.05)",
                 color: target === t ? "#000" : TARGET_COLORS[t],
-                opacity: target === t ? 1 : 0.5,
+                opacity: target === t ? 1 : 0.6,
+                boxShadow: target === t ? `0 0 8px ${TARGET_COLORS[t]}40` : "none",
               }}
             >
               {t.toUpperCase()}
@@ -783,15 +790,15 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
           ))}
         </div>
 
-        <div className="w-px h-4 bg-white/10 shrink-0" />
+        <div className="w-px h-4 bg-white/15 shrink-0" />
 
         {/* Grid */}
-        <div className="flex items-center gap-1 shrink-0">
-          <span className="text-[8px] text-white/25 font-bold">GRID</span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-[7px] text-white/35 font-bold uppercase tracking-wider">Grid</span>
           <select
             value={gridRes}
             onChange={(e) => setGridRes(parseFloat(e.target.value))}
-            className="h-6 px-1.5 text-[9px] bg-black/30 border border-white/8 rounded text-white/70 cursor-pointer"
+            className="h-6 px-1.5 text-[8px] bg-black/30 border border-white/15 rounded text-white/70 cursor-pointer hover:border-white/25 transition-colors"
           >
             <option value={0.125}>1/32</option>
             <option value={0.25}>1/16</option>
@@ -803,12 +810,13 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         {/* Snap */}
         <button
           onClick={() => setSnap(!snap)}
-          className="px-1.5 py-0.5 text-[8px] font-bold tracking-wider rounded transition-all shrink-0"
+          className="px-2 py-0.5 text-[7px] font-bold tracking-wider rounded transition-all shrink-0 hover:brightness-110"
           style={{
-            backgroundColor: snap ? accentColor : "transparent",
+            backgroundColor: snap ? TARGET_COLORS[target] : "rgba(255,255,255,0.05)",
             color: snap ? "#000" : "white",
-            opacity: snap ? 1 : 0.3,
-            border: `1px solid ${snap ? accentColor : "rgba(255,255,255,0.1)"}`,
+            opacity: snap ? 1 : 0.4,
+            border: `1px solid ${snap ? TARGET_COLORS[target] : "rgba(255,255,255,0.15)"}`,
+            boxShadow: snap ? `0 0 6px ${TARGET_COLORS[target]}30` : "none",
           }}
         >
           SNAP
@@ -817,16 +825,19 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         {/* Scale snap */}
         <button
           onClick={() => setScaleSnap(!scaleSnap)}
-          className="px-1.5 py-0.5 text-[8px] font-bold tracking-wider rounded transition-all shrink-0"
+          className="px-2 py-0.5 text-[7px] font-bold tracking-wider rounded transition-all shrink-0 hover:brightness-110"
           style={{
-            backgroundColor: scaleSnap ? accentColor : "transparent",
-            color: scaleSnap ? "#000" : "white",
-            opacity: scaleSnap ? 1 : 0.3,
-            border: `1px solid ${scaleSnap ? accentColor : "rgba(255,255,255,0.1)"}`,
+            backgroundColor: scaleSnap ? "#10b98160" : "rgba(255,255,255,0.05)",
+            color: scaleSnap ? "#fff" : "white",
+            opacity: scaleSnap ? 1 : 0.4,
+            border: `1px solid ${scaleSnap ? "#10b98180" : "rgba(255,255,255,0.15)"}`,
+            boxShadow: scaleSnap ? "0 0 6px #10b98140" : "none",
           }}
         >
           SCALE
         </button>
+
+        <div className="w-px h-4 bg-white/15 shrink-0" />
 
         {/* Quantize */}
         <button
@@ -836,97 +847,21 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
             }
           }}
           disabled={selectedNoteIds.size === 0}
-          className="px-1.5 py-0.5 text-[8px] font-bold tracking-wider rounded transition-all shrink-0 disabled:opacity-20"
+          className="px-2 py-0.5 text-[7px] font-bold tracking-wider rounded transition-all shrink-0 disabled:opacity-20 hover:brightness-110"
           style={{
-            backgroundColor: "rgba(255,165,0,0.2)",
+            backgroundColor: selectedNoteIds.size > 0 ? "rgba(255,165,0,0.25)" : "rgba(255,165,0,0.1)",
             color: selectedNoteIds.size > 0 ? "white" : "white/50",
-            border: "1px solid rgba(255,165,0,0.3)",
+            border: "1px solid rgba(255,165,0,0.4)",
           }}
         >
           QUANTIZE
         </button>
 
-        <div className="w-px h-4 bg-white/10 shrink-0" />
-
-        {/* Multi-select */}
-        <button
-          onClick={() => setSelectedNoteIds(new Set(notes.map((n) => n.id)))}
-          className="px-1.5 py-0.5 text-[8px] font-bold tracking-wider rounded transition-all shrink-0"
-          style={{
-            backgroundColor: "rgba(100,150,255,0.2)",
-            color: "white",
-            border: "1px solid rgba(100,150,255,0.3)",
-          }}
-        >
-          SEL ALL
-        </button>
-
-        {/* Delete selected */}
-        <button
-          onClick={() => removeNotes(selectedNoteIds)}
-          disabled={selectedNoteIds.size === 0}
-          className="px-1.5 py-0.5 text-[8px] font-bold tracking-wider rounded transition-all shrink-0 disabled:opacity-20"
-          style={{
-            backgroundColor: "rgba(255,100,100,0.2)",
-            color: selectedNoteIds.size > 0 ? "white" : "white/50",
-            border: "1px solid rgba(255,100,100,0.3)",
-          }}
-        >
-          DEL
-        </button>
-
-        {/* Copy */}
-        <button
-          onClick={copyNotes}
-          disabled={selectedNoteIds.size === 0}
-          className="px-1.5 py-0.5 text-[8px] font-bold tracking-wider rounded transition-all shrink-0 disabled:opacity-20"
-          style={{
-            backgroundColor: "rgba(100,200,100,0.2)",
-            color: selectedNoteIds.size > 0 ? "white" : "white/50",
-            border: "1px solid rgba(100,200,100,0.3)",
-          }}
-        >
-          COPY
-        </button>
-
-        {/* Paste */}
-        <button
-          onClick={pasteNotes}
-          disabled={clipboard.length === 0}
-          className="px-1.5 py-0.5 text-[8px] font-bold tracking-wider rounded transition-all shrink-0 disabled:opacity-20"
-          style={{
-            backgroundColor: "rgba(100,200,100,0.2)",
-            color: clipboard.length > 0 ? "white" : "white/50",
-            border: "1px solid rgba(100,200,100,0.3)",
-          }}
-        >
-          PASTE
-        </button>
-
-        {/* Clear all */}
-        <button
-          onClick={() => {
-            setNotes([]);
-            setSelectedNoteIds(new Set());
-          }}
-          className="px-1.5 py-0.5 text-[8px] font-bold tracking-wider rounded transition-all shrink-0"
-          style={{
-            backgroundColor: "rgba(200,100,100,0.2)",
-            color: "rgba(255,200,200,0.6)",
-            border: "1px solid rgba(200,100,100,0.2)",
-          }}
-        >
-          CLEAR
-        </button>
-
-        <div className="w-px h-4 bg-white/10 shrink-0" />
-
-        {/* ─── HARMONY Generator ─── */}
+        {/* Harmony */}
         <HarmonyMenu
           accentColor={accentColor}
           onGenerate={(type) => {
             if (type === "fix-to-scale" as HarmonyType) {
-              // Snap ALL notes (or selected) to nearest scale note
               const ids = selectedNoteIds.size > 0 ? selectedNoteIds : new Set(notes.map(n => n.id));
               setNotes((prev) => prev.map((n) => {
                 if (!ids.has(n.id)) return n;
@@ -948,24 +883,91 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
           }}
         />
 
+        <div className="w-px h-4 bg-white/15 shrink-0" />
+
+        {/* Edit operations */}
+        <button
+          onClick={() => setSelectedNoteIds(new Set(notes.map((n) => n.id)))}
+          className="px-2 py-0.5 text-[7px] font-bold tracking-wider rounded transition-all shrink-0 hover:brightness-110"
+          style={{
+            backgroundColor: "rgba(100,150,255,0.15)",
+            color: "white",
+            border: "1px solid rgba(100,150,255,0.35)",
+          }}
+        >
+          SEL ALL
+        </button>
+
+        <button
+          onClick={() => removeNotes(selectedNoteIds)}
+          disabled={selectedNoteIds.size === 0}
+          className="px-2 py-0.5 text-[7px] font-bold tracking-wider rounded transition-all shrink-0 disabled:opacity-20 hover:brightness-110"
+          style={{
+            backgroundColor: "rgba(255,100,100,0.15)",
+            color: selectedNoteIds.size > 0 ? "white" : "white/50",
+            border: "1px solid rgba(255,100,100,0.35)",
+          }}
+        >
+          DEL
+        </button>
+
+        <button
+          onClick={copyNotes}
+          disabled={selectedNoteIds.size === 0}
+          className="px-2 py-0.5 text-[7px] font-bold tracking-wider rounded transition-all shrink-0 disabled:opacity-20 hover:brightness-110"
+          style={{
+            backgroundColor: "rgba(100,200,100,0.15)",
+            color: selectedNoteIds.size > 0 ? "white" : "white/50",
+            border: "1px solid rgba(100,200,100,0.35)",
+          }}
+        >
+          COPY
+        </button>
+
+        <button
+          onClick={pasteNotes}
+          disabled={clipboard.length === 0}
+          className="px-2 py-0.5 text-[7px] font-bold tracking-wider rounded transition-all shrink-0 disabled:opacity-20 hover:brightness-110"
+          style={{
+            backgroundColor: "rgba(100,200,100,0.15)",
+            color: clipboard.length > 0 ? "white" : "white/50",
+            border: "1px solid rgba(100,200,100,0.35)",
+          }}
+        >
+          PASTE
+        </button>
+
+        <button
+          onClick={() => {
+            setNotes([]);
+            setSelectedNoteIds(new Set());
+          }}
+          className="px-2 py-0.5 text-[7px] font-bold tracking-wider rounded transition-all shrink-0 hover:brightness-110"
+          style={{
+            backgroundColor: "rgba(200,100,100,0.15)",
+            color: "rgba(255,150,150,0.7)",
+            border: "1px solid rgba(200,100,100,0.3)",
+          }}
+        >
+          CLEAR
+        </button>
+
         <div className="flex-1" />
 
         {/* Stats */}
-        <div className="flex items-center gap-3 text-[8px] text-white/30 shrink-0">
-          <span className="font-mono">{notes.length} notes</span>
-          <span>|</span>
-          <span className="font-mono">{bpm} BPM</span>
-          <span>|</span>
-          <span className="font-mono">{totalBeats} beats</span>
-          <span>|</span>
-          <span className="font-mono">{zoomPercentage}%</span>
+        <div className="flex items-center gap-2 text-[7px] text-white/35 shrink-0 font-mono">
+          <span>{notes.length} notes</span>
+          <span className="text-white/20">|</span>
+          <span>{bpm} BPM</span>
+          <span className="text-white/20">|</span>
+          <span>{zoomPercentage}%</span>
         </div>
 
-        <div className="w-px h-4 bg-white/10 shrink-0" />
+        <div className="w-px h-4 bg-white/15 shrink-0" />
 
         <button
           onClick={onClose}
-          className="px-2 py-1 text-[8px] font-bold tracking-wider text-white/40 hover:text-white/80 border border-white/10 hover:border-white/25 rounded transition-all shrink-0"
+          className="px-2 py-0.5 text-[7px] font-bold tracking-wider text-white/35 hover:text-white/70 border border-white/15 hover:border-white/35 rounded transition-all shrink-0"
         >
           BACK
         </button>
@@ -975,13 +977,13 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Piano keys */}
         <div
-          className="shrink-0 overflow-y-auto border-r border-[var(--ed-border)]"
+          className="shrink-0 overflow-y-auto border-r border-[var(--ed-border)] bg-[#1a1816]"
           style={{ width: PIANO_WIDTH }}
         >
           {Array.from({ length: totalRows }, (_, i) => {
             const midi = baseNote + (totalRows - i - 1);
             const noteIdx = midi % 12;
-            const octave = Math.floor(midi / 12) - 1;
+            const noteName = NOTE_NAMES[noteIdx] ?? "?";
             const isBlack = OCTAVE_PATTERN[noteIdx]?.black ?? false;
             const isC = noteIdx === 0;
             const isScaleNote = isNoteInScale(midi, rootMidi, scaleName);
@@ -990,16 +992,30 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
               <div
                 key={i}
                 onClick={() => handleKeyClick(midi)}
-                className={`flex items-center px-1 text-[7px] font-bold tracking-wider cursor-pointer select-none border-b transition-colors ${
+                className={`flex items-center justify-center text-[6px] font-bold tracking-wider cursor-pointer select-none border-b transition-all ${
                   isBlack
-                    ? "bg-[#131316] text-white/15 hover:bg-[#1c1c22] border-[#0a0a0c]"
-                    : "bg-[#24242a] text-white/25 hover:bg-[#2e2e36] border-[#1a1a1e]"
-                } ${isC ? "border-b-[var(--ed-border)]" : "border-b-[#1a1a1e]/50"} ${
-                  scaleSnap && !isScaleNote ? "opacity-40" : ""
-                } ${scaleSnap && isScaleNote && !isBlack ? "bg-[#2a3628]" : ""}`}
-                style={{ height: rowHeight }}
+                    ? "hover:brightness-110"
+                    : "hover:brightness-105"
+                } ${isC ? "border-b-[var(--ed-border)]" : "border-b-[#1a1a1e]/30"} ${
+                  scaleSnap && !isScaleNote ? "opacity-30" : ""
+                }`}
+                style={{
+                  height: rowHeight,
+                  background: isBlack
+                    ? `linear-gradient(180deg, ${PIANO_BLACK_BG_HOVER} 0%, ${PIANO_BLACK_BG} 100%)`
+                    : isC
+                      ? PIANO_WHITE_BG_C
+                      : PIANO_WHITE_BG,
+                  color: isBlack ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.25)",
+                  boxShadow: isBlack ? "inset -2px 0 4px rgba(0,0,0,0.8)" : "inset 1px 1px 2px rgba(255,255,255,0.1), inset -1px -1px 2px rgba(0,0,0,0.3)",
+                  borderLeft: isBlack ? "1px solid rgba(0,0,0,0.5)" : "none",
+                  borderRight: isBlack ? "1px solid rgba(0,0,0,0.8)" : "none",
+                  paddingTop: isBlack ? "2px" : "0px",
+                }}
               >
-                {isC && <span className="text-white/40">{octave}</span>}
+                <span style={{ color: isBlack ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.35)" }}>
+                  {!isBlack && noteName}
+                </span>
               </div>
             );
           })}
@@ -1014,6 +1030,21 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
           onPointerUp={handleGridPointerUp}
           onWheel={handleWheel}
         >
+          {/* Empty state */}
+          {notes.length === 0 && (
+            <div
+              className="absolute inset-0 flex items-center justify-center pointer-events-none"
+              style={{ width: gridW, height: gridH }}
+            >
+              <div className="text-center text-white/20">
+                <div className="text-[11px] font-semibold mb-1">Click to place notes</div>
+                <div className="text-[8px] text-white/15">
+                  Right-click to delete · Drag edges to resize
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Background grid */}
           <div className="relative" style={{ width: gridW, height: gridH + velocityLaneHeight }}>
             {/* Row stripes (notes grid) */}
@@ -1025,17 +1056,16 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
               return (
                 <div
                   key={`row-${i}`}
-                  className="absolute w-full border-b border-white/[0.03]"
+                  className="absolute w-full border-b"
                   style={{
                     top: i * rowHeight,
                     height: rowHeight,
                     backgroundColor: isBlack
-                      ? "rgba(255,255,255,0.015)"
+                      ? "rgba(26, 24, 22, 0.5)"
                       : scaleSnap && isScaleNote
-                        ? "rgba(50,180,100,0.1)"
-                        : scaleSnap
-                          ? "rgba(255,255,255,0.005)"
-                          : "transparent",
+                        ? "rgba(16, 185, 129, 0.08)"
+                        : "transparent",
+                    borderColor: "rgba(255,255,255,0.02)",
                   }}
                 />
               );
@@ -1049,15 +1079,15 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
               return (
                 <div
                   key={`vl-${i}`}
-                  className="absolute top-0 bottom-0"
+                  className="absolute top-0 bottom-0 pointer-events-none"
                   style={{
                     left: x,
-                    width: 1,
+                    width: isBar ? 1.5 : 1,
                     backgroundColor: isBar
-                      ? "rgba(255,255,255,0.18)"
+                      ? "rgba(255,255,255,0.25)"
                       : isBeat
-                        ? "rgba(255,255,255,0.08)"
-                        : "rgba(255,255,255,0.03)",
+                        ? "rgba(255,255,255,0.12)"
+                        : "rgba(255,255,255,0.04)",
                   }}
                 />
               );
@@ -1091,56 +1121,71 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                   onPointerMove={handleNotePointerMove}
                   onPointerUp={handleNotePointerUp}
                   onContextMenu={(e) => handleNoteContext(e, note.id)}
-                  className="absolute rounded-[3px] touch-none select-none"
+                  className="absolute rounded-[4px] touch-none select-none transition-shadow"
                   style={{
                     left: x,
                     top: y + 1,
                     width: w,
                     height: rowHeight - 2,
-                    backgroundColor: noteColor,
-                    opacity: 0.5 + note.velocity * 0.5,
-                    outline: isSel ? "2px solid white" : "none",
-                    outlineOffset: "-1px",
-                    boxShadow: isSel ? `0 0 12px ${noteColor}60` : "none",
+                    background: `linear-gradient(180deg, ${noteColor}cc 0%, ${noteColor}88 100%)`,
+                    opacity: 0.65 + note.velocity * 0.35,
+                    border: isSel ? "1px solid rgba(255,255,255,0.8)" : "none",
+                    boxShadow: isSel
+                      ? `0 0 8px ${noteColor}40, inset 0 1px 2px rgba(255,255,255,0.2)`
+                      : `inset 0 1px 2px rgba(255,255,255,0.1), 0 2px 4px rgba(0,0,0,0.3)`,
                     zIndex: isSel ? 10 : 1,
                     cursor: dragMode === "resize" ? "col-resize" : dragMode === "velocity" ? "ns-resize" : "grab",
                   }}
                 >
-                  {/* Note name */}
-                  {w > 28 && (
-                    <span className="absolute left-1 top-0 text-[7px] font-bold text-black/60 leading-none pointer-events-none" style={{ top: 2 }}>
+                  {/* Ghost outline when dragging */}
+                  {dragMode === "move" && dragStartRef.current?.note.id === note.id && (
+                    <div
+                      className="absolute rounded-[4px] border border-dashed border-white/30 pointer-events-none"
+                      style={{
+                        left: -(dragStartRef.current.note.start * cellW - x),
+                        top: -(dragStartRef.current.note.midi - note.midi) * rowHeight,
+                        width: Math.max(12, dragStartRef.current.note.duration * cellW),
+                        height: rowHeight - 2,
+                      }}
+                    />
+                  )}
+
+                  {/* Note name - show if width > 24px */}
+                  {w > 24 && (
+                    <span className="absolute left-1 top-0.5 text-[6px] font-bold text-white/70 leading-none pointer-events-none select-none">
                       {midiNoteName(note.midi)}
                     </span>
                   )}
 
-                  {/* Velocity bar */}
+                  {/* Velocity bar - colored by track, rounded top */}
                   <div
-                    className="absolute bottom-0 left-0 right-0 h-[3px] rounded-b-[3px] cursor-ns-resize"
-                    style={{ backgroundColor: "rgba(0,0,0,0.3)" }}
-                  >
-                    <div
-                      className="h-full rounded-b-[3px]"
-                      style={{ width: `${note.velocity * 100}%`, backgroundColor: "rgba(255,255,255,0.4)" }}
-                    />
-                  </div>
+                    className="absolute bottom-0 left-0 right-0 h-[3px] rounded-b-[2px] cursor-ns-resize transition-opacity hover:opacity-100"
+                    style={{
+                      backgroundColor: noteColor,
+                      opacity: note.velocity * 0.7,
+                    }}
+                  />
 
                   {/* Resize handle */}
-                  <div className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize hover:bg-white/20 rounded-r-[3px] transition-colors" />
+                  <div className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-white/30 rounded-r-[3px] transition-colors opacity-0 hover:opacity-100" />
                 </div>
               );
             })}
 
             {/* ─── VELOCITY LANE ────────────────────────────────── */}
             <div
-              className="absolute border-t border-white/8"
+              className="absolute border-t border-white/12"
               style={{
                 top: gridH,
                 left: 0,
                 right: 0,
                 height: velocityLaneHeight,
-                backgroundColor: "rgba(0,0,0,0.2)",
+                backgroundColor: "rgba(0,0,0,0.15)",
               }}
             >
+              {/* Velocity lane label */}
+              <div className="absolute left-1 top-1 text-[7px] font-bold text-white/30 pointer-events-none">VEL</div>
+
               {/* Velocity bars */}
               {notes.map((note) => {
                 const x = note.start * cellW;
@@ -1164,16 +1209,17 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                     }}
                     onPointerMove={handleNotePointerMove}
                     onPointerUp={handleNotePointerUp}
-                    className="absolute rounded-t-[2px]"
+                    className="absolute rounded-t-[3px] transition-opacity hover:opacity-100"
                     style={{
                       left: x,
                       top: velocityLaneHeight - h,
                       width: w,
                       height: h,
-                      backgroundColor: noteColor,
-                      opacity: 0.6 + note.velocity * 0.3,
+                      background: `linear-gradient(180deg, ${noteColor}cc 0%, ${noteColor}88 100%)`,
+                      opacity: 0.65 + note.velocity * 0.35,
                       cursor: "ns-resize",
-                      outline: isSel ? "1px solid white" : "none",
+                      border: isSel ? `1px solid rgba(255,255,255,0.6)` : "none",
+                      boxShadow: isSel ? `0 0 6px ${noteColor}40` : "none",
                     }}
                   />
                 );
@@ -1185,12 +1231,24 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
               className="absolute top-0 pointer-events-none"
               style={{
                 left: playheadBeat * cellW,
-                width: 2,
+                width: 1.5,
                 height: gridH + velocityLaneHeight,
-                backgroundColor: accentColor,
-                boxShadow: `0 0 8px ${accentColor}, 0 0 20px ${accentColor}40`,
+                background: `linear-gradient(90deg, ${accentColor}00, ${accentColor}, ${accentColor}00)`,
+                boxShadow: `0 0 12px ${accentColor}60, inset 0 0 8px ${accentColor}40`,
               }}
-            />
+            >
+              {/* Beat number label */}
+              <div
+                className="absolute text-[7px] font-bold text-white/60 pointer-events-none whitespace-nowrap"
+                style={{
+                  left: "4px",
+                  top: "-16px",
+                  color: accentColor,
+                }}
+              >
+                Beat {Math.floor(playheadBeat + 1)}
+              </div>
+            </div>
 
             {/* Rubber band selection */}
             {rubberBand && (
@@ -1209,27 +1267,51 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
       </div>
 
       {/* ─── FOOTER ───────────────────────────────────────────────– */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-t border-[var(--ed-border)] bg-[var(--ed-bg-secondary)]/60 text-[8px] text-white/30">
-        <div>
+      <div className="flex items-center justify-between px-3 py-1.5 border-t border-[var(--ed-border)] bg-[var(--ed-bg-secondary)]/60 text-[8px] text-white/35">
+        <div className="flex items-center gap-4 flex-1">
           {selectedNoteIds.size === 1 ? (
             (() => {
               const note = notes.find((n) => n.id === Array.from(selectedNoteIds)[0]);
-              return note
-                ? `${midiNoteName(note.midi)} | Beat ${note.start.toFixed(2)} | Dur ${note.duration.toFixed(2)} | Vel ${Math.round(note.velocity * 100)}%`
-                : "Click = add note · Shift+Drag = rubber band · Ctrl+A = select all";
+              return note ? (
+                <>
+                  <span className="font-bold text-white/50">{midiNoteName(note.midi)}</span>
+                  <span className="text-white/25">|</span>
+                  <span>Beat <span className="text-white/50 font-mono">{note.start.toFixed(2)}</span></span>
+                  <span className="text-white/25">|</span>
+                  <span>Dur <span className="text-white/50 font-mono">{note.duration.toFixed(2)}</span></span>
+                  <span className="text-white/25">|</span>
+                  <span>Vel <span className="text-white/50 font-mono">{Math.round(note.velocity * 100)}%</span></span>
+                  <span className="text-white/25">|</span>
+                  <span>Track: <span className="text-white/50 font-bold">{note.track.toUpperCase()}</span></span>
+                </>
+              ) : null;
             })()
           ) : selectedNoteIds.size > 1 ? (
-            `${selectedNoteIds.size} notes selected · Delete = remove · Ctrl+C = copy · Ctrl+V = paste`
+            <>
+              <span className="font-bold text-white/50">{selectedNoteIds.size} notes selected</span>
+              <span className="text-white/25">·</span>
+              <span>Del to remove</span>
+              <span className="text-white/25">·</span>
+              <span>Ctrl+C copy</span>
+              <span className="text-white/25">·</span>
+              <span>Ctrl+V paste</span>
+            </>
           ) : (
-            "Click = add note · Shift+Drag = rubber band · Ctrl+A = select all · Ctrl+Wheel = zoom"
+            <span className="text-white/30">
+              Click to place notes · Right-click to delete · Drag to move · Shift+Drag to rubber band select
+            </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <span>Ctrl+Scroll = H.Zoom</span>
-          <span>|</span>
-          <span>Shift+Scroll = V.Zoom</span>
-          <span>|</span>
-          <span style={{ color: accentColor }}>{target.toUpperCase()}</span>
+        <div className="flex items-center gap-2 text-white/25">
+          <span>Ctrl+Scroll</span>
+          <span className="text-white/15">=</span>
+          <span>H.Zoom</span>
+          <span className="text-white/20">·</span>
+          <span>Shift+Scroll</span>
+          <span className="text-white/15">=</span>
+          <span>V.Zoom</span>
+          <span className="text-white/20">·</span>
+          <span style={{ color: accentColor }} className="font-bold">{target.toUpperCase()}</span>
         </div>
       </div>
     </div>
@@ -1262,31 +1344,32 @@ function HarmonyMenu({ accentColor, onGenerate }: {
     <div ref={ref} className="relative shrink-0">
       <button
         onClick={() => setOpen(!open)}
-        className="px-2 py-0.5 text-[8px] font-bold tracking-wider rounded transition-all"
+        className="px-2 py-0.5 text-[7px] font-bold tracking-wider rounded transition-all hover:brightness-110"
         style={{
           backgroundColor: open ? accentColor : "rgba(255,255,255,0.05)",
           color: open ? "#000" : accentColor,
-          border: `1px solid ${open ? accentColor : accentColor + "40"}`,
+          border: `1px solid ${open ? accentColor : accentColor + "50"}`,
+          boxShadow: open ? `0 0 8px ${accentColor}40` : "none",
         }}
       >
         HARMONY
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 min-w-[180px] bg-[#1a1a22] border border-[var(--ed-border)] rounded-lg shadow-2xl py-1 overflow-hidden">
+        <div className="absolute top-full left-0 mt-1 z-50 min-w-[160px] bg-[#1a1a22] border border-[var(--ed-border)] rounded-lg shadow-2xl py-1 overflow-hidden">
           {HARMONY_PRESETS.map((preset) => {
             const showGroupHeader = preset.group !== lastGroup;
             lastGroup = preset.group;
             return (
               <React.Fragment key={preset.id}>
                 {showGroupHeader && (
-                  <div className="px-3 pt-2 pb-1 text-[7px] font-bold tracking-[0.2em] text-white/25 uppercase">
+                  <div className="px-3 pt-2 pb-1 text-[6px] font-bold tracking-[0.2em] text-white/25 uppercase">
                     {preset.group}
                   </div>
                 )}
                 <button
                   onClick={() => { onGenerate(preset.id); setOpen(false); }}
-                  className="w-full text-left px-3 py-1.5 text-[10px] text-white/70 hover:text-white hover:bg-white/5 transition-colors"
+                  className="w-full text-left px-3 py-1.5 text-[9px] text-white/70 hover:text-white hover:bg-white/8 transition-colors"
                 >
                   {preset.label}
                 </button>
