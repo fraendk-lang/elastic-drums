@@ -57,6 +57,9 @@ export const MELODY_PRESETS: MelodyPreset[] = [
   { name: "Tape Wobble", params: mp({ synthType: "subtractive", waveform: "sawtooth", filterModel: "lpf", cutoff: 550, resonance: 7, envMod: 0.3, decay: 220, accent: 0.35, slideTime: 70, legato: true, distortion: 0.2, volume: 0.45, subOsc: 0.4, pulseWidth: 0.5, unison: 0, vibratoRate: 4, vibratoDepth: 0, fmHarmonicity: 3, fmModIndex: 10 }) },
   { name: "Atmosphere", params: mp({ synthType: "subtractive", waveform: "triangle", filterModel: "lpf", cutoff: 800, resonance: 3, envMod: 0.08, decay: 500, accent: 0.1, slideTime: 150, legato: true, distortion: 0, volume: 0.4, subOsc: 0.6, pulseWidth: 0.5, unison: 0, vibratoRate: 3, vibratoDepth: 0.15, fmHarmonicity: 3, fmModIndex: 10 }) },
   { name: "Space Echo", params: mp({ synthType: "subtractive", waveform: "sawtooth", filterModel: "lpf", cutoff: 1000, resonance: 5, envMod: 0.12, decay: 400, accent: 0.2, slideTime: 90, legato: true, distortion: 0.05, volume: 0.4, subOsc: 0.25, pulseWidth: 0.5, unison: 0, vibratoRate: 4, vibratoDepth: 0.1, fmHarmonicity: 3, fmModIndex: 10 }) },
+  // ── Professional New Presets ──
+  { name: "Vintage Lead", params: mp({ synthType: "subtractive", waveform: "sawtooth", filterModel: "ladder", cutoff: 800, resonance: 18, envMod: 0.5, decay: 120, accent: 0.5, slideTime: 30, legato: false, distortion: 0.2, volume: 0.5, subOsc: 0.1, pulseWidth: 0.5, unison: 0.15, vibratoRate: 5, vibratoDepth: 0.15, fmHarmonicity: 3, fmModIndex: 10 }) },
+  { name: "Crystal Bell", params: mp({ synthType: "fm", waveform: "triangle", filterModel: "lpf", cutoff: 4000, resonance: 3, envMod: 0.1, decay: 100, accent: 0.3, slideTime: 0, legato: false, distortion: 0, volume: 0.48, subOsc: 0, pulseWidth: 0.5, unison: 0, vibratoRate: 3, vibratoDepth: 0.05, fmHarmonicity: 5, fmModIndex: 20 }) },
 ];
 
 // ─── Melody Generation Strategies ────────────────────────

@@ -28,12 +28,13 @@ function ensureFilterModel(p: BassParams): BassParams {
 export const BASS_PRESETS: BassPreset[] = [
   // ── Classic Acid ──
   { name: "Classic 303", params: bp({}) },
+  { name: "Warm Vintage", params: bp({ waveform: "square", cutoff: 200, resonance: 4, envMod: 0.15, decay: 300, accent: 0.3, slideTime: 80, distortion: 0.35, volume: 0.7, subOsc: 0.6, filterModel: "ladder", punch: 0.15, harmonics: 0.2, subFilter: 60 }) },
   { name: "Acid Squelch", params: bp({ cutoff: 400, resonance: 22, envMod: 0.85, decay: 120, accent: 0.7, slideTime: 50, distortion: 0.4 }) },
   { name: "Acid Screamer", params: bp({ cutoff: 350, resonance: 28, envMod: 0.95, decay: 100, accent: 0.9, slideTime: 30, distortion: 0.6, volume: 0.65 }) },
   { name: "Acid Whistle", params: bp({ cutoff: 600, resonance: 26, envMod: 0.9, decay: 60, accent: 0.8, slideTime: 40, distortion: 0.3, volume: 0.6 }) },
   // ── Deep / Sub ──
   { name: "Deep Sub", params: bp({ waveform: "square", cutoff: 300, resonance: 4, envMod: 0.1, decay: 400, accent: 0.3, slideTime: 80, distortion: 0, volume: 0.8, subOsc: 0.7 }) },
-  { name: "808 Sub", params: bp({ waveform: "sine" as "sawtooth", cutoff: 200, resonance: 2, envMod: 0.05, decay: 600, accent: 0.2, slideTime: 0, distortion: 0, volume: 0.85, subOsc: 0.9 }) },
+  { name: "808 Sub", params: bp({ waveform: "square", cutoff: 200, resonance: 2, envMod: 0.05, decay: 600, accent: 0.2, slideTime: 0, distortion: 0, volume: 0.85, subOsc: 0.9, subFilter: 40 }) },
   { name: "Dub Pressure", params: bp({ cutoff: 280, resonance: 10, envMod: 0.25, decay: 450, accent: 0.35, slideTime: 90, distortion: 0.1, volume: 0.75, subOsc: 0.65 }) },
   // ── Pluck / Stab ──
   { name: "Funky Pluck", params: bp({ cutoff: 700, resonance: 16, envMod: 0.7, decay: 80, accent: 0.4, slideTime: 0, distortion: 0.15 }) },
@@ -56,6 +57,9 @@ export const BASS_PRESETS: BassPreset[] = [
   { name: "Lo-Fi Wobble", params: bp({ waveform: "square", cutoff: 380, resonance: 19, envMod: 0.65, decay: 170, accent: 0.55, slideTime: 80, distortion: 0.3, volume: 0.6, subOsc: 0.45 }) },
   { name: "Trance Gate", params: bp({ cutoff: 800, resonance: 13, envMod: 0.6, decay: 70, accent: 0.7, slideTime: 5, distortion: 0.25, volume: 0.6 }) },
   { name: "Dark Ambient", params: bp({ waveform: "square", cutoff: 250, resonance: 6, envMod: 0.2, decay: 700, accent: 0.2, slideTime: 150, distortion: 0, volume: 0.6, subOsc: 0.8 }) },
+  // ── Professional New Presets ──
+  { name: "Analog Warmth", params: bp({ waveform: "square", cutoff: 500, resonance: 5, envMod: 0.2, decay: 350, accent: 0.25, slideTime: 60, distortion: 0.08, volume: 0.65, subOsc: 0.8, filterModel: "ladder", punch: 0.2, harmonics: 0.25, subFilter: 70 }) },
+  { name: "Tape Bass", params: bp({ waveform: "sawtooth", cutoff: 700, resonance: 8, envMod: 0.35, decay: 250, accent: 0.4, slideTime: 45, distortion: 0.45, volume: 0.6, subOsc: 0.4, harmonics: 0.4, punch: 0.25 }) },
 ];
 
 // ─── Bassline Agent: Genre Strategies ────────────────────

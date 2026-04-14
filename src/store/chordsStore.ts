@@ -67,6 +67,9 @@ export const CHORDS_PRESETS: ChordsPreset[] = [
   { name: "Deep House", params: cp({ waveform: "sawtooth", cutoff: 700, resonance: 7, envMod: 0.35, attack: 20, release: 180, detune: 12, distortion: 0.08, volume: 0.5, subOsc: 0.25 }) },
   { name: "Garage Stab", params: cp({ waveform: "sawtooth", cutoff: 1800, resonance: 11, envMod: 0.55, attack: 4, release: 110, detune: 7, distortion: 0.2, volume: 0.5, subOsc: 0 }) },
   { name: "Dub Swell", params: cp({ waveform: "triangle", cutoff: 500, resonance: 8, envMod: 0.25, attack: 100, release: 600, detune: 20, distortion: 0.05, volume: 0.45, subOsc: 0.5 }) },
+  // ── Professional New Presets ──
+  { name: "Vintage Keys", params: cp({ waveform: "triangle", filterModel: "ladder", cutoff: 1500, resonance: 3, envMod: 0.1, attack: 10, release: 200, detune: 5, distortion: 0, volume: 0.55, subOsc: 0.1, chorus: 0, spread: 0.3, brightness: 0.2 }) },
+  { name: "Lush Pad", params: cp({ waveform: "sawtooth", filterModel: "ladder", cutoff: 1000, resonance: 5, envMod: 0.25, attack: 200, release: 1500, detune: 35, distortion: 0.05, volume: 0.5, subOsc: 0.3, chorus: 0.8, spread: 0.9, brightness: 0.7 }) },
 ];
 
 // ─── Chordline Agent: Genre Strategies ──────────────────
