@@ -100,8 +100,23 @@ class MidiPlayer {
     this.startTime = performance.now();
 
     // Schedule all note events
-    for (const track of this.midi.tracks) {
-      const channel = track.channel ?? 0;
+    for (let trackIdx = 0; trackIdx < this.midi.tracks.length; trackIdx++) {
+      const track = this.midi.tracks[trackIdx]!;
+      const ch = track.channel;
+
+      // Detect drum tracks: channel 9, or name contains "drum", or has GM drum note range
+      const isDrum = ch === 9
+        || (track.name ?? "").toLowerCase().includes("drum")
+        || (ch === undefined && track.notes.some((n) => n.midi >= 35 && n.midi <= 81 && GM_DRUM_MAP[n.midi] !== undefined));
+
+      // Route non-drum tracks by index: first=bass, second=chords, third+=melody
+      let melodicRole: "bass" | "chords" | "melody" = "melody";
+      if (!isDrum) {
+        const melodicIdx = trackIdx - (isDrum ? 0 : 0); // Track position among non-drum tracks
+        if (ch === 0 || melodicIdx <= 1) melodicRole = "bass";
+        else if (ch === 1 || melodicIdx === 2) melodicRole = "chords";
+        else melodicRole = "melody";
+      }
 
       for (const note of track.notes) {
         const timeMs = note.time * 1000;
@@ -112,21 +127,23 @@ class MidiPlayer {
         const timer = setTimeout(() => {
           if (!this.playing) return;
 
-          if (channel === 9) {
-            // Drum channel (0-indexed channel 9 = GM channel 10)
+          if (isDrum) {
             const voice = GM_DRUM_MAP[midi];
             if (voice !== undefined && this.onDrumTrigger) {
               this.onDrumTrigger(voice, velocity);
             }
-          } else if (channel === 0) {
-            // Bass
-            this.onBassTrigger?.(midi, velocity, duration);
-          } else if (channel === 1) {
-            // Chords (simplified: trigger each note individually)
-            this.onChordTrigger?.([midi], velocity, duration);
-          } else if (channel === 2) {
-            // Melody
-            this.onMelodyTrigger?.(midi, velocity, duration);
+          } else {
+            switch (melodicRole) {
+              case "bass":
+                this.onBassTrigger?.(midi, velocity, duration);
+                break;
+              case "chords":
+                this.onChordTrigger?.([midi], velocity, duration);
+                break;
+              case "melody":
+                this.onMelodyTrigger?.(midi, velocity, duration);
+                break;
+            }
           }
         }, timeMs);
 

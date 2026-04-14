@@ -24,21 +24,31 @@ export function MidiPlayerPanel({ isOpen, onClose }: MidiPlayerPanelProps) {
   const [progress, setProgress] = useState({ position: 0, duration: 0 });
   const dragOverRef = useRef(false);
 
-  // Set up MIDI playback callbacks
+  // Set up MIDI playback callbacks — trigger sounds through the app's engines
   useEffect(() => {
     midiPlayer.setCallbacks({
-      onDrum: (voice, _velocity) => {
-        useDrumStore.getState().triggerVoice(voice);
+      onDrum: (voice) => {
+        // Trigger drum voice immediately
+        audioEngine.triggerVoice(voice);
       },
-      onBass: (note, _velocity, _duration) => {
-        bassEngine.triggerNote(note, audioEngine.currentTime, false, false, false);
+      onBass: (note, _velocity, duration) => {
+        const t = audioEngine.currentTime + 0.01; // Tiny offset for scheduling
+        bassEngine.triggerNote(note, t, false, false, false);
+        // Auto-release after duration
+        const relMs = Math.max(100, duration * 1000);
+        setTimeout(() => bassEngine.releaseNote(audioEngine.currentTime), relMs);
       },
-      onChord: (notes, _velocity, _duration) => {
-        const n = notes[0] ?? 60;
-        chordsEngine.triggerChord([n], audioEngine.currentTime, false, false);
+      onChord: (notes, _velocity, duration) => {
+        const t = audioEngine.currentTime + 0.01;
+        chordsEngine.triggerChord(notes, t, false, false);
+        const relMs = Math.max(100, duration * 1000);
+        setTimeout(() => chordsEngine.releaseChord(audioEngine.currentTime), relMs);
       },
-      onMelody: (note, _velocity, _duration) => {
-        melodyEngine.triggerNote(note, audioEngine.currentTime, false, false, false);
+      onMelody: (note, _velocity, duration) => {
+        const t = audioEngine.currentTime + 0.01;
+        melodyEngine.triggerNote(note, t, false, false, false);
+        const relMs = Math.max(100, duration * 1000);
+        setTimeout(() => melodyEngine.releaseNote(audioEngine.currentTime), relMs);
       },
       onProgress: (position, duration) => {
         setProgress({ position, duration });
