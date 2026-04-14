@@ -60,6 +60,7 @@ export const BASS_PRESETS: BassPreset[] = [
   // ── Professional New Presets ──
   { name: "Analog Warmth", params: bp({ waveform: "square", cutoff: 500, resonance: 5, envMod: 0.2, decay: 350, accent: 0.25, slideTime: 60, distortion: 0.08, volume: 0.65, subOsc: 0.8, filterModel: "ladder", punch: 0.2, harmonics: 0.25, subFilter: 70 }) },
   { name: "Tape Bass", params: bp({ waveform: "sawtooth", cutoff: 700, resonance: 8, envMod: 0.35, decay: 250, accent: 0.4, slideTime: 45, distortion: 0.45, volume: 0.6, subOsc: 0.4, harmonics: 0.4, punch: 0.25 }) },
+  { name: "Organic Evolve", params: bp({ waveform: "sawtooth", cutoff: 300, resonance: 6, envMod: 0.4, decay: 800, accent: 0.15, slideTime: 120, distortion: 0.08, volume: 0.55, subOsc: 0.7, filterModel: "ladder", punch: 0.05, harmonics: 0.12, subFilter: 55 }) },
 ];
 
 // ─── Bassline Agent: Genre Strategies ────────────────────
