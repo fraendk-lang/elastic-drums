@@ -340,7 +340,11 @@ export function startBassScheduler() {
           }
         }
       } else {
-        bassEngine.rest(nextBassStepTime);
+        // Only rest if this sequencer actually had a note playing
+        // (don't kill notes from Piano Roll)
+        if (steps.some(s => s.active)) {
+          bassEngine.rest(nextBassStepTime);
+        }
       }
 
       useBassStore.setState({ currentStep: (currentStep + 1) % length });

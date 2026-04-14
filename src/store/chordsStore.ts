@@ -349,7 +349,9 @@ export function startChordsScheduler() {
           }
         }
       } else {
-        chordsEngine.rest(nextChordsStepTime);
+        if (steps.some(s => s.active)) {
+          chordsEngine.rest(nextChordsStepTime);
+        }
       }
 
       useChordsStore.setState({ currentStep: (currentStep + 1) % length });

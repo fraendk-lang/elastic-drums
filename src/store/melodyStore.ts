@@ -563,7 +563,9 @@ export function startMelodyScheduler() {
           }
         }
       } else {
-        melodyEngine.rest(nextMelodyStepTime);
+        if (steps.some(s => s.active)) {
+          melodyEngine.rest(nextMelodyStepTime);
+        }
       }
 
       useMelodyStore.setState({ currentStep: (currentStep + 1) % length });
