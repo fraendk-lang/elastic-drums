@@ -45,8 +45,8 @@ const OCTAVE_PATTERN = [
 ];
 
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-const PIANO_WIDTH = 52;
-const DEFAULT_CELL_W = 30;
+const PIANO_WIDTH = 64;
+const DEFAULT_CELL_W = 40;
 const DEFAULT_ROW_HEIGHT = 18;
 
 const TARGET_COLORS: Record<SoundTarget, string> = {
@@ -407,7 +407,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
       id: uid(),
       midi: finalMidi,
       start: Math.max(0, start),
-      duration: gridRes,
+      duration: Math.max(1, gridRes * 4), // Default: 1 beat (quarter note) minimum
       velocity: 0.8,
       track: target,
     };
@@ -575,7 +575,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     const selected = new Set<string>();
     for (const note of notes) {
       const noteX = note.start * cellW;
-      const noteX2 = noteX + Math.max(4, note.duration * cellW);
+      const noteX2 = noteX + Math.max(12, note.duration * cellW);
       const row = totalRows - (note.midi - baseNote) - 1;
       const noteY = row * rowHeight;
       const noteY2 = noteY + rowHeight;
@@ -1058,7 +1058,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
               if (row < 0 || row >= totalRows) return null;
               const x = note.start * cellW;
               const y = row * rowHeight;
-              const w = Math.max(4, note.duration * cellW);
+              const w = Math.max(12, note.duration * cellW);
               const isSel = selectedNoteIds.has(note.id);
               const noteColor = TARGET_COLORS[note.track];
 
@@ -1122,7 +1122,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
               {/* Velocity bars */}
               {notes.map((note) => {
                 const x = note.start * cellW;
-                const w = Math.max(4, note.duration * cellW);
+                const w = Math.max(12, note.duration * cellW);
                 const h = note.velocity * velocityLaneHeight;
                 const isSel = selectedNoteIds.has(note.id);
                 const noteColor = TARGET_COLORS[note.track];
