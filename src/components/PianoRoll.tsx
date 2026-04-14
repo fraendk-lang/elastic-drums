@@ -93,6 +93,7 @@ function midiNoteName(midi: number): string {
 
 export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const bpm = useDrumStore((s) => s.bpm);
+  const isPlaying = useDrumStore((s) => s.isPlaying);
   const currentStep = useTransportStore((s) => s.currentStep);
 
   const [notes, setNotes] = useState<PianoRollNote[]>([
@@ -111,6 +112,8 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
 
   const gridRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ x: number; y: number; note: PianoRollNote } | null>(null);
+  const lastTriggeredStep = useRef(-1);
+  const activeNoteIds = useRef<Set<string>>(new Set());
 
   const totalRows = 48; // 4 octaves
   const baseNote = 36; // C2
@@ -118,6 +121,83 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const gridW = totalBeats * CELL_W;
   const gridH = totalRows * ROW_HEIGHT;
   const accentColor = TARGET_COLORS[target];
+
+  // ─── Playback: trigger notes when transport is running ──
+  useEffect(() => {
+    if (!isPlaying || !isOpen) {
+      lastTriggeredStep.current = -1;
+      activeNoteIds.current.clear();
+      return;
+    }
+
+    // Convert step to beat position: each step = 1/4 beat (16th note)
+    const currentBeat = currentStep * 0.25;
+
+    // Don't re-trigger on the same step
+    if (currentStep === lastTriggeredStep.current) return;
+    lastTriggeredStep.current = currentStep;
+
+    const t = audioEngine.currentTime + 0.01;
+
+    // Check which notes should start on this beat
+    for (const note of notes) {
+      const noteStartStep = Math.round(note.start / 0.25);
+      const noteEndStep = Math.round((note.start + note.duration) / 0.25);
+
+      // Note starts on this step
+      if (noteStartStep === currentStep && !activeNoteIds.current.has(note.id)) {
+        activeNoteIds.current.add(note.id);
+
+        switch (target) {
+          case "drums":
+            audioEngine.triggerVoice(Math.max(0, Math.min(11, note.midi - 36)));
+            break;
+          case "bass":
+            if (soundFontEngine.isLoaded("bass")) {
+              const durSec = (note.duration / (bpm / 60)) / 4;
+              soundFontEngine.playNote("bass", note.midi, t, note.velocity, durSec);
+            } else {
+              bassEngine.triggerNote(note.midi, t, false, false, false);
+            }
+            break;
+          case "chords":
+            if (soundFontEngine.isLoaded("chords")) {
+              const durSec = (note.duration / (bpm / 60)) / 4;
+              soundFontEngine.playNote("chords", note.midi, t, note.velocity, durSec);
+            } else {
+              chordsEngine.triggerChord([note.midi], t, false, false);
+            }
+            break;
+          case "melody":
+            if (soundFontEngine.isLoaded("melody")) {
+              const durSec = (note.duration / (bpm / 60)) / 4;
+              soundFontEngine.playNote("melody", note.midi, t, note.velocity, durSec);
+            } else {
+              melodyEngine.triggerNote(note.midi, t, false, false, false);
+            }
+            break;
+        }
+      }
+
+      // Note ends on this step — release
+      if (noteEndStep === currentStep && activeNoteIds.current.has(note.id)) {
+        activeNoteIds.current.delete(note.id);
+
+        if (target === "bass" && !soundFontEngine.isLoaded("bass")) {
+          bassEngine.releaseNote(t);
+        } else if (target === "chords" && !soundFontEngine.isLoaded("chords")) {
+          chordsEngine.releaseChord(t);
+        } else if (target === "melody" && !soundFontEngine.isLoaded("melody")) {
+          melodyEngine.releaseNote(t);
+        }
+      }
+    }
+
+    // Loop: wrap beat position (currentBeat >= totalBeats resets to 0)
+    if (currentBeat >= totalBeats) {
+      activeNoteIds.current.clear();
+    }
+  }, [isPlaying, isOpen, currentStep, notes, target, bpm]);
 
   // ─── Note actions ─────────────────────────────────────
 
