@@ -34,6 +34,9 @@ export interface ChordsParams {
   volume: number;      // 0-1
   subOsc: number;      // 0-1
   filterType: "lowpass" | "highpass" | "bandpass" | "notch";
+  chorus: number;      // Chorus depth (0-1), default 0.3
+  spread: number;      // Stereo spread (0-1), default 0.5
+  brightness: number;  // High-shelf boost (0-1), default 0.3
 }
 
 export const DEFAULT_CHORDS_PARAMS: ChordsParams = {
@@ -49,6 +52,9 @@ export const DEFAULT_CHORDS_PARAMS: ChordsParams = {
   volume: 0.5,
   subOsc: 0.2,
   filterType: "lowpass",
+  chorus: 0.3,
+  spread: 0.5,
+  brightness: 0.3,
 };
 
 export const CHORD_TYPES: Record<string, number[]> = {
@@ -84,6 +90,7 @@ interface Voice {
   osc: OscillatorNode;
   subOsc: OscillatorNode;
   subGain: GainNode;
+  panner: StereoPannerNode;
 }
 
 const NUM_VOICES = 6;
@@ -99,6 +106,15 @@ export class ChordsEngine {
 
   // VCF: filter chain (replaces manual cascaded biquads)
   private filterChain: FilterChain | null = null;
+
+  // Chorus effect
+  private chorusDelay: DelayNode | null = null;
+  private chorusLfo: OscillatorNode | null = null;
+  private chorusLfoGain: GainNode | null = null;
+  private chorusMix: GainNode | null = null;
+
+  // Brightness control (high-shelf filter)
+  private brightnessFilter: BiquadFilterNode | null = null;
 
   // VCA + output
   private vca: GainNode | null = null;
@@ -117,8 +133,10 @@ export class ChordsEngine {
     this.mixer = audioCtx.createGain();
     this.mixer.gain.value = 1.0 / NUM_VOICES; // Normalize
 
-    // --- Create 6 voice pairs ---
+    // --- Create 6 voice pairs with stereo panners ---
     const detuneSpread = [-1, -0.6, -0.2, 0.2, 0.6, 1]; // Spread multipliers
+    const panPositions = [-0.7, -0.4, -0.1, 0.1, 0.4, 0.7]; // Stereo positions
+
     for (let i = 0; i < NUM_VOICES; i++) {
       const osc = audioCtx.createOscillator();
       osc.type = this.params.waveform;
@@ -133,19 +151,47 @@ export class ChordsEngine {
       const subGain = audioCtx.createGain();
       subGain.gain.value = this.params.subOsc;
 
-      // Route: osc → mixer, subOsc → subGain → mixer
-      osc.connect(this.mixer);
+      // Stereo panner for this voice
+      const panner = audioCtx.createStereoPanner();
+      panner.pan.value = panPositions[i]! * this.params.spread;
+
+      // Route: osc + subOsc → panner → mixer
+      osc.connect(panner);
       subOsc.connect(subGain);
-      subGain.connect(this.mixer);
+      subGain.connect(panner);
+      panner.connect(this.mixer);
 
       osc.start();
       subOsc.start();
 
-      this.voices.push({ osc, subOsc, subGain });
+      this.voices.push({ osc, subOsc, subGain, panner });
     }
 
     // --- VCF: use filter model ---
     this.filterChain = createFilterChain(audioCtx, this.params.filterModel);
+
+    // --- Chorus effect (detuned delay) ---
+    this.chorusDelay = audioCtx.createDelay();
+    this.chorusDelay.delayTime.value = 0.003; // 3ms base delay
+
+    this.chorusLfo = audioCtx.createOscillator();
+    this.chorusLfo.frequency.value = 1.2; // 1.2 Hz LFO rate
+
+    this.chorusLfoGain = audioCtx.createGain();
+    this.chorusLfoGain.gain.value = 0.0015; // Depth: 3ms ± 1.5ms
+
+    this.chorusMix = audioCtx.createGain();
+    this.chorusMix.gain.value = this.params.chorus; // 0-1 mix amount
+
+    this.chorusLfo.connect(this.chorusLfoGain);
+    this.chorusLfoGain.connect(this.chorusDelay.delayTime);
+    this.chorusLfo.start();
+
+    // --- Brightness control (high-shelf filter at 3kHz) ---
+    this.brightnessFilter = audioCtx.createBiquadFilter();
+    this.brightnessFilter.type = "highshelf";
+    this.brightnessFilter.frequency.value = 3000;
+    this.updateBrightness();
 
     // --- VCA ---
     this.vca = audioCtx.createGain();
@@ -159,9 +205,18 @@ export class ChordsEngine {
     this.output = audioCtx.createGain();
     this.output.gain.value = this.params.volume;
 
-    // --- Signal chain: mixer → filterChain → VCA → distortion → output ---
+    // --- Signal chain: mixer → filterChain → chorus (dry + wet) → brightness → VCA → distortion → output ---
+    // Main path (dry)
     this.mixer.connect(this.filterChain.input);
-    this.filterChain.output.connect(this.vca);
+    this.filterChain.output.connect(this.brightnessFilter);
+
+    // Chorus path (wet)
+    this.filterChain.output.connect(this.chorusDelay);
+    this.chorusDelay.connect(this.chorusMix);
+    this.chorusMix.connect(this.brightnessFilter);
+
+    // After brightness to VCA
+    this.brightnessFilter.connect(this.vca);
     this.vca.connect(this.distNode);
     this.distNode.connect(this.output);
 
@@ -190,6 +245,13 @@ export class ChordsEngine {
     }
     this.distNode.curve = curve;
     this.distNode.oversample = "4x";
+  }
+
+  private updateBrightness(): void {
+    if (!this.brightnessFilter) return;
+    // Brightness: 0-1 maps to 0-6dB boost
+    const gain = this.params.brightness * 6;
+    this.brightnessFilter.gain.value = gain;
   }
 
   /**
@@ -269,13 +331,13 @@ export class ChordsEngine {
       // Tie: do NOT re-trigger VCA -- keep it open, just glide pitch + filter
       this.scheduleFilterEnvelope(time, accent, true);
     } else {
-      // Normal trigger
+      // Normal trigger with exponential attack for smooth pad entry
       const attackSec = p.attack / 1000;
       const level = accent ? 1.0 : 0.75;
 
       this.vca.gain.cancelScheduledValues(time);
       this.vca.gain.setValueAtTime(0.001, time);
-      this.vca.gain.linearRampToValueAtTime(level, time + attackSec);
+      this.vca.gain.exponentialRampToValueAtTime(level, time + attackSec);
 
       // Filter envelope
       this.scheduleFilterEnvelope(time, accent, false);
@@ -287,9 +349,9 @@ export class ChordsEngine {
   /** Release chord (exponential release with configurable time) */
   releaseChord(time: number): void {
     if (!this.vca) return;
-    const releaseTau = this.params.release / 1000 / 3;
+    const releaseTau = this.params.release / 1000 / 4;
     this.vca.gain.cancelScheduledValues(time);
-    this.vca.gain.setTargetAtTime(0, time, releaseTau);
+    this.vca.gain.setTargetAtTime(0.001, time, releaseTau);
     this.chordIsOn = false;
   }
 
@@ -316,6 +378,21 @@ export class ChordsEngine {
           voice.subOsc.detune.value = p.detune * detuneSpread[i]!;
         }
       }
+    }
+    if (p.spread !== undefined) {
+      const panPositions = [-0.7, -0.4, -0.1, 0.1, 0.4, 0.7];
+      for (let i = 0; i < this.voices.length; i++) {
+        const voice = this.voices[i];
+        if (voice) {
+          voice.panner.pan.value = panPositions[i]! * p.spread;
+        }
+      }
+    }
+    if (p.chorus !== undefined && this.chorusMix) {
+      this.chorusMix.gain.value = p.chorus;
+    }
+    if (p.brightness !== undefined) {
+      this.updateBrightness();
     }
     if (this.filterChain) {
       if (p.cutoff !== undefined || p.resonance !== undefined) {

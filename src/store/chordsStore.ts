@@ -38,13 +38,16 @@ function ensureFilterModel(p: ChordsParams): ChordsParams {
 }
 
 export const CHORDS_PRESETS: ChordsPreset[] = [
-  // ── Pads ──
-  { name: "Warm Pad", params: cp({ waveform: "sawtooth", cutoff: 800, resonance: 3, envMod: 0.15, attack: 80, release: 500, detune: 15, distortion: 0, volume: 0.5, subOsc: 0.3 }) },
-  { name: "Ambient Wash", params: cp({ waveform: "triangle", cutoff: 1000, resonance: 2, envMod: 0.1, attack: 200, release: 1500, detune: 25, distortion: 0, volume: 0.4, subOsc: 0.5 }) },
-  { name: "Ethereal Pad", params: cp({ waveform: "triangle", cutoff: 1200, resonance: 4, envMod: 0.08, attack: 300, release: 2000, detune: 30, distortion: 0, volume: 0.35, subOsc: 0.6 }) },
-  { name: "String Machine", params: cp({ waveform: "sawtooth", cutoff: 900, resonance: 2, envMod: 0.12, attack: 120, release: 800, detune: 18, distortion: 0.05, volume: 0.5, subOsc: 0.2 }) },
-  { name: "Dark Minor", params: cp({ waveform: "square", cutoff: 600, resonance: 6, envMod: 0.2, attack: 40, release: 400, detune: 20, distortion: 0.1, volume: 0.5, subOsc: 0.4 }) },
-  { name: "Glass Pad", params: cp({ waveform: "triangle", cutoff: 2500, resonance: 8, envMod: 0.05, attack: 150, release: 1200, detune: 10, distortion: 0, volume: 0.4, subOsc: 0 }) },
+  // ── Professional Pads ──
+  { name: "Warm Analog Pad", params: cp({ waveform: "sawtooth", filterModel: "ladder", cutoff: 800, resonance: 2, envMod: 0.15, attack: 100, release: 600, detune: 20, distortion: 0, volume: 0.5, subOsc: 0.3, chorus: 0.4, spread: 0.6, brightness: 0.2 }) },
+  { name: "Glass Keys", params: cp({ waveform: "triangle", filterModel: "steiner-bp", cutoff: 3000, resonance: 3, envMod: 0.05, attack: 50, release: 800, detune: 8, distortion: 0, volume: 0.45, subOsc: 0, chorus: 0.2, spread: 0.4, brightness: 0.7 }) },
+  { name: "Reese Pad", params: cp({ waveform: "sawtooth", filterModel: "ladder", cutoff: 1200, resonance: 12, envMod: 0.3, attack: 150, release: 1000, detune: 18, distortion: 0.05, volume: 0.5, subOsc: 0.2, chorus: 0.6, spread: 0.7, brightness: 0.25 }) },
+  { name: "Ambient Wash", params: cp({ waveform: "triangle", filterModel: "lpf", cutoff: 600, resonance: 1, envMod: 0.08, attack: 250, release: 2000, detune: 30, distortion: 0, volume: 0.35, subOsc: 0.4, chorus: 0.5, spread: 1.0, brightness: 0.1 }) },
+  { name: "Dark Strings", params: cp({ waveform: "sawtooth", filterModel: "ladder", cutoff: 900, resonance: 4, envMod: 0.2, attack: 120, release: 900, detune: 15, distortion: 0.08, volume: 0.48, subOsc: 0.25, chorus: 0.35, spread: 0.8, brightness: 0.15 }) },
+  // ── Classic Pads (original) ──
+  { name: "Ethereal Pad", params: cp({ waveform: "triangle", filterModel: "lpf", cutoff: 1200, resonance: 4, envMod: 0.08, attack: 300, release: 2000, detune: 30, distortion: 0, volume: 0.35, subOsc: 0.6, chorus: 0.3, spread: 0.5, brightness: 0.3 }) },
+  { name: "String Machine", params: cp({ waveform: "sawtooth", filterModel: "lpf", cutoff: 900, resonance: 2, envMod: 0.12, attack: 120, release: 800, detune: 18, distortion: 0.05, volume: 0.5, subOsc: 0.2, chorus: 0.3, spread: 0.5, brightness: 0.3 }) },
+  { name: "Glass Pad", params: cp({ waveform: "triangle", filterModel: "steiner-lp", cutoff: 2500, resonance: 8, envMod: 0.05, attack: 150, release: 1200, detune: 10, distortion: 0, volume: 0.4, subOsc: 0, chorus: 0.3, spread: 0.5, brightness: 0.3 }) },
   // ── Stabs ──
   { name: "Bright Stabs", params: cp({ waveform: "sawtooth", cutoff: 2000, resonance: 8, envMod: 0.5, attack: 5, release: 100, detune: 8, distortion: 0.2, volume: 0.5, subOsc: 0 }) },
   { name: "Techno Stabs", params: cp({ waveform: "square", cutoff: 1800, resonance: 12, envMod: 0.7, attack: 3, release: 80, detune: 3, distortion: 0.3, volume: 0.5, subOsc: 0 }) },

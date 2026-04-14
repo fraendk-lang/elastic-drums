@@ -41,6 +41,12 @@ export interface MelodyParams {
   volume: number;      // Output level (0-1)
   subOsc: number;      // Sub-oscillator level (0-1), 0 = off
   filterType: "lowpass" | "highpass" | "bandpass" | "notch";
+  pulseWidth: number;  // PWM: 0-1, default 0.5
+  unison: number;      // Unison detune spread: 0-1, default 0
+  vibratoRate: number; // LFO rate: 0.5-8 Hz, default 4
+  vibratoDepth: number; // LFO depth: 0-1, default 0
+  fmHarmonicity: number; // FM carrier:modulator ratio, default 3
+  fmModIndex: number;  // FM brightness, default 10
 }
 
 export const DEFAULT_MELODY_PARAMS: MelodyParams = {
@@ -58,6 +64,12 @@ export const DEFAULT_MELODY_PARAMS: MelodyParams = {
   volume: 0.5,
   subOsc: 0.1,
   filterType: "lowpass",
+  pulseWidth: 0.5,
+  unison: 0,
+  vibratoRate: 4,
+  vibratoDepth: 0,
+  fmHarmonicity: 3,
+  fmModIndex: 10,
 };
 
 // MIDI note to frequency
@@ -82,6 +94,20 @@ export class MelodyEngine {
   private subOsc: OscillatorNode | null = null;
   private subGain: GainNode | null = null;
   private oscMix: GainNode | null = null;
+
+  // PWM (pulse width modulation) — for square waves
+  private pwmOsc2: OscillatorNode | null = null;
+  private pwmMix: GainNode | null = null;
+
+  // Unison oscillators (3-voice unison)
+  private unisonOsc1: OscillatorNode | null = null;
+  private unisonOsc2: OscillatorNode | null = null;
+  private unisonGain1: GainNode | null = null;
+  private unisonGain2: GainNode | null = null;
+
+  // Vibrato LFO
+  private vibratoLfo: OscillatorNode | null = null;
+  private vibratoGain: GainNode | null = null;
 
   // VCF: filter chain (replaces manual cascaded biquads) — used for subtractive only
   private filterChain: FilterChain | null = null;
@@ -112,7 +138,45 @@ export class MelodyEngine {
     this.subGain = audioCtx.createGain();
     this.subGain.gain.value = this.params.subOsc;
 
-    // Mixer node to combine main + sub before filter
+    // --- PWM for square waves (using two detuned sawtooths) ---
+    this.pwmOsc2 = audioCtx.createOscillator();
+    this.pwmOsc2.type = "sawtooth";
+    this.pwmOsc2.frequency.value = 261.63;
+    this.pwmOsc2.detune.value = 0; // Will be updated when PWM changes
+
+    this.pwmMix = audioCtx.createGain();
+    this.pwmMix.gain.value = 0; // Off by default (only active for square + PWM)
+
+    // --- Unison oscillators ---
+    this.unisonOsc1 = audioCtx.createOscillator();
+    this.unisonOsc1.type = this.params.waveform;
+    this.unisonOsc1.frequency.value = 261.63;
+
+    this.unisonOsc2 = audioCtx.createOscillator();
+    this.unisonOsc2.type = this.params.waveform;
+    this.unisonOsc2.frequency.value = 261.63;
+
+    this.unisonGain1 = audioCtx.createGain();
+    this.unisonGain1.gain.value = 0; // Off by default
+
+    this.unisonGain2 = audioCtx.createGain();
+    this.unisonGain2.gain.value = 0; // Off by default
+
+    // --- Vibrato LFO ---
+    this.vibratoLfo = audioCtx.createOscillator();
+    this.vibratoLfo.frequency.value = this.params.vibratoRate;
+
+    this.vibratoGain = audioCtx.createGain();
+    this.vibratoGain.gain.value = 0; // Off by default
+
+    this.vibratoLfo.connect(this.vibratoGain);
+    this.vibratoGain.connect(this.osc.frequency);
+    this.vibratoGain.connect(this.subOsc.frequency);
+    if (this.unisonOsc1) this.vibratoGain.connect(this.unisonOsc1.frequency);
+    if (this.unisonOsc2) this.vibratoGain.connect(this.unisonOsc2.frequency);
+    this.vibratoLfo.start();
+
+    // Mixer node to combine all oscs before filter
     this.oscMix = audioCtx.createGain();
     this.oscMix.gain.value = 1.0;
 
@@ -134,12 +198,24 @@ export class MelodyEngine {
     this.output = audioCtx.createGain();
     this.output.gain.value = this.params.volume;
 
-    // --- Signal chain (subtractive synth only) ---
+    // --- Signal chain ---
     // Main osc → mixer
     this.osc.connect(this.oscMix);
+
     // Sub osc → sub gain → mixer
     this.subOsc.connect(this.subGain);
     this.subGain.connect(this.oscMix);
+
+    // PWM osc → PWM mix → mixer (for square wave PWM)
+    this.pwmOsc2.connect(this.pwmMix);
+    this.pwmMix.connect(this.oscMix);
+
+    // Unison oscs → unison gains → mixer
+    this.unisonOsc1.connect(this.unisonGain1);
+    this.unisonGain1.connect(this.oscMix);
+    this.unisonOsc2.connect(this.unisonGain2);
+    this.unisonGain2.connect(this.oscMix);
+
     // Mixer → filterChain → VCA → distortion → output
     if (this.filterChain) {
       this.oscMix.connect(this.filterChain.input);
@@ -151,11 +227,12 @@ export class MelodyEngine {
     this.vca.connect(this.distNode);
     this.distNode.connect(this.output);
 
-    // Don't connect yet — caller will route to mixer
-    // this.output.connect(audioCtx.destination);
-
+    // Start all oscillators
     this.osc.start();
     this.subOsc.start();
+    this.pwmOsc2.start();
+    this.unisonOsc1.start();
+    this.unisonOsc2.start();
     this.isRunning = true;
   }
 
@@ -238,12 +315,12 @@ export class MelodyEngine {
     // Dispatch based on synthesis type
     switch (p.synthType) {
       case "fm":
-        // FM Synthesis
+        // FM Synthesis with parameterized harmonicity and modIndex
         if (!this.ctx || !this.vca) return;
         playFM(
           this.ctx, this.vca, time,
           midiNote, p.volume, 0.3,  // duration placeholder
-          3, 10,  // harmonicity, modIndex
+          p.fmHarmonicity, p.fmModIndex,  // harmonicity, modIndex (from params)
           0.01, 0.2, 0.3, 0.1  // ADSR
         );
         break;
@@ -260,11 +337,11 @@ export class MelodyEngine {
         break;
 
       case "pluck":
-        // Karplus-Strong
+        // Karplus-Strong with parameterized dampening and resonance
         if (!this.ctx || !this.vca) return;
         playPluck(
           this.ctx, this.vca, time,
-          midiNote, p.volume, 4000, 0.98  // dampening, resonance
+          midiNote, p.volume, p.cutoff, 0.98  // Use cutoff as dampening frequency, high resonance
         );
         break;
 
@@ -279,15 +356,51 @@ export class MelodyEngine {
         // Legato mode: always slide between notes
         const useSlide = p.legato || slide;
 
+        // --- Waveform-specific setup ---
+        if (p.waveform === "square" && p.pulseWidth !== 0.5) {
+          // PWM mode: Use two detuned sawtooths (osc1 - osc2 = variable width pulse)
+          if (this.pwmOsc2 && this.pwmMix) {
+            const pwmCents = (p.pulseWidth - 0.5) * 100; // Map 0-1 to ±50 cents
+            this.pwmOsc2.detune.setValueAtTime(pwmCents, time);
+            this.pwmMix.gain.setValueAtTime(0.5, time); // Mix two saws at equal level for PWM
+          }
+        } else if (this.pwmMix) {
+          this.pwmMix.gain.setValueAtTime(0, time); // Disable PWM
+        }
+
+        // Unison mode: activate extra oscillators
+        if (p.unison > 0 && this.unisonOsc1 && this.unisonOsc2 && this.unisonGain1 && this.unisonGain2) {
+          const unisonDetune = p.unison * 15; // 0-1 maps to 0-15 cents spread
+          this.unisonOsc1.detune.setValueAtTime(-unisonDetune, time);
+          this.unisonOsc2.detune.setValueAtTime(unisonDetune, time);
+          this.unisonGain1.gain.setValueAtTime(0.33, time); // 3-voice mix (1/3 each)
+          this.unisonGain2.gain.setValueAtTime(0.33, time);
+        } else if (this.unisonGain1 && this.unisonGain2) {
+          this.unisonGain1.gain.setValueAtTime(0, time);
+          this.unisonGain2.gain.setValueAtTime(0, time);
+        }
+
+        // Vibrato LFO
+        if (this.vibratoLfo && this.vibratoGain) {
+          this.vibratoLfo.frequency.setValueAtTime(p.vibratoRate, time);
+          this.vibratoGain.gain.setValueAtTime(p.vibratoDepth * 20, time); // Depth in Hz (0-20 Hz max)
+        }
+
         // --- Pitch ---
         if (useSlide && p.slideTime > 0) {
           // Slide: exponential glide to target frequency
           const slideTau = p.slideTime / 1000 / 3;
           this.osc.frequency.setTargetAtTime(freq, time, slideTau);
           this.subOsc.frequency.setTargetAtTime(subFreq, time, slideTau);
+          if (this.unisonOsc1) this.unisonOsc1.frequency.setTargetAtTime(freq, time, slideTau);
+          if (this.unisonOsc2) this.unisonOsc2.frequency.setTargetAtTime(freq, time, slideTau);
+          if (this.pwmOsc2) this.pwmOsc2.frequency.setTargetAtTime(freq, time, slideTau);
         } else {
           this.osc.frequency.setValueAtTime(freq, time);
           this.subOsc.frequency.setValueAtTime(subFreq, time);
+          if (this.unisonOsc1) this.unisonOsc1.frequency.setValueAtTime(freq, time);
+          if (this.unisonOsc2) this.unisonOsc2.frequency.setValueAtTime(freq, time);
+          if (this.pwmOsc2) this.pwmOsc2.frequency.setValueAtTime(freq, time);
         }
 
         // --- VCA ---
@@ -330,7 +443,18 @@ export class MelodyEngine {
   setParams(p: Partial<MelodyParams>): void {
     Object.assign(this.params, p);
 
-    if (this.osc && p.waveform) this.osc.type = p.waveform;
+    if (this.osc && p.waveform) {
+      this.osc.type = p.waveform;
+      // Update unison oscs too
+      if (this.unisonOsc1) this.unisonOsc1.type = p.waveform;
+      if (this.unisonOsc2) this.unisonOsc2.type = p.waveform;
+    }
+    if (p.vibratoRate !== undefined && this.vibratoLfo) {
+      this.vibratoLfo.frequency.value = p.vibratoRate;
+    }
+    if (p.vibratoDepth !== undefined && this.vibratoGain) {
+      this.vibratoGain.gain.value = p.vibratoDepth * 20;
+    }
 
     // Hot-swap synthType: create/destroy filter chain as needed
     if (p.synthType && p.synthType !== this.params.synthType) {

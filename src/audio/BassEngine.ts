@@ -31,6 +31,9 @@ export interface BassParams {
   distortion: number;  // Drive amount (0-1)
   volume: number;      // Output level (0-1)
   subOsc: number;      // Sub-oscillator level (0-1), 0 = off
+  punch: number;       // Transient punch amount (0-1), default 0.3
+  harmonics: number;   // Harmonic enhancer mix (0-1), default 0.15
+  subFilter: number;   // Sub lowpass cutoff (30-150Hz), default 80
 }
 
 export const DEFAULT_BASS_PARAMS: BassParams = {
@@ -46,6 +49,9 @@ export const DEFAULT_BASS_PARAMS: BassParams = {
   distortion: 0.3,
   volume: 0.7,
   subOsc: 0,
+  punch: 0.3,
+  harmonics: 0.15,
+  subFilter: 80,
 };
 
 // Musical scales
@@ -96,6 +102,7 @@ export class BassEngine {
   private osc: OscillatorNode | null = null;
   private subOsc: OscillatorNode | null = null;
   private subGain: GainNode | null = null;
+  private subLPF: BiquadFilterNode | null = null;  // Sub layer lowpass filter
   private oscMix: GainNode | null = null;
 
   // VCF: filter chain (replaces manual cascaded biquads)
@@ -104,10 +111,17 @@ export class BassEngine {
   // VCA + output
   private vca: GainNode | null = null;
   private distNode: WaveShaperNode | null = null;
+  private dcBlocker: BiquadFilterNode | null = null;  // Remove DC offset from distortion
   private output: GainNode | null = null;
+
+  // Harmonic enhancer: parallel saturation path
+  private harmonicEnhancer: WaveShaperNode | null = null;
+  private harmonicFilter: BiquadFilterNode | null = null;  // Bandpass 200-2000Hz
+  private harmonicMix: GainNode | null = null;
 
   private isRunning = false;
   private noteIsOn = false;
+  private _filterEnvTimer: ReturnType<typeof setInterval> | null = null;
 
   params: BassParams = { ...DEFAULT_BASS_PARAMS };
 
@@ -127,12 +141,30 @@ export class BassEngine {
     this.subGain = audioCtx.createGain();
     this.subGain.gain.value = this.params.subOsc;
 
-    // Mixer node to combine main + sub before filter
+    // Sub layer lowpass filter at 80Hz for clean sine-like sub regardless of source
+    this.subLPF = audioCtx.createBiquadFilter();
+    this.subLPF.type = "lowpass";
+    this.subLPF.frequency.value = this.params.subFilter;
+    this.subLPF.Q.value = 0.7;
+
+    // Mixer node to combine main osc (post-filter) + sub (bypassed)
     this.oscMix = audioCtx.createGain();
     this.oscMix.gain.value = 1.0;
 
     // --- VCF: use filter model ---
     this.filterChain = createFilterChain(audioCtx, this.params.filterModel);
+
+    // --- Harmonic enhancer: parallel saturation path ---
+    this.harmonicEnhancer = audioCtx.createWaveShaper();
+    this.updateHarmonicEnhancer();
+
+    this.harmonicFilter = audioCtx.createBiquadFilter();
+    this.harmonicFilter.type = "bandpass";
+    this.harmonicFilter.frequency.value = 500; // Mid-range focus
+    this.harmonicFilter.Q.value = 1.0;
+
+    this.harmonicMix = audioCtx.createGain();
+    this.harmonicMix.gain.value = this.params.harmonics;
 
     // --- VCA ---
     this.vca = audioCtx.createGain();
@@ -142,21 +174,37 @@ export class BassEngine {
     this.distNode = audioCtx.createWaveShaper();
     this.updateDistortion();
 
+    // --- DC offset blocker ---
+    this.dcBlocker = audioCtx.createBiquadFilter();
+    this.dcBlocker.type = "highpass";
+    this.dcBlocker.frequency.value = 20;
+    this.dcBlocker.Q.value = 0.7;
+
     // --- Output ---
     this.output = audioCtx.createGain();
     this.output.gain.value = this.params.volume;
 
-    // --- Signal chain ---
-    // Main osc → mixer
-    this.osc.connect(this.oscMix);
-    // Sub osc → sub gain → mixer
-    this.subOsc.connect(this.subGain);
-    this.subGain.connect(this.oscMix);
-    // Mixer → filterChain → VCA → distortion → output
-    this.oscMix.connect(this.filterChain.input);
+    // --- Signal chain (improved architecture) ---
+    // Main osc → filter chain → VCA → distortion
+    this.osc.connect(this.filterChain.input);
     this.filterChain.output.connect(this.vca);
     this.vca.connect(this.distNode);
-    this.distNode.connect(this.output);
+    this.distNode.connect(this.dcBlocker);
+
+    // Harmonic enhancer: parallel from distortion
+    this.distNode.connect(this.harmonicFilter);
+    this.harmonicFilter.connect(this.harmonicEnhancer);
+    this.harmonicEnhancer.connect(this.harmonicMix);
+
+    // Sub osc → sub LPF (bypasses main filter chain)
+    this.subOsc.connect(this.subGain);
+    this.subGain.connect(this.subLPF);
+
+    // Mix main + harmonics → sub, then to output
+    this.dcBlocker.connect(this.oscMix);
+    this.harmonicMix.connect(this.oscMix);
+    this.subLPF.connect(this.oscMix);
+    this.oscMix.connect(this.output);
 
     // Don't connect yet — caller will route to mixer
     // this.output.connect(audioCtx.destination);
@@ -173,73 +221,90 @@ export class BassEngine {
       this.distNode.curve = null;
       return;
     }
-    // Warm analog-style soft-clip with tube-like asymmetry
-    const samples = 2048;
+    // Professional analog-style saturation with tube bias
+    const samples = 4096; // Higher resolution for smoother harmonics
     const curve = new Float32Array(samples);
-    const gain = 1 + drive * 12;
+    const gain = 1 + drive * 15; // Extended gain range
+    const bias = 0.15; // Tube-like DC bias for even harmonics
     for (let i = 0; i < samples; i++) {
       const x = (i / (samples / 2) - 1) * gain;
-      // Two-stage: gentle saturation + asymmetric clip
-      const soft = x / (1 + Math.abs(x) * 0.5); // gentle pre-saturation
-      if (soft >= 0) {
-        curve[i] = Math.tanh(soft);
+      // Three-stage saturation:
+      // 1. Tube bias (asymmetric even harmonics)
+      const biased = x + bias;
+      // 2. Soft-knee compression
+      const knee = biased / (1 + Math.abs(biased) * 0.3);
+      // 3. Final tanh saturation with asymmetry
+      if (knee >= 0) {
+        curve[i] = Math.tanh(knee * 1.2) * 0.95;
       } else {
-        curve[i] = Math.tanh(soft * 1.15) * 0.92; // asymmetric warmth
+        curve[i] = Math.tanh(knee * 0.9) * 0.88; // Softer negative half = even harmonics
       }
     }
     this.distNode.curve = curve;
     this.distNode.oversample = "4x";
   }
 
+  private updateHarmonicEnhancer(): void {
+    if (!this.harmonicEnhancer) return;
+    // Light saturation curve for harmonic enhancer
+    const samples = 2048;
+    const curve = new Float32Array(samples);
+    for (let i = 0; i < samples; i++) {
+      const x = (i / (samples / 2) - 1) * 2; // Moderate gain for subtle saturation
+      curve[i] = Math.tanh(x * 0.8) * 0.9;
+    }
+    this.harmonicEnhancer.curve = curve;
+    this.harmonicEnhancer.oversample = "2x";
+  }
+
   /**
    * Schedule the 303 filter envelope via the filter chain.
    * The 303 has a very fast attack (~2-3ms) and a sharp exponential decay.
    * Accent dramatically increases the envelope depth and peak.
+   * Uses smooth 5ms timer update for professional envelope shaping.
    */
-  private scheduleFilterEnvelope(time: number, accent: boolean, slide: boolean): void {
+  private scheduleFilterEnvelope(_time: number, accent: boolean, slide: boolean): void {
     if (!this.filterChain) return;
 
-    const p = this.params;
-    const accentAmount = accent ? (1.0 + p.accent * 2.5) : 1.0; // Accent up to 3.5x
-    const envDepth = p.envMod * accentAmount;
+    // Clear any previous envelope
+    if (this._filterEnvTimer) clearInterval(this._filterEnvTimer);
 
-    // Filter peak: cutoff + envelope sweep range
-    // 303 sweeps from high freq down to cutoff
+    const p = this.params;
+    const accentMul = accent ? (1.0 + p.accent * 2.5) : 1.0;
+    const envDepth = p.envMod * accentMul;
     const filterPeak = Math.min(p.cutoff + envDepth * 8000, 18000);
     const filterBase = Math.max(p.cutoff, 20);
-
-    // Decay time: accent makes it snappier
     const decaySec = (p.decay / 1000) * (accent ? 0.4 : 1.0);
-    // Time constant for exponential decay (~3x faster than linear)
-    const decayTau = decaySec / 3.5;
-
-    // Attack time: ~3ms (characteristic 303 snap)
-    const attackTime = 0.003;
-
-    // Resonance normalized to 0-1 range for filter chain update
     const res = Math.min(p.resonance / 30, 1.0);
 
-    if (slide) {
-      // During slide: glide filter cutoff to peak more slowly
-      void (p.slideTime / 1000 / 3); // Calculate but don't use
-      // Start at current, ramp to peak over slide time
-      this.filterChain.update(filterPeak, res, time);
-      // Then decay back (manually with setTimeout to avoid complex scheduling)
-      setTimeout(() => {
-        this.filterChain?.update(filterBase, res, time + p.slideTime / 1000);
-      }, 0);
-    } else {
-      // Fast attack to peak
-      this.filterChain.update(filterBase, res, time);
-      // Quick update to peak
-      setTimeout(() => {
-        this.filterChain?.update(filterPeak, res, time + attackTime);
-      }, attackTime * 1000);
-      // Then decay back
-      setTimeout(() => {
-        this.filterChain?.update(filterBase, res, time + attackTime);
-      }, (attackTime + decayTau) * 1000);
-    }
+    const attackMs = slide ? p.slideTime : 3;
+    const startTime = performance.now();
+    let currentFreq = filterBase;
+
+    this._filterEnvTimer = setInterval(() => {
+      const elapsed = (performance.now() - startTime) / 1000;
+      const now = this.ctx?.currentTime ?? 0;
+
+      if (elapsed < attackMs / 1000) {
+        // Attack phase: ramp to peak
+        const t = elapsed / (attackMs / 1000);
+        currentFreq = filterBase + (filterPeak - filterBase) * t;
+      } else {
+        // Decay phase: exponential decay from peak to base
+        const decayElapsed = elapsed - attackMs / 1000;
+        const t = Math.exp(-decayElapsed / (decaySec / 3));
+        currentFreq = filterBase + (filterPeak - filterBase) * t;
+      }
+
+      this.filterChain?.update(currentFreq, res, now);
+
+      // Stop after envelope is essentially done
+      if (elapsed > attackMs / 1000 + decaySec * 2) {
+        clearInterval(this._filterEnvTimer!);
+        this._filterEnvTimer = null;
+        this.filterChain?.update(filterBase, res, now);
+      }
+    }, 5); // 5ms = 200Hz update rate, smooth enough for filter sweep
   }
 
   /** Trigger a bass note */
@@ -261,18 +326,22 @@ export class BassEngine {
       this.subOsc.frequency.setValueAtTime(subFreq, time);
     }
 
-    // --- VCA ---
+    // --- VCA with punch envelope ---
     if (tie && this.noteIsOn) {
       // Tie: do NOT re-trigger VCA -- keep it open, just glide pitch + filter
       // Only re-trigger the filter envelope mildly for squelch
       this.scheduleFilterEnvelope(time, accent, true);
     } else {
       // Normal trigger or first note
-      // VCA: fast attack
+      // VCA: fast attack with transient punch for percussive character
       this.vca.gain.cancelScheduledValues(time);
       const level = accent ? 1.0 : 0.75;
+      const punchAmount = accent ? p.punch * 0.4 : p.punch * 0.15; // Scale punch by accent
+
+      // Transient punch: brief overshoot at note onset for attack
       this.vca.gain.setValueAtTime(0.001, time);
-      this.vca.gain.linearRampToValueAtTime(level, time + 0.003);
+      this.vca.gain.linearRampToValueAtTime(level + punchAmount, time + 0.002); // 2ms overshoot
+      this.vca.gain.linearRampToValueAtTime(level, time + 0.008); // 6ms settle to sustain level
 
       // Filter envelope: the heart of the 303 sound
       this.scheduleFilterEnvelope(time, accent, slide);
@@ -288,6 +357,11 @@ export class BassEngine {
     // 303-style release: fairly fast but not instant
     this.vca.gain.setTargetAtTime(0, time, 0.015);
     this.noteIsOn = false;
+    // Clear any pending filter envelope
+    if (this._filterEnvTimer) {
+      clearInterval(this._filterEnvTimer);
+      this._filterEnvTimer = null;
+    }
   }
 
   /** Rest (no note on this step) */
@@ -308,16 +382,16 @@ export class BassEngine {
       }
       // Hot-swap filter chain when filterModel changes
       if (p.filterModel && p.filterModel !== this.params.filterModel) {
-        if (this.ctx && this.oscMix && this.vca) {
+        if (this.ctx && this.osc && this.vca) {
           // Disconnect old filter chain from signal path
-          this.oscMix.disconnect(this.filterChain.input);
+          this.osc.disconnect(this.filterChain.input);
           this.filterChain.output.disconnect(this.vca);
 
           // Create new filter chain
           this.filterChain = createFilterChain(this.ctx, p.filterModel);
 
           // Reconnect new filter chain to signal path
-          this.oscMix.connect(this.filterChain.input);
+          this.osc.connect(this.filterChain.input);
           this.filterChain.output.connect(this.vca);
 
           // Apply current cutoff/resonance to new filter
@@ -328,8 +402,11 @@ export class BassEngine {
       }
     }
     if (this.subGain && p.subOsc !== undefined) this.subGain.gain.value = p.subOsc;
+    if (this.subLPF && p.subFilter !== undefined) this.subLPF.frequency.value = p.subFilter;
+    if (this.harmonicMix && p.harmonics !== undefined) this.harmonicMix.gain.value = p.harmonics;
     if (this.output && p.volume !== undefined) this.output.gain.value = p.volume;
     if (p.distortion !== undefined) this.updateDistortion();
+    if (p.harmonics !== undefined) this.updateHarmonicEnhancer();
   }
 
   /** Get output node for routing to mixer */
