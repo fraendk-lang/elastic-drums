@@ -92,6 +92,7 @@ function chordFromDegree(scaleName: string, degree: number): number[] {
 // ─── Harmony Generators ─────────────────────────────────────
 
 type HarmonyType =
+  | "fix-to-scale"
   | "scale-up" | "scale-down"
   | "chords-I-IV-V-I" | "chords-I-vi-IV-V"
   | "chords-ii-V-I" | "chords-I-V-vi-IV"
@@ -99,6 +100,7 @@ type HarmonyType =
   | "arpeggio-up" | "arpeggio-down";
 
 const HARMONY_PRESETS: { id: HarmonyType; label: string; group: string }[] = [
+  { id: "fix-to-scale",    label: "⟳ Fix to Scale",   group: "Correct" },
   { id: "scale-up",        label: "Scale ↑",         group: "Scales" },
   { id: "scale-down",      label: "Scale ↓",         group: "Scales" },
   { id: "chords-I-IV-V-I", label: "I – IV – V – I",  group: "Chords" },
@@ -923,6 +925,15 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         <HarmonyMenu
           accentColor={accentColor}
           onGenerate={(type) => {
+            if (type === "fix-to-scale" as HarmonyType) {
+              // Snap ALL notes (or selected) to nearest scale note
+              const ids = selectedNoteIds.size > 0 ? selectedNoteIds : new Set(notes.map(n => n.id));
+              setNotes((prev) => prev.map((n) => {
+                if (!ids.has(n.id)) return n;
+                return { ...n, midi: snapToScale(n.midi, rootMidi, scaleName) };
+              }));
+              return;
+            }
             const playheadBeat = (useTransportStore.getState().currentStep * 0.25) % totalBeats;
             if (type === "harmonize-3rds" || type === "harmonize-5ths") {
               const selected = notes.filter((n) => selectedNoteIds.has(n.id));
