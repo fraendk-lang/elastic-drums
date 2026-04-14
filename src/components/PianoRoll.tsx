@@ -217,34 +217,36 @@ function harmonizeNotes(
   return result;
 }
 
+// Robust preview: schedule release at exact audio time, not via setTimeout
 function previewNote(midi: number, velocity: number, target: SoundTarget): void {
-  const time = audioEngine.currentTime;
+  const now = audioEngine.currentTime;
+  const releaseAt = now + 0.25; // 250ms preview
   switch (target) {
     case "drums":
       audioEngine.triggerVoice(Math.max(0, Math.min(11, midi - 36)));
       break;
     case "bass":
       if (soundFontEngine.isLoaded("bass")) {
-        soundFontEngine.playNote("bass", midi, time, velocity, 0.3);
+        soundFontEngine.playNote("bass", midi, now, velocity, 0.25);
       } else {
-        bassEngine.triggerNote(midi, time, false, false, false);
-        setTimeout(() => bassEngine.releaseNote(audioEngine.currentTime), 300);
+        bassEngine.triggerNote(midi, now, false, false, false);
+        bassEngine.releaseNote(releaseAt); // Schedule release in audio thread
       }
       break;
     case "chords":
       if (soundFontEngine.isLoaded("chords")) {
-        soundFontEngine.playNote("chords", midi, time, velocity, 0.3);
+        soundFontEngine.playNote("chords", midi, now, velocity, 0.25);
       } else {
-        chordsEngine.triggerChord([midi], time, false, false);
-        setTimeout(() => chordsEngine.releaseChord(audioEngine.currentTime), 300);
+        chordsEngine.triggerChord([midi], now, false, false);
+        chordsEngine.releaseChord(releaseAt);
       }
       break;
     case "melody":
       if (soundFontEngine.isLoaded("melody")) {
-        soundFontEngine.playNote("melody", midi, time, velocity, 0.3);
+        soundFontEngine.playNote("melody", midi, now, velocity, 0.25);
       } else {
-        melodyEngine.triggerNote(midi, time, false, false, false);
-        setTimeout(() => melodyEngine.releaseNote(audioEngine.currentTime), 300);
+        melodyEngine.triggerNote(midi, now, false, false, false);
+        melodyEngine.releaseNote(releaseAt);
       }
       break;
   }
