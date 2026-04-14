@@ -526,7 +526,8 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     const midi = baseNote + (totalRows - row - 1);
     const beat = x / cellW;
 
-    const hit = notes.find((n) => n.midi === midi && beat >= n.start && beat < n.start + n.duration);
+    // Only hit notes on the SAME track — allows overlapping notes on different tracks
+    const hit = notes.find((n) => n.track === target && n.midi === midi && beat >= n.start && beat < n.start + n.duration);
 
     if (hit) {
       if (e.shiftKey) {
