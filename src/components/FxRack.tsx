@@ -24,8 +24,27 @@ interface FxModuleDef {
   }[];
 }
 
+type FxTarget = "master" | "drums" | "bass" | "chords" | "melody";
+
+const FX_TARGET_CHANNELS: Record<FxTarget, number[]> = {
+  master: [],  // = use master FX methods
+  drums:  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+  bass:   [12],
+  chords: [13],
+  melody: [14],
+};
+
+const FX_TARGET_LABELS: { id: FxTarget; label: string; color: string }[] = [
+  { id: "master", label: "MST", color: "#f59e0b" },
+  { id: "drums",  label: "DRM", color: "#f59e0b" },
+  { id: "bass",   label: "BAS", color: "#10b981" },
+  { id: "chords", label: "CHD", color: "#a78bfa" },
+  { id: "melody", label: "MEL", color: "#f472b6" },
+];
+
 interface FxModuleState {
   enabled: boolean;
+  target: FxTarget;
   params: Record<string, number>;
 }
 
@@ -103,6 +122,12 @@ const MODULE_DEFS: FxModuleDef[] = [
   },
 ];
 
+// ─── Helper: Get channels for a target ─────────────────────────────
+
+function getChannels(target: FxTarget): number[] {
+  return FX_TARGET_CHANNELS[target] ?? [];
+}
+
 // ─── Helper: Apply FX Parameter Changes ──────────────────────────────
 
 function applyFxParam(
@@ -110,7 +135,8 @@ function applyFxParam(
   paramId: string,
   value: number,
   enabled: boolean,
-  allParams: Record<string, number>
+  allParams: Record<string, number>,
+  target: FxTarget = "master"
 ) {
   if (!enabled) return; // Don't apply if module is disabled
 
@@ -118,9 +144,13 @@ function applyFxParam(
     case "reverb": {
       const rvbLvl = paramId === "level" ? value / 100 : (allParams.level ?? 35) / 100;
       audioEngine.setReverbLevel(rvbLvl);
-      // Update sends proportionally
       const rvbSend = Math.max(0.15, rvbLvl * 0.6);
-      for (let ch = 0; ch < 15; ch++) audioEngine.setChannelReverbSend(ch, rvbSend);
+      const channels = getChannels(target);
+      if (target === "master" || channels.length === 0) {
+        for (let ch = 0; ch < 15; ch++) audioEngine.setChannelReverbSend(ch, rvbSend);
+      } else {
+        for (const ch of channels) audioEngine.setChannelReverbSend(ch, rvbSend);
+      }
       if (paramId === "damping") {
         audioEngine.setReverbDamping(500 + (value / 100) * 15500);
       }
@@ -142,24 +172,30 @@ function applyFxParam(
       break;
     }
 
-    case "filter":
-      if (paramId === "cutoff" || paramId === "resonance") {
-        // Map cutoff 0-100 to 80Hz-20kHz
-        const cutoff = allParams.cutoff ?? 80;
-        const resonance = allParams.resonance ?? 20;
-        const freq = 80 * Math.pow(20000 / 80, cutoff / 100);
-        const q = 0.5 + (resonance / 100) * 15; // 0.5 to 15.5
+    case "filter": {
+      const cutoff = allParams.cutoff ?? 80;
+      const resonance = allParams.resonance ?? 20;
+      const freq = 80 * Math.pow(20000 / 80, cutoff / 100);
+      const q = 0.5 + (resonance / 100) * 15;
+      const channels = getChannels(target);
+      if (target === "master" || channels.length === 0) {
         audioEngine.setMasterFilter("lowpass", freq, q);
+      } else {
+        for (const ch of channels) audioEngine.setChannelFilter(ch, "lowpass", freq, q);
       }
       break;
+    }
 
-    case "drive":
-      if (paramId === "amount") {
-        audioEngine.setMasterSaturation(value / 100);
+    case "drive": {
+      const driveAmt = (paramId === "amount" ? value : allParams.amount ?? 0) / 100;
+      const channels = getChannels(target);
+      if (target === "master" || channels.length === 0) {
+        audioEngine.setMasterSaturation(driveAmt);
+      } else {
+        for (const ch of channels) audioEngine.setChannelDrive(ch, driveAmt);
       }
-      // tone parameter doesn't directly map to an audioEngine method
-      // but we could extend it later
       break;
+    }
 
     case "sidechain":
       if (paramId === "amount" || paramId === "release") {
@@ -199,19 +235,23 @@ function applyFxParam(
 function applyModuleToggle(
   id: string,
   enabled: boolean,
-  params: Record<string, number>
+  params: Record<string, number>,
+  target: FxTarget = "master"
 ) {
+  const channels = getChannels(target);
+  const isPerChannel = target !== "master" && channels.length > 0;
+
   switch (id) {
     case "reverb": {
       const lvl = enabled ? (params.level ?? 35) / 100 : 0;
-      audioEngine.setReverbLevel(lvl);
-      // Set send amounts on all channels so reverb is audible
+      audioEngine.setReverbLevel(Math.max(audioEngine.getSidechainAmount() > 0 ? 0.1 : 0, lvl));
       const reverbSend = enabled ? Math.max(0.15, lvl * 0.6) : 0;
-      for (let ch = 0; ch < 15; ch++) audioEngine.setChannelReverbSend(ch, reverbSend);
-      if (enabled) {
-        const dmpFreq = 500 + ((params.damping ?? 60) / 100) * 15500;
-        audioEngine.setReverbDamping(dmpFreq);
+      if (isPerChannel) {
+        for (const ch of channels) audioEngine.setChannelReverbSend(ch, reverbSend);
+      } else {
+        for (let ch = 0; ch < 15; ch++) audioEngine.setChannelReverbSend(ch, reverbSend);
       }
+      if (enabled) audioEngine.setReverbDamping(500 + ((params.damping ?? 60) / 100) * 15500);
       break;
     }
 
@@ -219,32 +259,46 @@ function applyModuleToggle(
       const mix = enabled ? (params.mix ?? 30) / 100 : 0;
       audioEngine.setDelayLevel(mix);
       const delaySend = enabled ? 0.25 : 0;
-      for (let ch = 0; ch < 15; ch++) audioEngine.setChannelDelaySend(ch, delaySend);
+      if (isPerChannel) {
+        for (const ch of channels) audioEngine.setChannelDelaySend(ch, delaySend);
+      } else {
+        for (let ch = 0; ch < 15; ch++) audioEngine.setChannelDelaySend(ch, delaySend);
+      }
       if (enabled) {
         const DIVISIONS = [0.125, 0.167, 0.25, 0.333, 0.5, 0.667, 1.0, 2.0];
         const bpm = useDrumStore.getState().bpm;
-        const beatSec = 60 / bpm;
         const divIdx = Math.round(params.division ?? 4);
-        const time = Math.min(2.0, beatSec * (DIVISIONS[divIdx] ?? 0.5));
+        const time = Math.min(2.0, (60 / bpm) * (DIVISIONS[divIdx] ?? 0.5));
         const fb = Math.min(0.88, (params.feedback ?? 40) / 100);
         audioEngine.setDelayParams(time, fb, 8000 - fb * 5000);
       }
       break;
     }
 
-    case "filter":
-      if (enabled) {
-        const freq = 80 * Math.pow(20000 / 80, (params.cutoff ?? 80) / 100);
-        const q = 0.5 + ((params.resonance ?? 20) / 100) * 15;
-        audioEngine.setMasterFilter("lowpass", freq, q);
+    case "filter": {
+      const freq = 80 * Math.pow(20000 / 80, (params.cutoff ?? 80) / 100);
+      const q = 0.5 + ((params.resonance ?? 20) / 100) * 15;
+      if (isPerChannel) {
+        for (const ch of channels) {
+          if (enabled) audioEngine.setChannelFilter(ch, "lowpass", freq, q);
+          else audioEngine.bypassChannelFilter(ch);
+        }
       } else {
-        audioEngine.bypassMasterFilter();
+        if (enabled) audioEngine.setMasterFilter("lowpass", freq, q);
+        else audioEngine.bypassMasterFilter();
       }
       break;
+    }
 
-    case "drive":
-      audioEngine.setMasterSaturation(enabled ? (params.amount ?? 0) / 100 : 0);
+    case "drive": {
+      const drv = enabled ? (params.amount ?? 0) / 100 : 0;
+      if (isPerChannel) {
+        for (const ch of channels) audioEngine.setChannelDrive(ch, drv);
+      } else {
+        audioEngine.setMasterSaturation(drv);
+      }
       break;
+    }
 
     case "sidechain":
       if (enabled) {
@@ -284,16 +338,20 @@ function applyModuleToggle(
 interface FxModuleCardProps {
   def: FxModuleDef;
   enabled: boolean;
+  target: FxTarget;
   params: Record<string, number>;
   onToggle: () => void;
+  onTargetChange: (target: FxTarget) => void;
   onParamChange: (paramId: string, value: number) => void;
 }
 
 function FxModuleCard({
   def,
   enabled,
+  target,
   params,
   onToggle,
+  onTargetChange,
   onParamChange,
 }: FxModuleCardProps) {
   return (
@@ -308,12 +366,24 @@ function FxModuleCard({
       {/* Module name */}
       <span
         className="text-[8px] font-bold tracking-[0.15em]"
-        style={{
-          color: enabled ? def.color : "rgba(255,255,255,0.25)",
-        }}
+        style={{ color: enabled ? def.color : "rgba(255,255,255,0.25)" }}
       >
         {def.name}
       </span>
+
+      {/* Target selector: MST DRM BAS CHD MEL */}
+      <div className="flex gap-[1px]">
+        {FX_TARGET_LABELS.map((t) => (
+          <button key={t.id} onClick={() => onTargetChange(t.id)}
+            className="px-1 py-0 text-[6px] font-bold rounded transition-all"
+            style={{
+              backgroundColor: target === t.id ? (enabled ? t.color + "30" : "rgba(255,255,255,0.08)") : "transparent",
+              color: target === t.id ? (enabled ? t.color : "rgba(255,255,255,0.4)") : "rgba(255,255,255,0.15)",
+            }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
 
       {/* Knobs row */}
       <div className="flex gap-2">
@@ -363,13 +433,13 @@ export function FxRack({ isOpen, onToggle }: FxRackProps) {
   const [modules, setModules] = useState<
     Record<string, FxModuleState>
   >({
-    reverb: { enabled: false, params: { level: 35, damping: 60 } },
-    delay: { enabled: false, params: { time: 50, feedback: 40 } },
-    filter: { enabled: false, params: { cutoff: 80, resonance: 20 } },
-    drive: { enabled: false, params: { amount: 0, tone: 50 } },
-    sidechain: { enabled: false, params: { amount: 70, release: 30 } },
-    chorus: { enabled: false, params: { rate: 30, depth: 40 } },
-    comp: { enabled: false, params: { threshold: 50, ratio: 40 } },
+    reverb: { enabled: false, target: "master", params: { level: 35, damping: 60 } },
+    delay: { enabled: false, target: "master", params: { division: 4, feedback: 40, mix: 30 } },
+    filter: { enabled: false, target: "master", params: { cutoff: 80, resonance: 20 } },
+    drive: { enabled: false, target: "master", params: { amount: 0, tone: 50 } },
+    sidechain: { enabled: false, target: "master", params: { amount: 70, release: 30 } },
+    chorus: { enabled: false, target: "master", params: { rate: 30, depth: 40 } },
+    comp: { enabled: false, target: "master", params: { threshold: 50, ratio: 40 } },
   });
 
   // Generic parameter change handler
@@ -379,19 +449,25 @@ export function FxRack({ isOpen, onToggle }: FxRackProps) {
         const mod = prev[moduleId];
         if (!mod) return prev;
 
-        const next = {
-          ...mod,
-          params: { ...mod.params, [paramId]: value },
-        };
+        const next = { ...mod, params: { ...mod.params, [paramId]: value } };
+        applyFxParam(moduleId, paramId, value, mod.enabled, next.params, mod.target);
+        return { ...prev, [moduleId]: next };
+      });
+    },
+    []
+  );
 
-        applyFxParam(
-          moduleId,
-          paramId,
-          value,
-          mod.enabled,
-          next.params
-        );
-
+  // Change which target (channel) a module affects
+  const setTarget = useCallback(
+    (moduleId: string, target: FxTarget) => {
+      setModules((prev) => {
+        const mod = prev[moduleId];
+        if (!mod) return prev;
+        // Disable on old target first
+        if (mod.enabled) applyModuleToggle(moduleId, false, mod.params, mod.target);
+        const next = { ...mod, target };
+        // Re-enable on new target
+        if (mod.enabled) applyModuleToggle(moduleId, true, next.params, next.target);
         return { ...prev, [moduleId]: next };
       });
     },
@@ -405,7 +481,7 @@ export function FxRack({ isOpen, onToggle }: FxRackProps) {
       if (!mod) return prev;
 
       const next = { ...mod, enabled: !mod.enabled };
-      applyModuleToggle(moduleId, next.enabled, next.params);
+      applyModuleToggle(moduleId, next.enabled, next.params, next.target);
 
       return { ...prev, [moduleId]: next };
     });
@@ -447,8 +523,10 @@ export function FxRack({ isOpen, onToggle }: FxRackProps) {
               key={def.id}
               def={def}
               enabled={mod.enabled}
+              target={mod.target}
               params={mod.params}
               onToggle={() => toggleModule(def.id)}
+              onTargetChange={(t) => setTarget(def.id, t)}
               onParamChange={(paramId, value) =>
                 setParam(def.id, paramId, value)
               }
