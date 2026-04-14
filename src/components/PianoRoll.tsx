@@ -502,6 +502,34 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         if (selectedNoteIds.size > 0) {
           removeNotes(selectedNoteIds);
         }
+      } else if (e.key === "ArrowLeft" && selectedNoteIds.size > 0) {
+        e.preventDefault();
+        setNotes((prev) => prev.map((n) => {
+          if (!selectedNoteIds.has(n.id)) return n;
+          const step = e.shiftKey ? gridRes * 4 : gridRes; // Shift = bigger jump
+          return { ...n, start: Math.max(0, Math.round((n.start - step) / gridRes) * gridRes) };
+        }));
+      } else if (e.key === "ArrowRight" && selectedNoteIds.size > 0) {
+        e.preventDefault();
+        setNotes((prev) => prev.map((n) => {
+          if (!selectedNoteIds.has(n.id)) return n;
+          const step = e.shiftKey ? gridRes * 4 : gridRes;
+          return { ...n, start: Math.round((n.start + step) / gridRes) * gridRes };
+        }));
+      } else if (e.key === "ArrowUp" && selectedNoteIds.size > 0) {
+        e.preventDefault();
+        setNotes((prev) => prev.map((n) => {
+          if (!selectedNoteIds.has(n.id)) return n;
+          const newMidi = Math.min(baseNote + totalRows - 1, n.midi + 1);
+          return { ...n, midi: scaleSnap ? snapToScale(newMidi, rootMidi, scaleName) : newMidi };
+        }));
+      } else if (e.key === "ArrowDown" && selectedNoteIds.size > 0) {
+        e.preventDefault();
+        setNotes((prev) => prev.map((n) => {
+          if (!selectedNoteIds.has(n.id)) return n;
+          const newMidi = Math.max(baseNote, n.midi - 1);
+          return { ...n, midi: scaleSnap ? snapToScale(newMidi, rootMidi, scaleName) : newMidi };
+        }));
       }
     };
 
