@@ -26,18 +26,18 @@ export type SampleCategory =
  * This determines which samples appear in the SampleBrowser for each pad.
  */
 export const VOICE_CATEGORIES: Record<number, SampleCategory[]> = {
-  0:  ["kicks", "boom-kicks"],                              // KICK
-  1:  ["snares", "rims", "claps"],                          // SNARE  
-  2:  ["claps", "snaps", "snares"],                         // CLAP
-  3:  ["toms", "percussions", "boom-kicks"],                // TOM LO
-  4:  ["toms", "percussions"],                              // TOM MID
-  5:  ["toms", "percussions", "shakers"],                   // TOM HI
-  6:  ["hats", "hats-closed", "shakers"],                   // HH CL
-  7:  ["hats", "hats-open", "cymbals"],                     // HH OP
-  8:  ["cymbals", "chords"],                                // CYMBAL
-  9:  ["cymbals", "hats-open"],                             // RIDE
-  10: ["percussions", "shakers", "snaps", "sfx", "oneshots", "chords"], // PERC 1
-  11: ["percussions", "shakers", "snaps", "sfx", "oneshots", "chords"], // PERC 2
+  0:  ["kicks", "boom-kicks", "oneshots", "chords"],                     // KICK
+  1:  ["snares", "rims", "claps", "oneshots", "chords"],                 // SNARE
+  2:  ["claps", "snaps", "snares", "oneshots", "chords"],                // CLAP
+  3:  ["toms", "percussions", "boom-kicks", "oneshots", "chords"],       // TOM LO
+  4:  ["toms", "percussions", "oneshots", "chords"],                     // TOM MID
+  5:  ["toms", "percussions", "shakers", "oneshots", "chords"],          // TOM HI
+  6:  ["hats", "hats-closed", "shakers", "oneshots", "chords"],          // HH CL
+  7:  ["hats", "hats-open", "cymbals", "oneshots", "chords"],            // HH OP
+  8:  ["cymbals", "chords", "oneshots"],                                 // CYMBAL
+  9:  ["cymbals", "hats-open", "oneshots", "chords"],                    // RIDE
+  10: ["percussions", "shakers", "snaps", "sfx", "oneshots", "chords"],  // PERC 1
+  11: ["percussions", "shakers", "snaps", "sfx", "oneshots", "chords"],  // PERC 2
 };
 
 // @ts-ignore — TS2590: array too large for literal inference, runtime type is correct
