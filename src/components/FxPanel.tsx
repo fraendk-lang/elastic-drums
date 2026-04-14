@@ -1,8 +1,8 @@
 /**
  * FxPanel — Fullscreen Performance FX Overlay
  *
- * Kaoss Pad-style XY controller + Beat FX buttons (Roll, Brake, Build, Noise, Stutter, Echo).
- * Inspired by Korg Kaoss Pad and Pioneer RMX-1000.
+ * Kaoss Pad-style XY controller + Beat FX buttons.
+ * Completely rewritten with musical parameter mapping, BPM sync, and proper audio algorithms.
  */
 
 import { useState, useCallback, useRef } from "react";
@@ -14,7 +14,7 @@ import { useDrumStore } from "../store/drumStore";
 type FxTarget = "master" | "drums" | "bass" | "chords" | "melody";
 
 const FX_TARGETS: { id: FxTarget; label: string; channels: number[] }[] = [
-  { id: "master", label: "MASTER", channels: [] }, // master = use setMasterFilter
+  { id: "master", label: "MASTER", channels: [] },
   { id: "drums", label: "DRUMS", channels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
   { id: "bass", label: "BASS", channels: [12] },
   { id: "chords", label: "CHORDS", channels: [13] },
@@ -34,17 +34,67 @@ interface ModeConfig {
   yLabel: string;
 }
 
+interface MusicalValue {
+  text: string;
+  description: string;
+}
+
 // ─── Constants ───────────────────────────────────────────
 
 const MODE_CONFIG: Record<FxMode, ModeConfig> = {
-  FILTER:  { color: "#f59e0b", xLabel: "Cutoff",     yLabel: "Resonance" },
-  DELAY:   { color: "#3b82f6", xLabel: "Time",        yLabel: "Feedback" },
-  REVERB:  { color: "#8b5cf6", xLabel: "Size",        yLabel: "Level" },
-  FLANGER: { color: "#06b6d4", xLabel: "Rate",        yLabel: "Depth" },
-  CRUSH:   { color: "#ef4444", xLabel: "Cutoff",      yLabel: "Drive" },
+  FILTER: { color: "#f59e0b", xLabel: "Frequency", yLabel: "Resonance" },
+  DELAY: { color: "#3b82f6", xLabel: "Division", yLabel: "Feedback" },
+  REVERB: { color: "#8b5cf6", xLabel: "Brightness", yLabel: "Level" },
+  FLANGER: { color: "#06b6d4", xLabel: "Rate", yLabel: "Depth + Feedback" },
+  CRUSH: { color: "#ef4444", xLabel: "Filter Mode", yLabel: "Drive" },
 };
 
 const FX_MODES: FxMode[] = ["FILTER", "DELAY", "REVERB", "FLANGER", "CRUSH"];
+
+// ─── Musical Value Formatters ────────────────────────────
+
+function getMusicalValue(mode: FxMode, x: number, y: number, _bpm: number): MusicalValue {
+  switch (mode) {
+    case "FILTER": {
+      if (x < 0.5) {
+        const norm = 1 - x * 2;
+        const freq = Math.round(80 * Math.pow(20000 / 80, 1 - norm));
+        const q = Math.round((0.5 + y * 25) * 10) / 10;
+        return { text: `LP ${freq}Hz`, description: `Q: ${q}` };
+      } else {
+        const norm = (x - 0.5) * 2;
+        const freq = Math.round(20 * Math.pow(12000 / 20, norm));
+        const q = Math.round((0.5 + y * 25) * 10) / 10;
+        return { text: `HP ${freq}Hz`, description: `Q: ${q}` };
+      }
+    }
+    case "DELAY": {
+      const divisions = [0.125, 0.167, 0.25, 0.333, 0.5, 0.667, 1.0, 2.0];
+      const divNames = ["1/32", "1/16T", "1/16", "1/8T", "1/8", "1/4T", "1/4", "1/2"];
+      const divIdx = Math.min(divisions.length - 1, Math.floor(x * divisions.length));
+      const feedback = Math.round(Math.pow(y, 1.5) * 88);
+      return { text: `${divNames[divIdx]}`, description: `FB: ${feedback}%` };
+    }
+    case "REVERB": {
+      const damping = Math.round(16000 * Math.pow(500 / 16000, x));
+      const level = Math.round(Math.pow(y, 0.8) * 120);
+      return { text: `${damping}Hz`, description: `${level}%` };
+    }
+    case "FLANGER": {
+      const rate = Math.round((0.05 * Math.pow(4 / 0.05, x)) * 100) / 100;
+      const depth = Math.round(Math.min(1.0, y * 1.5) * 100);
+      const hasFeedback = y > 0.3 ? "+" : "";
+      return { text: `${rate}Hz${hasFeedback}`, description: `Depth: ${depth}%` };
+    }
+    case "CRUSH": {
+      if (x < 0.4) {
+        return { text: "TEL", description: `Drive: ${Math.round(Math.pow(y, 1.3) * 100)}%` };
+      } else {
+        return { text: "CRUSH", description: `Drive: ${Math.round(Math.pow(y, 1.3) * 100)}%` };
+      }
+    }
+  }
+}
 
 // ─── FX Parameter Application ────────────────────────────
 
@@ -66,66 +116,83 @@ function releaseFilter(target: FxTarget): void {
   }
 }
 
-// Store original values for clean release
-let _savedDelayFB = 0.4;
-let _savedDelayLevel = 0.3;
-let _savedSaturation = 0;
+// ─── FX Application ─────────────────────────────────────
 
-function applyFxMode(mode: FxMode, x: number, y: number, target: FxTarget): void {
+function applyFxMode(mode: FxMode, x: number, y: number, target: FxTarget, bpm: number): void {
   switch (mode) {
     case "FILTER": {
-      // X = cutoff sweep: left half = lowpass, right half = highpass (DJ-style isolator)
-      const q = y * 30;
-      const type: BiquadFilterType = x < 0.5 ? "lowpass" : "highpass";
-      const mappedFreq = x < 0.5
-        ? 100 * Math.pow(15000 / 100, x * 2)       // LP: sweep 100→15kHz
-        : 20 + Math.pow(15000, (x - 0.5) * 2);     // HP: sweep 20→15kHz
-      applyFilter(target, type, mappedFreq, q);
+      const q = 0.5 + y * 25;
+      if (x < 0.5) {
+        // Left half: LOWPASS sweep 20kHz → 80Hz
+        const norm = 1 - x * 2;
+        const freq = 80 * Math.pow(20000 / 80, 1 - norm);
+        applyFilter(target, "lowpass", freq, q);
+      } else {
+        // Right half: HIGHPASS sweep 20Hz → 12kHz
+        const norm = (x - 0.5) * 2;
+        const freq = 20 * Math.pow(12000 / 20, norm);
+        applyFilter(target, "highpass", freq, q);
+      }
       break;
     }
     case "DELAY": {
-      // X = delay time synced to divisions, Y = feedback (0–0.92) + auto wet boost
-      const time = 0.05 + x * 0.95;
-      const feedback = y * 0.92;
-      audioEngine.setDelayParams(time, feedback, 2000 + x * 6000);
-      audioEngine.setDelayLevel(0.4 + y * 0.6);
+      const beatSec = 60 / bpm;
+      const divisions = [0.125, 0.167, 0.25, 0.333, 0.5, 0.667, 1.0, 2.0];
+      const divIdx = Math.min(divisions.length - 1, Math.floor(x * divisions.length));
+      const time = Math.min(2.0, beatSec * divisions[divIdx]!);
+      const feedback = Math.pow(y, 1.5) * 0.88;
+      const filterFreq = 8000 - feedback * 5000;
+      audioEngine.setDelayParams(time, feedback, filterFreq);
+      audioEngine.setDelayLevel(0.3 + y * 0.5);
       break;
     }
     case "REVERB": {
-      // X = reverb damping (bright→dark), Y = level (0–1.0)
-      // NO IR regeneration — only damping filter + wet level
-      audioEngine.setReverbDamping(16000 - x * 15000); // X left = bright, right = dark
-      audioEngine.setReverbLevel(y);                    // Y up = more reverb
+      // X: bright↔dark damping
+      const damping = 16000 * Math.pow(500 / 16000, x);
+      audioEngine.setReverbDamping(damping);
+      // Also adjust pre-delay for spatial effect
+      audioEngine.setReverbPreDelay(x * 60);
+      // Y: wet level with smooth curve
+      const level = Math.pow(y, 0.8) * 1.2;
+      audioEngine.setReverbLevel(Math.min(level, 1.5));
       break;
     }
     case "FLANGER": {
-      // DEDICATED FLANGER: X = sweep rate (0.1–8 Hz), Y = depth + feedback
-      const rate = 0.1 + x * 7.9;     // Sweep speed
-      const depth = y;                  // Sweep depth
-      const feedback = 0.3 + y * 0.6;  // More depth = more resonance
+      // X = sweep rate: 0.05→4 Hz
+      const rate = 0.05 * Math.pow(4 / 0.05, x);
+      // Y = depth + feedback (bottom half depth, top half feedback)
+      const depth = Math.min(1.0, y * 1.5);
+      const feedback = y > 0.3 ? 0.3 + (y - 0.3) * 0.93 : 0.3;
       audioEngine.setFlangerParams(rate, depth, feedback);
       break;
     }
     case "CRUSH": {
-      // X = cutoff (dark→bright), Y = saturation drive
-      const cutoff = 150 + x * 3000;
-      const sat = y;
-      applyFilter(target, "lowpass", cutoff, 3 + y * 8);
-      audioEngine.setMasterSaturation(sat);
+      // X: left = telephone/bandpass, center = normal, right = bright
+      if (x < 0.4) {
+        // Telephone: bandpass 300-3kHz
+        const bpFreq = 300 + (x / 0.4) * 2700;
+        applyFilter(target, "bandpass", bpFreq, 2 + (0.4 - x) * 15);
+      } else {
+        // Low-pass with resonance peak
+        const freq = 800 + ((x - 0.4) / 0.6) * 14000;
+        applyFilter(target, "lowpass", freq, 1 + y * 6);
+      }
+      // Y = saturation/distortion intensity
+      const drive = Math.pow(y, 1.3);
+      audioEngine.setMasterSaturation(drive);
       break;
     }
   }
 }
 
-function activateFxMode(mode: FxMode, x: number, y: number, target: FxTarget): void {
-  // Called once on pad-down — set up the FX
+function activateFxMode(mode: FxMode, x: number, y: number, target: FxTarget, bpm: number): void {
   if (mode === "FLANGER") {
-    const rate = 0.1 + x * 7.9;
-    const depth = y;
-    const feedback = 0.3 + y * 0.6;
+    const rate = 0.05 * Math.pow(4 / 0.05, x);
+    const depth = Math.min(1.0, y * 1.5);
+    const feedback = y > 0.3 ? 0.3 + (y - 0.3) * 0.93 : 0.3;
     audioEngine.startFlanger(rate, depth, feedback);
   }
-  applyFxMode(mode, x, y, target);
+  applyFxMode(mode, x, y, target, bpm);
 }
 
 function releaseFxMode(mode: FxMode, target: FxTarget): void {
@@ -134,19 +201,20 @@ function releaseFxMode(mode: FxMode, target: FxTarget): void {
       releaseFilter(target);
       break;
     case "DELAY":
-      audioEngine.setDelayParams(0.375, _savedDelayFB, 4000);
-      audioEngine.setDelayLevel(_savedDelayLevel);
+      audioEngine.setDelayParams(0.375, 0.4, 4000);
+      audioEngine.setDelayLevel(0.3);
       break;
     case "REVERB":
       audioEngine.setReverbLevel(0.35);
       audioEngine.setReverbDamping(8000);
+      audioEngine.setReverbPreDelay(0);
       break;
     case "FLANGER":
-      audioEngine.stopFlanger(); // Clean release — no global delay affected!
+      audioEngine.stopFlanger();
       break;
     case "CRUSH":
       releaseFilter(target);
-      audioEngine.setMasterSaturation(_savedSaturation);
+      audioEngine.setMasterSaturation(0);
       break;
   }
 }
@@ -160,6 +228,7 @@ interface BeatFx {
   deactivate: (bpm: number) => void;
   _savedGain?: number;
   _sweepTimer?: ReturnType<typeof setInterval> | null;
+  _divIndex?: number;
 }
 
 function createBeatFxList(): BeatFx[] {
@@ -167,9 +236,11 @@ function createBeatFxList(): BeatFx[] {
     {
       label: "ROLL",
       color: "#f59e0b",
-      activate: (bpm: number) => {
-        // 1/16 note rate at current BPM
-        const rate = (bpm / 60) * 4;
+      _divIndex: 0,
+      activate: function (bpm: number) {
+        const divisions = [2, 4, 8];
+        const rate = (bpm / 60) * divisions[this._divIndex! % divisions.length]!;
+        this._divIndex = (this._divIndex ?? 0) + 1;
         audioEngine.startStutter(rate);
       },
       deactivate: () => {
@@ -180,17 +251,18 @@ function createBeatFxList(): BeatFx[] {
       label: "BRAKE",
       color: "#ef4444",
       _savedGain: 0.85,
-      activate: function() {
+      activate: function (bpm: number) {
         const masterGain = audioEngine.getMasterGainNode();
         if (masterGain) {
-          this._savedGain = masterGain.gain.value; // Save current level
+          this._savedGain = masterGain.gain.value;
           const now = audioEngine.currentTime;
+          const rampTime = (60 / bpm) * 8;
           masterGain.gain.cancelScheduledValues(now);
           masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-          masterGain.gain.linearRampToValueAtTime(0.05, now + 2);
+          masterGain.gain.exponentialRampToValueAtTime(0.01, now + rampTime);
         }
       },
-      deactivate: function() {
+      deactivate: function () {
         const masterGain = audioEngine.getMasterGainNode();
         if (masterGain) {
           const now = audioEngine.currentTime;
@@ -203,20 +275,24 @@ function createBeatFxList(): BeatFx[] {
     {
       label: "BUILD",
       color: "#06b6d4",
-      _sweepTimer: null as ReturnType<typeof setInterval> | null,
-      activate: function() {
-        // Start noise at low volume — ramp up via filter sweep only (no stop/start glitches)
-        audioEngine.startNoise(0.4);
+      _sweepTimer: null,
+      activate: function (bpm: number) {
+        audioEngine.startNoise(0.3);
         audioEngine.setMasterFilter("highpass", 200, 2);
-        // Sweep highpass filter 200→8000 Hz over ~4 seconds (40 ticks × 100ms)
+        const sweepDuration = (60 / bpm) * 16;
         let filterFreq = 200;
+        const step = (8000 - 200) / (sweepDuration * 10);
         this._sweepTimer = setInterval(() => {
-          filterFreq = Math.min(8000, filterFreq + 200);
-          audioEngine.setMasterFilter("highpass", filterFreq, 2 + filterFreq / 2000);
+          filterFreq = Math.min(8000, filterFreq + step);
+          const q = 2 + (filterFreq / 8000) * 8;
+          audioEngine.setMasterFilter("highpass", filterFreq, q);
         }, 100);
       },
-      deactivate: function() {
-        if (this._sweepTimer) { clearInterval(this._sweepTimer); this._sweepTimer = null; }
+      deactivate: function () {
+        if (this._sweepTimer) {
+          clearInterval(this._sweepTimer);
+          this._sweepTimer = null;
+        }
         audioEngine.stopNoise();
         audioEngine.bypassMasterFilter();
       },
@@ -232,21 +308,37 @@ function createBeatFxList(): BeatFx[] {
       },
     },
     {
-      label: "STUTTER",
+      label: "TAPE",
       color: "#a855f7",
-      activate: () => {
-        audioEngine.startStutter(4);
+      _savedGain: 0.85,
+      activate: function (bpm: number) {
+        const masterGain = audioEngine.getMasterGainNode();
+        if (masterGain) {
+          this._savedGain = masterGain.gain.value;
+          const now = audioEngine.currentTime;
+          const stopTime = (60 / bpm) * 2;
+          masterGain.gain.cancelScheduledValues(now);
+          masterGain.gain.setValueAtTime(this._savedGain, now);
+          masterGain.gain.setTargetAtTime(0.02, now, stopTime * 0.3);
+        }
       },
-      deactivate: () => {
-        audioEngine.stopStutter();
+      deactivate: function () {
+        const masterGain = audioEngine.getMasterGainNode();
+        if (masterGain) {
+          const now = audioEngine.currentTime;
+          masterGain.gain.cancelScheduledValues(now);
+          masterGain.gain.setValueAtTime(masterGain.gain.value, now);
+          masterGain.gain.linearRampToValueAtTime(this._savedGain ?? 0.85, now + 0.15);
+        }
       },
     },
     {
       label: "ECHO",
       color: "#3b82f6",
-      activate: () => {
-        audioEngine.setDelayLevel(1.0);
-        audioEngine.setDelayParams(0.375, 0.85, 4000);
+      activate: (bpm: number) => {
+        const beatSec = 60 / bpm;
+        audioEngine.setDelayLevel(0.9);
+        audioEngine.setDelayParams(beatSec * 0.75, 0.8, 5000);
       },
       deactivate: () => {
         audioEngine.setDelayLevel(0.3);
@@ -264,8 +356,8 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
   const [activeMode, setActiveMode] = useState<FxMode>("FILTER");
   const [fxTarget, setFxTarget] = useState<FxTarget>("master");
   const [padActive, setPadActive] = useState(false);
-  const [holdMode, setHoldMode] = useState(false);   // Latch: keep FX active on pad release
-  const [holdLocked, setHoldLocked] = useState(false); // True when effect is latched
+  const [holdMode, setHoldMode] = useState(false);
+  const [holdLocked, setHoldLocked] = useState(false);
   const [padX, setPadX] = useState(0.5);
   const [padY, setPadY] = useState(0.5);
   const [activeBeatFx, setActiveBeatFx] = useState<Set<number>>(new Set());
@@ -283,34 +375,38 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
     return { x, y };
   }, []);
 
-  const handlePadDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setPadActive(true);
-    const { x, y } = calcXY(e);
-    setPadX(x);
-    setPadY(y);
-    activateFxMode(activeMode, x, y, fxTarget);
-  }, [activeMode, fxTarget, calcXY]);
+  const handlePadDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      e.currentTarget.setPointerCapture(e.pointerId);
+      setPadActive(true);
+      const { x, y } = calcXY(e);
+      setPadX(x);
+      setPadY(y);
+      activateFxMode(activeMode, x, y, fxTarget, bpm);
+    },
+    [activeMode, fxTarget, bpm, calcXY]
+  );
 
-  const handlePadMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (!padActive) return;
-    const { x, y } = calcXY(e);
-    setPadX(x);
-    setPadY(y);
-    applyFxMode(activeMode, x, y, fxTarget);
-  }, [padActive, activeMode, fxTarget, calcXY]);
+  const handlePadMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!padActive) return;
+      const { x, y } = calcXY(e);
+      setPadX(x);
+      setPadY(y);
+      applyFxMode(activeMode, x, y, fxTarget, bpm);
+    },
+    [padActive, activeMode, fxTarget, bpm, calcXY]
+  );
 
   const handlePadUp = useCallback(() => {
     setPadActive(false);
     if (holdMode) {
-      // Latch: keep the effect active at current position
       setHoldLocked(true);
     } else {
       releaseFxMode(activeMode, fxTarget);
     }
   }, [activeMode, fxTarget, holdMode]);
 
-  // Release held effect (when toggling hold off or switching modes)
   const releaseHold = useCallback(() => {
     setHoldLocked(false);
     releaseFxMode(activeMode, fxTarget);
@@ -318,23 +414,29 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
 
   // ─── Beat FX Handlers ───────────────────────────────
 
-  const handleBeatFxDown = useCallback((index: number) => {
-    beatFxListRef.current[index]?.activate(bpm);
-    setActiveBeatFx((prev) => {
-      const next = new Set(prev);
-      next.add(index);
-      return next;
-    });
-  }, [bpm]);
+  const handleBeatFxDown = useCallback(
+    (index: number) => {
+      beatFxListRef.current[index]?.activate(bpm);
+      setActiveBeatFx((prev) => {
+        const next = new Set(prev);
+        next.add(index);
+        return next;
+      });
+    },
+    [bpm]
+  );
 
-  const handleBeatFxUp = useCallback((index: number) => {
-    beatFxListRef.current[index]?.deactivate(bpm);
-    setActiveBeatFx((prev) => {
-      const next = new Set(prev);
-      next.delete(index);
-      return next;
-    });
-  }, [bpm]);
+  const handleBeatFxUp = useCallback(
+    (index: number) => {
+      beatFxListRef.current[index]?.deactivate(bpm);
+      setActiveBeatFx((prev) => {
+        const next = new Set(prev);
+        next.delete(index);
+        return next;
+      });
+    },
+    [bpm]
+  );
 
   // ─── Render ─────────────────────────────────────────
 
@@ -342,6 +444,7 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
 
   const modeConfig = MODE_CONFIG[activeMode];
   const modeColor = modeConfig.color;
+  const musicalValue = getMusicalValue(activeMode, padX, padY, bpm);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#08080a]">
@@ -361,7 +464,7 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
               <button
                 key={mode}
                 onClick={() => {
-                  if (holdLocked) releaseHold(); // Release held effect when switching modes
+                  if (holdLocked) releaseHold();
                   setActiveMode(mode);
                 }}
                 className="px-3 py-1 rounded text-xs font-bold tracking-wider transition-all"
@@ -381,7 +484,7 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
         <div className="flex items-center gap-2">
           <button
             onClick={() => {
-              if (holdMode && holdLocked) releaseHold(); // Release when turning hold off
+              if (holdMode && holdLocked) releaseHold();
               setHoldMode(!holdMode);
             }}
             className="px-3 py-1 rounded text-xs font-bold tracking-wider transition-all"
@@ -410,12 +513,15 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
       <div className="flex items-center h-8 px-4 border-b border-[var(--ed-border)]/50 gap-1">
         <span className="text-[8px] font-bold text-white/25 tracking-wider mr-2">TARGET</span>
         {FX_TARGETS.map((t) => (
-          <button key={t.id} onClick={() => setFxTarget(t.id)}
+          <button
+            key={t.id}
+            onClick={() => setFxTarget(t.id)}
             className={`px-2.5 py-0.5 text-[9px] font-bold tracking-wider rounded transition-all ${
               fxTarget === t.id
                 ? "bg-white/10 text-white border border-white/20"
                 : "text-white/30 hover:text-white/60 border border-transparent"
-            }`}>
+            }`}
+          >
             {t.label}
           </button>
         ))}
@@ -484,6 +590,30 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
                 {/* Center crosshair */}
                 <line x1="50%" y1="0" x2="50%" y2="100%" stroke="white" strokeOpacity="0.08" strokeWidth="1" strokeDasharray="4 4" />
                 <line x1="0" y1="50%" x2="100%" y2="50%" stroke="white" strokeOpacity="0.08" strokeWidth="1" strokeDasharray="4 4" />
+
+                {/* Mode-specific zone lines */}
+                {activeMode === "FILTER" && (
+                  <line x1="50%" y1="0" x2="50%" y2="100%" stroke={modeColor} strokeOpacity="0.15" strokeWidth="2" />
+                )}
+                {activeMode === "DELAY" && (
+                  <>
+                    {[1, 2, 3, 4, 5, 6, 7].map((i) => (
+                      <line
+                        key={`delay-${i}`}
+                        x1={`${(i / 8) * 100}%`}
+                        y1="0"
+                        x2={`${(i / 8) * 100}%`}
+                        y2="100%"
+                        stroke={modeColor}
+                        strokeOpacity="0.1"
+                        strokeWidth="1"
+                      />
+                    ))}
+                  </>
+                )}
+                {activeMode === "CRUSH" && (
+                  <line x1="40%" y1="0" x2="40%" y2="100%" stroke={modeColor} strokeOpacity="0.15" strokeWidth="2" />
+                )}
               </svg>
 
               {/* Crosshair guide lines at dot position (only when active) */}
@@ -536,13 +666,14 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
                 }}
               />
 
-              {/* XY value readout (only when active) */}
+              {/* Musical value readout (top-right overlay) */}
               {padActive && (
                 <div
-                  className="absolute top-3 right-3 text-[10px] font-mono pointer-events-none"
+                  className="absolute top-3 right-3 text-[10px] font-mono pointer-events-none text-center"
                   style={{ color: modeColor + "cc" }}
                 >
-                  X: {padX.toFixed(2)} &nbsp; Y: {padY.toFixed(2)}
+                  <div className="font-bold">{musicalValue.text}</div>
+                  <div className="text-[9px] opacity-75">{musicalValue.description}</div>
                 </div>
               )}
             </div>

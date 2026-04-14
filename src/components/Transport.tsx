@@ -25,9 +25,16 @@ export function Transport({
     nextPreset, prevPreset, clearPattern,
   } = useDrumStore();
 
-  // Tap Tempo
+  // Tap Tempo with visual feedback
+  const [tapFlash, setTapFlash] = useState(false);
+  const [detectedBpm, setDetectedBpm] = useState<number | null>(null);
   const tapTimes = useRef<number[]>([]);
+
   const handleTap = useCallback(() => {
+    // Visual feedback: flash the button
+    setTapFlash(true);
+    setTimeout(() => setTapFlash(false), 150);
+
     const now = performance.now();
     tapTimes.current.push(now);
     if (tapTimes.current.length > 6) tapTimes.current.shift();
@@ -38,7 +45,11 @@ export function Transport({
       }
       const avgMs = intervals.reduce((a, b) => a + b, 0) / intervals.length;
       const tappedBpm = Math.round(60000 / avgMs);
-      if (tappedBpm >= 30 && tappedBpm <= 300) setBpm(tappedBpm);
+      if (tappedBpm >= 30 && tappedBpm <= 300) {
+        setBpm(tappedBpm);
+        setDetectedBpm(tappedBpm);
+        setTimeout(() => setDetectedBpm(null), 1500);
+      }
     }
     setTimeout(() => {
       if (tapTimes.current.length > 0 && performance.now() - tapTimes.current[tapTimes.current.length - 1]! > 2000) {
@@ -46,6 +57,20 @@ export function Transport({
       }
     }, 2100);
   }, [setBpm]);
+
+  // Keyboard shortcut for tap tempo (T key)
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 't' || e.key === 'T') {
+      handleTap();
+    }
+  }, [handleTap]);
+
+  // Add keyboard listener on mount
+  const keyListenerRef = useRef(false);
+  if (!keyListenerRef.current) {
+    keyListenerRef.current = true;
+    typeof window !== 'undefined' && window.addEventListener('keydown', handleKeyDown);
+  }
 
   return (
     <header className="flex items-center h-11 px-3 border-b border-[var(--ed-border)]/70 bg-gradient-to-b from-[#111116] to-[#0d0d11] gap-1.5 relative z-20">
@@ -61,6 +86,7 @@ export function Transport({
       {/* ── Transport ── */}
       <button
         onClick={togglePlay}
+        aria-label={isPlaying ? "Stop" : "Play"}
         className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold transition-all ed-pad-press ${
           isPlaying
             ? "bg-red-500/15 text-red-400 border border-red-500/30 shadow-[0_0_12px_rgba(239,68,68,0.15)]"
@@ -73,18 +99,29 @@ export function Transport({
       <FillButton />
 
       {/* BPM */}
-      <div className="flex items-center bg-black/30 rounded-md border border-white/6 px-0.5">
+      <div className="flex items-center bg-black/30 rounded-md border border-white/6 px-0.5 relative">
         <input
           type="number" min={30} max={300} value={bpm}
           onChange={(e) => setBpm(Number(e.target.value))}
+          aria-label="Tempo in BPM"
           className="w-11 h-7 px-1 text-center text-[12px] font-mono bg-transparent text-[var(--ed-accent-orange)] focus:outline-none font-bold tabular-nums"
         />
         <button
           onClick={handleTap}
-          className="h-5 px-1.5 text-[7px] font-bold tracking-wider text-white/25 hover:text-white/60 transition-colors border-l border-white/6"
+          aria-label="Tap to set tempo"
+          className={`h-5 px-1.5 text-[7px] font-bold tracking-wider transition-all border-l border-white/6 ${
+            tapFlash
+              ? "text-white/80 bg-white/20"
+              : "text-white/25 hover:text-white/60"
+          }`}
         >
           TAP
         </button>
+        {detectedBpm && (
+          <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-[10px] font-bold text-white/60 pointer-events-none whitespace-nowrap bg-black/50 px-2 py-0.5 rounded">
+            {detectedBpm} BPM
+          </div>
+        )}
       </div>
 
       {/* Swing */}
@@ -92,6 +129,7 @@ export function Transport({
         <span className="text-[7px] text-white/25 uppercase font-bold">Swg</span>
         <input type="range" min={50} max={75} value={swing}
           onChange={(e) => setSwing(Number(e.target.value))}
+          aria-label="Swing amount"
           className="w-10 h-[3px] accent-white/40" />
         <span className="text-[9px] font-mono text-white/35 w-4 tabular-nums">{swing}</span>
       </div>
@@ -117,10 +155,28 @@ export function Transport({
 
       {/* ── Pattern ── */}
       <div className="flex items-center gap-1">
-        <button onClick={prevPreset} className="w-5 h-5 rounded text-[9px] text-white/30 hover:text-white/70 hover:bg-white/5 transition-all">&lsaquo;</button>
+        <button
+          onClick={prevPreset}
+          aria-label="Previous pattern"
+          className="w-5 h-5 rounded text-[9px] text-white/30 hover:text-white/70 hover:bg-white/5 transition-all"
+        >
+          &lsaquo;
+        </button>
         <span className="text-[10px] font-medium text-white/80 min-w-[65px] text-center truncate px-1">{pattern.name}</span>
-        <button onClick={nextPreset} className="w-5 h-5 rounded text-[9px] text-white/30 hover:text-white/70 hover:bg-white/5 transition-all">&rsaquo;</button>
-        <button onClick={clearPattern} className="text-[7px] text-white/15 hover:text-red-400/60 transition-colors ml-0.5 font-bold tracking-wider">CLR</button>
+        <button
+          onClick={nextPreset}
+          aria-label="Next pattern"
+          className="w-5 h-5 rounded text-[9px] text-white/30 hover:text-white/70 hover:bg-white/5 transition-all"
+        >
+          &rsaquo;
+        </button>
+        <button
+          onClick={clearPattern}
+          aria-label="Clear pattern"
+          className="text-[7px] text-white/15 hover:text-red-400/60 transition-colors ml-0.5 font-bold tracking-wider"
+        >
+          CLR
+        </button>
       </div>
 
       {/* ── Spacer ── */}
@@ -145,8 +201,13 @@ export function Transport({
 
         <Sep />
 
-        <button onClick={onToggleHelp}
-          className="w-6 h-6 rounded-md text-[10px] text-white/20 hover:text-white/50 hover:bg-white/5 transition-all">?</button>
+        <button
+          onClick={onToggleHelp}
+          aria-label="Help"
+          className="w-6 h-6 rounded-md text-[10px] text-white/20 hover:text-white/50 hover:bg-white/5 transition-all"
+        >
+          ?
+        </button>
       </div>
     </header>
   );
@@ -185,6 +246,7 @@ function RecordButton() {
     <button
       onClick={handleClick}
       disabled={processing}
+      aria-label={recording ? `Recording ${formatTime(elapsed)}` : processing ? "Processing" : "Record"}
       className={`h-6 px-2.5 rounded-md text-[8px] font-bold tracking-wider transition-all flex items-center gap-1 ${
         recording
           ? "bg-red-500/20 text-red-400 shadow-[0_0_12px_rgba(239,68,68,0.2)] border border-red-500/30"
@@ -207,6 +269,7 @@ function ToolBtn({ onClick, label, accent }: { onClick: () => void; label: strin
   return (
     <button
       onClick={onClick}
+      aria-label={`Open ${label}`}
       className={`h-6 px-2.5 rounded-md text-[8px] font-bold tracking-wider transition-all ed-tool-btn ${
         accent
           ? "bg-[var(--ed-accent-orange)]/8 text-[var(--ed-accent-orange)]/80 hover:bg-[var(--ed-accent-orange)]/15 hover:text-[var(--ed-accent-orange)]"
@@ -225,6 +288,7 @@ function FillButton() {
       onMouseDown={() => { setActive(true); setFillMode(true); }}
       onMouseUp={() => { setActive(false); setFillMode(false); }}
       onMouseLeave={() => { setActive(false); setFillMode(false); }}
+      aria-label="Fill mode (hold)"
       className={`h-6 px-2 rounded-md text-[7px] font-bold tracking-wider transition-all ${
         active
           ? "bg-yellow-400/20 text-yellow-300 shadow-[0_0_10px_rgba(250,204,21,0.15)]"

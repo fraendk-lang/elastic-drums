@@ -1,0 +1,200 @@
+/**
+ * Mixer Router — Channel strips, bus groups, and panning
+ *
+ * Manages per-channel processing chains (filter → shaper → gain → panner → analyser),
+ * bus group routing, and binaural audio mode.
+ */
+
+export class MixerRouter {
+  private channelGains: GainNode[] = [];
+  private channelAnalysers: AnalyserNode[] = [];
+  private channelFilters: BiquadFilterNode[] = [];
+  private channelShapers: WaveShaperNode[] = [];
+  private channelPanners: PannerNode[] = [];
+  private binauralMode = false;
+  private groupBuses: Map<string, { gain: GainNode; analyser: AnalyserNode }> = new Map();
+  private channelGroupAssignment: string[] = [];
+
+  /** Create a channel strip: filter → shaper → gain → panner → analyser → destination */
+  createChannel(ctx: AudioContext, destination: GainNode): { filter: BiquadFilterNode; gain: GainNode; analyser: AnalyserNode; panner: PannerNode } {
+    // Insert filter (bypass by default: allpass)
+    const filter = ctx.createBiquadFilter();
+    filter.type = "allpass";
+    filter.frequency.value = 1000;
+
+    // Insert distortion (bypass by default: null curve)
+    const shaper = ctx.createWaveShaper();
+
+    // Channel gain (volume fader)
+    const gain = ctx.createGain();
+    gain.gain.value = 1.0;
+
+    // Channel panner (3D / HRTF capable)
+    const panner = ctx.createPanner();
+    panner.panningModel = "equalpower"; // default; switch to "HRTF" for binaural
+    panner.distanceModel = "inverse";
+    panner.refDistance = 1;
+    panner.maxDistance = 10;
+    panner.positionX.value = 0; // center
+    panner.positionY.value = 0;
+    panner.positionZ.value = -1; // in front of listener
+
+    // Analyser (meter)
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 4096;
+    analyser.smoothingTimeConstant = 0.15;
+
+    // Routing: filter → shaper → gain → panner → analyser → destination
+    filter.connect(shaper);
+    shaper.connect(gain);
+    gain.connect(panner);
+    panner.connect(analyser);
+    analyser.connect(destination);
+
+    this.channelFilters.push(filter);
+    this.channelShapers.push(shaper);
+    this.channelGains.push(gain);
+    this.channelPanners.push(panner);
+    this.channelAnalysers.push(analyser);
+
+    return { filter, gain, analyser, panner };
+  }
+
+  /** Get all channel nodes */
+  getChannelGain(i: number): GainNode | null {
+    return this.channelGains[i] ?? null;
+  }
+
+  getChannelAnalyser(i: number): AnalyserNode | null {
+    return this.channelAnalysers[i] ?? null;
+  }
+
+  getChannelFilter(i: number): BiquadFilterNode | null {
+    return this.channelFilters[i] ?? null;
+  }
+
+  getChannelOutput(i: number): AudioNode {
+    return this.channelFilters[i] ?? this.channelGains[i]!;
+  }
+
+  /** Set channel volume with smooth ramp */
+  setChannelVolume(channel: number, volume: number, ctx: AudioContext): void {
+    const gain = this.channelGains[channel];
+    if (gain && ctx) {
+      const now = ctx.currentTime;
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.linearRampToValueAtTime(volume, now + 0.015); // 15ms fade
+    }
+  }
+
+  /** Set/bypass channel filter */
+  setChannelFilter(channel: number, type: BiquadFilterType, frequency: number, q: number): void {
+    const filter = this.channelFilters[channel];
+    if (!filter) return;
+    filter.type = type;
+    filter.frequency.value = frequency;
+    filter.Q.value = q;
+  }
+
+  bypassChannelFilter(channel: number): void {
+    const filter = this.channelFilters[channel];
+    if (filter) filter.type = "allpass";
+  }
+
+  /** Set channel drive (insert distortion) */
+  setChannelDrive(channel: number, drive: number): void {
+    const shaper = this.channelShapers[channel];
+    if (!shaper) return;
+    if (drive < 0.01) {
+      shaper.curve = null;
+      return;
+    }
+    const curve = new Float32Array(256);
+    const gain = 1 + drive * 8;
+    for (let i = 0; i < 256; i++) {
+      const x = (i / 128 - 1) * gain;
+      curve[i] = Math.tanh(x);
+    }
+    shaper.curve = curve;
+  }
+
+  /** Set channel pan */
+  setChannelPan(channel: number, pan: number): void {
+    const panner = this.channelPanners[channel];
+    if (panner) {
+      // Map -1..+1 to X position (-5..+5) for spatial width
+      panner.positionX.value = Math.max(-1, Math.min(1, pan)) * 5;
+    }
+  }
+
+  setChannelElevation(channel: number, elevation: number): void {
+    const panner = this.channelPanners[channel];
+    if (panner) panner.positionY.value = Math.max(-1, Math.min(1, elevation)) * 3;
+  }
+
+  /** Binaural mode */
+  setBinauralMode(enabled: boolean): void {
+    this.binauralMode = enabled;
+    const model = enabled ? "HRTF" : "equalpower";
+    for (const panner of this.channelPanners) {
+      panner.panningModel = model as PanningModelType;
+    }
+  }
+
+  getBinauralMode(): boolean {
+    return this.binauralMode;
+  }
+
+  /** Bus groups */
+  createBusGroup(name: string, ctx: AudioContext, masterGain: GainNode): void {
+    const gain = ctx.createGain();
+    gain.gain.value = 1.0;
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 4096;
+    analyser.smoothingTimeConstant = 0.15;
+    gain.connect(analyser);
+    analyser.connect(masterGain);
+    this.groupBuses.set(name, { gain, analyser });
+  }
+
+  setChannelGroup(channel: number, group: string, masterGain: GainNode): void {
+    this.channelGroupAssignment[channel] = group;
+    // Reconnect: channel analyser → group bus (instead of direct to master)
+    const chAnalyser = this.channelAnalysers[channel];
+    if (!chAnalyser) return;
+
+    chAnalyser.disconnect();
+    const bus = this.groupBuses.get(group);
+    if (bus) {
+      chAnalyser.connect(bus.gain);
+    } else {
+      chAnalyser.connect(masterGain);
+    }
+  }
+
+  getGroupLevel(group: string): number {
+    const bus = this.groupBuses.get(group);
+    if (!bus) return 0;
+    const data = new Float32Array(bus.analyser.fftSize);
+    bus.analyser.getFloatTimeDomainData(data);
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) sum += data[i]! * data[i]!;
+    return Math.sqrt(sum / data.length) * 2;
+  }
+
+  setGroupVolume(group: string, volume: number): void {
+    const bus = this.groupBuses.get(group);
+    if (bus) bus.gain.gain.value = volume;
+  }
+
+  getGroupNames(): string[] {
+    return Array.from(this.groupBuses.keys());
+  }
+
+  getChannelGroup(channel: number): string {
+    return this.channelGroupAssignment[channel] ?? "master";
+  }
+}
+
+export const mixerRouter = new MixerRouter();

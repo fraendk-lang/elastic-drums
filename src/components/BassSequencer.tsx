@@ -32,7 +32,7 @@ export function BassSequencer() {
   const {
     steps, length, currentStep, selectedPage, rootNote, rootName, scaleName, params, presetIndex, strategyIndex,
     automationData, automationParam,
-    toggleStep, setStepNote, toggleAccent, toggleSlide, toggleTie, cycleOctave,
+    toggleStep, setStepNote, toggleAccent, toggleSlide, toggleTie, setTieRange, cycleOctave,
     setRootNote, setScale, setParam, setLength, setSelectedPage,
     clearSteps, generateBassline, nextStrategy, prevStrategy,
     loadPreset, loadBassPattern,
@@ -41,6 +41,8 @@ export function BassSequencer() {
 
   const isPlaying = useDrumStore((s) => s.isPlaying);
   const dragRef = useRef<{ step: number; startY: number; startNote: number } | null>(null);
+  const [durationDrag, setDurationDrag] = useState<{ sourceStep: number; endStep: number } | null>(null);
+  const stepElRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [loadOpen, setLoadOpen] = useState(false);
@@ -105,6 +107,45 @@ export function BassSequencer() {
       window.addEventListener("mouseup", handleUp);
     }
   }, [steps, toggleStep, setStepNote, toggleSlide, toggleTie, cycleOctave]);
+
+  // Duration drag: right edge of note → drag right to extend via ties
+  const handleDurationDragStart = useCallback((e: React.PointerEvent, absStep: number) => {
+    const s = steps[absStep];
+    if (!s?.active || s.tie) return; // Only start from non-tie active notes
+
+    // Check if pointer is near right edge (last 10px)
+    const rect = e.currentTarget.getBoundingClientRect();
+    const offsetX = e.clientX - rect.left;
+    if (offsetX < rect.width - 10) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDurationDrag({ sourceStep: absStep, endStep: absStep });
+  }, [steps]);
+
+  const handleDurationDragMove = useCallback((e: React.PointerEvent) => {
+    if (!durationDrag) return;
+    // Find which step column the pointer is over
+    for (let i = 0; i < 16; i++) {
+      const absStep = pageOffset + i;
+      const el = stepElRefs.current.get(absStep);
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (e.clientX >= rect.left && e.clientX < rect.right && absStep >= durationDrag.sourceStep) {
+        setDurationDrag((prev) => prev ? { ...prev, endStep: absStep } : null);
+        break;
+      }
+    }
+  }, [durationDrag, pageOffset]);
+
+  const handleDurationDragEnd = useCallback(() => {
+    if (!durationDrag) return;
+    if (durationDrag.endStep > durationDrag.sourceStep) {
+      setTieRange(durationDrag.sourceStep, durationDrag.endStep);
+    }
+    setDurationDrag(null);
+  }, [durationDrag, setTieRange]);
 
   const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
   const maxNote = Math.max(7, scale.length + 3);
@@ -254,11 +295,11 @@ export function BassSequencer() {
           })()}
         </div>
         <div className="flex-1" />
-        <span className="hidden lg:inline text-[7px] text-white/12">drag = pitch &middot; rclick = accent &middot; shift = slide &middot; alt = tie</span>
+        <span className="hidden lg:inline text-[7px] text-white/12">drag = pitch &middot; drag edge = duration &middot; rclick = accent &middot; shift = slide &middot; alt = tie</span>
       </div>
 
       {/* Piano Roll + Automation */}
-      <div className="flex gap-1.5 px-3 py-1.5 h-20 sm:h-28">
+      <div className="flex gap-1.5 px-3 py-1.5 h-20 sm:h-28" onPointerMove={handleDurationDragMove} onPointerUp={handleDurationDragEnd}>
       <div className="flex gap-[1px] flex-1 min-w-0">
         {Array.from({ length: 16 }, (_, i) => {
           const absStep = pageOffset + i;
@@ -271,10 +312,14 @@ export function BassSequencer() {
           const isTiedFromPrev = isActive && step.tie && prevStep?.active;
           const isBeat = i % 4 === 0;
           const beyondLength = absStep >= length;
+          const isInDragRange = durationDrag && absStep > durationDrag.sourceStep && absStep <= durationDrag.endStep;
 
           return (
-            <div key={i} className={`flex-1 flex flex-col justify-end min-w-0 relative ${beyondLength ? "opacity-25" : ""}`}
+            <div key={i}
+              ref={(el) => { if (el) stepElRefs.current.set(absStep, el); else stepElRefs.current.delete(absStep); }}
+              className={`flex-1 flex flex-col justify-end min-w-0 relative ${beyondLength ? "opacity-25" : ""}`}
               onMouseDown={(e) => { e.preventDefault(); handleMouseDown(e, absStep); }}
+              onPointerDown={(e) => handleDurationDragStart(e, absStep)}
               onContextMenu={(e) => { e.preventDefault(); if (isActive) toggleAccent(absStep); }}
               onAuxClick={(e) => { if (e.button === 1 && isActive) { e.preventDefault(); cycleOctave(absStep); } }}>
               {isBeat && <div className="absolute top-0 bottom-0 left-0 w-px bg-white/[0.04]" />}
@@ -298,6 +343,14 @@ export function BassSequencer() {
                 onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.055)"; }}
                 onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.025)"; }}>
                 {isActive && <span className="text-[8px] font-bold font-mono text-white/90 leading-none drop-shadow-sm">{midiToName(midi)}</span>}
+                {/* Duration drag handle — right edge */}
+                {isActive && !step.tie && (
+                  <div className="absolute right-0 top-0 bottom-0 w-[8px] cursor-e-resize opacity-0 hover:opacity-100 transition-opacity bg-white/20 rounded-r" />
+                )}
+                {/* Duration drag preview */}
+                {isInDragRange && !isActive && (
+                  <div className="absolute inset-0 rounded-sm" style={{ backgroundColor: "rgba(34,211,238,0.25)" }} />
+                )}
               </div>
               <div className={`text-center text-[7px] font-mono mt-0.5 ${isCurrent ? "text-[var(--ed-accent-bass)] font-bold" : isBeat ? "text-white/15" : "text-white/8"}`}>{absStep + 1}</div>
               {isActive && (

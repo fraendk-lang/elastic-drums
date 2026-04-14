@@ -249,6 +249,7 @@ interface BassStore {
   toggleAccent: (step: number) => void;
   toggleSlide: (step: number) => void;
   toggleTie: (step: number) => void;
+  setTieRange: (fromStep: number, toStep: number) => void;
   cycleOctave: (step: number) => void;
   setRootNote: (midi: number, name: string) => void;
   setScale: (name: string) => void;
@@ -373,6 +374,31 @@ export const useBassStore = create<BassStore>((set, get) => ({
 
   toggleTie: (step) => set((s) => {
     const newSteps = [...s.steps]; newSteps[step] = { ...newSteps[step]!, tie: !newSteps[step]!.tie }; return { steps: newSteps };
+  }),
+
+  setTieRange: (fromStep, toStep) => set((s) => {
+    const newSteps = [...s.steps];
+    const sourceStep = newSteps[fromStep]!;
+    if (!sourceStep.active) return { steps: newSteps };
+
+    // Steps from fromStep+1 to toStep become tie notes (same note/octave as source)
+    for (let i = fromStep + 1; i <= Math.min(toStep, 63); i++) {
+      newSteps[i] = {
+        active: true,
+        note: sourceStep.note,
+        octave: sourceStep.octave,
+        accent: false,
+        slide: false,
+        tie: true,
+      };
+    }
+    // Clear ties beyond the drag range (in case user shortened)
+    for (let i = toStep + 1; i <= 63; i++) {
+      if (newSteps[i]?.tie && newSteps[i]?.active) {
+        newSteps[i] = { active: false, note: 0, octave: 0, accent: false, slide: false, tie: false };
+      } else break; // Stop at first non-tie
+    }
+    return { steps: newSteps };
   }),
 
   cycleOctave: (step) => set((s) => {

@@ -29,3 +29,13 @@ Thumbs.db
 # Environment
 .env
 .env.local
+.vercel
+
+# Test builds
+dist-test*/
+
+# Playwright MCP logs
+.playwright-mcp/
+
+# Claude config
+.claude/

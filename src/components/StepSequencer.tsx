@@ -15,6 +15,251 @@ const TRACK_COLORS = [
   "#8b5cf6", "#8b5cf6",
 ];
 
+// ─── StepButton Component (memoized) ─────────────────────────────
+interface StepButtonProps {
+  track: number;
+  absoluteStep: number;
+  isActive: boolean;
+  isCurrent: boolean;
+  trackColor: string;
+  velocity: number;
+  ratchetCount: number;
+  condition: string;
+  gateLength: number;
+  hasLocks: boolean;
+  isHeld: boolean;
+  isTiedStep: boolean;
+  isInGateDragRange: boolean;
+  isBeat: boolean;
+  onClick: (e: React.MouseEvent) => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+  onMouseDown: (e: React.MouseEvent) => void;
+  onPointerDown: (e: React.PointerEvent) => void;
+  stepRef: (el: HTMLButtonElement | null) => void;
+}
+
+const StepButton = React.memo(function StepButton({
+  track, absoluteStep, isActive, isCurrent, trackColor, velocity,
+  ratchetCount, condition, gateLength, hasLocks, isHeld, isTiedStep,
+  isInGateDragRange, isBeat, onClick, onContextMenu, onMouseDown, onPointerDown,
+  stepRef,
+}: StepButtonProps) {
+  const velNorm = velocity / 127;
+  const hasRatchet = isActive && ratchetCount > 1;
+  const hasCondition = isActive && condition !== "always";
+  const hasGate = isActive && gateLength > 1;
+  const activeText = isActive ? "active" : "off";
+  const velText = isActive ? `velocity ${velocity}` : "";
+
+  return (
+    <button
+      ref={stepRef}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
+      aria-label={`Step ${absoluteStep + 1}, ${VOICE_LABELS[track]}, ${activeText}${velText ? ", " + velText : ""}`}
+      className={`ed-step-btn h-[28px] rounded-[3px] relative overflow-hidden ${
+        isHeld ? "ring-2 ring-[var(--ed-accent-green)] z-10" : ""
+      } ${
+        isActive
+          ? "hover:brightness-125"
+          : isBeat
+            ? "bg-[var(--ed-bg-elevated)] hover:bg-[var(--ed-bg-surface)]"
+            : "bg-[var(--ed-bg-surface)]/50 hover:bg-[var(--ed-bg-surface)]"
+      }`}
+      style={isActive ? {
+        backgroundColor: trackColor,
+        opacity: 0.35 + velNorm * 0.65,
+        boxShadow: isCurrent ? `0 0 8px ${trackColor}40` : "none",
+      } : (isTiedStep || isInGateDragRange) ? {
+        backgroundColor: trackColor,
+        opacity: 0.2,
+      } : undefined}
+    >
+      {isCurrent && (
+        <div className="absolute inset-0 bg-white/15 rounded-[3px]" />
+      )}
+      {isActive && (
+        <div
+          className="absolute bottom-0 left-0 right-0 bg-black/20"
+          style={{ height: `${100 - velNorm * 100}%` }}
+        />
+      )}
+      {hasGate && (
+        <div
+          className="absolute bottom-0 left-0 h-[3px] rounded-full"
+          style={{ backgroundColor: "#fff", opacity: 0.5, width: "100%" }}
+        />
+      )}
+      {isTiedStep && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-2 h-[2px] rounded-full bg-white/40" />
+        </div>
+      )}
+      {isActive && (
+        <div className="absolute right-0 top-0 bottom-0 w-[6px] cursor-e-resize opacity-0 hover:opacity-100 transition-opacity bg-white/30 rounded-r-[3px]" />
+      )}
+      {hasLocks && (
+        <div className="absolute top-[2px] right-[8px] w-[5px] h-[5px] rounded-full bg-[var(--ed-accent-green)] shadow-[0_0_4px_rgba(34,197,94,0.5)]" />
+      )}
+      {hasRatchet && (
+        <span className="absolute bottom-[1px] left-[2px] text-[6px] font-bold leading-none text-black/50">
+          {ratchetCount}×
+        </span>
+      )}
+      {hasCondition && (
+        <span className="absolute top-[1px] left-[2px] text-[5px] font-bold leading-none text-yellow-200/80">
+          {condition}
+        </span>
+      )}
+    </button>
+  );
+}, (prevProps, nextProps) => {
+  // Custom comparison: only re-render if key properties change
+  return (
+    prevProps.isActive === nextProps.isActive &&
+    prevProps.isCurrent === nextProps.isCurrent &&
+    prevProps.velocity === nextProps.velocity &&
+    prevProps.ratchetCount === nextProps.ratchetCount &&
+    prevProps.condition === nextProps.condition &&
+    prevProps.gateLength === nextProps.gateLength &&
+    prevProps.hasLocks === nextProps.hasLocks &&
+    prevProps.isHeld === nextProps.isHeld &&
+    prevProps.isTiedStep === nextProps.isTiedStep &&
+    prevProps.isInGateDragRange === nextProps.isInGateDragRange
+  );
+});
+
+// ─── TrackRow Component (memoized) ──────────────────────────────
+interface TrackRowProps {
+  track: number;
+  label: string;
+  color: string;
+  pageOffset: number;
+  selectedVoice: number;
+  currentStep: number;
+  isPlaying: boolean;
+  heldStep: { track: number; step: number } | null;
+  pattern: any;
+  gateDrag: { track: number; startStep: number } | null;
+  gateDragEnd: number;
+  stepRefs: React.MutableRefObject<Map<string, HTMLButtonElement>>;
+  onSelectTrack: (track: number) => void;
+  onToggleStep: (track: number, absoluteStep: number) => void;
+  onSetStepVelocity: (track: number, absoluteStep: number, velocity: number) => void;
+  onContextMenu: (e: React.MouseEvent, track: number, absStep: number) => void;
+  onStepMouseDown: (e: React.MouseEvent, track: number, absStep: number) => void;
+  onGateDragStart: (e: React.PointerEvent, track: number, absStep: number) => void;
+}
+
+const TrackRow = React.memo(function TrackRow({
+  track, label, color, pageOffset, selectedVoice, currentStep, isPlaying, heldStep,
+  pattern, gateDrag, gateDragEnd, stepRefs, onSelectTrack, onToggleStep,
+  onSetStepVelocity, onContextMenu, onStepMouseDown, onGateDragStart,
+}: TrackRowProps) {
+  const isSelectedTrack = selectedVoice === track;
+
+  return (
+    <React.Fragment>
+      <button
+        onClick={() => onSelectTrack(track)}
+        aria-label={`Select track: ${label}`}
+        className={`flex items-center text-[9px] font-semibold pr-1 h-[28px] rounded-l transition-all ${
+          isSelectedTrack
+            ? "text-[var(--ed-text-primary)]"
+            : "text-[var(--ed-text-muted)] hover:text-[var(--ed-text-secondary)]"
+        }`}
+      >
+        <div className="w-[3px] h-3.5 rounded-full mr-1.5 shrink-0 transition-all" style={{
+          backgroundColor: isSelectedTrack ? color : color + "30",
+          boxShadow: isSelectedTrack ? `0 0 6px ${color}30` : "none",
+        }} />
+        {label}
+      </button>
+
+      {Array.from({ length: 16 }, (_, stepIdx) => {
+        const absoluteStep = pageOffset + stepIdx;
+        const step = pattern.tracks[track]?.steps[absoluteStep];
+        const isActive = step?.active ?? false;
+        const isCurrent = isPlaying && currentStep === absoluteStep;
+        const velocity = step?.velocity ?? 100;
+        const hasLocks = isActive && step !== undefined && Object.keys(step.paramLocks).length > 0;
+        const ratchetCount = step?.ratchetCount ?? 1;
+        const condition = step?.condition ?? "always";
+        const isHeld = heldStep?.track === track && heldStep?.step === absoluteStep;
+        const isBeat = stepIdx % 4 === 0;
+        const gateLength = step?.gateLength ?? 1;
+
+        let isTiedStep = false;
+        if (!isActive) {
+          for (let g = 1; g <= 16; g++) {
+            const prevAbsStep = absoluteStep - g;
+            if (prevAbsStep < 0) break;
+            const prev = pattern.tracks[track]?.steps[prevAbsStep];
+            if (prev?.active && (prev.gateLength ?? 1) > g) { isTiedStep = true; break; }
+            if (prev?.active) break;
+          }
+        }
+
+        const isInGateDragRange = gateDrag?.track === track
+          && absoluteStep > gateDrag.startStep
+          && absoluteStep <= gateDragEnd;
+
+        return (
+          <StepButton
+            key={`${track}-${stepIdx}`}
+            track={track}
+            absoluteStep={absoluteStep}
+            isActive={isActive}
+            isCurrent={isCurrent}
+            trackColor={color}
+            velocity={velocity}
+            ratchetCount={ratchetCount}
+            condition={condition}
+            gateLength={gateLength}
+            hasLocks={hasLocks}
+            isHeld={isHeld}
+            isTiedStep={isTiedStep}
+            isInGateDragRange={isInGateDragRange}
+            isBeat={isBeat}
+            onClick={(e) => {
+              if (gateDrag) return;
+              if (e.shiftKey && step?.active) {
+                const levels = [127, 100, 70, 40];
+                const current = step.velocity;
+                const idx = levels.findIndex((v) => v <= current);
+                const next = levels[(idx + 1) % levels.length]!;
+                onSetStepVelocity(track, absoluteStep, next);
+              } else {
+                onToggleStep(track, absoluteStep);
+              }
+            }}
+            onContextMenu={(e) => onContextMenu(e, track, absoluteStep)}
+            onMouseDown={(e) => onStepMouseDown(e, track, absoluteStep)}
+            onPointerDown={(e) => onGateDragStart(e, track, absoluteStep)}
+            stepRef={(el) => {
+              if (el) stepRefs.current.set(`${track}-${stepIdx}`, el);
+              else stepRefs.current.delete(`${track}-${stepIdx}`);
+            }}
+          />
+        );
+      })}
+    </React.Fragment>
+  );
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.track === nextProps.track &&
+    prevProps.selectedVoice === nextProps.selectedVoice &&
+    prevProps.currentStep === nextProps.currentStep &&
+    prevProps.isPlaying === nextProps.isPlaying &&
+    prevProps.heldStep === nextProps.heldStep &&
+    prevProps.pattern === nextProps.pattern &&
+    prevProps.gateDrag === nextProps.gateDrag &&
+    prevProps.gateDragEnd === nextProps.gateDragEnd
+  );
+});
+
 export function StepSequencer() {
   const {
     pattern, currentStep, isPlaying, selectedPage, heldStep, selectedVoice,
@@ -35,16 +280,27 @@ export function StepSequencer() {
     "1st", "!1st", "2:2", "3:3", "4:4", "2:3", "2:4", "3:4",
   ];
 
+  // Use refs to avoid re-creating callbacks when pattern changes
+  const patternRef = useRef(pattern);
+  const setStepConditionRef = useRef(setStepCondition);
+  const setStepRatchetRef = useRef(setStepRatchet);
+  const setStepVelocityRef = useRef(setStepVelocity);
+
+  patternRef.current = pattern;
+  setStepConditionRef.current = setStepCondition;
+  setStepRatchetRef.current = setStepRatchet;
+  setStepVelocityRef.current = setStepVelocity;
+
   const handleContextMenu = useCallback((e: React.MouseEvent, track: number, absStep: number) => {
     e.preventDefault();
-    const step = pattern.tracks[track]?.steps[absStep];
+    const step = patternRef.current.tracks[track]?.steps[absStep];
     if (!step?.active) return;
 
     if (e.altKey || e.metaKey) {
       const current = step.condition ?? "always";
       const idx = CONDITIONS.indexOf(current);
       const next = CONDITIONS[(idx + 1) % CONDITIONS.length]!;
-      setStepCondition(track, absStep, next);
+      setStepConditionRef.current(track, absStep, next);
       return;
     }
 
@@ -53,41 +309,52 @@ export function StepSequencer() {
       const current = step.ratchetCount ?? 1;
       const idx = ratchetLevels.indexOf(current);
       const next = ratchetLevels[(idx + 1) % ratchetLevels.length]!;
-      setStepRatchet(track, absStep, next);
+      setStepRatchetRef.current(track, absStep, next);
     } else {
       const levels = [127, 100, 70, 40];
       const current = step.velocity;
       const idx = levels.findIndex((v) => v <= current);
       const next = levels[(idx + 1) % levels.length]!;
-      setStepVelocity(track, absStep, next);
+      setStepVelocityRef.current(track, absStep, next);
     }
-  }, [pattern, setStepVelocity, setStepRatchet]);
+  }, []);
+
+  const holdStepRef = useRef(holdStep);
+  const setSelectedVoiceRef = useRef(setSelectedVoice);
+
+  holdStepRef.current = holdStep;
+  setSelectedVoiceRef.current = setSelectedVoice;
 
   const handleStepMouseDown = useCallback((e: React.MouseEvent, track: number, absStep: number) => {
-    const step = pattern.tracks[track]?.steps[absStep];
+    const step = patternRef.current.tracks[track]?.steps[absStep];
     if (!step?.active || e.button !== 0) return;
-    holdStep(track, absStep);
-    setSelectedVoice(track);
-  }, [pattern, holdStep, setSelectedVoice]);
+    holdStepRef.current(track, absStep);
+    setSelectedVoiceRef.current(track);
+  }, []);
 
   // ─── Gate-Length Drag Handlers ──────────────────────────
   // Right edge of an active step: drag right to extend gate length
 
+  const setGateDragRef = useRef(setGateDrag);
+  const setGateDragEndRef = useRef(setGateDragEnd);
+
+  setGateDragRef.current = setGateDrag;
+  setGateDragEndRef.current = setGateDragEnd;
+
   const handleGateDragStart = useCallback((e: React.PointerEvent, track: number, absStep: number) => {
-    const step = pattern.tracks[track]?.steps[absStep];
+    const step = patternRef.current.tracks[track]?.steps[absStep];
     if (!step?.active) return;
 
-    // Check if pointer is near the right edge of the step button (last 8px)
     const rect = e.currentTarget.getBoundingClientRect();
     const offsetX = e.clientX - rect.left;
-    if (offsetX < rect.width - 8) return; // Not near right edge
+    if (offsetX < rect.width - 8) return;
 
     e.preventDefault();
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
-    setGateDrag({ track, startStep: absStep });
-    setGateDragEnd(absStep);
-  }, [pattern]);
+    setGateDragRef.current({ track, startStep: absStep });
+    setGateDragEndRef.current(absStep);
+  }, []);
 
   const handleGateDragMove = useCallback((e: React.PointerEvent) => {
     if (!gateDrag) return;
@@ -107,14 +374,20 @@ export function StepSequencer() {
     }
   }, [gateDrag, pageOffset]);
 
+  const setStepGateLengthRef = useRef(setStepGateLength);
+  const releaseSepRef = useRef(releaseStep);
+
+  setStepGateLengthRef.current = setStepGateLength;
+  releaseSepRef.current = releaseStep;
+
   const handleGateDragEnd = useCallback(() => {
     if (!gateDrag) return;
     const gateLen = gateDragEnd - gateDrag.startStep + 1;
     if (gateLen >= 1) {
-      setStepGateLength(gateDrag.track, gateDrag.startStep, gateLen);
+      setStepGateLengthRef.current(gateDrag.track, gateDrag.startStep, gateLen);
     }
-    setGateDrag(null);
-  }, [gateDrag, gateDragEnd, setStepGateLength]);
+    setGateDragRef.current(null);
+  }, [gateDrag, gateDragEnd]);
 
   return (
     <div className="flex flex-col h-full p-3" onMouseUp={() => { releaseStep(); handleGateDragEnd(); }} onPointerMove={handleGateDragMove}>
@@ -126,6 +399,7 @@ export function StepSequencer() {
             <button
               key={page}
               onClick={() => setSelectedPage(page)}
+              aria-label={`Page ${page + 1}, steps ${page * 16 + 1} to ${(page + 1) * 16}`}
               className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-all ${
                 selectedPage === page
                   ? "bg-[var(--ed-accent-orange)] text-black font-bold shadow-[0_0_8px_rgba(245,158,11,0.2)]"
@@ -141,12 +415,14 @@ export function StepSequencer() {
         <div className="flex items-center gap-1 ml-1">
           <button
             onClick={() => copyPage(selectedPage)}
+            aria-label="Copy page"
             className="px-2 py-0.5 text-[8px] font-bold rounded-md bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-[var(--ed-text-primary)] hover:bg-[var(--ed-bg-elevated)] transition-all"
           >
             COPY
           </button>
           <button
             onClick={() => pastePage(selectedPage)}
+            aria-label="Paste page"
             className={`px-2 py-0.5 text-[8px] font-bold rounded-md transition-all ${
               pageClipboard
                 ? "bg-[var(--ed-accent-blue)]/15 text-[var(--ed-accent-blue)] hover:bg-[var(--ed-accent-blue)]/25"
@@ -242,156 +518,29 @@ export function StepSequencer() {
           {/* Track rows */}
           {VOICE_LABELS.map((label, track) => {
             const trackColor = TRACK_COLORS[track]!;
-            const isSelectedTrack = selectedVoice === track;
 
             return (
-              <React.Fragment key={track}>
-                {/* Track label */}
-                <button
-                  onClick={() => setSelectedVoice(track)}
-                  className={`flex items-center text-[9px] font-semibold pr-1 h-[28px] rounded-l transition-all ${
-                    isSelectedTrack
-                      ? "text-[var(--ed-text-primary)]"
-                      : "text-[var(--ed-text-muted)] hover:text-[var(--ed-text-secondary)]"
-                  }`}
-                >
-                  <div className="w-[3px] h-3.5 rounded-full mr-1.5 shrink-0 transition-all" style={{
-                    backgroundColor: isSelectedTrack ? trackColor : trackColor + "30",
-                    boxShadow: isSelectedTrack ? `0 0 6px ${trackColor}30` : "none",
-                  }} />
-                  {label}
-                </button>
-
-                {/* Steps */}
-                {Array.from({ length: 16 }, (_, stepIdx) => {
-                  const absoluteStep = pageOffset + stepIdx;
-                  const step = pattern.tracks[track]?.steps[absoluteStep];
-                  const isActive = step?.active ?? false;
-                  const isCurrent = isPlaying && currentStep === absoluteStep;
-                  const velocity = step?.velocity ?? 100;
-                  const hasLocks = isActive && step !== undefined && Object.keys(step.paramLocks).length > 0;
-                  const ratchetCount = step?.ratchetCount ?? 1;
-                  const hasRatchet = isActive && ratchetCount > 1;
-                  const condition = step?.condition ?? "always";
-                  const hasCondition = isActive && condition !== "always";
-                  const isHeld = heldStep?.track === track && heldStep?.step === absoluteStep;
-                  const velNorm = velocity / 127;
-                  const isBeat = stepIdx % 4 === 0;
-                  const gateLength = step?.gateLength ?? 1;
-                  const hasGate = isActive && gateLength > 1;
-
-                  // Check if this step is a "tied" continuation of a previous gate
-                  let isTiedStep = false;
-                  if (!isActive) {
-                    for (let g = 1; g <= 16; g++) {
-                      const prevAbsStep = absoluteStep - g;
-                      if (prevAbsStep < 0) break;
-                      const prev = pattern.tracks[track]?.steps[prevAbsStep];
-                      if (prev?.active && (prev.gateLength ?? 1) > g) { isTiedStep = true; break; }
-                      if (prev?.active) break;
-                    }
-                  }
-
-                  // Gate drag preview: highlight steps in drag range
-                  const isInGateDragRange = gateDrag?.track === track
-                    && absoluteStep > gateDrag.startStep
-                    && absoluteStep <= gateDragEnd;
-
-                  return (
-                    <button
-                      key={`${track}-${stepIdx}`}
-                      ref={(el) => {
-                        if (el) stepRefs.current.set(`${track}-${stepIdx}`, el);
-                        else stepRefs.current.delete(`${track}-${stepIdx}`);
-                      }}
-                      onClick={(e) => {
-                        if (gateDrag) return; // Don't toggle during gate drag
-                        if (e.shiftKey && step?.active) {
-                          const levels = [127, 100, 70, 40];
-                          const current = step.velocity;
-                          const idx = levels.findIndex((v) => v <= current);
-                          const next = levels[(idx + 1) % levels.length]!;
-                          setStepVelocity(track, absoluteStep, next);
-                        } else {
-                          toggleStep(track, absoluteStep);
-                        }
-                      }}
-                      onContextMenu={(e) => handleContextMenu(e, track, absoluteStep)}
-                      onMouseDown={(e) => handleStepMouseDown(e, track, absoluteStep)}
-                      onPointerDown={(e) => handleGateDragStart(e, track, absoluteStep)}
-                      className={`ed-step-btn h-[28px] rounded-[3px] relative overflow-hidden ${
-                        isHeld ? "ring-2 ring-[var(--ed-accent-green)] z-10" : ""
-                      } ${
-                        isActive
-                          ? "hover:brightness-125"
-                          : isBeat
-                            ? "bg-[var(--ed-bg-elevated)] hover:bg-[var(--ed-bg-surface)]"
-                            : "bg-[var(--ed-bg-surface)]/50 hover:bg-[var(--ed-bg-surface)]"
-                      }`}
-                      style={isActive ? {
-                        backgroundColor: trackColor,
-                        opacity: 0.35 + velNorm * 0.65,
-                        boxShadow: isCurrent ? `0 0 8px ${trackColor}40` : "none",
-                      } : (isTiedStep || isInGateDragRange) ? {
-                        backgroundColor: trackColor,
-                        opacity: 0.2,
-                      } : undefined}
-                    >
-                      {/* Playhead highlight */}
-                      {isCurrent && (
-                        <div className="absolute inset-0 bg-white/15 rounded-[3px]" />
-                      )}
-
-                      {/* Velocity bar */}
-                      {isActive && (
-                        <div
-                          className="absolute bottom-0 left-0 right-0 bg-black/20"
-                          style={{ height: `${100 - velNorm * 100}%` }}
-                        />
-                      )}
-
-                      {/* Gate-length bar (bottom stripe showing tied duration) */}
-                      {hasGate && (
-                        <div
-                          className="absolute bottom-0 left-0 h-[3px] rounded-full"
-                          style={{ backgroundColor: "#fff", opacity: 0.5, width: "100%" }}
-                        />
-                      )}
-
-                      {/* Tied step indicator (striped fill) */}
-                      {isTiedStep && (
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="w-2 h-[2px] rounded-full bg-white/40" />
-                        </div>
-                      )}
-
-                      {/* Gate drag handle — right edge (visible on hover for active steps) */}
-                      {isActive && (
-                        <div className="absolute right-0 top-0 bottom-0 w-[6px] cursor-e-resize opacity-0 hover:opacity-100 transition-opacity bg-white/30 rounded-r-[3px]" />
-                      )}
-
-                      {/* P-Lock dot */}
-                      {hasLocks && (
-                        <div className="absolute top-[2px] right-[8px] w-[5px] h-[5px] rounded-full bg-[var(--ed-accent-green)] shadow-[0_0_4px_rgba(34,197,94,0.5)]" />
-                      )}
-
-                      {/* Ratchet indicator */}
-                      {hasRatchet && (
-                        <span className="absolute bottom-[1px] left-[2px] text-[6px] font-bold leading-none text-black/50">
-                          {ratchetCount}×
-                        </span>
-                      )}
-
-                      {/* Condition indicator */}
-                      {hasCondition && (
-                        <span className="absolute top-[1px] left-[2px] text-[5px] font-bold leading-none text-yellow-200/80">
-                          {condition}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </React.Fragment>
+              <TrackRow
+                key={track}
+                track={track}
+                label={label}
+                color={trackColor}
+                pageOffset={pageOffset}
+                selectedVoice={selectedVoice}
+                currentStep={currentStep}
+                isPlaying={isPlaying}
+                heldStep={heldStep}
+                pattern={pattern}
+                gateDrag={gateDrag}
+                gateDragEnd={gateDragEnd}
+                stepRefs={stepRefs}
+                onSelectTrack={setSelectedVoice}
+                onToggleStep={toggleStep}
+                onSetStepVelocity={setStepVelocity}
+                onContextMenu={handleContextMenu}
+                onStepMouseDown={handleStepMouseDown}
+                onGateDragStart={handleGateDragStart}
+              />
             );
           })}
         </div>

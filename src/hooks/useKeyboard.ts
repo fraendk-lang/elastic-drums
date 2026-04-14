@@ -11,14 +11,21 @@ import { useDrumStore } from "../store/drumStore";
  *
  * Transport:
  *   Space    →  Play/Stop
- *   1-6      →  Load Preset 1-6
- *   ←  →     →  Prev/Next Preset
+ *   1-9, 0   →  Load Preset 1-10 (0 = 10th)
+ *   ←  →     →  Prev/Next Preset (cycles through all)
+ *   T        →  Tap Tempo (handled in Transport)
  */
 
 const KEY_TO_VOICE: Record<string, number> = {
   q: 0,  w: 1,  e: 2,  r: 3,
   a: 4,  s: 5,  d: 6,  f: 7,
   z: 8,  x: 9,  c: 10, v: 11,
+};
+
+// Map number keys to preset indices: 1→0, 2→1, ... 9→8, 0→9
+const KEY_TO_PRESET: Record<string, number> = {
+  "1": 0, "2": 1, "3": 2, "4": 3, "5": 4,
+  "6": 5, "7": 6, "8": 7, "9": 8, "0": 9,
 };
 
 export function useKeyboard() {
@@ -34,7 +41,7 @@ export function useKeyboard() {
 
     const handleDown = (e: KeyboardEvent) => {
       // Ignore if typing in an input
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
 
       const key = e.key.toLowerCase();
 
@@ -58,18 +65,22 @@ export function useKeyboard() {
         return;
       }
 
-      // Preset loading (1-6)
-      if (key >= "1" && key <= "6") {
-        loadPreset(Number(key) - 1);
+      // Preset loading (1-9, 0): direct access to presets
+      const presetIdx = KEY_TO_PRESET[e.key]; // Use e.key (not lowercased) for number keys
+      if (presetIdx !== undefined) {
+        e.preventDefault();
+        loadPreset(presetIdx);
         return;
       }
 
-      // Preset navigation
+      // Preset navigation — cycles through ALL presets (including beyond 10)
       if (key === "arrowright") {
+        e.preventDefault();
         nextPreset();
         return;
       }
       if (key === "arrowleft") {
+        e.preventDefault();
         prevPreset();
         return;
       }

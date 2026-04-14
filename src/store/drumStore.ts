@@ -653,19 +653,19 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   },
 
   loadPreset: (index) => {
-    const wasPlaying = get().isPlaying;
-    if (wasPlaying) stopScheduler();
-
     const preset = PRESET_PATTERNS[index];
     if (!preset) return;
 
+    const wasPlaying = get().isPlaying;
     const pattern = structuredClone(preset);
+
+    // Hot-swap pattern without stopping playback
     set({
       pattern,
       currentPatternIndex: index,
       swing: pattern.swing,
       currentStep: 0,
-      isPlaying: false,
+      isPlaying: wasPlaying, // Keep transport running
     });
   },
 
