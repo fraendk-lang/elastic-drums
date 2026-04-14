@@ -10,16 +10,22 @@ const VOICE_LABELS = [
 ];
 
 const CATEGORY_NAMES: Record<SampleCategory, string> = {
-  kicks: "KICKS",
-  snares: "SNARES",
-  rims: "RIMS",
-  hats: "HATS",
-  claps: "CLAPS",
-  cymbals: "CYMBALS",
-  toms: "TOMS",
-  percussions: "PERC",
-  snaps: "SNAPS",
-  sfx: "SFX",
+  "kicks": "KICKS",
+  "boom-kicks": "BOOM",
+  "snares": "SNARES",
+  "rims": "RIMS",
+  "hats": "HATS",
+  "hats-closed": "HH CL",
+  "hats-open": "HH OP",
+  "claps": "CLAPS",
+  "cymbals": "CYMBALS",
+  "toms": "TOMS",
+  "percussions": "PERC",
+  "shakers": "SHAKE",
+  "snaps": "SNAPS",
+  "sfx": "SFX",
+  "chords": "CHORD",
+  "oneshots": "1-SHOT",
 };
 
 interface SampleBrowserProps {
@@ -53,10 +59,10 @@ export function SampleBrowser({
     new Set(availableSamples.map(s => s.category))
   ).sort((a, b) => {
     const orderMap: Record<SampleCategory, number> = {
-      kicks: 0, snares: 1, rims: 2, claps: 3, snaps: 4,
-      hats: 5, cymbals: 6, toms: 7, percussions: 8, sfx: 9,
+      kicks: 0, "boom-kicks": 1, snares: 2, rims: 3, claps: 4, snaps: 5,
+      hats: 6, "hats-closed": 7, "hats-open": 8, cymbals: 9, toms: 10, percussions: 11, shakers: 12, sfx: 13, chords: 14, oneshots: 15,
     };
-    return (orderMap[a] ?? 10) - (orderMap[b] ?? 10);
+    return (orderMap[a] ?? 16) - (orderMap[b] ?? 16);
   });
 
   // Set initial category if not set

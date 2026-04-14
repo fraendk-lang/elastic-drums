@@ -6,13 +6,13 @@
  * Click a soundset = loads the default kit. Click a variation = switches to it.
  */
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { useDrumStore } from "../store/drumStore";
+import { useCustomKitStore } from "../store/customKitStore";
 import { FACTORY_KITS, KIT_CATEGORIES } from "../kits/factoryKits";
 import { applyKit, kitToPattern } from "../kits/KitManager";
 import type { DrumKit } from "../kits/KitManager";
-import { SAMPLE_KITS, loadSampleKit } from "../audio/SampleKitLoader";
-import { sampleManager } from "../audio/SampleManager";
+// sampleManager used indirectly via customKitStore
 
 interface KitBrowserProps {
   isOpen: boolean;
@@ -69,7 +69,55 @@ export function KitBrowser({ isOpen, onClose }: KitBrowserProps) {
   const [activeSoundset, setActiveSoundset] = useState<string | null>(null);
   const [activeKitId, setActiveKitId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [loadingSampleKit, setLoadingSampleKit] = useState(false);
+  const customKits = useCustomKitStore((s) => s.kits);
+  const saveCurrentKit = useCustomKitStore((s) => s.saveCurrentKit);
+  const loadCustomKit = useCustomKitStore((s) => s.loadKit);
+  const deleteCustomKit = useCustomKitStore((s) => s.deleteKit);
+  const listKits = useCustomKitStore((s) => s.listKits);
+
+  // Load custom kits on mount
+  useEffect(() => {
+    listKits().catch((err) => console.error("Failed to load custom kits:", err));
+  }, [listKits]);
+
+  const handleSaveKit = useCallback(async () => {
+    const name = window.prompt("Enter a name for this kit:", "My Custom Kit");
+    if (!name) return;
+
+    try {
+      await saveCurrentKit(name);
+      console.log(`Kit "${name}" saved`);
+    } catch (err) {
+      console.error("Failed to save kit:", err);
+    }
+  }, [saveCurrentKit]);
+
+  const handleLoadCustomKit = useCallback(
+    async (id: string) => {
+      try {
+        await loadCustomKit(id);
+        // Stop playback when loading a kit
+        const { isPlaying, togglePlay } = useDrumStore.getState();
+        if (isPlaying) togglePlay();
+        setActiveKitId(id);
+      } catch (err) {
+        console.error("Failed to load kit:", err);
+      }
+    },
+    [loadCustomKit]
+  );
+
+  const handleDeleteKit = useCallback(
+    async (id: string) => {
+      if (!window.confirm("Delete this kit?")) return;
+      try {
+        await deleteCustomKit(id);
+      } catch (err) {
+        console.error("Failed to delete kit:", err);
+      }
+    },
+    [deleteCustomKit]
+  );
 
   const soundsets = useMemo(() => buildSoundsets(FACTORY_KITS), []);
 
@@ -111,41 +159,6 @@ export function KitBrowser({ isOpen, onClose }: KitBrowserProps) {
           useDrumStore.getState().togglePlay();
         }
       }, 50);
-    }
-  }, []);
-
-  const loadSampleKitHandler = useCallback(async (kitId: string) => {
-    const kit = SAMPLE_KITS.find((k) => k.id === kitId);
-    if (!kit) return;
-
-    setLoadingSampleKit(true);
-    try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const buffers = await loadSampleKit(ctx, kit);
-
-      // Load each buffer into the corresponding voice
-      const voiceMap = [
-        "kick", "snare", "clap", "tom-lo", "tom-mid", "tom-hi",
-        "hh-closed", "hh-open", "cymbal", "ride", "perc1", "perc2",
-      ];
-
-      for (let i = 0; i < buffers.length; i++) {
-        const buffer = buffers[i];
-        if (buffer && voiceMap[i]) {
-          sampleManager.loadFromBuffer(buffer, voiceMap[i]!, i);
-        }
-      }
-
-      setActiveKitId(kit.id);
-      // Stop playback when loading samples
-      const { isPlaying, togglePlay } = useDrumStore.getState();
-      if (isPlaying) togglePlay();
-
-      console.log(`Sample kit "${kit.name}" loaded`);
-    } catch (error) {
-      console.error("Failed to load sample kit:", error);
-    } finally {
-      setLoadingSampleKit(false);
     }
   }, []);
 
@@ -193,50 +206,68 @@ export function KitBrowser({ isOpen, onClose }: KitBrowserProps) {
         <div className="flex flex-1 min-h-0 overflow-hidden">
           {/* Left: Soundset cards */}
           <div className="w-56 border-r border-[var(--ed-border)] overflow-y-auto p-3 flex flex-col gap-1.5">
-            {/* Sample Kits Section */}
-            {SAMPLE_KITS.length > 0 && (
-              <>
-                <div className="text-[9px] font-bold text-[var(--ed-text-muted)] px-1 py-2 border-b border-[var(--ed-border)]">
-                  SAMPLE KITS
-                </div>
-                {SAMPLE_KITS.map((sampleKit) => {
-                  const isActive = activeKitId === sampleKit.id;
-                  return (
-                    <button
-                      key={sampleKit.id}
-                      onClick={() => loadSampleKitHandler(sampleKit.id)}
-                      disabled={loadingSampleKit}
-                      className={`text-left p-3 rounded-lg transition-all ${
-                        isActive
-                          ? "border-2"
-                          : "border border-[var(--ed-border)] hover:border-opacity-50"
-                      } ${loadingSampleKit ? "opacity-50 cursor-not-allowed" : ""}`}
-                      style={{
-                        backgroundColor: isActive ? "#ec4899" + "15" : "var(--ed-bg-surface)",
-                        borderColor: isActive ? "#ec4899" : undefined,
-                      }}
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <div
-                          className="w-2 h-2 rounded-full shrink-0"
-                          style={{ backgroundColor: "#ec4899" }}
-                        />
-                        <span
-                          className="text-[11px] font-bold tracking-wider"
-                          style={{ color: isActive ? "#ec4899" : "var(--ed-text-primary)" }}
-                        >
-                          {sampleKit.name}
-                        </span>
-                      </div>
-                      <p className="text-[8px] text-[var(--ed-text-muted)] leading-relaxed">
-                        {loadingSampleKit && activeKitId === sampleKit.id ? "Loading..." : "12 drum samples"}
-                      </p>
-                    </button>
-                  );
-                })}
-                <div className="h-2" />
-              </>
+            {/* My Custom Kits Section */}
+            <div className="text-[9px] font-bold text-[var(--ed-text-muted)] px-1 py-2 border-b border-[var(--ed-border)]">
+              MY KITS
+            </div>
+
+            {/* Save Current Button */}
+            <button
+              onClick={handleSaveKit}
+              className="text-left p-3 rounded-lg transition-all border border-dashed border-[var(--ed-border)] hover:border-[var(--ed-accent-green)] bg-transparent text-[var(--ed-text-secondary)] hover:text-[var(--ed-accent-green)]"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-lg leading-none">+</span>
+                <span className="text-[11px] font-bold tracking-wider">SAVE CURRENT</span>
+              </div>
+            </button>
+
+            {/* Custom Kits List */}
+            {customKits.length > 0 ? (
+              customKits.map((kit) => {
+                const isActive = activeKitId === kit.id;
+                return (
+                  <div
+                    key={kit.id}
+                    className={`text-left p-3 rounded-lg transition-all border ${
+                      isActive
+                        ? "border-2 border-[#a855f7]"
+                        : "border border-[var(--ed-border)] hover:border-opacity-50"
+                    }`}
+                    style={{
+                      backgroundColor: isActive ? "#a855f7" + "15" : "var(--ed-bg-surface)",
+                    }}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <div
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{ backgroundColor: "#a855f7" }}
+                      />
+                      <button
+                        onClick={() => handleLoadCustomKit(kit.id)}
+                        className="flex-1 text-left"
+                        style={{ color: isActive ? "#a855f7" : "var(--ed-text-primary)" }}
+                      >
+                        <span className="text-[11px] font-bold tracking-wider">{kit.name}</span>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteKit(kit.id)}
+                        className="text-xs text-[var(--ed-text-muted)] hover:text-[var(--ed-accent-red)] transition-colors px-1"
+                        title="Delete kit"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="text-[8px] text-[var(--ed-text-muted)] px-2 py-3 text-center">
+                No saved kits yet
+              </div>
             )}
+
+            <div className="h-2" />
 
             {filteredSoundsets.map((soundset) => {
               const isActive = activeSoundset === soundset.id;
