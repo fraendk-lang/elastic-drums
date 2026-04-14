@@ -71,6 +71,17 @@ export const CHORDS_PRESETS: ChordsPreset[] = [
   { name: "Vintage Keys", params: cp({ waveform: "triangle", filterModel: "ladder", cutoff: 1500, resonance: 3, envMod: 0.1, attack: 10, release: 200, detune: 5, distortion: 0, volume: 0.55, subOsc: 0.1, chorus: 0, spread: 0.3, brightness: 0.2 }) },
   { name: "Lush Pad", params: cp({ waveform: "sawtooth", filterModel: "ladder", cutoff: 1000, resonance: 5, envMod: 0.25, attack: 200, release: 1500, detune: 35, distortion: 0.05, volume: 0.5, subOsc: 0.3, chorus: 0.8, spread: 0.9, brightness: 0.7 }) },
   { name: "Vintage Strings", params: cp({ waveform: "sawtooth", filterModel: "ladder", cutoff: 4000, resonance: 2, envMod: 0.1, attack: 200, release: 1200, detune: 8, distortion: 0.04, volume: 0.65, subOsc: 0.15, chorus: 0.7, spread: 0.85, brightness: 0.35 }) },
+  // ── Comprehensive Designer Presets ──
+  { name: "Juno Strings", params: cp({ waveform: "sawtooth", cutoff: 4000, resonance: 2, envMod: 0.15, attack: 400, release: 1200, detune: 8, distortion: 0, volume: 0.65, subOsc: 0, chorus: 0.7, spread: 0.8, brightness: 0.3 }) },
+  { name: "Dream Pad", params: cp({ waveform: "sawtooth", cutoff: 3000, resonance: 2, envMod: 0.15, attack: 350, release: 1500, detune: 15, distortion: 0, volume: 0.6, subOsc: 0.2, chorus: 0.6, spread: 0.9, brightness: 0.2 }) },
+  { name: "Analog Pad", params: cp({ waveform: "sawtooth", cutoff: 2000, resonance: 2, envMod: 0.15, attack: 300, release: 800, detune: 8, distortion: 0.08, volume: 0.55, subOsc: 0.3, chorus: 0, spread: 0.3, brightness: 0.1 }) },
+  { name: "Glass Pad", params: cp({ waveform: "triangle", cutoff: 5000, resonance: 3, envMod: 0.1, attack: 250, release: 1000, detune: 5, distortion: 0, volume: 0.6, subOsc: 0, chorus: 0.2, spread: 0.3, brightness: 0.6 }) },
+  { name: "Dark Pad", params: cp({ waveform: "sawtooth", cutoff: 2000, resonance: 2, envMod: 0.1, attack: 150, release: 900, detune: 3, distortion: 0, volume: 0.5, subOsc: 0, chorus: 0.5, spread: 0.5, brightness: 0 }) },
+  { name: "Choir Pad", params: cp({ waveform: "sawtooth", cutoff: 3000, resonance: 2, envMod: 0.15, attack: 400, release: 1200, detune: 10, distortion: 0, volume: 0.6, subOsc: 0, chorus: 0.3, spread: 0.9, brightness: 0.4 }) },
+  { name: "Cinematic Pad", params: cp({ waveform: "sawtooth", cutoff: 5000, resonance: 2, envMod: 0.2, attack: 500, release: 2000, detune: 25, distortion: 0, volume: 0.6, subOsc: 0.1, chorus: 0.4, spread: 0.8, brightness: 0.5 }) },
+  { name: "PWM Pad", params: cp({ waveform: "square", cutoff: 3000, resonance: 2, envMod: 0.15, attack: 300, release: 1000, detune: 8, distortion: 0, volume: 0.55, subOsc: 0.2, chorus: 0.6, spread: 0.5, brightness: 0.2 }) },
+  { name: "Ambient Wash", params: cp({ waveform: "sawtooth", cutoff: 6000, resonance: 1, envMod: 0.1, attack: 500, release: 2000, detune: 12, distortion: 0, volume: 0.45, subOsc: 0.3, chorus: 0.3, spread: 1.0, brightness: 0.3 }) },
+  { name: "Soft Keys", params: cp({ waveform: "triangle", cutoff: 2000, resonance: 1, envMod: 0.08, attack: 80, release: 400, detune: 2, distortion: 0, volume: 0.55, subOsc: 0, chorus: 0, spread: 0.2, brightness: 0.1 }) },
 ];
 
 // ─── Chordline Agent: Genre Strategies ──────────────────

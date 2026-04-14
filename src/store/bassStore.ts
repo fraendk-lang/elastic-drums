@@ -61,6 +61,17 @@ export const BASS_PRESETS: BassPreset[] = [
   { name: "Analog Warmth", params: bp({ waveform: "square", cutoff: 500, resonance: 5, envMod: 0.2, decay: 350, accent: 0.25, slideTime: 60, distortion: 0.08, volume: 0.65, subOsc: 0.8, filterModel: "ladder", punch: 0.2, harmonics: 0.25, subFilter: 70 }) },
   { name: "Tape Bass", params: bp({ waveform: "sawtooth", cutoff: 700, resonance: 8, envMod: 0.35, decay: 250, accent: 0.4, slideTime: 45, distortion: 0.45, volume: 0.6, subOsc: 0.4, harmonics: 0.4, punch: 0.25 }) },
   { name: "Organic Evolve", params: bp({ waveform: "sawtooth", cutoff: 300, resonance: 6, envMod: 0.4, decay: 800, accent: 0.15, slideTime: 120, distortion: 0.08, volume: 0.55, subOsc: 0.7, filterModel: "ladder", punch: 0.05, harmonics: 0.12, subFilter: 55 }) },
+  // ── Comprehensive Designer Presets ──
+  { name: "Deep Sub", params: bp({ waveform: "square", cutoff: 200, resonance: 2, envMod: 0.1, decay: 400, accent: 0.1, slideTime: 0, distortion: 0.08, volume: 0.8, subOsc: 0.9, filterModel: "ladder", punch: 0.1, harmonics: 0, subFilter: 40 }) },
+  { name: "Punch Bass", params: bp({ waveform: "sawtooth", cutoff: 250, resonance: 4, envMod: 0.15, decay: 120, accent: 0.5, slideTime: 0, distortion: 0.3, volume: 0.7, subOsc: 0.6, punch: 0.5 }) },
+  { name: "Acid Bass", params: bp({ waveform: "sawtooth", cutoff: 400, resonance: 22, envMod: 0.6, decay: 100, accent: 0.3, slideTime: 0, distortion: 0.5, filterModel: "ladder", punch: 0.3 }) },
+  { name: "Analog Bass", params: bp({ waveform: "square", cutoff: 200, resonance: 3, envMod: 0.1, decay: 350, accent: 0.15, slideTime: 0, distortion: 0.1, volume: 0.7, subOsc: 0.7, punch: 0.15, harmonics: 0.25 }) },
+  { name: "Dirty Bass", params: bp({ waveform: "sawtooth", cutoff: 200, resonance: 4, envMod: 0.1, decay: 200, accent: 0.4, slideTime: 0, distortion: 0.7, volume: 0.65 }) },
+  { name: "Moving Bass", params: bp({ waveform: "sawtooth", cutoff: 300, resonance: 4, envMod: 0.4, decay: 600, accent: 0.05, slideTime: 100, distortion: 0, volume: 0.7, subOsc: 0.6, punch: 0.05 }) },
+  { name: "FM Bass", params: bp({ waveform: "sawtooth", cutoff: 200, resonance: 8, envMod: 0.15, decay: 150, accent: 0.3, slideTime: 0, distortion: 0.25, volume: 0.7 }) },
+  { name: "Reese Bass", params: bp({ waveform: "sawtooth", cutoff: 250, resonance: 4, envMod: 0.15, decay: 300, accent: 0.15, slideTime: 60, distortion: 0, volume: 0.7, subOsc: 0.5, harmonics: 0.3, punch: 0.15 }) },
+  { name: "Pluck Bass", params: bp({ waveform: "sawtooth", cutoff: 300, resonance: 3, envMod: 0.2, decay: 80, accent: 0.4, slideTime: 0, distortion: 0, volume: 0.7, punch: 0.4 }) },
+  { name: "Sub Growl", params: bp({ waveform: "sawtooth", cutoff: 200, resonance: 5, envMod: 0.2, decay: 150, accent: 0.35, slideTime: 0, distortion: 0.45, volume: 0.7, subOsc: 0.7, punch: 0.35, harmonics: 0.3 }) },
 ];
 
 // ─── Bassline Agent: Genre Strategies ────────────────────
