@@ -133,6 +133,16 @@ export function ChordsSequencer() {
 
         <Sep />
 
+        {/* Filter Model */}
+        {(["lpf", "ladder", "steiner-lp"] as const).map((m) => (
+          <button key={m} onClick={() => setParam("filterModel", m)}
+            className={`px-1.5 h-5 text-[7px] font-bold rounded transition-all ${
+              params.filterModel === m ? "bg-[var(--ed-accent-blue)]/20 text-[var(--ed-accent-blue)]" : "text-white/20 hover:text-white/40"
+            }`}>{m === "lpf" ? "12dB" : m === "ladder" ? "MOOG" : "STNR"}</button>
+        ))}
+
+        <Sep />
+
         {/* Chord Type Selector */}
         <div className="flex items-center gap-[2px] bg-white/[0.03] rounded-md px-1">
           <span className="text-[7px] text-white/25 font-bold mr-0.5">TYPE</span>

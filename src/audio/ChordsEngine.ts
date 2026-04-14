@@ -5,22 +5,25 @@
  *   Voice 0: VCO + SubOsc ──┐
  *   Voice 1: VCO + SubOsc ──┤
  *   Voice 2: VCO + SubOsc ──┤
- *   Voice 3: VCO + SubOsc ──┼→ Mixer → Filter1 → Filter2 → VCA → Distortion → Output
+ *   Voice 3: VCO + SubOsc ──┼→ Mixer → FilterChain → VCA → Distortion → Output
  *   Voice 4: VCO + SubOsc ──┤
  *   Voice 5: VCO + SubOsc ──┘
  *
  * Features:
  *   - 6 oscillator voices with configurable waveform + sub-oscillators
  *   - Detune spread across voices for thick pad sound
- *   - Shared dual cascaded biquad filter (24dB/oct)
+ *   - Shared filter chain (configurable model: lpf, ladder, steiner, etc.)
  *   - Configurable attack/release VCA envelope
  *   - Filter envelope with configurable attack (not fixed 3ms like 303)
  *   - Asymmetric soft-clip distortion
  *   - Tie mode glides pitch without re-triggering VCA
  */
 
+import { createFilterChain, type FilterModel, type FilterChain } from "./filters";
+
 export interface ChordsParams {
   waveform: "sawtooth" | "square" | "triangle";
+  filterModel: FilterModel;  // "lpf" | "ladder" | "steiner-lp" | "steiner-bp" | "steiner-hp"
   cutoff: number;      // 200-12000
   resonance: number;   // 0-20
   envMod: number;      // 0-1
@@ -35,6 +38,7 @@ export interface ChordsParams {
 
 export const DEFAULT_CHORDS_PARAMS: ChordsParams = {
   waveform: "sawtooth",
+  filterModel: "lpf",
   cutoff: 1200,
   resonance: 5,
   envMod: 0.3,
@@ -93,9 +97,8 @@ export class ChordsEngine {
   // Shared mixer
   private mixer: GainNode | null = null;
 
-  // VCF: two cascaded biquads for 24dB/oct
-  private filter1: BiquadFilterNode | null = null;
-  private filter2: BiquadFilterNode | null = null;
+  // VCF: filter chain (replaces manual cascaded biquads)
+  private filterChain: FilterChain | null = null;
 
   // VCA + output
   private vca: GainNode | null = null;
@@ -141,16 +144,8 @@ export class ChordsEngine {
       this.voices.push({ osc, subOsc, subGain });
     }
 
-    // --- VCF: dual cascaded biquad for 24dB/oct ---
-    this.filter1 = audioCtx.createBiquadFilter();
-    this.filter1.type = "lowpass";
-    this.filter1.frequency.value = this.params.cutoff;
-    this.filter1.Q.value = this.params.resonance;
-
-    this.filter2 = audioCtx.createBiquadFilter();
-    this.filter2.type = "lowpass";
-    this.filter2.frequency.value = this.params.cutoff;
-    this.filter2.Q.value = Math.max(0, this.params.resonance * 0.85);
+    // --- VCF: use filter model ---
+    this.filterChain = createFilterChain(audioCtx, this.params.filterModel);
 
     // --- VCA ---
     this.vca = audioCtx.createGain();
@@ -164,10 +159,9 @@ export class ChordsEngine {
     this.output = audioCtx.createGain();
     this.output.gain.value = this.params.volume;
 
-    // --- Signal chain: mixer → filter1 → filter2 → VCA → distortion → output ---
-    this.mixer.connect(this.filter1);
-    this.filter1.connect(this.filter2);
-    this.filter2.connect(this.vca);
+    // --- Signal chain: mixer → filterChain → VCA → distortion → output ---
+    this.mixer.connect(this.filterChain.input);
+    this.filterChain.output.connect(this.vca);
     this.vca.connect(this.distNode);
     this.distNode.connect(this.output);
 
@@ -199,12 +193,12 @@ export class ChordsEngine {
   }
 
   /**
-   * Schedule the filter envelope on both cascaded filters.
+   * Schedule the filter envelope via the filter chain.
    * Uses configurable attack time (not fixed 3ms like the 303).
    * Accent boosts envelope depth.
    */
   private scheduleFilterEnvelope(time: number, accent: boolean, glide: boolean): void {
-    if (!this.filter1 || !this.filter2) return;
+    if (!this.filterChain) return;
 
     const p = this.params;
     const accentAmount = accent ? 2.0 : 1.0;
@@ -220,31 +214,32 @@ export class ChordsEngine {
     const decaySec = (p.release / 1000) * (accent ? 0.5 : 1.0);
     const decayTau = decaySec / 3.5;
 
-    // -- Filter 1 (main) --
-    this.filter1.frequency.cancelScheduledValues(time);
+    // Resonance normalized to 0-1 range for filter chain update
+    const res = Math.min(p.resonance / 20, 1.0);
+
     if (glide) {
       // During tie/glide: smooth transition
-      this.filter1.frequency.setTargetAtTime(filterPeak, time, attackSec / 3);
+      void (attackSec / 3); // Calculate but don't use
+      this.filterChain.update(filterPeak, res, time);
+      setTimeout(() => {
+        this.filterChain?.update(filterBase, res, time + attackSec);
+      }, attackSec * 1000);
     } else {
-      this.filter1.frequency.setValueAtTime(filterBase, time);
-      this.filter1.frequency.linearRampToValueAtTime(filterPeak, time + attackSec);
+      // Attack to peak
+      this.filterChain.update(filterBase, res, time);
+      setTimeout(() => {
+        this.filterChain?.update(filterPeak, res, time + attackSec);
+      }, attackSec * 1000);
+      // Decay back
+      setTimeout(() => {
+        this.filterChain?.update(filterBase, res, time + attackSec);
+      }, (attackSec + decayTau) * 1000);
     }
-    this.filter1.frequency.setTargetAtTime(filterBase, time + attackSec, decayTau);
-
-    // -- Filter 2 (cascaded) -- follows same envelope
-    this.filter2.frequency.cancelScheduledValues(time);
-    if (glide) {
-      this.filter2.frequency.setTargetAtTime(filterPeak, time, attackSec / 3);
-    } else {
-      this.filter2.frequency.setValueAtTime(filterBase, time);
-      this.filter2.frequency.linearRampToValueAtTime(filterPeak, time + attackSec);
-    }
-    this.filter2.frequency.setTargetAtTime(filterBase, time + attackSec, decayTau);
   }
 
   /** Trigger a chord (up to 6 voices) */
   triggerChord(midiNotes: number[], time: number, accent: boolean, tie: boolean): void {
-    if (!this.ctx || !this.vca || this.voices.length === 0) return;
+    if (!this.ctx || !this.vca || !this.filterChain || this.voices.length === 0) return;
 
     const p = this.params;
 
@@ -322,14 +317,11 @@ export class ChordsEngine {
         }
       }
     }
-    if (this.filter1) {
-      if (p.cutoff !== undefined) {
-        this.filter1.frequency.value = p.cutoff;
-        if (this.filter2) this.filter2.frequency.value = p.cutoff;
-      }
-      if (p.resonance !== undefined) {
-        this.filter1.Q.value = p.resonance;
-        if (this.filter2) this.filter2.Q.value = Math.max(0, p.resonance * 0.85);
+    if (this.filterChain) {
+      if (p.cutoff !== undefined || p.resonance !== undefined) {
+        const cutoff = p.cutoff ?? this.params.cutoff;
+        const res = Math.min((p.resonance ?? this.params.resonance) / 20, 1.0);
+        this.filterChain.update(cutoff, res, this.ctx?.currentTime ?? 0);
       }
     }
     if (p.subOsc !== undefined) {
@@ -337,10 +329,7 @@ export class ChordsEngine {
         voice.subGain.gain.value = p.subOsc;
       }
     }
-    if (p.filterType) {
-      if (this.filter1) this.filter1.type = p.filterType;
-      if (this.filter2) this.filter2.type = p.filterType;
-    }
+    // Note: filterType changes require recreating the filter chain; not supported at runtime
     if (this.output && p.volume !== undefined) this.output.gain.value = p.volume;
     if (p.distortion !== undefined) this.updateDistortion();
   }

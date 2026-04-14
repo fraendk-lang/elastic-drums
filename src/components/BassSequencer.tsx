@@ -191,6 +191,15 @@ export function BassSequencer() {
         <FilterBtn active={params.filterType === "bandpass"} onClick={() => setParam("filterType", "bandpass")} label="BP" />
         <FilterBtn active={params.filterType === "notch"} onClick={() => setParam("filterType", "notch")} label="NT" />
 
+        <Sep />
+
+        {/* Filter Model */}
+        {(["lpf", "ladder", "steiner-lp"] as const).map((m) => (
+          <FilterBtn key={m} active={params.filterModel === m}
+            onClick={() => setParam("filterModel", m)}
+            label={m === "lpf" ? "12dB" : m === "ladder" ? "MOOG" : "STNR"} />
+        ))}
+
         <div className="flex-1" />
 
         {/* Bassline Agent — strategy cycle + generate */}

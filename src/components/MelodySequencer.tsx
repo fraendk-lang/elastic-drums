@@ -115,6 +115,17 @@ export function MelodySequencer() {
 
         <Sep />
 
+        {/* Synth Type */}
+        {(["subtractive", "fm", "am", "pluck"] as const).map((st) => {
+          const labels: Record<string, string> = { subtractive: "SUB", fm: "FM", am: "AM", pluck: "PLK" };
+          return <button key={st} onClick={() => setParam("synthType", st)}
+            className={`px-1.5 h-5 text-[7px] font-bold rounded transition-all ${
+              params.synthType === st ? "bg-[var(--ed-accent-melody)]/20 text-[var(--ed-accent-melody)]" : "text-white/20 hover:text-white/40"
+            }`}>{labels[st]}</button>;
+        })}
+
+        <Sep />
+
         {/* Filter mode */}
         {(["lowpass", "highpass", "bandpass", "notch"] as const).map((ft) => {
           const labels: Record<string, string> = { lowpass: "LP", highpass: "HP", bandpass: "BP", notch: "NT" };
@@ -123,6 +134,21 @@ export function MelodySequencer() {
               params.filterType === ft ? "bg-[var(--ed-accent-blue)]/20 text-[var(--ed-accent-blue)]" : "text-white/20 hover:text-white/40"
             }`}>{labels[ft]}</button>;
         })}
+
+        {/* Filter Model (only shown for subtractive synth) */}
+        {params.synthType === "subtractive" && (
+          <>
+            <Sep />
+            {(["lpf", "ladder", "steiner-lp"] as const).map((m) => (
+              <button key={m} onClick={() => setParam("filterModel", m)}
+                className={`px-1.5 h-5 text-[7px] font-bold rounded transition-all ${
+                  params.filterModel === m ? "bg-[var(--ed-accent-blue)]/20 text-[var(--ed-accent-blue)]" : "text-white/20 hover:text-white/40"
+                }`}>{m === "lpf" ? "12dB" : m === "ladder" ? "MOOG" : "STNR"}</button>
+            ))}
+          </>
+        )}
+
+        <Sep />
 
         {/* Legato toggle */}
         <button onClick={() => setParam("legato", !params.legato)}

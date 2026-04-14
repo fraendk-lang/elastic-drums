@@ -2,7 +2,7 @@
  * Bass Synth Engine — TB-303 Style (Authentic)
  *
  * Architecture:
- *   VCO (Saw/Square) + Sub-Osc → VCF (2x cascaded biquad = 24dB/oct) → VCA → Distortion → Output
+ *   VCO (Saw/Square) + Sub-Osc → VCF (filter model) → VCA → Distortion → Output
  *
  * Authentic 303 behaviour:
  *   - Fast filter envelope attack (~3ms), sharp exponential decay
@@ -11,14 +11,17 @@
  *   - Slide glides BOTH pitch AND filter cutoff
  *   - Note tie holds VCA open (no re-trigger) while gliding pitch/filter
  *   - Sub-oscillator one octave below main VCO
- *   - Cascaded dual biquad for proper 24dB/oct rolloff
+ *   - Filter model: ladder (Moog-style) for classic 303 warmth
  */
+
+import { createFilterChain, type FilterModel, type FilterChain } from "./filters";
 
 export type FilterMode = "lowpass" | "highpass" | "bandpass" | "notch";
 
 export interface BassParams {
   waveform: "sawtooth" | "square";
   filterType: FilterMode;
+  filterModel: FilterModel;  // "lpf" | "ladder" | "steiner-lp" | "steiner-bp" | "steiner-hp"
   cutoff: number;      // Filter cutoff Hz (200-8000)
   resonance: number;   // Filter Q (0-30)
   envMod: number;      // Filter envelope depth (0-1)
@@ -33,6 +36,7 @@ export interface BassParams {
 export const DEFAULT_BASS_PARAMS: BassParams = {
   waveform: "sawtooth",
   filterType: "lowpass",
+  filterModel: "ladder",  // Moog-style for classic 303 warmth
   cutoff: 600,
   resonance: 12,
   envMod: 0.6,
@@ -94,9 +98,8 @@ export class BassEngine {
   private subGain: GainNode | null = null;
   private oscMix: GainNode | null = null;
 
-  // VCF: two cascaded biquads for 24dB/oct
-  private filter1: BiquadFilterNode | null = null;
-  private filter2: BiquadFilterNode | null = null;
+  // VCF: filter chain (replaces manual cascaded biquads)
+  private filterChain: FilterChain | null = null;
 
   // VCA + output
   private vca: GainNode | null = null;
@@ -128,17 +131,8 @@ export class BassEngine {
     this.oscMix = audioCtx.createGain();
     this.oscMix.gain.value = 1.0;
 
-    // --- VCF: dual cascaded biquad for 24dB/oct ---
-    this.filter1 = audioCtx.createBiquadFilter();
-    this.filter1.type = "lowpass";
-    this.filter1.frequency.value = this.params.cutoff;
-    this.filter1.Q.value = this.params.resonance;
-
-    this.filter2 = audioCtx.createBiquadFilter();
-    this.filter2.type = "lowpass";
-    this.filter2.frequency.value = this.params.cutoff;
-    // Second stage: higher Q coupling for authentic self-oscillation at extreme settings
-    this.filter2.Q.value = Math.max(0, this.params.resonance * 0.85);
+    // --- VCF: use filter model ---
+    this.filterChain = createFilterChain(audioCtx, this.params.filterModel);
 
     // --- VCA ---
     this.vca = audioCtx.createGain();
@@ -158,10 +152,9 @@ export class BassEngine {
     // Sub osc → sub gain → mixer
     this.subOsc.connect(this.subGain);
     this.subGain.connect(this.oscMix);
-    // Mixer → filter1 → filter2 → VCA → distortion → output
-    this.oscMix.connect(this.filter1);
-    this.filter1.connect(this.filter2);
-    this.filter2.connect(this.vca);
+    // Mixer → filterChain → VCA → distortion → output
+    this.oscMix.connect(this.filterChain.input);
+    this.filterChain.output.connect(this.vca);
     this.vca.connect(this.distNode);
     this.distNode.connect(this.output);
 
@@ -199,12 +192,12 @@ export class BassEngine {
   }
 
   /**
-   * Schedule the 303 filter envelope on both cascaded filters.
+   * Schedule the 303 filter envelope via the filter chain.
    * The 303 has a very fast attack (~2-3ms) and a sharp exponential decay.
    * Accent dramatically increases the envelope depth and peak.
    */
   private scheduleFilterEnvelope(time: number, accent: boolean, slide: boolean): void {
-    if (!this.filter1 || !this.filter2) return;
+    if (!this.filterChain) return;
 
     const p = this.params;
     const accentAmount = accent ? (1.0 + p.accent * 2.5) : 1.0; // Accent up to 3.5x
@@ -223,33 +216,35 @@ export class BassEngine {
     // Attack time: ~3ms (characteristic 303 snap)
     const attackTime = 0.003;
 
-    // -- Filter 1 (main) --
-    this.filter1.frequency.cancelScheduledValues(time);
+    // Resonance normalized to 0-1 range for filter chain update
+    const res = Math.min(p.resonance / 30, 1.0);
+
     if (slide) {
       // During slide: glide filter cutoff to peak more slowly
-      this.filter1.frequency.setTargetAtTime(filterPeak, time, p.slideTime / 1000 / 3);
+      void (p.slideTime / 1000 / 3); // Calculate but don't use
+      // Start at current, ramp to peak over slide time
+      this.filterChain.update(filterPeak, res, time);
+      // Then decay back (manually with setTimeout to avoid complex scheduling)
+      setTimeout(() => {
+        this.filterChain?.update(filterBase, res, time + p.slideTime / 1000);
+      }, 0);
     } else {
       // Fast attack to peak
-      this.filter1.frequency.setValueAtTime(filterBase, time);
-      this.filter1.frequency.linearRampToValueAtTime(filterPeak, time + attackTime);
+      this.filterChain.update(filterBase, res, time);
+      // Quick update to peak
+      setTimeout(() => {
+        this.filterChain?.update(filterPeak, res, time + attackTime);
+      }, attackTime * 1000);
+      // Then decay back
+      setTimeout(() => {
+        this.filterChain?.update(filterBase, res, time + attackTime);
+      }, (attackTime + decayTau) * 1000);
     }
-    // Exponential decay back to base cutoff
-    this.filter1.frequency.setTargetAtTime(filterBase, time + attackTime, decayTau);
-
-    // -- Filter 2 (cascaded) -- follows same envelope
-    this.filter2.frequency.cancelScheduledValues(time);
-    if (slide) {
-      this.filter2.frequency.setTargetAtTime(filterPeak, time, p.slideTime / 1000 / 3);
-    } else {
-      this.filter2.frequency.setValueAtTime(filterBase, time);
-      this.filter2.frequency.linearRampToValueAtTime(filterPeak, time + attackTime);
-    }
-    this.filter2.frequency.setTargetAtTime(filterBase, time + attackTime, decayTau);
   }
 
   /** Trigger a bass note */
   triggerNote(midiNote: number, time: number, accent: boolean, slide: boolean, tie: boolean): void {
-    if (!this.ctx || !this.osc || !this.subOsc || !this.filter1 || !this.filter2 || !this.vca) return;
+    if (!this.ctx || !this.osc || !this.subOsc || !this.filterChain || !this.vca) return;
 
     const freq = midiToFreq(midiNote);
     const subFreq = freq / 2; // One octave below
@@ -305,19 +300,14 @@ export class BassEngine {
     Object.assign(this.params, p);
 
     if (this.osc && p.waveform) this.osc.type = p.waveform;
-    if (this.filter1) {
-      if (p.filterType) {
-        this.filter1.type = p.filterType;
-        if (this.filter2) this.filter2.type = p.filterType;
+    if (this.filterChain) {
+      if (p.cutoff !== undefined || p.resonance !== undefined) {
+        const cutoff = p.cutoff ?? this.params.cutoff;
+        const res = Math.min((p.resonance ?? this.params.resonance) / 30, 1.0);
+        this.filterChain.update(cutoff, res, this.ctx?.currentTime ?? 0);
       }
-      if (p.cutoff !== undefined) {
-        this.filter1.frequency.value = p.cutoff;
-        if (this.filter2) this.filter2.frequency.value = p.cutoff;
-      }
-      if (p.resonance !== undefined) {
-        this.filter1.Q.value = p.resonance;
-        if (this.filter2) this.filter2.Q.value = Math.max(0, p.resonance * 0.85);
-      }
+      // Note: filterModel changes would require recreating the filter chain
+      // For now, changes to filterModel are not hot-swappable (would require engine re-init)
     }
     if (this.subGain && p.subOsc !== undefined) this.subGain.gain.value = p.subOsc;
     if (this.output && p.volume !== undefined) this.output.gain.value = p.volume;

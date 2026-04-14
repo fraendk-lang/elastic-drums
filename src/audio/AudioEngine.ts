@@ -342,6 +342,19 @@ export class AudioEngine {
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
     return buffer;
   }
+
+  /** Clean up all audio resources and close the AudioContext */
+  destroy(): void {
+    sendFxManager.destroy();
+    if (this.ctx) {
+      try {
+        this.ctx.close();
+      } catch {
+        /* already closed */
+      }
+      this.ctx = null;
+    }
+  }
 }
 
 export const audioEngine = new AudioEngine();

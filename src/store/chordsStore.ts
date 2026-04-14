@@ -31,6 +31,11 @@ export interface ChordsPreset {
 
 const cp = (p: Partial<ChordsParams>): ChordsParams => ({ ...DEFAULT_CHORDS_PARAMS, ...p });
 
+// Factory helper to ensure filterModel is set (for backward compatibility)
+function ensureFilterModel(p: ChordsParams): ChordsParams {
+  return { ...p, filterModel: p.filterModel || "lpf" };
+}
+
 export const CHORDS_PRESETS: ChordsPreset[] = [
   // ── Pads ──
   { name: "Warm Pad", params: cp({ waveform: "sawtooth", cutoff: 800, resonance: 3, envMod: 0.15, attack: 80, release: 500, detune: 15, distortion: 0, volume: 0.5, subOsc: 0.3 }) },
@@ -475,8 +480,9 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
   loadPreset: (index) => {
     const preset = CHORDS_PRESETS[index];
     if (!preset) return;
-    set({ params: { ...preset.params }, presetIndex: index });
-    chordsEngine.setParams({ ...preset.params });
+    const params = ensureFilterModel(preset.params);
+    set({ params, presetIndex: index });
+    chordsEngine.setParams(params);
   },
 
   nextPreset: () => { const n = (get().presetIndex + 1) % CHORDS_PRESETS.length; get().loadPreset(n); },
@@ -497,15 +503,16 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
   }),
 
   loadChordsPattern: (data) => {
+    const params = ensureFilterModel(data.params);
     set({
       steps: data.steps,
       length: data.length,
-      params: data.params,
+      params,
       rootNote: data.rootNote,
       rootName: data.rootName,
       scaleName: data.scaleName,
     });
-    chordsEngine.setParams(data.params);
+    chordsEngine.setParams(params);
   },
 }));
 

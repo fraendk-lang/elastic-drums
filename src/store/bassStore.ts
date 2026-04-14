@@ -19,6 +19,11 @@ export interface BassPreset {
 
 const bp = (p: Partial<BassParams>): BassParams => ({ ...DEFAULT_BASS_PARAMS, ...p });
 
+// Factory helper to ensure filterModel is set (for backward compatibility)
+function ensureFilterModel(p: BassParams): BassParams {
+  return { ...p, filterModel: p.filterModel || "ladder" };
+}
+
 export const BASS_PRESETS: BassPreset[] = [
   // ── Classic Acid ──
   { name: "Classic 303", params: bp({}) },
@@ -483,8 +488,9 @@ export const useBassStore = create<BassStore>((set, get) => ({
   loadPreset: (index) => {
     const preset = BASS_PRESETS[index];
     if (!preset) return;
-    set({ params: { ...preset.params }, presetIndex: index });
-    bassEngine.setParams({ ...preset.params });
+    const params = ensureFilterModel(preset.params);
+    set({ params, presetIndex: index });
+    bassEngine.setParams(params);
   },
 
   nextPreset: () => { const n = (get().presetIndex + 1) % BASS_PRESETS.length; get().loadPreset(n); },
@@ -507,15 +513,16 @@ export const useBassStore = create<BassStore>((set, get) => ({
   }),
 
   loadBassPattern: (data) => {
+    const params = ensureFilterModel(data.params);
     set({
       steps: data.steps,
       length: data.length,
-      params: data.params,
+      params,
       rootNote: data.rootNote,
       rootName: data.rootName,
       scaleName: data.scaleName,
     });
-    bassEngine.setParams(data.params);
+    bassEngine.setParams(params);
   },
 }));
 

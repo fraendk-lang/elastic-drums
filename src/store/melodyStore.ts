@@ -21,6 +21,11 @@ export interface MelodyPreset {
 
 const mp = (p: Partial<MelodyParams>): MelodyParams => ({ ...DEFAULT_MELODY_PARAMS, ...p });
 
+// Factory helper to ensure synthType and filterModel are set (for backward compatibility)
+function ensureSynthParams(p: MelodyParams): MelodyParams {
+  return { ...p, synthType: p.synthType || "subtractive", filterModel: p.filterModel || "lpf" };
+}
+
 export const MELODY_PRESETS: MelodyPreset[] = [
   // ── Classic ──
   { name: "Classic Lead", params: { ...DEFAULT_MELODY_PARAMS } },
@@ -683,8 +688,9 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
   loadPreset: (index) => {
     const preset = MELODY_PRESETS[index];
     if (!preset) return;
-    set({ params: { ...preset.params }, presetIndex: index });
-    melodyEngine.setParams({ ...preset.params });
+    const params = ensureSynthParams(preset.params);
+    set({ params, presetIndex: index });
+    melodyEngine.setParams(params);
   },
 
   nextPreset: () => { const n = (get().presetIndex + 1) % MELODY_PRESETS.length; get().loadPreset(n); },
@@ -705,15 +711,16 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
   }),
 
   loadMelodyPattern: (data) => {
+    const params = ensureSynthParams(data.params);
     set({
       steps: data.steps,
       length: data.length,
-      params: data.params,
+      params,
       rootNote: data.rootNote,
       rootName: data.rootName,
       scaleName: data.scaleName,
     });
-    melodyEngine.setParams(data.params);
+    melodyEngine.setParams(params);
   },
 }));
 

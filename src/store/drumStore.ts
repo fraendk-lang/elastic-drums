@@ -81,6 +81,9 @@ let cycleCount = 0;
 let fillMode = false;
 let prevStepTriggered: boolean[] = new Array(12).fill(false);
 
+// P-Lock timer tracking to prevent memory leaks
+const activePLockTimers = new Set<ReturnType<typeof setTimeout>>();
+
 export function setFillMode(on: boolean) { fillMode = on; }
 
 function evaluateCondition(
@@ -449,11 +452,13 @@ function startScheduler() {
         // Restore P-Locks after a brief delay to ensure they apply to the scheduled voice
         if (lockKeys.length > 0) {
           const restoreDelay = Math.max(5, stepDuration * 500); // ms, at least 5ms
-          setTimeout(() => {
+          const timerId = setTimeout(() => {
             for (const key of lockKeys) {
               audioEngine.setVoiceParam(track, key, savedValues[key]!);
             }
+            activePLockTimers.delete(timerId);
           }, restoreDelay);
+          activePLockTimers.add(timerId);
         }
       }
 
@@ -498,6 +503,9 @@ function stopScheduler() {
     clearInterval(schedulerTimer);
     schedulerTimer = null;
   }
+  // Clear all active P-Lock timers to prevent memory leaks
+  activePLockTimers.forEach(timerId => clearTimeout(timerId));
+  activePLockTimers.clear();
   cycleCount = 0;
   prevStepTriggered = new Array(12).fill(false);
 }
@@ -658,6 +666,10 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
 
     const wasPlaying = get().isPlaying;
     const pattern = structuredClone(preset);
+
+    // Clear any active P-Lock timers when changing patterns
+    activePLockTimers.forEach(timerId => clearTimeout(timerId));
+    activePLockTimers.clear();
 
     // Hot-swap pattern without stopping playback
     set({

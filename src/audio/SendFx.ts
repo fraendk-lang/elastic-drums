@@ -650,6 +650,72 @@ export class SendFxManager {
     const rate = (bpm / 60) * division;
     if (this.pumpLfo) this.pumpLfo.frequency.value = rate;
   }
+
+  /** Destroy all running oscillators and clean up resources */
+  destroy(): void {
+    // Stop and disconnect delayTapeLfo
+    if (this.delayTapeLfo) {
+      try {
+        this.delayTapeLfo.stop();
+      } catch {
+        /* already stopped */
+      }
+      this.delayTapeLfo.disconnect();
+      this.delayTapeLfo = null;
+    }
+
+    // Stop and disconnect flangerLfo
+    if (this.flangerLfo) {
+      try {
+        this.flangerLfo.stop();
+      } catch {
+        /* already stopped */
+      }
+      this.flangerLfo.disconnect();
+      this.flangerLfo = null;
+    }
+
+    // Stop and disconnect pumpLfo
+    if (this.pumpLfo) {
+      try {
+        this.pumpLfo.stop();
+      } catch {
+        /* already stopped */
+      }
+      this.pumpLfo.disconnect();
+      this.pumpLfo = null;
+    }
+
+    // Clean up any active performance FX
+    this.stopNoise();
+    if (this.ctx) {
+      this.stopStutter(this.ctx.createDynamicsCompressor());
+    }
+
+    // Disconnect all nodes
+    if (this.sendABus) {
+      this.sendABus.disconnect();
+      this.sendABus = null;
+    }
+    if (this.sendBBus) {
+      this.sendBBus.disconnect();
+      this.sendBBus = null;
+    }
+    if (this.flangerInput) {
+      this.flangerInput.disconnect();
+      this.flangerInput = null;
+    }
+    if (this.flangerOutput) {
+      this.flangerOutput.disconnect();
+      this.flangerOutput = null;
+    }
+    if (this.pumpGain) {
+      this.pumpGain.disconnect();
+      this.pumpGain = null;
+    }
+
+    this.ctx = null;
+  }
 }
 
 // Export singleton instance
