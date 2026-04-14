@@ -11,11 +11,18 @@ export interface SampleKit {
   path: string; // e.g. "/samples/808-classic"
 }
 
-// Registry of available sample kits (user adds entries here)
+// Registry of available sample kits
 export const SAMPLE_KITS: SampleKit[] = [
-  { id: "house-classic", name: "House Classic", path: "/samples/house-classic" },
-  { id: "house-deep", name: "House Deep", path: "/samples/house-deep" },
-  { id: "house-minimal", name: "House Minimal", path: "/samples/house-minimal" },
+  { id: "house-classic",   name: "House Classic",   path: "/samples/house-classic" },
+  { id: "house-deep",      name: "House Deep",      path: "/samples/house-deep" },
+  { id: "house-minimal",   name: "House Minimal",   path: "/samples/house-minimal" },
+  { id: "house-punchy",    name: "House Punchy",    path: "/samples/house-punchy" },
+  { id: "house-dark",      name: "House Dark",      path: "/samples/house-dark" },
+  { id: "house-snappy",    name: "House Snappy",    path: "/samples/house-snappy" },
+  { id: "house-percussive", name: "House Percussive", path: "/samples/house-percussive" },
+  { id: "house-rimshot",   name: "House Rimshot",   path: "/samples/house-rimshot" },
+  { id: "house-fx",        name: "House FX",        path: "/samples/house-fx" },
+  { id: "house-full-perc", name: "Full Percussion", path: "/samples/house-full-perc" },
 ];
 
 const VOICE_FILENAMES = [
