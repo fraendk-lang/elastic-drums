@@ -46,7 +46,7 @@ const OCTAVE_PATTERN = [
 
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const PIANO_WIDTH = 68;
-const DEFAULT_CELL_W = 40;
+const DEFAULT_CELL_W = 80; // Wider cells so grid fills the screen
 const DEFAULT_ROW_HEIGHT = 18;
 
 // Piano key colors
@@ -542,9 +542,10 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
 
     const row = Math.floor(y / rowHeight);
     const midi = baseNote + (totalRows - row - 1);
-    // Always snap click position to grid
+    // Always snap click position to grid, clamp to visible range
     const rawBeat = x / cellW;
     const beat = snap ? Math.round(rawBeat / gridRes) * gridRes : rawBeat;
+    if (beat < 0 || beat >= totalBeats || midi < baseNote || midi >= baseNote + totalRows) return;
 
     // Only hit notes on the SAME track — allows overlapping notes on different tracks
     const hit = notes.find((n) => n.track === target && n.midi === midi && beat >= n.start && beat < n.start + n.duration);
@@ -1038,7 +1039,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
           {notes.length === 0 && (
             <div
               className="absolute inset-0 flex items-center justify-center pointer-events-none"
-              style={{ width: gridW, height: gridH }}
+              style={{ width: Math.max(gridW, 800), height: gridH }}
             >
               <div className="text-center text-white/20">
                 <div className="text-[11px] font-semibold mb-1">Click to place notes</div>
@@ -1050,7 +1051,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
           )}
 
           {/* Background grid */}
-          <div className="relative" style={{ width: gridW, height: gridH + velocityLaneHeight }}>
+          <div className="relative" style={{ width: Math.max(gridW, 800), height: gridH + velocityLaneHeight }}>
             {/* Row stripes (notes grid) */}
             {Array.from({ length: totalRows }, (_, i) => {
               const midi = baseNote + (totalRows - i - 1);
