@@ -70,6 +70,7 @@ export const CHORDS_PRESETS: ChordsPreset[] = [
   // ── Professional New Presets ──
   { name: "Vintage Keys", params: cp({ waveform: "triangle", filterModel: "ladder", cutoff: 1500, resonance: 3, envMod: 0.1, attack: 10, release: 200, detune: 5, distortion: 0, volume: 0.55, subOsc: 0.1, chorus: 0, spread: 0.3, brightness: 0.2 }) },
   { name: "Lush Pad", params: cp({ waveform: "sawtooth", filterModel: "ladder", cutoff: 1000, resonance: 5, envMod: 0.25, attack: 200, release: 1500, detune: 35, distortion: 0.05, volume: 0.5, subOsc: 0.3, chorus: 0.8, spread: 0.9, brightness: 0.7 }) },
+  { name: "Vintage Strings", params: cp({ waveform: "sawtooth", filterModel: "ladder", cutoff: 4000, resonance: 2, envMod: 0.1, attack: 500, release: 1200, detune: 8, distortion: 0.04, volume: 0.48, subOsc: 0.15, chorus: 0.7, spread: 0.85, brightness: 0.35 }) },
 ];
 
 // ─── Chordline Agent: Genre Strategies ──────────────────
