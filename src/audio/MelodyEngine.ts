@@ -331,11 +331,55 @@ export class MelodyEngine {
     Object.assign(this.params, p);
 
     if (this.osc && p.waveform) this.osc.type = p.waveform;
+
+    // Hot-swap synthType: create/destroy filter chain as needed
+    if (p.synthType && p.synthType !== this.params.synthType) {
+      const switchingToSubtractive = p.synthType === "subtractive";
+
+      if (switchingToSubtractive && !this.filterChain && this.ctx && this.oscMix && this.vca) {
+        // Switching TO subtractive: create and wire filter chain
+        this.filterChain = createFilterChain(this.ctx, this.params.filterModel);
+        this.oscMix.disconnect(this.vca);
+        this.oscMix.connect(this.filterChain.input);
+        this.filterChain.output.connect(this.vca);
+        // Apply current params to new filter
+        const cutoff = this.params.cutoff;
+        const res = Math.min(this.params.resonance / 30, 1.0);
+        this.filterChain.update(cutoff, res, this.ctx.currentTime);
+      } else if (!switchingToSubtractive && this.filterChain && this.oscMix && this.vca) {
+        // Switching FROM subtractive: disconnect filter chain, bypass to VCA
+        this.oscMix.disconnect(this.filterChain.input);
+        this.filterChain.output.disconnect(this.vca);
+        this.oscMix.connect(this.vca);
+        // Keep filterChain for potential future use
+      }
+    }
+
     if (this.filterChain) {
       if (p.cutoff !== undefined || p.resonance !== undefined) {
         const cutoff = p.cutoff ?? this.params.cutoff;
         const res = Math.min((p.resonance ?? this.params.resonance) / 30, 1.0);
         this.filterChain.update(cutoff, res, this.ctx?.currentTime ?? 0);
+      }
+      // Hot-swap filter chain when filterModel changes (only matters for subtractive)
+      if (p.filterModel && p.filterModel !== this.params.filterModel && this.params.synthType === "subtractive") {
+        if (this.ctx && this.oscMix && this.vca) {
+          // Disconnect old filter chain from signal path
+          this.oscMix.disconnect(this.filterChain.input);
+          this.filterChain.output.disconnect(this.vca);
+
+          // Create new filter chain
+          this.filterChain = createFilterChain(this.ctx, p.filterModel);
+
+          // Reconnect new filter chain to signal path
+          this.oscMix.connect(this.filterChain.input);
+          this.filterChain.output.connect(this.vca);
+
+          // Apply current cutoff/resonance to new filter
+          const cutoff = this.params.cutoff;
+          const res = Math.min(this.params.resonance / 30, 1.0);
+          this.filterChain.update(cutoff, res, this.ctx.currentTime);
+        }
       }
     }
     if (this.subGain && p.subOsc !== undefined) this.subGain.gain.value = p.subOsc;

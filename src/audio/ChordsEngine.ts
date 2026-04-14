@@ -323,13 +323,32 @@ export class ChordsEngine {
         const res = Math.min((p.resonance ?? this.params.resonance) / 20, 1.0);
         this.filterChain.update(cutoff, res, this.ctx?.currentTime ?? 0);
       }
+      // Hot-swap filter chain when filterModel changes
+      if (p.filterModel && p.filterModel !== this.params.filterModel) {
+        if (this.ctx && this.mixer && this.vca) {
+          // Disconnect old filter chain from signal path
+          this.mixer.disconnect(this.filterChain.input);
+          this.filterChain.output.disconnect(this.vca);
+
+          // Create new filter chain
+          this.filterChain = createFilterChain(this.ctx, p.filterModel);
+
+          // Reconnect new filter chain to signal path
+          this.mixer.connect(this.filterChain.input);
+          this.filterChain.output.connect(this.vca);
+
+          // Apply current cutoff/resonance to new filter
+          const cutoff = this.params.cutoff;
+          const res = Math.min(this.params.resonance / 20, 1.0);
+          this.filterChain.update(cutoff, res, this.ctx.currentTime);
+        }
+      }
     }
     if (p.subOsc !== undefined) {
       for (const voice of this.voices) {
         voice.subGain.gain.value = p.subOsc;
       }
     }
-    // Note: filterType changes require recreating the filter chain; not supported at runtime
     if (this.output && p.volume !== undefined) this.output.gain.value = p.volume;
     if (p.distortion !== undefined) this.updateDistortion();
   }

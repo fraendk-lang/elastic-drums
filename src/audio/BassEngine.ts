@@ -306,8 +306,26 @@ export class BassEngine {
         const res = Math.min((p.resonance ?? this.params.resonance) / 30, 1.0);
         this.filterChain.update(cutoff, res, this.ctx?.currentTime ?? 0);
       }
-      // Note: filterModel changes would require recreating the filter chain
-      // For now, changes to filterModel are not hot-swappable (would require engine re-init)
+      // Hot-swap filter chain when filterModel changes
+      if (p.filterModel && p.filterModel !== this.params.filterModel) {
+        if (this.ctx && this.oscMix && this.vca) {
+          // Disconnect old filter chain from signal path
+          this.oscMix.disconnect(this.filterChain.input);
+          this.filterChain.output.disconnect(this.vca);
+
+          // Create new filter chain
+          this.filterChain = createFilterChain(this.ctx, p.filterModel);
+
+          // Reconnect new filter chain to signal path
+          this.oscMix.connect(this.filterChain.input);
+          this.filterChain.output.connect(this.vca);
+
+          // Apply current cutoff/resonance to new filter
+          const cutoff = this.params.cutoff;
+          const res = Math.min(this.params.resonance / 30, 1.0);
+          this.filterChain.update(cutoff, res, this.ctx.currentTime);
+        }
+      }
     }
     if (this.subGain && p.subOsc !== undefined) this.subGain.gain.value = p.subOsc;
     if (this.output && p.volume !== undefined) this.output.gain.value = p.volume;
