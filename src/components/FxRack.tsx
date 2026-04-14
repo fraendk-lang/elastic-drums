@@ -6,6 +6,7 @@
 
 import { useState, useCallback } from "react";
 import { audioEngine } from "../audio/AudioEngine";
+import { useDrumStore } from "../store/drumStore";
 import { Knob } from "./Knob";
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -50,8 +51,9 @@ const MODULE_DEFS: FxModuleDef[] = [
     name: "DELAY",
     color: "#3b82f6",
     params: [
-      { id: "time", label: "TIME", min: 0, max: 100, default: 50 },
+      { id: "division", label: "DIV", min: 0, max: 7, default: 4 }, // 0=1/32, 1=1/16T, 2=1/16, 3=1/8T, 4=1/8, 5=1/4T, 6=1/4, 7=1/2
       { id: "feedback", label: "FB", min: 0, max: 100, default: 40 },
+      { id: "mix", label: "MIX", min: 0, max: 100, default: 30 },
     ],
   },
   {
@@ -126,10 +128,17 @@ function applyFxParam(
     }
 
     case "delay": {
-      const dTime = 0.1 + ((paramId === "time" ? value : allParams.time ?? 50) / 100) * 1.5;
-      const dFb = Math.min(0.85, (paramId === "feedback" ? value : allParams.feedback ?? 40) / 100);
-      audioEngine.setDelayParams(dTime, dFb, 6000);
-      audioEngine.setDelayLevel(0.3 + dFb * 0.5); // More feedback = more audible wet
+      // BPM-synced delay divisions
+      const DIVISIONS = [0.125, 0.167, 0.25, 0.333, 0.5, 0.667, 1.0, 2.0]; // 1/32 → 1/2
+      const bpm = useDrumStore.getState().bpm;
+      const beatSec = 60 / bpm;
+      const divIdx = Math.round(paramId === "division" ? value : allParams.division ?? 4);
+      const time = Math.min(2.0, beatSec * (DIVISIONS[divIdx] ?? 0.5));
+      const fb = Math.min(0.88, (paramId === "feedback" ? value : allParams.feedback ?? 40) / 100);
+      const mix = (paramId === "mix" ? value : allParams.mix ?? 30) / 100;
+      const filterFreq = 8000 - fb * 5000; // Darker with more feedback
+      audioEngine.setDelayParams(time, fb, filterFreq);
+      audioEngine.setDelayLevel(mix);
       break;
     }
 
@@ -207,15 +216,18 @@ function applyModuleToggle(
     }
 
     case "delay": {
-      const dlvl = enabled ? 0.5 : 0;
-      audioEngine.setDelayLevel(dlvl);
-      // Set send amounts on all channels so delay is audible
-      const delaySend = enabled ? 0.2 : 0;
+      const mix = enabled ? (params.mix ?? 30) / 100 : 0;
+      audioEngine.setDelayLevel(mix);
+      const delaySend = enabled ? 0.25 : 0;
       for (let ch = 0; ch < 15; ch++) audioEngine.setChannelDelaySend(ch, delaySend);
       if (enabled) {
-        const time = 0.1 + ((params.time ?? 50) / 100) * 1.5; // 100ms - 1.6s
-        const fb = Math.min(0.85, (params.feedback ?? 40) / 100);
-        audioEngine.setDelayParams(time, fb, 6000);
+        const DIVISIONS = [0.125, 0.167, 0.25, 0.333, 0.5, 0.667, 1.0, 2.0];
+        const bpm = useDrumStore.getState().bpm;
+        const beatSec = 60 / bpm;
+        const divIdx = Math.round(params.division ?? 4);
+        const time = Math.min(2.0, beatSec * (DIVISIONS[divIdx] ?? 0.5));
+        const fb = Math.min(0.88, (params.feedback ?? 40) / 100);
+        audioEngine.setDelayParams(time, fb, 8000 - fb * 5000);
       }
       break;
     }
@@ -319,6 +331,14 @@ function FxModuleCard({
           />
         ))}
       </div>
+
+      {/* Delay: show synced division name */}
+      {def.id === "delay" && (
+        <span className="text-[8px] font-mono font-bold" style={{ color: enabled ? def.color : "rgba(255,255,255,0.15)" }}>
+          {["1/32", "1/16T", "1/16", "1/8T", "1/8", "1/4T", "1/4", "1/2"][Math.round(params.division ?? 4)] ?? "1/8"}
+          {" SYNC"}
+        </span>
+      )}
 
       {/* On/Off toggle */}
       <button
