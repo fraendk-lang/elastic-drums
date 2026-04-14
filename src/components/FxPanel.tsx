@@ -529,173 +529,157 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
 
       {/* Main content */}
       <div className="flex flex-1 min-h-0">
-        {/* Left: XY Pad */}
-        <div className="flex-1 flex flex-col p-4 min-w-0">
-          <div className="relative flex-1 flex">
-            {/* Y-axis label */}
-            <div className="flex items-center justify-center w-6 shrink-0">
-              <span
-                className="text-[10px] font-bold tracking-wider whitespace-nowrap"
-                style={{
-                  color: modeColor + "80",
-                  writingMode: "vertical-lr",
-                  transform: "rotate(180deg)",
-                }}
-              >
+        {/* XY Pad */}
+        <div className="flex-1 flex flex-col p-3 min-w-0">
+          {/* Parameter display — always visible */}
+          <div className="flex items-center justify-between mb-2 px-1">
+            <div className="flex items-center gap-3">
+              <span className="text-[9px] font-bold tracking-wider" style={{ color: modeColor + "90" }}>
+                X: {modeConfig.xLabel}
+              </span>
+              <span className="text-[9px] font-bold tracking-wider" style={{ color: modeColor + "90" }}>
                 Y: {modeConfig.yLabel}
               </span>
             </div>
-
-            {/* Pad area */}
-            <div
-              ref={padRef}
-              onPointerDown={handlePadDown}
-              onPointerMove={handlePadMove}
-              onPointerUp={handlePadUp}
-              onPointerCancel={handlePadUp}
-              className="relative flex-1 bg-[#0a0a0e] border rounded-xl cursor-crosshair touch-none overflow-hidden select-none transition-all duration-150"
-              style={{
-                borderColor: padActive ? modeColor + "60" : "rgba(255,255,255,0.1)",
-                boxShadow: padActive ? `inset 0 0 60px ${modeColor}08, 0 0 20px ${modeColor}15` : "none",
-              }}
-            >
-              {/* Grid lines */}
-              <svg className="absolute inset-0 w-full h-full pointer-events-none" preserveAspectRatio="none">
-                {/* Vertical grid lines */}
-                {[0.25, 0.5, 0.75].map((pos) => (
-                  <line
-                    key={`v-${pos}`}
-                    x1={`${pos * 100}%`}
-                    y1="0"
-                    x2={`${pos * 100}%`}
-                    y2="100%"
-                    stroke="white"
-                    strokeOpacity="0.05"
-                    strokeWidth="1"
-                  />
-                ))}
-                {/* Horizontal grid lines */}
-                {[0.25, 0.5, 0.75].map((pos) => (
-                  <line
-                    key={`h-${pos}`}
-                    x1="0"
-                    y1={`${pos * 100}%`}
-                    x2="100%"
-                    y2={`${pos * 100}%`}
-                    stroke="white"
-                    strokeOpacity="0.05"
-                    strokeWidth="1"
-                  />
-                ))}
-                {/* Center crosshair */}
-                <line x1="50%" y1="0" x2="50%" y2="100%" stroke="white" strokeOpacity="0.08" strokeWidth="1" strokeDasharray="4 4" />
-                <line x1="0" y1="50%" x2="100%" y2="50%" stroke="white" strokeOpacity="0.08" strokeWidth="1" strokeDasharray="4 4" />
-
-                {/* Mode-specific zone lines */}
-                {activeMode === "FILTER" && (
-                  <line x1="50%" y1="0" x2="50%" y2="100%" stroke={modeColor} strokeOpacity="0.15" strokeWidth="2" />
-                )}
-                {activeMode === "DELAY" && (
-                  <>
-                    {[1, 2, 3, 4, 5, 6, 7].map((i) => (
-                      <line
-                        key={`delay-${i}`}
-                        x1={`${(i / 8) * 100}%`}
-                        y1="0"
-                        x2={`${(i / 8) * 100}%`}
-                        y2="100%"
-                        stroke={modeColor}
-                        strokeOpacity="0.1"
-                        strokeWidth="1"
-                      />
-                    ))}
-                  </>
-                )}
-                {activeMode === "CRUSH" && (
-                  <line x1="40%" y1="0" x2="40%" y2="100%" stroke={modeColor} strokeOpacity="0.15" strokeWidth="2" />
-                )}
-              </svg>
-
-              {/* Crosshair guide lines at dot position (only when active) */}
-              {padActive && (
-                <svg className="absolute inset-0 w-full h-full pointer-events-none">
-                  <line
-                    x1={`${padX * 100}%`}
-                    y1="0"
-                    x2={`${padX * 100}%`}
-                    y2="100%"
-                    stroke={modeColor}
-                    strokeOpacity="0.15"
-                    strokeWidth="1"
-                  />
-                  <line
-                    x1="0"
-                    y1={`${(1 - padY) * 100}%`}
-                    x2="100%"
-                    y2={`${(1 - padY) * 100}%`}
-                    stroke={modeColor}
-                    strokeOpacity="0.15"
-                    strokeWidth="1"
-                  />
-                </svg>
-              )}
-
-              {/* Glow halo (large, behind dot) */}
-              {padActive && (
-                <div
-                  className="absolute w-24 h-24 rounded-full -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-                  style={{
-                    left: `${padX * 100}%`,
-                    top: `${(1 - padY) * 100}%`,
-                    background: `radial-gradient(circle, ${modeColor}30 0%, transparent 70%)`,
-                  }}
-                />
-              )}
-
-              {/* Glowing dot */}
-              <div
-                className="absolute w-6 h-6 rounded-full -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-opacity duration-150"
-                style={{
-                  left: `${padX * 100}%`,
-                  top: `${(1 - padY) * 100}%`,
-                  backgroundColor: modeColor,
-                  boxShadow: padActive
-                    ? `0 0 20px ${modeColor}, 0 0 40px ${modeColor}80, 0 0 80px ${modeColor}30`
-                    : `0 0 8px ${modeColor}60`,
-                  opacity: padActive ? 1 : 0.4,
-                }}
-              />
-
-              {/* Musical value readout (top-right overlay) */}
-              {padActive && (
-                <div
-                  className="absolute top-3 right-3 text-[10px] font-mono pointer-events-none text-center"
-                  style={{ color: modeColor + "cc" }}
-                >
-                  <div className="font-bold">{musicalValue.text}</div>
-                  <div className="text-[9px] opacity-75">{musicalValue.description}</div>
-                </div>
-              )}
+            <div className="flex items-center gap-2 text-right">
+              <span className="text-sm font-black font-mono tracking-wider" style={{ color: modeColor, textShadow: `0 0 20px ${modeColor}60` }}>
+                {musicalValue.text}
+              </span>
+              <span className="text-[10px] font-medium" style={{ color: modeColor + "80" }}>
+                {musicalValue.description}
+              </span>
             </div>
           </div>
 
-          {/* X-axis label */}
-          <div className="flex justify-center mt-2 ml-6">
-            <span
-              className="text-[10px] font-bold tracking-wider"
-              style={{ color: modeColor + "80" }}
-            >
-              X: {modeConfig.xLabel}
-            </span>
+          {/* Pad area */}
+          <div
+            ref={padRef}
+            onPointerDown={handlePadDown}
+            onPointerMove={handlePadMove}
+            onPointerUp={handlePadUp}
+            onPointerCancel={handlePadUp}
+            className="relative flex-1 rounded-xl cursor-crosshair touch-none overflow-hidden select-none"
+            style={{
+              background: padActive
+                ? `radial-gradient(ellipse at ${padX * 100}% ${(1 - padY) * 100}%, ${modeColor}12 0%, #0a0a0e 60%)`
+                : `linear-gradient(180deg, #0e0e14 0%, #08080c 100%)`,
+              border: `2px solid ${padActive ? modeColor + "50" : modeColor + "18"}`,
+              boxShadow: padActive
+                ? `inset 0 0 120px ${modeColor}10, 0 0 30px ${modeColor}15, inset 0 0 40px ${modeColor}08`
+                : `inset 0 0 60px rgba(0,0,0,0.5)`,
+              transition: "border-color 0.15s, box-shadow 0.3s",
+            }}
+          >
+            {/* Background grid — more visible */}
+            <svg className="absolute inset-0 w-full h-full pointer-events-none" preserveAspectRatio="none">
+              {/* 8×8 fine grid */}
+              {[0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875].map((pos) => (
+                <line key={`v-${pos}`} x1={`${pos * 100}%`} y1="0" x2={`${pos * 100}%`} y2="100%" stroke={modeColor} strokeOpacity="0.06" strokeWidth="1" />
+              ))}
+              {[0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875].map((pos) => (
+                <line key={`h-${pos}`} x1="0" y1={`${pos * 100}%`} x2="100%" y2={`${pos * 100}%`} stroke={modeColor} strokeOpacity="0.06" strokeWidth="1" />
+              ))}
+              {/* Center crosshair — brighter */}
+              <line x1="50%" y1="0" x2="50%" y2="100%" stroke={modeColor} strokeOpacity="0.12" strokeWidth="1" strokeDasharray="6 4" />
+              <line x1="0" y1="50%" x2="100%" y2="50%" stroke={modeColor} strokeOpacity="0.12" strokeWidth="1" strokeDasharray="6 4" />
+
+              {/* Mode-specific zones */}
+              {activeMode === "FILTER" && <>
+                <line x1="50%" y1="0" x2="50%" y2="100%" stroke={modeColor} strokeOpacity="0.3" strokeWidth="2" />
+                <text x="20%" y="95%" fill={modeColor} fillOpacity="0.2" fontSize="11" fontWeight="bold" textAnchor="middle">LP</text>
+                <text x="80%" y="95%" fill={modeColor} fillOpacity="0.2" fontSize="11" fontWeight="bold" textAnchor="middle">HP</text>
+              </>}
+              {activeMode === "DELAY" && <>
+                {[1, 2, 3, 4, 5, 6, 7].map((i) => (
+                  <line key={`d-${i}`} x1={`${(i / 8) * 100}%`} y1="0" x2={`${(i / 8) * 100}%`} y2="100%" stroke={modeColor} strokeOpacity="0.12" strokeWidth="1" strokeDasharray="3 5" />
+                ))}
+                {["1/32", "1/16T", "1/16", "1/8T", "1/8", "1/4T", "1/4", "1/2"].map((label, i) => (
+                  <text key={label} x={`${(i + 0.5) / 8 * 100}%`} y="97%" fill={modeColor} fillOpacity="0.15" fontSize="8" fontWeight="bold" textAnchor="middle">{label}</text>
+                ))}
+              </>}
+              {activeMode === "CRUSH" && <>
+                <line x1="40%" y1="0" x2="40%" y2="100%" stroke={modeColor} strokeOpacity="0.3" strokeWidth="2" />
+                <text x="20%" y="95%" fill={modeColor} fillOpacity="0.2" fontSize="10" fontWeight="bold" textAnchor="middle">TEL</text>
+                <text x="70%" y="95%" fill={modeColor} fillOpacity="0.2" fontSize="10" fontWeight="bold" textAnchor="middle">CRUSH</text>
+              </>}
+            </svg>
+
+            {/* Active crosshair lines — brighter, thicker */}
+            {(padActive || holdLocked) && (
+              <svg className="absolute inset-0 w-full h-full pointer-events-none">
+                <line x1={`${padX * 100}%`} y1="0" x2={`${padX * 100}%`} y2="100%" stroke={modeColor} strokeOpacity="0.3" strokeWidth="1" />
+                <line x1="0" y1={`${(1 - padY) * 100}%`} x2="100%" y2={`${(1 - padY) * 100}%`} stroke={modeColor} strokeOpacity="0.3" strokeWidth="1" />
+              </svg>
+            )}
+
+            {/* Outer glow halo — MUCH bigger */}
+            {padActive && (
+              <div className="absolute rounded-full -translate-x-1/2 -translate-y-1/2 pointer-events-none" style={{
+                left: `${padX * 100}%`, top: `${(1 - padY) * 100}%`,
+                width: "240px", height: "240px",
+                background: `radial-gradient(circle, ${modeColor}20 0%, ${modeColor}08 40%, transparent 70%)`,
+              }} />
+            )}
+
+            {/* Inner glow ring */}
+            {(padActive || holdLocked) && (
+              <div className="absolute rounded-full -translate-x-1/2 -translate-y-1/2 pointer-events-none" style={{
+                left: `${padX * 100}%`, top: `${(1 - padY) * 100}%`,
+                width: "80px", height: "80px",
+                background: `radial-gradient(circle, ${modeColor}35 0%, ${modeColor}15 50%, transparent 100%)`,
+              }} />
+            )}
+
+            {/* Main dot — BIGGER, more glow */}
+            <div className="absolute rounded-full -translate-x-1/2 -translate-y-1/2 pointer-events-none" style={{
+              left: `${padX * 100}%`, top: `${(1 - padY) * 100}%`,
+              width: padActive ? "36px" : "20px", height: padActive ? "36px" : "20px",
+              backgroundColor: modeColor,
+              boxShadow: padActive
+                ? `0 0 30px ${modeColor}, 0 0 60px ${modeColor}90, 0 0 120px ${modeColor}40, inset 0 0 8px rgba(255,255,255,0.3)`
+                : holdLocked
+                  ? `0 0 20px ${modeColor}80, 0 0 40px ${modeColor}40`
+                  : `0 0 10px ${modeColor}50`,
+              opacity: padActive ? 1 : holdLocked ? 0.8 : 0.35,
+              transition: "width 0.1s, height 0.1s, opacity 0.15s",
+            }} />
+
+            {/* Center bright spot on dot */}
+            {padActive && (
+              <div className="absolute rounded-full -translate-x-1/2 -translate-y-1/2 pointer-events-none" style={{
+                left: `${padX * 100}%`, top: `${(1 - padY) * 100}%`,
+                width: "12px", height: "12px",
+                backgroundColor: "white",
+                opacity: 0.6,
+                filter: "blur(2px)",
+              }} />
+            )}
+
+            {/* "Touch to engage" hint when idle */}
+            {!padActive && !holdLocked && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <span className="text-[11px] font-bold tracking-[0.3em] uppercase" style={{ color: modeColor + "20" }}>
+                  Touch to engage
+                </span>
+              </div>
+            )}
+
+            {/* Hold locked indicator */}
+            {holdLocked && !padActive && (
+              <div className="absolute top-3 left-3 flex items-center gap-1.5 pointer-events-none">
+                <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: modeColor }} />
+                <span className="text-[9px] font-bold tracking-wider" style={{ color: modeColor }}>HELD</span>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Right: Beat FX Buttons */}
-        <div className="w-48 flex flex-col p-4 pl-0">
-          <div className="text-[10px] font-bold tracking-wider text-[var(--ed-text-muted)] mb-2 text-center">
+        {/* Right: Beat FX Buttons — bigger, more dramatic */}
+        <div className="w-52 flex flex-col p-3 pl-0 gap-2">
+          <div className="text-[9px] font-bold tracking-[0.2em] text-[var(--ed-text-muted)] text-center mb-1">
             BEAT FX
           </div>
-          <div className="grid grid-cols-2 gap-2 flex-1 content-start">
+          <div className="grid grid-cols-2 gap-2.5 flex-1 content-start">
             {beatFxListRef.current.map((fx, index) => {
               const isActive = activeBeatFx.has(index);
               return (
@@ -703,15 +687,18 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
                   key={fx.label}
                   onPointerDown={() => handleBeatFxDown(index)}
                   onPointerUp={() => handleBeatFxUp(index)}
-                  onPointerLeave={() => {
-                    if (activeBeatFx.has(index)) handleBeatFxUp(index);
-                  }}
-                  className="h-16 rounded-xl font-bold text-sm tracking-wider transition-all select-none touch-none"
+                  onPointerLeave={() => { if (activeBeatFx.has(index)) handleBeatFxUp(index); }}
+                  className="rounded-xl font-black text-sm tracking-[0.15em] transition-all select-none touch-none"
                   style={{
-                    backgroundColor: isActive ? fx.color : "#141418",
-                    color: isActive ? "#000" : fx.color + "90",
-                    border: `1px solid ${isActive ? fx.color : fx.color + "30"}`,
-                    boxShadow: isActive ? `0 0 20px ${fx.color}40` : "none",
+                    height: "72px",
+                    backgroundColor: isActive ? fx.color : "#111116",
+                    color: isActive ? "#000" : fx.color,
+                    border: `2px solid ${isActive ? fx.color : fx.color + "25"}`,
+                    boxShadow: isActive
+                      ? `0 0 30px ${fx.color}50, inset 0 0 20px rgba(255,255,255,0.1)`
+                      : `inset 0 1px 0 rgba(255,255,255,0.03), inset 0 -2px 0 rgba(0,0,0,0.3)`,
+                    textShadow: isActive ? "none" : `0 0 12px ${fx.color}40`,
+                    transform: isActive ? "scale(0.96)" : "scale(1)",
                   }}
                 >
                   {fx.label}
