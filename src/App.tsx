@@ -11,6 +11,7 @@ import { SceneLauncher } from "./components/SceneLauncher";
 import { FxPanel } from "./components/FxPanel";
 import { KitBrowser } from "./components/KitBrowser";
 import { VoiceEditor } from "./components/VoiceEditor";
+import { FxRack } from "./components/FxRack";
 import { SynthSection } from "./components/SynthSection";
 import { MidiPlayerPanel } from "./components/MidiPlayerPanel";
 import { PianoRoll } from "./components/PianoRoll";
@@ -36,6 +37,7 @@ export function App() {
   const [audioReady, setAudioReady] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
   const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saved" | "restored">("idle");
+  const [fxRackOpen, setFxRackOpen] = useState(false);
 
   // Overlay store replaces individual useState booleans
   const overlay = useOverlayStore();
@@ -254,6 +256,9 @@ export function App() {
           <MixerStrip onOpenMixer={() => overlay.openOverlay("mixer")} />
         </div>
       </div>
+
+      {/* FX Rack: 7 effect modules (Reverb, Delay, Filter, Drive, Sidechain, Chorus, Comp) */}
+      <FxRack isOpen={fxRackOpen} onToggle={() => setFxRackOpen(o => !o)} />
 
       {/* Synth Section: Bass / Chords / Melody */}
       <SynthSection />
