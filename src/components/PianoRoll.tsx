@@ -228,7 +228,7 @@ function previewNote(midi: number, velocity: number, target: SoundTarget): void 
         soundFontEngine.playNote("bass", midi, time, velocity, 0.3);
       } else {
         bassEngine.triggerNote(midi, time, false, false, false);
-        setTimeout(() => bassEngine.releaseNote(time + 0.3), 300);
+        setTimeout(() => bassEngine.releaseNote(audioEngine.currentTime), 300);
       }
       break;
     case "chords":
@@ -236,7 +236,7 @@ function previewNote(midi: number, velocity: number, target: SoundTarget): void 
         soundFontEngine.playNote("chords", midi, time, velocity, 0.3);
       } else {
         chordsEngine.triggerChord([midi], time, false, false);
-        setTimeout(() => chordsEngine.releaseChord(time + 0.3), 300);
+        setTimeout(() => chordsEngine.releaseChord(audioEngine.currentTime), 300);
       }
       break;
     case "melody":
@@ -244,7 +244,7 @@ function previewNote(midi: number, velocity: number, target: SoundTarget): void 
         soundFontEngine.playNote("melody", midi, time, velocity, 0.3);
       } else {
         melodyEngine.triggerNote(midi, time, false, false, false);
-        setTimeout(() => melodyEngine.releaseNote(time + 0.3), 300);
+        setTimeout(() => melodyEngine.releaseNote(audioEngine.currentTime), 300);
       }
       break;
   }
