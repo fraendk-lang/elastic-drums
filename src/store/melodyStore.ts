@@ -9,6 +9,7 @@ import { create } from "zustand";
 import { melodyEngine, type MelodyStep, type MelodyParams, DEFAULT_MELODY_PARAMS } from "../audio/MelodyEngine";
 import { scaleNote, SCALES } from "../audio/BassEngine";
 import { audioEngine } from "../audio/AudioEngine";
+import { soundFontEngine } from "../audio/SoundFontEngine";
 import { generateEuclidean } from "./drumStore";
 import { syncScaleToOtherStores, registerScaleStore } from "./bassStore";
 
@@ -474,6 +475,7 @@ interface MelodyStore {
   automationData: Record<string, number[]>;
   automationParam: string;
   isPlaying: boolean;
+  instrument: string;
 
   setAutomationValue: (param: string, step: number, value: number) => void;
   setAutomationParam: (param: string) => void;
@@ -499,6 +501,7 @@ interface MelodyStore {
   loadPreset: (index: number) => void;
   nextPreset: () => void;
   prevPreset: () => void;
+  setInstrument: (id: string) => Promise<void>;
   // For save/load
   loadMelodyPattern: (data: { steps: MelodyStep[]; length: number; params: MelodyParams; rootNote: number; rootName: string; scaleName: string }) => void;
 }
@@ -537,14 +540,24 @@ export function startMelodyScheduler() {
 
       if (step?.active) {
         const midiNote = scaleNote(rootNote, scaleName, step.note, step.octave);
-        melodyEngine.triggerNote(midiNote, nextMelodyStepTime, step.accent, step.slide, step.tie);
+        const { instrument } = useMelodyStore.getState();
 
-        const nextStepIdx = (currentStep + 1) % length;
-        const nextStep = steps[nextStepIdx];
-        if (nextStep?.active && nextStep.tie) {
-          // Don't release — tie holds note
-        } else if (!nextStep?.active) {
-          melodyEngine.releaseNote(nextMelodyStepTime + secondsPerStep * 0.9);
+        // Use soundfont if a non-synth instrument is selected
+        if (instrument !== "_synth_") {
+          const velocity = step.accent ? 1.0 : 0.7;
+          const duration = secondsPerStep * 1.2;
+          soundFontEngine.playNote("melody", midiNote, nextMelodyStepTime, velocity, duration);
+        } else {
+          // Use built-in synth
+          melodyEngine.triggerNote(midiNote, nextMelodyStepTime, step.accent, step.slide, step.tie);
+
+          const nextStepIdx = (currentStep + 1) % length;
+          const nextStep = steps[nextStepIdx];
+          if (nextStep?.active && nextStep.tie) {
+            // Don't release — tie holds note
+          } else if (!nextStep?.active) {
+            melodyEngine.releaseNote(nextMelodyStepTime + secondsPerStep * 0.9);
+          }
         }
       } else {
         melodyEngine.rest(nextMelodyStepTime);
@@ -579,6 +592,7 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
   automationData: {},
   automationParam: "cutoff",
   isPlaying: false,
+  instrument: "_synth_",
 
   toggleStep: (step) => set((s) => {
     const newSteps = [...s.steps];
@@ -695,6 +709,20 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
 
   nextPreset: () => { const n = (get().presetIndex + 1) % MELODY_PRESETS.length; get().loadPreset(n); },
   prevPreset: () => { const p = (get().presetIndex - 1 + MELODY_PRESETS.length) % MELODY_PRESETS.length; get().loadPreset(p); },
+
+  setInstrument: async (id: string) => {
+    set({ instrument: id });
+    const ctx = audioEngine.getAudioContext();
+    if (ctx) {
+      const destination = audioEngine.getChannelOutput(14); // Melody = channel 14
+      try {
+        await soundFontEngine.loadInstrument("melody", id, destination);
+      } catch (err) {
+        console.warn("Failed to load melody instrument:", err);
+        set({ instrument: "_synth_" });
+      }
+    }
+  },
 
   setAutomationValue: (param, step, value) => set((s) => {
     const data = { ...s.automationData };

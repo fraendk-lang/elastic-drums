@@ -4,6 +4,7 @@
 
 import { useCallback, useRef } from "react";
 import { useMelodyStore, MELODY_PRESETS, MELODY_STRATEGIES } from "../store/melodyStore";
+import { MELODY_INSTRUMENTS } from "../audio/SoundFontEngine";
 import { SCALES, ROOT_NOTES, scaleNote } from "../audio/BassEngine";
 import { useDrumStore } from "../store/drumStore";
 import { Knob } from "./Knob";
@@ -29,12 +30,12 @@ function midiToName(midi: number): string {
 
 export function MelodySequencer() {
   const {
-    steps, length, currentStep, selectedPage, rootNote, rootName, scaleName, params, presetIndex, strategyIndex,
+    steps, length, currentStep, selectedPage, rootNote, rootName, scaleName, params, presetIndex, strategyIndex, instrument,
     automationData, automationParam,
     toggleStep, setStepNote, toggleAccent, toggleSlide, toggleTie, cycleOctave,
     setRootNote, setScale, setParam, setLength, setSelectedPage,
     clearSteps, generateMelodiline, nextStrategy, prevStrategy,
-    loadPreset,
+    loadPreset, setInstrument,
     setAutomationValue, setAutomationParam,
   } = useMelodyStore();
 
@@ -88,11 +89,25 @@ export function MelodySequencer() {
 
         <Sep />
 
+        {/* Instrument selector */}
+        <select
+          value={instrument}
+          onChange={(e) => setInstrument(e.target.value)}
+          className="h-6 px-1.5 text-[9px] bg-black/30 border border-white/8 rounded-md text-[var(--ed-accent-melody)]/70 focus:outline-none appearance-none cursor-pointer hover:border-[var(--ed-accent-melody)]/30 transition-colors min-w-[90px]"
+        >
+          {MELODY_INSTRUMENTS.map((inst) => (
+            <option key={inst.id} value={inst.id}>{inst.name}</option>
+          ))}
+        </select>
+
+        <Sep />
+
         {/* Sound preset selector */}
         <select
           value={presetIndex}
           onChange={(e) => loadPreset(Number(e.target.value))}
-          className="h-6 px-1.5 text-[9px] bg-black/30 border border-white/8 rounded-md text-[var(--ed-accent-melody)]/70 focus:outline-none appearance-none cursor-pointer hover:border-[var(--ed-accent-melody)]/30 transition-colors min-w-[90px]"
+          className={`h-6 px-1.5 text-[9px] bg-black/30 border border-white/8 rounded-md text-[var(--ed-accent-melody)]/70 focus:outline-none appearance-none cursor-pointer hover:border-[var(--ed-accent-melody)]/30 transition-colors min-w-[90px] ${instrument !== "_synth_" ? "opacity-40 cursor-not-allowed" : ""}`}
+          disabled={instrument !== "_synth_"}
         >
           {MELODY_PRESETS.map((p, i) => (
             <option key={i} value={i}>{p.name}</option>

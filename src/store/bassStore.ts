@@ -8,6 +8,7 @@
 import { create } from "zustand";
 import { bassEngine, scaleNote, SCALES, type BassStep, type BassParams, DEFAULT_BASS_PARAMS } from "../audio/BassEngine";
 import { audioEngine } from "../audio/AudioEngine";
+import { soundFontEngine } from "../audio/SoundFontEngine";
 import { generateEuclidean } from "./drumStore";
 
 // ─── Factory Sound Presets ───────────────────────────────
@@ -247,6 +248,7 @@ interface BassStore {
   isPlaying: boolean;
   automationData: Record<string, number[]>;
   automationParam: string;
+  instrument: string;
 
   toggleStep: (step: number) => void;
   setStepNote: (step: number, note: number) => void;
@@ -270,6 +272,7 @@ interface BassStore {
   loadPreset: (index: number) => void;
   nextPreset: () => void;
   prevPreset: () => void;
+  setInstrument: (id: string) => Promise<void>;
   // For save/load
   setAutomationValue: (param: string, step: number, value: number) => void;
   setAutomationParam: (param: string) => void;
@@ -311,14 +314,24 @@ export function startBassScheduler() {
 
       if (step?.active) {
         const midiNote = scaleNote(rootNote, scaleName, step.note, step.octave);
-        bassEngine.triggerNote(midiNote, nextBassStepTime, step.accent, step.slide, step.tie);
+        const { instrument } = useBassStore.getState();
 
-        const nextStepIdx = (currentStep + 1) % length;
-        const nextStep = steps[nextStepIdx];
-        if (nextStep?.active && nextStep.tie) {
-          // Don't release — tie holds note
-        } else if (!nextStep?.active) {
-          bassEngine.releaseNote(nextBassStepTime + secondsPerStep * 0.9);
+        // Use soundfont if a non-synth instrument is selected
+        if (instrument !== "_synth_") {
+          const velocity = step.accent ? 1.0 : 0.7;
+          const duration = secondsPerStep * 1.5;
+          soundFontEngine.playNote("bass", midiNote, nextBassStepTime, velocity, duration);
+        } else {
+          // Use built-in synth
+          bassEngine.triggerNote(midiNote, nextBassStepTime, step.accent, step.slide, step.tie);
+
+          const nextStepIdx = (currentStep + 1) % length;
+          const nextStep = steps[nextStepIdx];
+          if (nextStep?.active && nextStep.tie) {
+            // Don't release — tie holds note
+          } else if (!nextStep?.active) {
+            bassEngine.releaseNote(nextBassStepTime + secondsPerStep * 0.9);
+          }
         }
       } else {
         bassEngine.rest(nextBassStepTime);
@@ -353,6 +366,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
   presetIndex: 0,
   strategyIndex: 0,
   isPlaying: false,
+  instrument: "_synth_",
 
   toggleStep: (step) => set((s) => {
     const newSteps = [...s.steps];
@@ -495,6 +509,20 @@ export const useBassStore = create<BassStore>((set, get) => ({
 
   nextPreset: () => { const n = (get().presetIndex + 1) % BASS_PRESETS.length; get().loadPreset(n); },
   prevPreset: () => { const p = (get().presetIndex - 1 + BASS_PRESETS.length) % BASS_PRESETS.length; get().loadPreset(p); },
+
+  setInstrument: async (id: string) => {
+    set({ instrument: id });
+    const ctx = audioEngine.getAudioContext();
+    if (ctx) {
+      const destination = audioEngine.getChannelOutput(12); // Bass = channel 12
+      try {
+        await soundFontEngine.loadInstrument("bass", id, destination);
+      } catch (err) {
+        console.warn("Failed to load bass instrument:", err);
+        set({ instrument: "_synth_" });
+      }
+    }
+  },
 
   setAutomationValue: (param, step, value) => set((s) => {
     const data = { ...s.automationData };

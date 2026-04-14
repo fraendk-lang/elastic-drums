@@ -4,6 +4,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useChordsStore, CHORDS_PRESETS, CHORDLINE_STRATEGIES, CHORD_TYPE_NAMES } from "../store/chordsStore";
+import { CHORDS_INSTRUMENTS } from "../audio/SoundFontEngine";
 import { SCALES, ROOT_NOTES, scaleNote } from "../audio/BassEngine";
 import { useDrumStore } from "../store/drumStore";
 import { Knob } from "./Knob";
@@ -35,12 +36,12 @@ function chordLabel(midi: number, chordType: string): string {
 
 export function ChordsSequencer() {
   const {
-    steps, length, currentStep, selectedPage, rootNote, rootName, scaleName, params, presetIndex, strategyIndex,
+    steps, length, currentStep, selectedPage, rootNote, rootName, scaleName, params, presetIndex, strategyIndex, instrument,
     automationData, automationParam,
     toggleStep, setStepNote, toggleTie, cycleOctave, cycleChordType, setStepChordType,
     setRootNote, setScale, setParam, setLength, setSelectedPage,
     clearSteps, generateChordline, nextStrategy, prevStrategy,
-    loadPreset,
+    loadPreset, setInstrument,
     setAutomationValue, setAutomationParam,
   } = useChordsStore();
 
@@ -95,11 +96,25 @@ export function ChordsSequencer() {
 
         <Sep />
 
+        {/* Instrument selector */}
+        <select
+          value={instrument}
+          onChange={(e) => setInstrument(e.target.value)}
+          className="h-6 px-1.5 text-[9px] bg-black/30 border border-white/8 rounded-md text-[var(--ed-accent-chords)]/70 focus:outline-none appearance-none cursor-pointer hover:border-[var(--ed-accent-chords)]/30 transition-colors min-w-[90px]"
+        >
+          {CHORDS_INSTRUMENTS.map((inst) => (
+            <option key={inst.id} value={inst.id}>{inst.name}</option>
+          ))}
+        </select>
+
+        <Sep />
+
         {/* Sound preset selector */}
         <select
           value={presetIndex}
           onChange={(e) => loadPreset(Number(e.target.value))}
-          className="h-6 px-1.5 text-[9px] bg-black/30 border border-white/8 rounded-md text-[var(--ed-accent-chords)]/70 focus:outline-none appearance-none cursor-pointer hover:border-[var(--ed-accent-chords)]/30 transition-colors min-w-[90px]"
+          className={`h-6 px-1.5 text-[9px] bg-black/30 border border-white/8 rounded-md text-[var(--ed-accent-chords)]/70 focus:outline-none appearance-none cursor-pointer hover:border-[var(--ed-accent-chords)]/30 transition-colors min-w-[90px] ${instrument !== "_synth_" ? "opacity-40 cursor-not-allowed" : ""}`}
+          disabled={instrument !== "_synth_"}
         >
           {CHORDS_PRESETS.map((p, i) => (
             <option key={i} value={i}>{p.name}</option>

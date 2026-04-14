@@ -11,6 +11,7 @@ import { voiceRenderer } from './VoiceRenderer';
 import { sendFxManager } from './SendFx';
 import { meteringEngine, MeteringEngine } from './Metering';
 import { mixerRouter } from './MixerRouting';
+import { soundFontEngine } from './SoundFontEngine';
 
 export class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -127,6 +128,9 @@ export class AudioEngine {
 
       // ─── Voice renderer setup ────────────────────────────
       voiceRenderer.setNoiseBuffer(this.noiseBuffer);
+
+      // ─── SoundFont Engine setup ──────────────────────────
+      soundFontEngine.init(this.ctx);
 
       meteringEngine.reset(15);
     }
@@ -345,6 +349,7 @@ export class AudioEngine {
 
   /** Clean up all audio resources and close the AudioContext */
   destroy(): void {
+    soundFontEngine.destroy();
     sendFxManager.destroy();
     if (this.ctx) {
       try {

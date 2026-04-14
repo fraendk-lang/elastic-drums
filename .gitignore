@@ -39,3 +39,5 @@ dist-test*/
 
 # Claude config
 .claude/
+samples/*
+*.asd

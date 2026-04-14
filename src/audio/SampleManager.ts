@@ -67,6 +67,21 @@ class SampleManagerClass {
     return sample;
   }
 
+  /** Load sample from an AudioBuffer (used by kit loading) */
+  loadFromBuffer(buffer: AudioBuffer, name: string, voiceIndex: number): LoadedSample {
+    const sample: LoadedSample = {
+      name,
+      buffer,
+      originalBuffer: buffer,
+      duration: buffer.duration,
+      sampleRate: buffer.sampleRate,
+      muLawEnabled: false,
+    };
+
+    this.samples.set(voiceIndex, sample);
+    return sample;
+  }
+
   /** Get loaded sample for a voice */
   getSample(voiceIndex: number): LoadedSample | undefined {
     return this.samples.get(voiceIndex);

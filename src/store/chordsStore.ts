@@ -15,6 +15,7 @@ import {
 } from "../audio/ChordsEngine";
 import { scaleNote, SCALES } from "../audio/BassEngine";
 import { audioEngine } from "../audio/AudioEngine";
+import { soundFontEngine } from "../audio/SoundFontEngine";
 import { generateEuclidean } from "./drumStore";
 import { syncScaleToOtherStores, registerScaleStore } from "./bassStore";
 
@@ -249,6 +250,7 @@ interface ChordsStore {
   automationData: Record<string, number[]>;
   automationParam: string;
   isPlaying: boolean;
+  instrument: string;
 
   setAutomationValue: (param: string, step: number, value: number) => void;
   setAutomationParam: (param: string) => void;
@@ -275,6 +277,7 @@ interface ChordsStore {
   loadPreset: (index: number) => void;
   nextPreset: () => void;
   prevPreset: () => void;
+  setInstrument: (id: string) => Promise<void>;
   // For save/load
   loadChordsPattern: (data: { steps: ChordsStep[]; length: number; params: ChordsParams; rootNote: number; rootName: string; scaleName: string }) => void;
 }
@@ -317,15 +320,26 @@ export function startChordsScheduler() {
         const intervals = CHORD_TYPES[step.chordType] ?? CHORD_TYPES["Min"]!;
         const midiNotes = intervals.map((interval) => rootMidi + interval);
 
-        chordsEngine.triggerChord(midiNotes, nextChordsStepTime, step.accent, step.tie);
+        const { instrument } = useChordsStore.getState();
 
-        // Check next step for tie/release
-        const nextStepIdx = (currentStep + 1) % length;
-        const nextStep = steps[nextStepIdx];
-        if (nextStep?.active && nextStep.tie) {
-          // Don't release — tie holds chord
-        } else if (!nextStep?.active) {
-          chordsEngine.releaseChord(nextChordsStepTime + secondsPerStep * 0.9);
+        // Use soundfont if a non-synth instrument is selected
+        if (instrument !== "_synth_") {
+          const velocity = step.accent ? 1.0 : 0.7;
+          const duration = secondsPerStep * 2.0;
+          // Play the root note only for soundfont (can't play full chords easily)
+          soundFontEngine.playNote("chords", rootMidi, nextChordsStepTime, velocity, duration);
+        } else {
+          // Use built-in synth
+          chordsEngine.triggerChord(midiNotes, nextChordsStepTime, step.accent, step.tie);
+
+          // Check next step for tie/release
+          const nextStepIdx = (currentStep + 1) % length;
+          const nextStep = steps[nextStepIdx];
+          if (nextStep?.active && nextStep.tie) {
+            // Don't release — tie holds chord
+          } else if (!nextStep?.active) {
+            chordsEngine.releaseChord(nextChordsStepTime + secondsPerStep * 0.9);
+          }
         }
       } else {
         chordsEngine.rest(nextChordsStepTime);
@@ -360,6 +374,7 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
   automationData: {},
   automationParam: "cutoff",
   isPlaying: false,
+  instrument: "_synth_",
 
   toggleStep: (step) => set((s) => {
     const newSteps = [...s.steps];
@@ -487,6 +502,20 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
 
   nextPreset: () => { const n = (get().presetIndex + 1) % CHORDS_PRESETS.length; get().loadPreset(n); },
   prevPreset: () => { const p = (get().presetIndex - 1 + CHORDS_PRESETS.length) % CHORDS_PRESETS.length; get().loadPreset(p); },
+
+  setInstrument: async (id: string) => {
+    set({ instrument: id });
+    const ctx = audioEngine.getAudioContext();
+    if (ctx) {
+      const destination = audioEngine.getChannelOutput(13); // Chords = channel 13
+      try {
+        await soundFontEngine.loadInstrument("chords", id, destination);
+      } catch (err) {
+        console.warn("Failed to load chords instrument:", err);
+        set({ instrument: "_synth_" });
+      }
+    }
+  },
 
   setAutomationValue: (param, step, value) => set((s) => {
     const data = { ...s.automationData };
