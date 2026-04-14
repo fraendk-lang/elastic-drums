@@ -113,24 +113,25 @@ function applyFxParam(
   if (!enabled) return; // Don't apply if module is disabled
 
   switch (moduleId) {
-    case "reverb":
-      if (paramId === "level") {
-        audioEngine.setReverbLevel(value / 100);
-      } else if (paramId === "damping") {
-        // Map 0-100 to 500-16000 Hz
-        const freq = 500 + (value / 100) * 15500;
-        audioEngine.setReverbDamping(freq);
+    case "reverb": {
+      const rvbLvl = paramId === "level" ? value / 100 : (allParams.level ?? 35) / 100;
+      audioEngine.setReverbLevel(rvbLvl);
+      // Update sends proportionally
+      const rvbSend = Math.max(0.15, rvbLvl * 0.6);
+      for (let ch = 0; ch < 15; ch++) audioEngine.setChannelReverbSend(ch, rvbSend);
+      if (paramId === "damping") {
+        audioEngine.setReverbDamping(500 + (value / 100) * 15500);
       }
       break;
+    }
 
-    case "delay":
-      if (paramId === "time" || paramId === "feedback") {
-        // setDelayParams(time in sec, feedback 0-0.95, filterFreq)
-        const time = (allParams.time ?? 50) / 100 * 3; // 0-3 sec
-        const feedback = Math.min(0.95, (allParams.feedback ?? 40) / 100);
-        audioEngine.setDelayParams(time, feedback, 8000);
-      }
+    case "delay": {
+      const dTime = 0.1 + ((paramId === "time" ? value : allParams.time ?? 50) / 100) * 1.5;
+      const dFb = Math.min(0.85, (paramId === "feedback" ? value : allParams.feedback ?? 40) / 100);
+      audioEngine.setDelayParams(dTime, dFb, 6000);
+      audioEngine.setDelayLevel(0.3 + dFb * 0.5); // More feedback = more audible wet
       break;
+    }
 
     case "filter":
       if (paramId === "cutoff" || paramId === "resonance") {
@@ -192,13 +193,32 @@ function applyModuleToggle(
   params: Record<string, number>
 ) {
   switch (id) {
-    case "reverb":
-      audioEngine.setReverbLevel(enabled ? (params.level ?? 35) / 100 : 0);
+    case "reverb": {
+      const lvl = enabled ? (params.level ?? 35) / 100 : 0;
+      audioEngine.setReverbLevel(lvl);
+      // Set send amounts on all channels so reverb is audible
+      const reverbSend = enabled ? Math.max(0.15, lvl * 0.6) : 0;
+      for (let ch = 0; ch < 15; ch++) audioEngine.setChannelReverbSend(ch, reverbSend);
+      if (enabled) {
+        const dmpFreq = 500 + ((params.damping ?? 60) / 100) * 15500;
+        audioEngine.setReverbDamping(dmpFreq);
+      }
       break;
+    }
 
-    case "delay":
-      audioEngine.setDelayLevel(enabled ? 0.5 : 0);
+    case "delay": {
+      const dlvl = enabled ? 0.5 : 0;
+      audioEngine.setDelayLevel(dlvl);
+      // Set send amounts on all channels so delay is audible
+      const delaySend = enabled ? 0.2 : 0;
+      for (let ch = 0; ch < 15; ch++) audioEngine.setChannelDelaySend(ch, delaySend);
+      if (enabled) {
+        const time = 0.1 + ((params.time ?? 50) / 100) * 1.5; // 100ms - 1.6s
+        const fb = Math.min(0.85, (params.feedback ?? 40) / 100);
+        audioEngine.setDelayParams(time, fb, 6000);
+      }
       break;
+    }
 
     case "filter":
       if (enabled) {
