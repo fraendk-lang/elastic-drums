@@ -52,6 +52,10 @@ export function MidiPlayerPanel({ isOpen, onClose }: MidiPlayerPanelProps) {
       },
       onProgress: (position, duration) => {
         setProgress({ position, duration });
+        // Auto-stop when playback ends
+        if (position >= duration && !midiPlayer.isPlaying) {
+          setPlaying(false);
+        }
       },
     });
   }, []);
@@ -90,14 +94,21 @@ export function MidiPlayerPanel({ isOpen, onClose }: MidiPlayerPanelProps) {
     }
   }, [handleFileLoad]);
 
+  const [playing, setPlaying] = useState(false);
+
   const handlePlay = useCallback(() => {
-    if (fileInfo && !midiPlayer.isPlaying) {
-      midiPlayer.play(isLooping);
+    if (fileInfo && !playing) {
+      // Ensure audio context is active
+      audioEngine.resume().then(() => {
+        midiPlayer.play(isLooping);
+        setPlaying(true);
+      });
     }
-  }, [fileInfo, isLooping]);
+  }, [fileInfo, isLooping, playing]);
 
   const handleStop = useCallback(() => {
     midiPlayer.stop();
+    setPlaying(false);
     setProgress({ position: 0, duration: progress.duration });
   }, [progress.duration]);
 
@@ -207,10 +218,14 @@ export function MidiPlayerPanel({ isOpen, onClose }: MidiPlayerPanelProps) {
             <div className="flex gap-2">
               <button
                 onClick={handlePlay}
-                disabled={midiPlayer.isPlaying}
-                className="flex-1 px-3 py-2 bg-[var(--ed-accent-orange)] hover:bg-[var(--ed-accent-orange)]/80 disabled:opacity-50 text-black text-[10px] font-bold rounded transition-colors"
+                disabled={playing}
+                className={`flex-1 px-3 py-2 text-[10px] font-bold rounded transition-colors ${
+                  playing
+                    ? "bg-[var(--ed-accent-green)] text-black"
+                    : "bg-[var(--ed-accent-orange)] hover:bg-[var(--ed-accent-orange)]/80 text-black"
+                }`}
               >
-                {midiPlayer.isPlaying ? "PLAYING" : "PLAY"}
+                {playing ? "▶ PLAYING" : "▶ PLAY"}
               </button>
               <button
                 onClick={handleStop}
