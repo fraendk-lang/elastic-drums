@@ -542,7 +542,9 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
 
     const row = Math.floor(y / rowHeight);
     const midi = baseNote + (totalRows - row - 1);
-    const beat = x / cellW;
+    // Always snap click position to grid
+    const rawBeat = x / cellW;
+    const beat = snap ? Math.round(rawBeat / gridRes) * gridRes : rawBeat;
 
     // Only hit notes on the SAME track — allows overlapping notes on different tracks
     const hit = notes.find((n) => n.track === target && n.midi === midi && beat >= n.start && beat < n.start + n.duration);
@@ -699,9 +701,11 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
           const startDelta = (orig.start + beatDelta) - orig.start;
           let newMidi = n.midi + pitchDelta;
           if (scaleSnap) newMidi = snapToScale(newMidi, rootMidi, scaleName);
+          let newStart = n.start + startDelta;
+          if (snap) newStart = Math.round(newStart / gridRes) * gridRes;
           return {
             ...n,
-            start: Math.max(0, n.start + startDelta),
+            start: Math.max(0, newStart),
             midi: Math.max(0, Math.min(127, newMidi)),
           };
         }));
