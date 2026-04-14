@@ -780,7 +780,22 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   },
 
   // ─── Song Mode ───────────────────────────────────────────
-  setSongMode: (mode) => set({ songMode: mode }),
+  setSongMode: (mode) => {
+    set({ songMode: mode, songPosition: 0, songRepeatCount: 0 });
+    // When entering song mode, immediately load the first scene in the chain
+    if (mode === "song") {
+      const { songChain } = get();
+      if (songChain.length > 0) {
+        const firstEntry = songChain[0];
+        if (firstEntry) {
+          const sceneStore = getSceneStore();
+          if (sceneStore) {
+            sceneStore.getState().loadScene(firstEntry.sceneIndex);
+          }
+        }
+      }
+    }
+  },
 
   addToSongChain: (sceneIndex, repeats = 1) =>
     set((state) => ({

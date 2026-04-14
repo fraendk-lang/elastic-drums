@@ -192,6 +192,15 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     if (get().nextScene === slot) updates.nextScene = null;
 
     set(updates as SceneStore);
+
+    // Clean up song chain references to deleted scene
+    const drumState = useDrumStore.getState();
+    const cleaned = drumState.songChain.filter(
+      (entry) => entry.sceneIndex !== slot,
+    );
+    if (cleaned.length !== drumState.songChain.length) {
+      useDrumStore.setState({ songChain: cleaned });
+    }
   },
 
   renameScene: (slot: number, name: string) => {

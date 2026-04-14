@@ -1,9 +1,10 @@
 /**
- * Scene Launcher
+ * Scene Launcher — with right-click context menu
  *
- * Modal overlay with a 4x4 grid of scene slots.
- * Click = load immediately, Shift+click = queue for next bar,
- * Right-click = capture current state into slot.
+ * 4x4 grid of scene slots.
+ * Click = load, Shift+Click = queue for next bar.
+ * Right-click = context menu with: Capture, Edit (rename), Delete, Load, Queue.
+ * Double-click = rename.
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
@@ -12,6 +13,85 @@ import { useSceneStore, type Scene } from "../store/sceneStore";
 interface SceneLauncherProps {
   isOpen: boolean;
   onClose: () => void;
+}
+
+// ─── Context Menu ──────────────────────────────────────
+
+interface ContextMenuState {
+  x: number;
+  y: number;
+  slotIndex: number;
+  hasData: boolean;
+}
+
+interface ContextMenuProps {
+  menu: ContextMenuState;
+  onClose: () => void;
+  onCapture: (slot: number) => void;
+  onLoad: (slot: number) => void;
+  onQueue: (slot: number) => void;
+  onRename: (slot: number) => void;
+  onClear: (slot: number) => void;
+  onDuplicate: (slot: number) => void;
+}
+
+function SceneContextMenu({ menu, onClose, onCapture, onLoad, onQueue, onRename, onClear, onDuplicate }: ContextMenuProps) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [onClose]);
+
+  const items = menu.hasData
+    ? [
+        { label: "Load", icon: "▶", action: () => onLoad(menu.slotIndex), color: "var(--ed-accent-orange)" },
+        { label: "Queue Next", icon: "⏭", action: () => onQueue(menu.slotIndex), color: "var(--ed-accent-blue)" },
+        { label: "divider" },
+        { label: "Rename", icon: "✎", action: () => onRename(menu.slotIndex) },
+        { label: "Duplicate", icon: "⧉", action: () => onDuplicate(menu.slotIndex) },
+        { label: "Overwrite", icon: "⏺", action: () => onCapture(menu.slotIndex), color: "var(--ed-accent-green)" },
+        { label: "divider" },
+        { label: "Delete", icon: "✕", action: () => onClear(menu.slotIndex), color: "#ef4444" },
+      ]
+    : [
+        { label: "Capture Here", icon: "⏺", action: () => onCapture(menu.slotIndex), color: "var(--ed-accent-green)" },
+      ];
+
+  return (
+    <div
+      ref={ref}
+      className="fixed z-[60] min-w-[140px] py-1 bg-[#1a1a20] border border-[var(--ed-border)] rounded-lg shadow-2xl"
+      style={{ left: menu.x, top: menu.y }}
+    >
+      {items.map((item, i) => {
+        if (item.label === "divider") {
+          return <div key={`div-${i}`} className="h-px bg-[var(--ed-border)]/50 my-1 mx-2" />;
+        }
+        return (
+          <button
+            key={item.label}
+            onClick={() => { item.action?.(); onClose(); }}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-[10px] text-left hover:bg-white/5 transition-colors"
+            style={{ color: item.color ?? "var(--ed-text-secondary)" }}
+          >
+            <span className="w-4 text-center text-[11px] opacity-70">{item.icon}</span>
+            <span className="font-medium tracking-wider">{item.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 // ─── Slot Component ─────────────────────────────────────
@@ -23,57 +103,44 @@ interface SlotProps {
   isQueued: boolean;
   onLoad: (slot: number) => void;
   onQueue: (slot: number) => void;
-  onCapture: (slot: number) => void;
-  onClear: (slot: number) => void;
+  onContextMenu: (e: React.MouseEvent, slot: number) => void;
+  onStartRename: (slot: number) => void;
   onRename: (slot: number, name: string) => void;
+  isRenaming: boolean;
 }
 
-function SceneSlot({ index, scene, isActive, isQueued, onLoad, onQueue, onCapture, onClear, onRename }: SlotProps) {
-  const [isEditing, setIsEditing] = useState(false);
+function SceneSlot({ index, scene, isActive, isQueued, onLoad, onQueue, onContextMenu, onStartRename, onRename, isRenaming }: SlotProps) {
   const [editName, setEditName] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (isEditing && inputRef.current) {
+    if (isRenaming && inputRef.current && scene) {
+      setEditName(scene.name);
       inputRef.current.focus();
       inputRef.current.select();
     }
-  }, [isEditing]);
-
-  const handleDoubleClick = useCallback(() => {
-    if (!scene) return;
-    setEditName(scene.name);
-    setIsEditing(true);
-  }, [scene]);
+  }, [isRenaming, scene]);
 
   const commitRename = useCallback(() => {
     const trimmed = editName.trim();
-    if (trimmed) {
-      onRename(index, trimmed);
-    }
-    setIsEditing(false);
+    if (trimmed) onRename(index, trimmed);
   }, [editName, index, onRename]);
 
   const handleClick = useCallback((e: React.MouseEvent) => {
-    if (isEditing) return;
+    if (isRenaming) return;
     if (!scene) return;
     if (e.shiftKey) {
       onQueue(index);
     } else {
       onLoad(index);
     }
-  }, [scene, index, isEditing, onLoad, onQueue]);
+  }, [scene, index, isRenaming, onLoad, onQueue]);
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+  const handleCtxMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    if (scene && e.shiftKey) {
-      onClear(index); // Shift+right-click = clear slot
-    } else {
-      onCapture(index); // Right-click = capture to slot
-    }
-  }, [scene, index, onCapture, onClear]);
+    onContextMenu(e, index);
+  }, [index, onContextMenu]);
 
-  // Determine border and background colors
   let borderColor = "var(--ed-border)";
   let bgColor = "var(--ed-bg-surface)";
   let glowShadow = "none";
@@ -99,8 +166,8 @@ function SceneSlot({ index, scene, isActive, isQueued, onLoad, onQueue, onCaptur
   return (
     <button
       onClick={handleClick}
-      onDoubleClick={handleDoubleClick}
-      onContextMenu={handleContextMenu}
+      onDoubleClick={() => { if (scene) onStartRename(index); }}
+      onContextMenu={handleCtxMenu}
       className="relative flex flex-col items-center justify-center gap-1 rounded-lg border transition-all duration-150 hover:brightness-110 cursor-pointer select-none"
       style={{
         borderColor,
@@ -109,20 +176,16 @@ function SceneSlot({ index, scene, isActive, isQueued, onLoad, onQueue, onCaptur
         minHeight: "72px",
         animation: isQueued ? "ed-pulse-border 1.2s ease-in-out infinite" : undefined,
       }}
+      aria-label={`Scene ${index + 1}${scene ? `: ${scene.name}` : ", empty"}${isActive ? " (active)" : ""}${isQueued ? " (queued)" : ""}`}
     >
       {/* Status dot */}
-      <div
-        className="w-2 h-2 rounded-full"
-        style={{ backgroundColor: dotColor }}
-      />
+      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: dotColor }} />
 
       {/* Scene number */}
-      <span className="text-[10px] font-mono text-[var(--ed-text-muted)]">
-        {index + 1}
-      </span>
+      <span className="text-[10px] font-mono text-[var(--ed-text-muted)]">{index + 1}</span>
 
       {/* Name or edit input */}
-      {isEditing ? (
+      {isRenaming ? (
         <input
           ref={inputRef}
           type="text"
@@ -131,8 +194,9 @@ function SceneSlot({ index, scene, isActive, isQueued, onLoad, onQueue, onCaptur
           onBlur={commitRename}
           onKeyDown={(e) => {
             if (e.key === "Enter") commitRename();
-            if (e.key === "Escape") setIsEditing(false);
+            if (e.key === "Escape") onRename(index, scene?.name ?? "");
           }}
+          onClick={(e) => e.stopPropagation()}
           className="w-[90%] text-[9px] text-center bg-black/40 text-[var(--ed-text-primary)] border border-[var(--ed-accent-orange)] rounded px-1 py-0.5 outline-none"
           maxLength={16}
         />
@@ -149,14 +213,10 @@ function SceneSlot({ index, scene, isActive, isQueued, onLoad, onQueue, onCaptur
 
       {/* Active / Queued badge */}
       {isActive && (
-        <span className="absolute top-1 right-1 text-[7px] font-bold tracking-wider text-[var(--ed-accent-orange)]">
-          LIVE
-        </span>
+        <span className="absolute top-1 right-1 text-[7px] font-bold tracking-wider text-[var(--ed-accent-orange)]">LIVE</span>
       )}
       {isQueued && !isActive && (
-        <span className="absolute top-1 right-1 text-[7px] font-bold tracking-wider text-[var(--ed-accent-blue)]">
-          NEXT
-        </span>
+        <span className="absolute top-1 right-1 text-[7px] font-bold tracking-wider text-[var(--ed-accent-blue)]">NEXT</span>
       )}
     </button>
   );
@@ -166,34 +226,71 @@ function SceneSlot({ index, scene, isActive, isQueued, onLoad, onQueue, onCaptur
 
 export function SceneLauncher({ isOpen, onClose }: SceneLauncherProps) {
   const { scenes, activeScene, nextScene, captureScene, loadScene, queueScene, clearScene, renameScene } = useSceneStore();
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [renamingSlot, setRenamingSlot] = useState<number | null>(null);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, slotIndex: number) => {
+    setContextMenu({
+      x: Math.min(e.clientX, window.innerWidth - 160),
+      y: Math.min(e.clientY, window.innerHeight - 250),
+      slotIndex,
+      hasData: scenes[slotIndex] !== null,
+    });
+  }, [scenes]);
 
   const handleCapture = useCallback((slot: number) => {
     captureScene(slot);
   }, [captureScene]);
 
+  const handleDuplicate = useCallback((slot: number) => {
+    // Find next empty slot and copy this scene there
+    const emptyIndex = scenes.findIndex((s, i) => s === null && i !== slot);
+    if (emptyIndex === -1) return;
+    // Capture current state to empty slot, then copy the source scene's data
+    const sourceScene = scenes[slot];
+    if (!sourceScene) return;
+    // Load the source scene first, then capture to the empty slot
+    loadScene(slot);
+    setTimeout(() => captureScene(emptyIndex), 50);
+  }, [scenes, loadScene, captureScene]);
+
+  const handleStartRename = useCallback((slot: number) => {
+    setRenamingSlot(slot);
+    setContextMenu(null);
+  }, []);
+
+  const handleRename = useCallback((slot: number, name: string) => {
+    if (name) renameScene(slot, name);
+    setRenamingSlot(null);
+  }, [renameScene]);
+
   const handleCaptureNext = useCallback(() => {
-    // Find next empty slot
     const emptyIndex = scenes.findIndex((s) => s === null);
-    if (emptyIndex !== -1) {
-      captureScene(emptyIndex);
-    }
+    if (emptyIndex !== -1) captureScene(emptyIndex);
   }, [scenes, captureScene]);
 
   const handleClearAll = useCallback(() => {
-    for (let i = 0; i < 16; i++) {
-      clearScene(i);
-    }
+    for (let i = 0; i < 16; i++) clearScene(i);
   }, [clearScene]);
 
-  // Close on Escape
+  // Close context menu on scroll or modal close
+  useEffect(() => {
+    if (!isOpen) { setContextMenu(null); setRenamingSlot(null); }
+  }, [isOpen]);
+
+  // Escape closes modal
   useEffect(() => {
     if (!isOpen) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        if (contextMenu) { setContextMenu(null); return; }
+        if (renamingSlot !== null) { setRenamingSlot(null); return; }
+        onClose();
+      }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, contextMenu, renamingSlot]);
 
   if (!isOpen) return null;
 
@@ -209,22 +306,16 @@ export function SceneLauncher({ isOpen, onClose }: SceneLauncherProps) {
       <div className="relative w-full max-w-lg bg-[var(--ed-bg-secondary)] border border-[var(--ed-border)] rounded-xl shadow-2xl p-5">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-bold text-[var(--ed-text-primary)] tracking-wider">
-            SCENE LAUNCHER
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-[var(--ed-text-muted)] hover:text-[var(--ed-text-primary)] text-lg px-1"
-          >
-            &times;
-          </button>
+          <h2 className="text-sm font-bold text-[var(--ed-text-primary)] tracking-wider">SCENE LAUNCHER</h2>
+          <button onClick={onClose} className="text-[var(--ed-text-muted)] hover:text-[var(--ed-text-primary)] text-lg px-1" aria-label="Close">&times;</button>
         </div>
 
         {/* Instructions */}
         <div className="text-[9px] text-[var(--ed-text-muted)] mb-3 flex gap-4">
           <span>Click = Load</span>
           <span>Shift+Click = Queue</span>
-          <span>Right-click = Capture</span>
+          <span>Right-click = Menu</span>
+          <span>Double-click = Rename</span>
         </div>
 
         {/* 4x4 Grid */}
@@ -238,9 +329,10 @@ export function SceneLauncher({ isOpen, onClose }: SceneLauncherProps) {
               isQueued={nextScene === i}
               onLoad={loadScene}
               onQueue={queueScene}
-              onCapture={handleCapture}
-              onClear={clearScene}
-              onRename={renameScene}
+              onContextMenu={handleContextMenu}
+              onStartRename={handleStartRename}
+              onRename={handleRename}
+              isRenaming={renamingSlot === i}
             />
           ))}
         </div>
@@ -252,9 +344,7 @@ export function SceneLauncher({ isOpen, onClose }: SceneLauncherProps) {
             disabled={!hasEmpty}
             className="flex-1 py-2 text-[10px] font-bold tracking-wider rounded-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed"
             style={{
-              backgroundColor: hasEmpty
-                ? "color-mix(in srgb, var(--ed-accent-orange) 15%, transparent)"
-                : undefined,
+              backgroundColor: hasEmpty ? "color-mix(in srgb, var(--ed-accent-orange) 15%, transparent)" : undefined,
               color: hasEmpty ? "var(--ed-accent-orange)" : "var(--ed-text-muted)",
               border: `1px solid ${hasEmpty ? "color-mix(in srgb, var(--ed-accent-orange) 30%, transparent)" : "var(--ed-border)"}`,
             }}
@@ -271,7 +361,21 @@ export function SceneLauncher({ isOpen, onClose }: SceneLauncherProps) {
         </div>
       </div>
 
-      {/* Pulsing border animation for queued slots */}
+      {/* Context Menu */}
+      {contextMenu && (
+        <SceneContextMenu
+          menu={contextMenu}
+          onClose={() => setContextMenu(null)}
+          onCapture={handleCapture}
+          onLoad={loadScene}
+          onQueue={queueScene}
+          onRename={handleStartRename}
+          onClear={clearScene}
+          onDuplicate={handleDuplicate}
+        />
+      )}
+
+      {/* Pulsing border animation */}
       <style>{`
         @keyframes ed-pulse-border {
           0%, 100% { border-color: var(--ed-accent-blue); opacity: 1; }
