@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useDrumStore, setFillMode } from "../store/drumStore";
 import { downloadMidi } from "../utils/midiExport";
 import { sharePattern } from "../utils/patternShare";
@@ -59,18 +59,16 @@ export function Transport({
   }, [setBpm]);
 
   // Keyboard shortcut for tap tempo (T key)
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 't' || e.key === 'T') {
-      handleTap();
-    }
-  }, [handleTap]);
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 't' || e.key === 'T') {
+        handleTap();
+      }
+    };
 
-  // Add keyboard listener on mount
-  const keyListenerRef = useRef(false);
-  if (!keyListenerRef.current) {
-    keyListenerRef.current = true;
-    typeof window !== 'undefined' && window.addEventListener('keydown', handleKeyDown);
-  }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleTap]);
 
   return (
     <header className="flex items-center h-11 px-3 border-b border-[var(--ed-border)]/70 bg-gradient-to-b from-[#111116] to-[#0d0d11] gap-1.5 relative z-20">

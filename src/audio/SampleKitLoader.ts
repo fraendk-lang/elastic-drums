@@ -1,7 +1,7 @@
 /**
  * Sample Kit Loader — loads drum sample kits from public/samples/
  *
- * Kit structure: public/samples/{kit-name}/{voice}.wav
+ * Kit structure: public/samples/{kit-name}/{voice}.ogg (production) or {voice}.wav (fallback)
  * Voices: kick, snare, clap, tom-lo, tom-mid, tom-hi, hh-closed, hh-open, cymbal, ride, perc1, perc2
  */
 
@@ -38,9 +38,9 @@ export async function loadSampleKit(
 
   for (const voice of VOICE_FILENAMES) {
     try {
-      // Try WAV first, then MP3
-      let response = await fetch(`${kit.path}/${voice}.wav`);
-      if (!response.ok) response = await fetch(`${kit.path}/${voice}.mp3`);
+      // Try OGG first (smaller, used in production), then WAV (local dev)
+      let response = await fetch(`${kit.path}/${voice}.ogg`);
+      if (!response.ok) response = await fetch(`${kit.path}/${voice}.wav`);
       if (!response.ok) {
         buffers.push(null);
         continue;
