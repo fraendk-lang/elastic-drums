@@ -267,15 +267,26 @@ let _pianoRollEnabled = true; // Can be toggled to mute piano roll playback
 
 // Background playback scheduler — runs even when panel is closed
 let _lastPlaybackStep = -1;
+let _pianoRollStepCounter = 0; // Own counter, independent of drum pattern length
 const _activePlaybackNotes = new Set<string>();
 
 function pianoRollTick(currentStep: number, bpm: number): void {
   if (!_pianoRollEnabled || _pianoRollNotes.length === 0) return;
   if (currentStep === _lastPlaybackStep) return;
+
+  // Detect step advancement (drum sequencer step changed)
+  const drumStepAdvanced = _lastPlaybackStep >= 0;
   _lastPlaybackStep = currentStep;
 
+  // Advance our own counter (wraps at piano roll length, not drum pattern length)
+  if (drumStepAdvanced) {
+    _pianoRollStepCounter++;
+  } else {
+    _pianoRollStepCounter = 0; // Reset on first tick
+  }
+
   const totalSteps = 16 * 4; // 16 beats × 4 steps per beat = 64 steps
-  const wrappedStep = currentStep % totalSteps;
+  const wrappedStep = _pianoRollStepCounter % totalSteps;
   const t = audioEngine.currentTime + 0.01;
   const secPerBeat = 60 / bpm; // seconds per quarter note
 
@@ -336,7 +347,7 @@ useTransportStore.subscribe((state, prev) => {
     const bpm = useDrumStore.getState().bpm;
     const isPlaying = useDrumStore.getState().isPlaying;
     if (isPlaying) pianoRollTick(state.currentStep, bpm);
-    else { _lastPlaybackStep = -1; _activePlaybackNotes.clear(); }
+    else { _lastPlaybackStep = -1; _pianoRollStepCounter = 0; _activePlaybackNotes.clear(); }
   }
 });
 
