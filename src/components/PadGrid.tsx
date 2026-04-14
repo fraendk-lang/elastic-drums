@@ -182,6 +182,8 @@ export function PadGrid() {
                 borderColor: isDragTarget ? "var(--ed-accent-green)" : isSelected ? color + "80" : "var(--ed-border)",
                 borderWidth: "1px",
                 borderStyle: "solid",
+                transform: isTriggered ? "scale(1.05)" : "scale(1)",
+                transition: "transform 0.08s ease-out",
               }}
             >
               {/* Waveform oscilloscope */}

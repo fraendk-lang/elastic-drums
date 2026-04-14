@@ -12,6 +12,7 @@ import { FxPanel } from "./components/FxPanel";
 import { KitBrowser } from "./components/KitBrowser";
 import { VoiceEditor } from "./components/VoiceEditor";
 import { SynthSection } from "./components/SynthSection";
+import { MidiPlayerPanel } from "./components/MidiPlayerPanel";
 import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
 import { melodyEngine } from "./audio/MelodyEngine";
@@ -207,6 +208,7 @@ export function App() {
         onOpenFx={() => overlay.openOverlay("fxPanel")}
         onOpenMixer={() => overlay.openOverlay("mixer")}
         onOpenKits={() => overlay.openOverlay("kitBrowser")}
+        onOpenMidi={() => overlay.openOverlay("midiPlayer")}
         onToggleHelp={() => overlay.toggle("help")}
       />
 
@@ -277,6 +279,7 @@ export function App() {
       <SceneLauncher isOpen={overlay.isOpen("scene")} onClose={() => overlay.closeOverlay("scene")} />
       <FxPanel isOpen={overlay.isOpen("fxPanel")} onClose={() => overlay.closeOverlay("fxPanel")} />
       <KitBrowser isOpen={overlay.isOpen("kitBrowser")} onClose={() => overlay.closeOverlay("kitBrowser")} />
+      <MidiPlayerPanel isOpen={overlay.isOpen("midiPlayer")} onClose={() => overlay.closeOverlay("midiPlayer")} />
     </div>
   );
 }

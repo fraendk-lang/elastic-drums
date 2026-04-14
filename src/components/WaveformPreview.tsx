@@ -86,7 +86,7 @@ export const WaveformPreview = memo(function WaveformPreview({
       ref={canvasRef}
       width={width}
       height={height}
-      className="absolute inset-0 pointer-events-none opacity-60"
+      className="absolute inset-0 pointer-events-none opacity-75"
       style={{ imageRendering: "pixelated" }}
     />
   );

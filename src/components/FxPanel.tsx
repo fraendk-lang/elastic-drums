@@ -8,6 +8,7 @@
 import { useState, useCallback, useRef } from "react";
 import { audioEngine } from "../audio/AudioEngine";
 import { useDrumStore } from "../store/drumStore";
+import { motionRecorder, type MotionRecording } from "../audio/MotionRecorder";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -361,6 +362,9 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
   const [padX, setPadX] = useState(0.5);
   const [padY, setPadY] = useState(0.5);
   const [activeBeatFx, setActiveBeatFx] = useState<Set<number>>(new Set());
+  const [isRecording, setIsRecording] = useState(false);
+  const [isPlayingMotion, setIsPlayingMotion] = useState(false);
+  const [recordings, setRecordings] = useState<MotionRecording[]>([]);
 
   const padRef = useRef<HTMLDivElement>(null);
   const beatFxListRef = useRef(createBeatFxList());
@@ -394,8 +398,12 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
       setPadX(x);
       setPadY(y);
       applyFxMode(activeMode, x, y, fxTarget, bpm);
+      // Record motion if recording is active
+      if (isRecording) {
+        motionRecorder.addPoint(x, y);
+      }
     },
-    [padActive, activeMode, fxTarget, bpm, calcXY]
+    [padActive, activeMode, fxTarget, bpm, calcXY, isRecording]
   );
 
   const handlePadUp = useCallback(() => {
@@ -480,8 +488,28 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
           })}
         </div>
 
-        {/* Right: Hold + Close */}
+        {/* Right: REC + HOLD + Close */}
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              if (isRecording) {
+                const rec = motionRecorder.stopRecording(activeMode, fxTarget, bpm);
+                setIsRecording(false);
+                if (rec) setRecordings(motionRecorder.allRecordings);
+              } else {
+                motionRecorder.startRecording();
+                setIsRecording(true);
+              }
+            }}
+            style={{
+              backgroundColor: isRecording ? "#ef4444" : "transparent",
+              color: isRecording ? "#fff" : "rgba(255,255,255,0.35)",
+              border: `1px solid ${isRecording ? "#ef4444" : "rgba(255,255,255,0.1)"}`,
+            }}
+            className="px-3 py-1 rounded text-xs font-bold tracking-wider transition-all"
+          >
+            {isRecording ? "● STOP" : "REC"}
+          </button>
           <button
             onClick={() => {
               if (holdMode && holdLocked) releaseHold();
@@ -548,6 +576,35 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
               <span className="text-[10px] font-medium" style={{ color: modeColor + "80" }}>
                 {musicalValue.description}
               </span>
+              {recordings.length > 0 && (
+                <button
+                  onClick={() => {
+                    if (isPlayingMotion) {
+                      motionRecorder.stopPlayback();
+                      setIsPlayingMotion(false);
+                      releaseFxMode(activeMode, fxTarget);
+                    } else {
+                      const lastRec = recordings[recordings.length - 1]!;
+                      // First activate the FX mode
+                      activateFxMode(lastRec.mode as FxMode, 0.5, 0.5, lastRec.target as FxTarget, bpm);
+                      motionRecorder.startPlayback(lastRec, (x, y) => {
+                        setPadX(x);
+                        setPadY(y);
+                        applyFxMode(lastRec.mode as FxMode, x, y, lastRec.target as FxTarget, bpm);
+                      });
+                      setIsPlayingMotion(true);
+                    }
+                  }}
+                  className="px-3 py-1 rounded text-xs font-bold tracking-wider transition-all"
+                  style={{
+                    backgroundColor: isPlayingMotion ? "#10b981" : "transparent",
+                    color: isPlayingMotion ? "#000" : "#10b981",
+                    border: `1px solid ${isPlayingMotion ? "#10b981" : "#10b98140"}`,
+                  }}
+                >
+                  {isPlayingMotion ? "■ STOP" : "▶ PLAY"}
+                </button>
+              )}
             </div>
           </div>
 
@@ -670,6 +727,17 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
                 <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: modeColor }} />
                 <span className="text-[9px] font-bold tracking-wider" style={{ color: modeColor }}>HELD</span>
               </div>
+            )}
+
+            {/* Recording indicator — pulsing red border */}
+            {isRecording && (
+              <div
+                className="absolute inset-0 rounded-xl pointer-events-none animate-pulse"
+                style={{
+                  border: "3px solid #ef4444",
+                  boxShadow: "0 0 20px #ef444460, inset 0 0 20px #ef444415",
+                }}
+              />
             )}
           </div>
         </div>
