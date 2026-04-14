@@ -385,6 +385,21 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
           >
             BINAURAL {audioEngine.getBinauralMode() ? "ON" : "OFF"}
           </button>
+
+          {/* Sidechain: Kick → Bass Duck */}
+          <button
+            onClick={() => {
+              const next = !audioEngine.getSidechainEnabled();
+              audioEngine.setSidechain(next, 0.7, 0.15);
+            }}
+            className={`px-2 py-0.5 text-[9px] font-bold rounded transition-colors ${
+              audioEngine.getSidechainEnabled()
+                ? "bg-[var(--ed-accent-orange)]/30 text-[var(--ed-accent-orange)]"
+                : "bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)]"
+            }`}
+          >
+            SIDECHAIN {audioEngine.getSidechainEnabled() ? "ON" : "OFF"}
+          </button>
         </div>
       </div>
     </div>

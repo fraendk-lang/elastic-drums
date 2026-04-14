@@ -262,11 +262,7 @@ function snapToScale(midi: number, rootMidi: number, scaleName: string): number 
    ═════════════════════════════════════════════════════════════════════════ */
 
 // Module-level state so notes persist when panel is closed
-let _pianoRollNotes: PianoRollNote[] = [
-  { id: "1", midi: 60, start: 0, duration: 1, velocity: 0.8, track: "melody" },
-  { id: "2", midi: 64, start: 1, duration: 0.5, velocity: 0.7, track: "melody" },
-  { id: "3", midi: 67, start: 2, duration: 1.5, velocity: 0.9, track: "melody" },
-];
+let _pianoRollNotes: PianoRollNote[] = [];
 let _pianoRollEnabled = true; // Can be toggled to mute piano roll playback
 
 // Background playback scheduler — runs even when panel is closed

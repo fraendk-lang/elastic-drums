@@ -30,6 +30,11 @@ export class AudioEngine {
   private channelGains: GainNode[] = [];
   private channelAnalysers: AnalyserNode[] = [];
 
+  // Sidechain: Kick (voice 0) ducks Bass (channel 12)
+  private sidechainEnabled = false;
+  private sidechainAmount = 0.7;  // How much to duck (0=full duck, 1=no duck)
+  private sidechainRelease = 0.15; // Release time in seconds
+
   private wasmMode = false;
   private workletNode: AudioWorkletNode | null = null;
   private wasmReady = false;
@@ -197,6 +202,8 @@ export class AudioEngine {
       const out = mixerRouter.getChannelOutput(voice);
       voiceRenderer.scheduleVoice(ctx, voice, velocity, ctx.currentTime, out);
     }
+    // Sidechain: kick ducks bass
+    if (voice === 0 && this.sidechainEnabled) this.applySidechainDuck(ctx.currentTime);
   }
 
   triggerVoiceAtTime(voice: number, velocity: number, time: number): void {
@@ -204,7 +211,34 @@ export class AudioEngine {
     if (this.wasmMode) return;
     const out = mixerRouter.getChannelOutput(voice);
     voiceRenderer.scheduleVoice(ctx, voice, velocity, time, out);
+    // Sidechain: kick ducks bass
+    if (voice === 0 && this.sidechainEnabled) this.applySidechainDuck(time);
   }
+
+  /** Apply sidechain duck to bass channel (12) */
+  private applySidechainDuck(time: number): void {
+    const bassGain = this.channelGains[12];
+    if (!bassGain) return;
+    const now = time;
+    const duck = this.sidechainAmount;
+    const rel = this.sidechainRelease;
+    // Fast duck down, smooth release back up
+    bassGain.gain.cancelScheduledValues(now);
+    bassGain.gain.setValueAtTime(bassGain.gain.value, now);
+    bassGain.gain.linearRampToValueAtTime(1 - duck, now + 0.005); // 5ms attack
+    bassGain.gain.linearRampToValueAtTime(1.0, now + 0.005 + rel); // smooth release
+  }
+
+  /** Enable/disable bass sidechain (kick → bass duck) */
+  setSidechain(enabled: boolean, amount = 0.7, release = 0.15): void {
+    this.sidechainEnabled = enabled;
+    this.sidechainAmount = Math.max(0, Math.min(1, amount));
+    this.sidechainRelease = Math.max(0.01, Math.min(1, release));
+  }
+
+  getSidechainEnabled(): boolean { return this.sidechainEnabled; }
+  getSidechainAmount(): number { return this.sidechainAmount; }
+  getSidechainRelease(): number { return this.sidechainRelease; }
 
   playSampleAtTime(buffer: AudioBuffer, voice: number, velocity: number, time: number, tune = 0): void {
     const ctx = this.getContext();
