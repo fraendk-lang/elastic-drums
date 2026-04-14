@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { audioEngine } from "../audio/AudioEngine";
+import { audioEngine, VOICE_PARAM_DEFS } from "../audio/AudioEngine";
+import { sampleManager } from "../audio/SampleManager";
 
 // Scene store reference — set lazily to avoid circular imports
 let _sceneStoreRef: { getState: () => { scenes: (unknown | null)[]; loadScene: (slot: number) => void } } | null = null;
@@ -551,6 +552,7 @@ interface DrumStore {
   nextPreset: () => void;
   prevPreset: () => void;
   clearPattern: () => void;
+  newSession: () => void;
 
   // P-Lock editing
   holdStep: (track: number, step: number) => void;
@@ -702,6 +704,41 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
       currentStep: 0,
       isPlaying: false,
     });
+  },
+
+  /** New empty session — clears pattern, all samples, resets synths */
+  newSession: () => {
+    const wasPlaying = get().isPlaying;
+    if (wasPlaying) stopScheduler();
+
+    // Clear P-Lock timers
+    activePLockTimers.forEach(timerId => clearTimeout(timerId));
+    activePLockTimers.clear();
+
+    // Reset drum pattern
+    set({
+      pattern: createEmptyPattern(),
+      currentPatternIndex: -1,
+      currentStep: 0,
+      isPlaying: false,
+      bpm: 120,
+      swing: 50,
+      songMode: "pattern" as SongMode,
+      songChain: [],
+      songPosition: 0,
+      songRepeatCount: 0,
+    });
+
+    // Clear all loaded samples
+    for (let i = 0; i < 12; i++) sampleManager.clearSample(i);
+
+    // Reset voice params to defaults
+    for (let v = 0; v < 12; v++) {
+      const defs = VOICE_PARAM_DEFS[v] ?? [];
+      for (const d of defs) {
+        audioEngine.setVoiceParam(v, d.id, d.default);
+      }
+    }
   },
 
   // ─── P-Lock editing ──────────────────────────────────────

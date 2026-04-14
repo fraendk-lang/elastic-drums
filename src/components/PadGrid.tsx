@@ -1,7 +1,12 @@
 import { useState, useCallback, useRef } from "react";
 import { useDrumStore } from "../store/drumStore";
+import { useOverlayStore } from "../store/overlayStore";
+import { useCustomKitStore } from "../store/customKitStore";
 import { sampleManager } from "../audio/SampleManager";
+import { audioEngine } from "../audio/AudioEngine";
 import { WaveformPreview } from "./WaveformPreview";
+import { SampleBrowser } from "./SampleBrowser";
+import type { LibrarySample } from "../audio/SampleLibrary";
 
 const VOICE_LABELS = [
   "KICK", "SNARE", "CLAP", "TOM LO",
@@ -17,9 +22,12 @@ const VOICE_COLORS = [
 
 export function PadGrid() {
   const { selectedVoice, setSelectedVoice, triggerVoice } = useDrumStore();
+  const { isOpen: isBrowserOpen, openOverlay: openBrowser, closeOverlay: closeBrowser } = useOverlayStore();
+  const { voiceSamples, setVoiceSample } = useCustomKitStore();
   const [triggered, setTriggered] = useState<Set<number>>(new Set());
   const [dragOver, setDragOver] = useState<number | null>(null);
   const [sampleNames, setSampleNames] = useState<Map<number, string>>(new Map());
+  const [browserVoiceIndex, setBrowserVoiceIndex] = useState<number | null>(null);
   const timeouts = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   const handlePadDown = useCallback((i: number) => {
@@ -91,6 +99,45 @@ export function PadGrid() {
     }
   }, []);
 
+  const handleBrowseClick = useCallback((e: React.MouseEvent, voiceIndex: number) => {
+    e.stopPropagation();
+    setBrowserVoiceIndex(voiceIndex);
+    openBrowser("sampleBrowser");
+  }, [openBrowser]);
+
+  const handleSampleSelect = useCallback(async (sample: LibrarySample | null) => {
+    if (browserVoiceIndex === null) return;
+
+    if (sample === null) {
+      // Clear sample
+      sampleManager.clearSample(browserVoiceIndex);
+      setSampleNames((prev) => {
+        const next = new Map(prev);
+        next.delete(browserVoiceIndex);
+        return next;
+      });
+      setVoiceSample(browserVoiceIndex, null);
+    } else {
+      // Load sample
+      try {
+        const response = await fetch(sample.path);
+        const arrayBuffer = await response.arrayBuffer();
+        const ctx = audioEngine.getAudioContext();
+        if (!ctx) throw new Error("AudioContext not initialized");
+
+        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+        sampleManager.loadFromBuffer(audioBuffer, sample.name, browserVoiceIndex);
+        setSampleNames((prev) => new Map(prev).set(browserVoiceIndex, sample.name));
+        setVoiceSample(browserVoiceIndex, sample.id);
+        triggerVoice(browserVoiceIndex);
+      } catch (err) {
+        console.error("Failed to load sample:", err);
+      }
+    }
+
+    closeBrowser("sampleBrowser");
+  }, [browserVoiceIndex, setVoiceSample, triggerVoice, closeBrowser]);
+
   return (
     <div className="p-3">
       <div className="grid grid-cols-4 gap-1.5">
@@ -102,20 +149,23 @@ export function PadGrid() {
           const color = VOICE_COLORS[i]!;
 
           return (
-            <button
+            <div
               key={i}
-              onMouseDown={() => handlePadDown(i)}
-              onDragOver={(e) => handleDragOver(e, i)}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, i)}
-              onContextMenu={(e) => handleContextMenu(e, i)}
-              className={`ed-pad-press relative flex flex-col items-center justify-center h-[68px] rounded-lg overflow-hidden ${
-                isDragTarget
-                  ? "ring-2 ring-[var(--ed-accent-green)]"
-                  : isSelected
-                    ? "ring-1"
-                    : ""
-              }`}
+              className="relative group"
+            >
+              <button
+                onMouseDown={() => handlePadDown(i)}
+                onDragOver={(e) => handleDragOver(e, i)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, i)}
+                onContextMenu={(e) => handleContextMenu(e, i)}
+                className={`ed-pad-press w-full relative flex flex-col items-center justify-center h-[68px] rounded-lg overflow-hidden ${
+                  isDragTarget
+                    ? "ring-2 ring-[var(--ed-accent-green)]"
+                    : isSelected
+                      ? "ring-1"
+                      : ""
+                }`}
               style={{
                 background: isTriggered
                   ? `linear-gradient(135deg, ${color}20, ${color}10)`
@@ -171,13 +221,34 @@ export function PadGrid() {
               }`}>
                 {hasSample ? sampleNames.get(i) : label}
               </span>
-            </button>
+              </button>
+
+              {/* Sample Browser button (folder icon) */}
+              <button
+                onClick={(e) => handleBrowseClick(e, i)}
+                className="absolute top-1 right-1 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 hover:bg-black/60"
+                title="Browse samples"
+              >
+                <svg className="w-3 h-3 text-[var(--ed-accent-green)]" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M7 2H2a1 1 0 00-1 1v11a1 1 0 001 1h12a1 1 0 001-1V6a1 1 0 00-1-1h-4L7 2z" />
+                </svg>
+              </button>
+            </div>
           );
         })}
       </div>
       <p className="text-[8px] text-[var(--ed-text-muted)] mt-2 text-center opacity-60">
-        drop audio &middot; right-click to clear
+        drop audio &middot; right-click to clear &middot; hover &amp; click folder to browse
       </p>
+
+      {/* Sample Browser Modal */}
+      <SampleBrowser
+        isOpen={isBrowserOpen("sampleBrowser") && browserVoiceIndex !== null}
+        voiceIndex={browserVoiceIndex ?? 0}
+        selectedSampleId={browserVoiceIndex !== null ? voiceSamples[browserVoiceIndex] ?? undefined : undefined}
+        onClose={() => closeBrowser("sampleBrowser")}
+        onSelect={handleSampleSelect}
+      />
     </div>
   );
 }

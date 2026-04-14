@@ -22,7 +22,7 @@ export function Transport({
   const {
     bpm, isPlaying, swing, pattern,
     setBpm, setSwing, togglePlay,
-    nextPreset, prevPreset, clearPattern,
+    nextPreset, prevPreset, clearPattern, newSession,
   } = useDrumStore();
 
   // Tap Tempo with visual feedback
@@ -176,6 +176,13 @@ export function Transport({
           className="text-[7px] text-white/15 hover:text-red-400/60 transition-colors ml-0.5 font-bold tracking-wider"
         >
           CLR
+        </button>
+        <button
+          onClick={newSession}
+          aria-label="New empty session"
+          className="text-[7px] text-white/15 hover:text-[var(--ed-accent-green)]/60 transition-colors ml-1 font-bold tracking-wider"
+        >
+          NEW
         </button>
       </div>
 
