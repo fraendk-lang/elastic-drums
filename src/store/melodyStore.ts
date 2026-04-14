@@ -558,7 +558,7 @@ export function startMelodyScheduler() {
           const nextStep = steps[nextStepIdx];
           if (nextStep?.active && nextStep.tie) {
             // Don't release — tie holds note
-          } else if (!nextStep?.active) {
+          } else {
             melodyEngine.releaseNote(nextMelodyStepTime + secondsPerStep * 0.9);
           }
         }

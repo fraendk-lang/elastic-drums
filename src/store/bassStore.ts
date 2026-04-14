@@ -333,7 +333,8 @@ export function startBassScheduler() {
           const nextStep = steps[nextStepIdx];
           if (nextStep?.active && nextStep.tie) {
             // Don't release — tie holds note
-          } else if (!nextStep?.active) {
+          } else {
+            // Release before next step (whether next is active or not)
             bassEngine.releaseNote(nextBassStepTime + secondsPerStep * 0.9);
           }
         }

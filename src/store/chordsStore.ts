@@ -343,7 +343,7 @@ export function startChordsScheduler() {
           const nextStep = steps[nextStepIdx];
           if (nextStep?.active && nextStep.tie) {
             // Don't release — tie holds chord
-          } else if (!nextStep?.active) {
+          } else {
             chordsEngine.releaseChord(nextChordsStepTime + secondsPerStep * 0.9);
           }
         }
