@@ -63,6 +63,150 @@ function midiNoteName(midi: number): string {
   return (NOTE_NAMES[midi % 12] ?? "?") + (Math.floor(midi / 12) - 1);
 }
 
+function uid(): string { return `n${Date.now()}-${Math.random().toString(36).slice(2,6)}`; }
+
+/** Get scale degrees as MIDI notes for a given octave range */
+function getScaleNotes(rootMidi: number, scaleName: string, fromOctave: number, toOctave: number): number[] {
+  const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
+  const result: number[] = [];
+  for (let oct = fromOctave; oct <= toOctave; oct++) {
+    for (const deg of scale) {
+      const midi = rootMidi + (oct - Math.floor(rootMidi / 12)) * 12 + deg;
+      if (midi >= 0 && midi <= 127) result.push(midi);
+    }
+  }
+  return result.sort((a, b) => a - b);
+}
+
+/** Chord quality from scale degree (0-based). Returns intervals from root. */
+function chordFromDegree(scaleName: string, degree: number): number[] {
+  const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
+  // Stack thirds within the scale: root + 3rd + 5th (+ 7th optional)
+  const root = scale[degree % scale.length] ?? 0;
+  const third = scale[(degree + 2) % scale.length] ?? 0;
+  const fifth = scale[(degree + 4) % scale.length] ?? 0;
+  return [root, third + (third < root ? 12 : 0), fifth + (fifth < third ? 12 : 0)];
+}
+
+// ─── Harmony Generators ─────────────────────────────────────
+
+type HarmonyType =
+  | "scale-up" | "scale-down"
+  | "chords-I-IV-V-I" | "chords-I-vi-IV-V"
+  | "chords-ii-V-I" | "chords-I-V-vi-IV"
+  | "harmonize-3rds" | "harmonize-5ths"
+  | "arpeggio-up" | "arpeggio-down";
+
+const HARMONY_PRESETS: { id: HarmonyType; label: string; group: string }[] = [
+  { id: "scale-up",        label: "Scale ↑",         group: "Scales" },
+  { id: "scale-down",      label: "Scale ↓",         group: "Scales" },
+  { id: "chords-I-IV-V-I", label: "I – IV – V – I",  group: "Chords" },
+  { id: "chords-I-vi-IV-V",label: "I – vi – IV – V",  group: "Chords" },
+  { id: "chords-ii-V-I",   label: "ii – V – I",       group: "Chords" },
+  { id: "chords-I-V-vi-IV",label: "I – V – vi – IV",  group: "Chords" },
+  { id: "harmonize-3rds",  label: "+ 3rds",            group: "Harmonize" },
+  { id: "harmonize-5ths",  label: "+ 5ths",            group: "Harmonize" },
+  { id: "arpeggio-up",     label: "Arpeggio ↑",       group: "Arpeggios" },
+  { id: "arpeggio-down",   label: "Arpeggio ↓",       group: "Arpeggios" },
+];
+
+function generateHarmony(
+  type: HarmonyType,
+  rootMidi: number,
+  scaleName: string,
+  startBeat: number,
+  gridRes: number,
+): PianoRollNote[] {
+  const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
+  const baseOctave = Math.floor(rootMidi / 12);
+  const notes: PianoRollNote[] = [];
+
+  const addNote = (midi: number, start: number, dur: number, vel = 0.8) => {
+    notes.push({ id: uid(), midi, start, duration: dur, velocity: vel });
+  };
+
+  switch (type) {
+    case "scale-up": {
+      const scaleNotes = getScaleNotes(rootMidi, scaleName, baseOctave, baseOctave + 1);
+      scaleNotes.forEach((n, i) => addNote(n, startBeat + i * gridRes * 2, gridRes * 2, 0.7 + (i / scaleNotes.length) * 0.3));
+      break;
+    }
+    case "scale-down": {
+      const scaleNotes = getScaleNotes(rootMidi, scaleName, baseOctave, baseOctave + 1).reverse();
+      scaleNotes.forEach((n, i) => addNote(n, startBeat + i * gridRes * 2, gridRes * 2, 0.7 + (i / scaleNotes.length) * 0.3));
+      break;
+    }
+    case "chords-I-IV-V-I":
+    case "chords-I-vi-IV-V":
+    case "chords-ii-V-I":
+    case "chords-I-V-vi-IV": {
+      const degreeSequences: Record<string, number[]> = {
+        "chords-I-IV-V-I":  [0, 3, 4, 0],
+        "chords-I-vi-IV-V": [0, 5, 3, 4],
+        "chords-ii-V-I":    [1, 4, 0, 0],
+        "chords-I-V-vi-IV": [0, 4, 5, 3],
+      };
+      const degrees = degreeSequences[type] ?? [0, 3, 4, 0];
+      const barDur = 4; // 1 bar = 4 beats
+      degrees.forEach((deg, barIdx) => {
+        const intervals = chordFromDegree(scaleName, deg);
+        const beatOffset = startBeat + barIdx * barDur;
+        intervals.forEach((interval) => {
+          const midi = rootMidi + interval;
+          addNote(midi, beatOffset, barDur - 0.25, 0.75);
+        });
+      });
+      break;
+    }
+    case "harmonize-3rds": // returns empty — applied to selection in the component
+    case "harmonize-5ths":
+      break;
+    case "arpeggio-up": {
+      const chordNotes = [0, 2, 4].map((d) => (scale[d % scale.length] ?? 0) + rootMidi);
+      for (let bar = 0; bar < 4; bar++) {
+        const oct = bar < 2 ? 0 : 12;
+        chordNotes.forEach((n, i) => {
+          addNote(n + oct, startBeat + bar * 4 + i * gridRes * 2, gridRes * 2, 0.7);
+          addNote(n + oct + 12, startBeat + bar * 4 + (i + 3) * gridRes * 2, gridRes * 2, 0.6);
+        });
+      }
+      break;
+    }
+    case "arpeggio-down": {
+      const chordNotes = [0, 2, 4].map((d) => (scale[d % scale.length] ?? 0) + rootMidi + 12).reverse();
+      for (let bar = 0; bar < 4; bar++) {
+        chordNotes.forEach((n, i) => {
+          addNote(n, startBeat + bar * 4 + i * gridRes * 2, gridRes * 2, 0.7);
+          addNote(n - 12, startBeat + bar * 4 + (i + 3) * gridRes * 2, gridRes * 2, 0.6);
+        });
+      }
+      break;
+    }
+  }
+  return notes;
+}
+
+/** Harmonize existing notes by adding scale-based intervals */
+function harmonizeNotes(
+  existingNotes: PianoRollNote[],
+  interval: number, // 2 = thirds, 4 = fifths (scale degree offset)
+  rootMidi: number,
+  scaleName: string,
+): PianoRollNote[] {
+  const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
+  const result: PianoRollNote[] = [];
+  for (const note of existingNotes) {
+    const degree = (note.midi - rootMidi + 120) % 12;
+    const scaleIdx = scale.indexOf(degree);
+    if (scaleIdx < 0) continue;
+    const targetDegree = scale[(scaleIdx + interval) % scale.length] ?? 0;
+    let targetMidi = note.midi - degree + targetDegree;
+    if (targetMidi <= note.midi) targetMidi += 12; // always go up
+    result.push({ id: uid(), midi: targetMidi, start: note.start, duration: note.duration, velocity: note.velocity * 0.85 });
+  }
+  return result;
+}
+
 function previewNote(midi: number, velocity: number, target: SoundTarget): void {
   const time = audioEngine.currentTime;
   switch (target) {
@@ -112,24 +256,105 @@ function snapToScale(midi: number, rootMidi: number, scaleName: string): number 
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   PERSISTENT PIANO ROLL STATE — survives component unmount
+   ═════════════════════════════════════════════════════════════════════════ */
+
+// Module-level state so notes persist when panel is closed
+let _pianoRollNotes: PianoRollNote[] = [
+  { id: "1", midi: 60, start: 0, duration: 1, velocity: 0.8 },
+  { id: "2", midi: 64, start: 1, duration: 0.5, velocity: 0.7 },
+  { id: "3", midi: 67, start: 2, duration: 1.5, velocity: 0.9 },
+];
+let _pianoRollTarget: SoundTarget = "melody";
+let _pianoRollEnabled = true; // Can be toggled to mute piano roll playback
+
+// Background playback scheduler — runs even when panel is closed
+let _lastPlaybackStep = -1;
+const _activePlaybackNotes = new Set<string>();
+
+function pianoRollTick(currentStep: number, bpm: number): void {
+  if (!_pianoRollEnabled || _pianoRollNotes.length === 0) return;
+  if (currentStep === _lastPlaybackStep) return;
+  _lastPlaybackStep = currentStep;
+
+  const totalBeats = 16;
+  const t = audioEngine.currentTime + 0.01;
+
+  for (const note of _pianoRollNotes) {
+    const noteStartStep = Math.round(note.start / 0.25);
+    const noteEndStep = Math.round((note.start + note.duration) / 0.25);
+    const wrappedStep = currentStep % (totalBeats * 4); // 64 steps for 16 beats
+
+    if (noteStartStep === wrappedStep && !_activePlaybackNotes.has(note.id)) {
+      _activePlaybackNotes.add(note.id);
+      const target = _pianoRollTarget;
+
+      switch (target) {
+        case "drums":
+          audioEngine.triggerVoice(Math.max(0, Math.min(11, note.midi - 36)));
+          break;
+        case "bass":
+          if (soundFontEngine.isLoaded("bass")) {
+            soundFontEngine.playNote("bass", note.midi, t, note.velocity, note.duration * (60 / bpm / 4));
+          } else {
+            bassEngine.triggerNote(note.midi, t, false, false, false);
+          }
+          break;
+        case "chords":
+          if (soundFontEngine.isLoaded("chords")) {
+            soundFontEngine.playNote("chords", note.midi, t, note.velocity, note.duration * (60 / bpm / 4));
+          } else {
+            chordsEngine.triggerChord([note.midi], t, false, false);
+          }
+          break;
+        case "melody":
+          if (soundFontEngine.isLoaded("melody")) {
+            soundFontEngine.playNote("melody", note.midi, t, note.velocity, note.duration * (60 / bpm / 4));
+          } else {
+            melodyEngine.triggerNote(note.midi, t, false, false, false);
+          }
+          break;
+      }
+    }
+
+    if (noteEndStep === wrappedStep && _activePlaybackNotes.has(note.id)) {
+      _activePlaybackNotes.delete(note.id);
+      if (_pianoRollTarget === "bass" && !soundFontEngine.isLoaded("bass")) bassEngine.releaseNote(t);
+      else if (_pianoRollTarget === "chords" && !soundFontEngine.isLoaded("chords")) chordsEngine.releaseChord(t);
+      else if (_pianoRollTarget === "melody" && !soundFontEngine.isLoaded("melody")) melodyEngine.releaseNote(t);
+    }
+  }
+}
+
+// Subscribe to transport — this runs globally, not tied to component lifecycle
+useTransportStore.subscribe((state, prev) => {
+  if (state.currentStep !== prev.currentStep) {
+    const bpm = useDrumStore.getState().bpm;
+    const isPlaying = useDrumStore.getState().isPlaying;
+    if (isPlaying) pianoRollTick(state.currentStep, bpm);
+    else { _lastPlaybackStep = -1; _activePlaybackNotes.clear(); }
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
    COMPONENT
    ═════════════════════════════════════════════════════════════════════════ */
 
 export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const bpm = useDrumStore((s) => s.bpm);
-  const isPlaying = useDrumStore((s) => s.isPlaying);
   const currentStep = useTransportStore((s) => s.currentStep);
   const rootNote = useBassStore((s) => s.rootNote);
   const scaleName = useBassStore((s) => s.scaleName);
 
-  // ─── STATE ────────────────────────────────────────────────────
-  const [notes, setNotes] = useState<PianoRollNote[]>([
-    { id: "1", midi: 60, start: 0, duration: 1, velocity: 0.8 },
-    { id: "2", midi: 64, start: 1, duration: 0.5, velocity: 0.7 },
-    { id: "3", midi: 67, start: 2, duration: 1.5, velocity: 0.9 },
-    { id: "4", midi: 63, start: 4, duration: 0.5, velocity: 0.6 },
-    { id: "5", midi: 60, start: 5, duration: 2, velocity: 0.85 },
-  ]);
+  // ─── STATE (synced to module-level for persistent playback) ───
+  const [notes, setNotesLocal] = useState<PianoRollNote[]>(_pianoRollNotes);
+  const setNotes = useCallback((updater: PianoRollNote[] | ((prev: PianoRollNote[]) => PianoRollNote[])) => {
+    setNotesLocal((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      _pianoRollNotes = next; // Sync to module-level for background playback
+      return next;
+    });
+  }, []);
 
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
   const [gridRes, setGridRes] = useState(0.25);
@@ -147,8 +372,6 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
 
   const gridRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ x: number; y: number; note: PianoRollNote } | null>(null);
-  const lastTriggeredStep = useRef(-1);
-  const activeNoteIds = useRef<Set<string>>(new Set());
 
   const totalRows = 48;
   const baseNote = 36;
@@ -158,76 +381,8 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const accentColor = TARGET_COLORS[target];
   const velocityLaneHeight = 80;
 
-  // ─── PLAYBACK ─────────────────────────────────────────────────
-  useEffect(() => {
-    if (!isPlaying || !isOpen) {
-      lastTriggeredStep.current = -1;
-      activeNoteIds.current.clear();
-      return;
-    }
-
-    const currentBeat = currentStep * 0.25;
-
-    if (currentStep === lastTriggeredStep.current) return;
-    lastTriggeredStep.current = currentStep;
-
-    const t = audioEngine.currentTime + 0.01;
-
-    for (const note of notes) {
-      const noteStartStep = Math.round(note.start / 0.25);
-      const noteEndStep = Math.round((note.start + note.duration) / 0.25);
-
-      if (noteStartStep === currentStep && !activeNoteIds.current.has(note.id)) {
-        activeNoteIds.current.add(note.id);
-
-        switch (target) {
-          case "drums":
-            audioEngine.triggerVoice(Math.max(0, Math.min(11, note.midi - 36)));
-            break;
-          case "bass":
-            if (soundFontEngine.isLoaded("bass")) {
-              const durSec = (note.duration / (bpm / 60)) / 4;
-              soundFontEngine.playNote("bass", note.midi, t, note.velocity, durSec);
-            } else {
-              bassEngine.triggerNote(note.midi, t, false, false, false);
-            }
-            break;
-          case "chords":
-            if (soundFontEngine.isLoaded("chords")) {
-              const durSec = (note.duration / (bpm / 60)) / 4;
-              soundFontEngine.playNote("chords", note.midi, t, note.velocity, durSec);
-            } else {
-              chordsEngine.triggerChord([note.midi], t, false, false);
-            }
-            break;
-          case "melody":
-            if (soundFontEngine.isLoaded("melody")) {
-              const durSec = (note.duration / (bpm / 60)) / 4;
-              soundFontEngine.playNote("melody", note.midi, t, note.velocity, durSec);
-            } else {
-              melodyEngine.triggerNote(note.midi, t, false, false, false);
-            }
-            break;
-        }
-      }
-
-      if (noteEndStep === currentStep && activeNoteIds.current.has(note.id)) {
-        activeNoteIds.current.delete(note.id);
-
-        if (target === "bass" && !soundFontEngine.isLoaded("bass")) {
-          bassEngine.releaseNote(t);
-        } else if (target === "chords" && !soundFontEngine.isLoaded("chords")) {
-          chordsEngine.releaseChord(t);
-        } else if (target === "melody" && !soundFontEngine.isLoaded("melody")) {
-          melodyEngine.releaseNote(t);
-        }
-      }
-    }
-
-    if (currentBeat >= totalBeats) {
-      activeNoteIds.current.clear();
-    }
-  }, [isPlaying, isOpen, currentStep, notes, target, bpm, totalBeats]);
+  // Sync target to module-level for background playback
+  useEffect(() => { _pianoRollTarget = target; }, [target]);
 
   // ─── NOTE ACTIONS ─────────────────────────────────────────────
   const addNote = useCallback((midi: number, startBeat: number) => {
@@ -695,12 +850,32 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
           className="px-1.5 py-0.5 text-[8px] font-bold tracking-wider rounded transition-all shrink-0"
           style={{
             backgroundColor: "rgba(200,100,100,0.2)",
-            color: "white/40",
+            color: "rgba(255,200,200,0.6)",
             border: "1px solid rgba(200,100,100,0.2)",
           }}
         >
           CLEAR
         </button>
+
+        <div className="w-px h-4 bg-white/10 shrink-0" />
+
+        {/* ─── HARMONY Generator ─── */}
+        <HarmonyMenu
+          accentColor={accentColor}
+          onGenerate={(type) => {
+            const playheadBeat = (useTransportStore.getState().currentStep * 0.25) % totalBeats;
+            if (type === "harmonize-3rds" || type === "harmonize-5ths") {
+              const selected = notes.filter((n) => selectedNoteIds.has(n.id));
+              if (selected.length === 0) return;
+              const interval = type === "harmonize-3rds" ? 2 : 4;
+              const newNotes = harmonizeNotes(selected, interval, rootNote, scaleName);
+              setNotes((prev) => [...prev, ...newNotes]);
+            } else {
+              const newNotes = generateHarmony(type, rootNote, scaleName, playheadBeat, gridRes);
+              setNotes((prev) => [...prev, ...newNotes]);
+            }
+          }}
+        />
 
         <div className="flex-1" />
 
@@ -984,6 +1159,69 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
           <span style={{ color: accentColor }}>{target.toUpperCase()}</span>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HARMONY MENU — Dropdown with scale/chord/arpeggio generators
+   ═════════════════════════════════════════════════════════════════════════ */
+
+function HarmonyMenu({ accentColor, onGenerate }: {
+  accentColor: string;
+  onGenerate: (type: HarmonyType) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [open]);
+
+  let lastGroup = "";
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        onClick={() => setOpen(!open)}
+        className="px-2 py-0.5 text-[8px] font-bold tracking-wider rounded transition-all"
+        style={{
+          backgroundColor: open ? accentColor : "rgba(255,255,255,0.05)",
+          color: open ? "#000" : accentColor,
+          border: `1px solid ${open ? accentColor : accentColor + "40"}`,
+        }}
+      >
+        HARMONY
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-50 min-w-[180px] bg-[#1a1a22] border border-[var(--ed-border)] rounded-lg shadow-2xl py-1 overflow-hidden">
+          {HARMONY_PRESETS.map((preset) => {
+            const showGroupHeader = preset.group !== lastGroup;
+            lastGroup = preset.group;
+            return (
+              <React.Fragment key={preset.id}>
+                {showGroupHeader && (
+                  <div className="px-3 pt-2 pb-1 text-[7px] font-bold tracking-[0.2em] text-white/25 uppercase">
+                    {preset.group}
+                  </div>
+                )}
+                <button
+                  onClick={() => { onGenerate(preset.id); setOpen(false); }}
+                  className="w-full text-left px-3 py-1.5 text-[10px] text-white/70 hover:text-white hover:bg-white/5 transition-colors"
+                >
+                  {preset.label}
+                </button>
+              </React.Fragment>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
