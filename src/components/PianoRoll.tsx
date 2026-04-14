@@ -488,50 +488,81 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     if (!isOpen) return;
 
     const handler = (e: KeyboardEvent) => {
+      // Ignore if typing in input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+      const hasSel = selectedNoteIds.size > 0;
+
+      // ─── Ctrl/Cmd shortcuts ───
       if (e.ctrlKey || e.metaKey) {
-        if (e.key === "a") {
-          e.preventDefault();
-          setSelectedNoteIds(new Set(notes.map((n) => n.id)));
-        } else if (e.key === "c") {
-          e.preventDefault();
-          copyNotes();
-        } else if (e.key === "v") {
-          e.preventDefault();
-          pasteNotes();
-        }
-      } else if (e.key === "Delete" || e.key === "Backspace") {
+        if (e.key === "a") { e.preventDefault(); setSelectedNoteIds(new Set(notes.map((n) => n.id))); }
+        else if (e.key === "c") { e.preventDefault(); copyNotes(); }
+        else if (e.key === "v") { e.preventDefault(); pasteNotes(); }
+        return;
+      }
+
+      // ─── Delete ───
+      if ((e.key === "Delete" || e.key === "Backspace") && hasSel) {
+        e.preventDefault(); removeNotes(selectedNoteIds); return;
+      }
+
+      // ─── Arrow keys: move notes ───
+      if (e.key === "ArrowLeft" && hasSel) {
         e.preventDefault();
-        if (selectedNoteIds.size > 0) {
-          removeNotes(selectedNoteIds);
-        }
-      } else if (e.key === "ArrowLeft" && selectedNoteIds.size > 0) {
+        const step = e.shiftKey ? 1 : gridRes; // Shift = 1 beat
+        setNotes((prev) => prev.map((n) => !selectedNoteIds.has(n.id) ? n :
+          { ...n, start: Math.max(0, Math.round((n.start - step) / gridRes) * gridRes) }
+        ));
+        return;
+      }
+      if (e.key === "ArrowRight" && hasSel) {
         e.preventDefault();
+        const step = e.shiftKey ? 1 : gridRes;
+        setNotes((prev) => prev.map((n) => !selectedNoteIds.has(n.id) ? n :
+          { ...n, start: Math.min(totalBeats - n.duration, Math.round((n.start + step) / gridRes) * gridRes) }
+        ));
+        return;
+      }
+      if (e.key === "ArrowUp" && hasSel) {
+        e.preventDefault();
+        const semitones = e.shiftKey ? 12 : 1; // Shift = octave
         setNotes((prev) => prev.map((n) => {
           if (!selectedNoteIds.has(n.id)) return n;
-          const step = e.shiftKey ? gridRes * 4 : gridRes; // Shift = bigger jump
-          return { ...n, start: Math.max(0, Math.round((n.start - step) / gridRes) * gridRes) };
+          let m = Math.min(baseNote + totalRows - 1, n.midi + semitones);
+          if (scaleSnap) m = snapToScale(m, rootMidi, scaleName);
+          return { ...n, midi: m };
         }));
-      } else if (e.key === "ArrowRight" && selectedNoteIds.size > 0) {
+        return;
+      }
+      if (e.key === "ArrowDown" && hasSel) {
         e.preventDefault();
+        const semitones = e.shiftKey ? 12 : 1;
         setNotes((prev) => prev.map((n) => {
           if (!selectedNoteIds.has(n.id)) return n;
-          const step = e.shiftKey ? gridRes * 4 : gridRes;
-          return { ...n, start: Math.round((n.start + step) / gridRes) * gridRes };
+          let m = Math.max(baseNote, n.midi - semitones);
+          if (scaleSnap) m = snapToScale(m, rootMidi, scaleName);
+          return { ...n, midi: m };
         }));
-      } else if (e.key === "ArrowUp" && selectedNoteIds.size > 0) {
+        return;
+      }
+
+      // ─── Velocity quick-set: keys 1-9 = 10%-90%, 0 = 100% ───
+      if (hasSel && e.key >= "0" && e.key <= "9") {
         e.preventDefault();
-        setNotes((prev) => prev.map((n) => {
-          if (!selectedNoteIds.has(n.id)) return n;
-          const newMidi = Math.min(baseNote + totalRows - 1, n.midi + 1);
-          return { ...n, midi: scaleSnap ? snapToScale(newMidi, rootMidi, scaleName) : newMidi };
-        }));
-      } else if (e.key === "ArrowDown" && selectedNoteIds.size > 0) {
+        const vel = e.key === "0" ? 1.0 : parseInt(e.key) / 10;
+        setNotes((prev) => prev.map((n) => !selectedNoteIds.has(n.id) ? n : { ...n, velocity: vel }));
+        return;
+      }
+
+      // ─── D = duplicate selected notes (offset by 1 beat) ───
+      if (e.key === "d" && hasSel) {
         e.preventDefault();
-        setNotes((prev) => prev.map((n) => {
-          if (!selectedNoteIds.has(n.id)) return n;
-          const newMidi = Math.max(baseNote, n.midi - 1);
-          return { ...n, midi: scaleSnap ? snapToScale(newMidi, rootMidi, scaleName) : newMidi };
+        const selected = notes.filter((n) => selectedNoteIds.has(n.id));
+        const dupes = selected.map((n) => ({
+          ...n, id: uid(), start: n.start + 1,
         }));
+        setNotes((prev) => [...prev, ...dupes]);
+        setSelectedNoteIds(new Set(dupes.map((n) => n.id)));
+        return;
       }
     };
 
