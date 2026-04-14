@@ -687,31 +687,32 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
 
     switch (dragMode) {
       case "move": {
-        let beatDelta = dx / cellW;
+        // Calculate total delta from ORIGINAL drag start (not incremental)
+        const beatDelta = dx / cellW;
         const pitchDelta = -Math.round(dy / rowHeight);
 
-        if (snap) beatDelta = Math.round(beatDelta / gridRes) * gridRes;
+        // Snap the delta itself
+        const snappedBeatDelta = snap ? Math.round(beatDelta / gridRes) * gridRes : beatDelta;
 
-        // Move all selected notes RELATIVELY (preserve their spacing)
         setNotes((prev) => prev.map((n) => {
           if (!selectedNoteIds.has(n.id)) return n;
-          // Find this note's original position from before drag started
-          const origNote = prev.find((p) => p.id === dragStartRef.current?.note.id);
-          if (!origNote) return n;
-          // Calculate delta from the dragged note's original position
-          const startDelta = (orig.start + beatDelta) - orig.start;
-          let newMidi = n.midi + pitchDelta;
-          if (scaleSnap) newMidi = snapToScale(newMidi, rootMidi, scaleName);
-          let newStart = n.start + startDelta;
+          // Each note moves by the same delta from its position at drag start
+          // We need to store original positions — use orig note as reference
+          const offsetStart = n.start - orig.start; // offset from dragged note
+          const offsetMidi = n.midi - orig.midi;
+
+          let newStart = orig.start + snappedBeatDelta + offsetStart;
           if (snap) newStart = Math.round(newStart / gridRes) * gridRes;
+
+          let newMidi = orig.midi + pitchDelta + offsetMidi;
+          if (scaleSnap) newMidi = snapToScale(newMidi, rootMidi, scaleName);
+
           return {
             ...n,
-            start: Math.max(0, newStart),
-            midi: Math.max(0, Math.min(127, newMidi)),
+            start: Math.max(0, Math.min(totalBeats - n.duration, newStart)),
+            midi: Math.max(baseNote, Math.min(baseNote + totalRows - 1, newMidi)),
           };
         }));
-        // Update drag origin so movement is incremental
-        dragStartRef.current = { x: e.clientX, y: e.clientY, note: { ...orig, start: orig.start + beatDelta, midi: orig.midi + pitchDelta } };
         break;
       }
       case "resize": {
