@@ -185,25 +185,25 @@ export class BassEngine {
     this.output.gain.value = this.params.volume;
 
     // --- Signal chain (improved architecture) ---
-    // Main osc → filter chain → VCA → distortion
+    // Main osc → filter chain → VCA → distortion → DC blocker
     this.osc.connect(this.filterChain.input);
     this.filterChain.output.connect(this.vca);
     this.vca.connect(this.distNode);
     this.distNode.connect(this.dcBlocker);
 
-    // Harmonic enhancer: parallel from distortion
+    // Harmonic enhancer: parallel from distortion output
     this.distNode.connect(this.harmonicFilter);
     this.harmonicFilter.connect(this.harmonicEnhancer);
     this.harmonicEnhancer.connect(this.harmonicMix);
 
-    // Sub osc → sub LPF (bypasses main filter chain)
+    // Sub osc → sub LPF → ALSO through VCA (so it respects note on/off!)
     this.subOsc.connect(this.subGain);
     this.subGain.connect(this.subLPF);
+    this.subLPF.connect(this.vca); // Sub goes through VCA for proper gating
 
-    // Mix main + harmonics → sub, then to output
+    // Mix post-VCA outputs to oscMix → output
     this.dcBlocker.connect(this.oscMix);
     this.harmonicMix.connect(this.oscMix);
-    this.subLPF.connect(this.oscMix);
     this.oscMix.connect(this.output);
 
     // Don't connect yet — caller will route to mixer
