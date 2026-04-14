@@ -277,17 +277,20 @@ function pianoRollTick(currentStep: number, bpm: number): void {
   if (currentStep === _lastPlaybackStep) return;
   _lastPlaybackStep = currentStep;
 
-  const totalBeats = 16;
+  const totalSteps = 16 * 4; // 16 beats × 4 steps per beat = 64 steps
+  const wrappedStep = currentStep % totalSteps;
   const t = audioEngine.currentTime + 0.01;
+  const secPerBeat = 60 / bpm; // seconds per quarter note
 
   for (const note of _pianoRollNotes) {
-    const noteStartStep = Math.round(note.start / 0.25);
-    const noteEndStep = Math.round((note.start + note.duration) / 0.25);
-    const wrappedStep = currentStep % (totalBeats * 4); // 64 steps for 16 beats
+    const noteStartStep = Math.round(note.start * 4); // beats → steps (4 steps per beat)
+    const noteEndStep = Math.round((note.start + note.duration) * 4);
+    const target = _pianoRollTarget;
 
+    // ─── Note ON ───
     if (noteStartStep === wrappedStep && !_activePlaybackNotes.has(note.id)) {
       _activePlaybackNotes.add(note.id);
-      const target = _pianoRollTarget;
+      const durSec = note.duration * secPerBeat; // Convert beats to seconds
 
       switch (target) {
         case "drums":
@@ -295,21 +298,21 @@ function pianoRollTick(currentStep: number, bpm: number): void {
           break;
         case "bass":
           if (soundFontEngine.isLoaded("bass")) {
-            soundFontEngine.playNote("bass", note.midi, t, note.velocity, note.duration * (60 / bpm / 4));
+            soundFontEngine.playNote("bass", note.midi, t, note.velocity, durSec);
           } else {
             bassEngine.triggerNote(note.midi, t, false, false, false);
           }
           break;
         case "chords":
           if (soundFontEngine.isLoaded("chords")) {
-            soundFontEngine.playNote("chords", note.midi, t, note.velocity, note.duration * (60 / bpm / 4));
+            soundFontEngine.playNote("chords", note.midi, t, note.velocity, durSec);
           } else {
             chordsEngine.triggerChord([note.midi], t, false, false);
           }
           break;
         case "melody":
           if (soundFontEngine.isLoaded("melody")) {
-            soundFontEngine.playNote("melody", note.midi, t, note.velocity, note.duration * (60 / bpm / 4));
+            soundFontEngine.playNote("melody", note.midi, t, note.velocity, durSec);
           } else {
             melodyEngine.triggerNote(note.midi, t, false, false, false);
           }
@@ -317,13 +320,17 @@ function pianoRollTick(currentStep: number, bpm: number): void {
       }
     }
 
-    if (noteEndStep === wrappedStep && _activePlaybackNotes.has(note.id)) {
+    // ─── Note OFF (use >= to catch long notes that span multiple steps) ───
+    if (noteEndStep <= wrappedStep && _activePlaybackNotes.has(note.id) && noteStartStep < wrappedStep) {
       _activePlaybackNotes.delete(note.id);
-      if (_pianoRollTarget === "bass" && !soundFontEngine.isLoaded("bass")) bassEngine.releaseNote(t);
-      else if (_pianoRollTarget === "chords" && !soundFontEngine.isLoaded("chords")) chordsEngine.releaseChord(t);
-      else if (_pianoRollTarget === "melody" && !soundFontEngine.isLoaded("melody")) melodyEngine.releaseNote(t);
+      if (target === "bass" && !soundFontEngine.isLoaded("bass")) bassEngine.releaseNote(t);
+      else if (target === "chords" && !soundFontEngine.isLoaded("chords")) chordsEngine.releaseChord(t);
+      else if (target === "melody" && !soundFontEngine.isLoaded("melody")) melodyEngine.releaseNote(t);
     }
   }
+
+  // Reset at loop boundary
+  if (wrappedStep === 0) _activePlaybackNotes.clear();
 }
 
 // Subscribe to transport — this runs globally, not tied to component lifecycle
@@ -629,21 +636,29 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
 
     switch (dragMode) {
       case "move": {
-        const beatDelta = dx / cellW;
+        let beatDelta = dx / cellW;
         const pitchDelta = -Math.round(dy / rowHeight);
 
-        let newStart = orig.start + beatDelta;
-        if (snap) newStart = Math.round(newStart / gridRes) * gridRes;
+        if (snap) beatDelta = Math.round(beatDelta / gridRes) * gridRes;
 
-        let newMidi = Math.max(0, Math.min(127, orig.midi + pitchDelta));
-        if (scaleSnap) {
-          newMidi = snapToScale(newMidi, rootMidi, scaleName);
-        }
-
-        patchNotes(selectedNoteIds, {
-          start: Math.max(0, newStart),
-          midi: newMidi,
-        });
+        // Move all selected notes RELATIVELY (preserve their spacing)
+        setNotes((prev) => prev.map((n) => {
+          if (!selectedNoteIds.has(n.id)) return n;
+          // Find this note's original position from before drag started
+          const origNote = prev.find((p) => p.id === dragStartRef.current?.note.id);
+          if (!origNote) return n;
+          // Calculate delta from the dragged note's original position
+          const startDelta = (orig.start + beatDelta) - orig.start;
+          let newMidi = n.midi + pitchDelta;
+          if (scaleSnap) newMidi = snapToScale(newMidi, rootMidi, scaleName);
+          return {
+            ...n,
+            start: Math.max(0, n.start + startDelta),
+            midi: Math.max(0, Math.min(127, newMidi)),
+          };
+        }));
+        // Update drag origin so movement is incremental
+        dragStartRef.current = { x: e.clientX, y: e.clientY, note: { ...orig, start: orig.start + beatDelta, midi: orig.midi + pitchDelta } };
         break;
       }
       case "resize": {
