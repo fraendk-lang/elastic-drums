@@ -19,6 +19,7 @@ interface PianoRollNote {
   start: number;
   duration: number;
   velocity: number;
+  track: SoundTarget;  // which engine this note plays through
 }
 
 interface PianoRollProps {
@@ -116,13 +117,14 @@ function generateHarmony(
   scaleName: string,
   startBeat: number,
   gridRes: number,
+  track: SoundTarget = "melody",
 ): PianoRollNote[] {
   const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
   const baseOctave = Math.floor(rootMidi / 12);
   const notes: PianoRollNote[] = [];
 
   const addNote = (midi: number, start: number, dur: number, vel = 0.8) => {
-    notes.push({ id: uid(), midi, start, duration: dur, velocity: vel });
+    notes.push({ id: uid(), midi, start, duration: dur, velocity: vel, track });
   };
 
   switch (type) {
@@ -202,7 +204,7 @@ function harmonizeNotes(
     const targetDegree = scale[(scaleIdx + interval) % scale.length] ?? 0;
     let targetMidi = note.midi - degree + targetDegree;
     if (targetMidi <= note.midi) targetMidi += 12; // always go up
-    result.push({ id: uid(), midi: targetMidi, start: note.start, duration: note.duration, velocity: note.velocity * 0.85 });
+    result.push({ id: uid(), midi: targetMidi, start: note.start, duration: note.duration, velocity: note.velocity * 0.85, track: note.track });
   }
   return result;
 }
@@ -261,11 +263,10 @@ function snapToScale(midi: number, rootMidi: number, scaleName: string): number 
 
 // Module-level state so notes persist when panel is closed
 let _pianoRollNotes: PianoRollNote[] = [
-  { id: "1", midi: 60, start: 0, duration: 1, velocity: 0.8 },
-  { id: "2", midi: 64, start: 1, duration: 0.5, velocity: 0.7 },
-  { id: "3", midi: 67, start: 2, duration: 1.5, velocity: 0.9 },
+  { id: "1", midi: 60, start: 0, duration: 1, velocity: 0.8, track: "melody" },
+  { id: "2", midi: 64, start: 1, duration: 0.5, velocity: 0.7, track: "melody" },
+  { id: "3", midi: 67, start: 2, duration: 1.5, velocity: 0.9, track: "melody" },
 ];
-let _pianoRollTarget: SoundTarget = "melody";
 let _pianoRollEnabled = true; // Can be toggled to mute piano roll playback
 
 // Background playback scheduler — runs even when panel is closed
@@ -285,7 +286,7 @@ function pianoRollTick(currentStep: number, bpm: number): void {
   for (const note of _pianoRollNotes) {
     const noteStartStep = Math.round(note.start * 4); // beats → steps (4 steps per beat)
     const noteEndStep = Math.round((note.start + note.duration) * 4);
-    const target = _pianoRollTarget;
+    const target = note.track;  // Use per-note track instead of global
 
     // ─── Note ON ───
     if (noteStartStep === wrappedStep && !_activePlaybackNotes.has(note.id)) {
@@ -379,6 +380,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
 
   const gridRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ x: number; y: number; note: PianoRollNote } | null>(null);
+  const gridClickStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const totalRows = 48;
   const baseNote = 36;
@@ -387,9 +389,6 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const gridH = totalRows * rowHeight;
   const accentColor = TARGET_COLORS[target];
   const velocityLaneHeight = 80;
-
-  // Sync target to module-level for background playback
-  useEffect(() => { _pianoRollTarget = target; }, [target]);
 
   // ─── NOTE ACTIONS ─────────────────────────────────────────────
   const addNote = useCallback((midi: number, startBeat: number) => {
@@ -405,11 +404,12 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     }
 
     const note: PianoRollNote = {
-      id: `n${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: uid(),
       midi: finalMidi,
       start: Math.max(0, start),
       duration: gridRes,
       velocity: 0.8,
+      track: target,
     };
     setNotes((prev) => [...prev, note]);
     setSelectedNoteIds(new Set([note.id]));
@@ -455,12 +455,13 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     const playheadBeat = currentStep * 0.25;
     const newNotes = clipboard.map((n) => ({
       ...n,
-      id: `n${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: uid(),
       start: n.start + playheadBeat,
+      track: target,
     }));
     setNotes((prev) => [...prev, ...newNotes]);
     setSelectedNoteIds(new Set(newNotes.map((n) => n.id)));
-  }, [clipboard, currentStep]);
+  }, [clipboard, currentStep, target]);
 
   // ─── KEYBOARD SHORTCUTS ───────────────────────────────────────
   useEffect(() => {
@@ -544,13 +545,16 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
       return;
     }
 
+    // Track click start for determining if this is a drag or single click
+    gridClickStartRef.current = { x: e.clientX, y: e.clientY };
+
     if (e.shiftKey) {
       setRubberBand({ x0: x, y0: y, x1: x, y1: y });
     } else {
+      // Don't create note yet; only create if it's not a drag
       setSelectedNoteIds(new Set());
-      addNote(midi, beat);
     }
-  }, [notes, addNote, baseNote, gridH, totalRows, rowHeight, cellW, selectedNoteIds]);
+  }, [notes, baseNote, gridH, totalRows, rowHeight, cellW, selectedNoteIds]);
 
   const handleGridPointerMove = useCallback((e: React.PointerEvent) => {
     if (!rubberBand) return;
@@ -583,9 +587,31 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     setSelectedNoteIds(selected);
   }, [rubberBand, notes, totalRows, baseNote, cellW, rowHeight]);
 
-  const handleGridPointerUp = useCallback(() => {
+  const handleGridPointerUp = useCallback((e: React.PointerEvent) => {
+    // If this was a single click (not a drag > 3px), create a note
+    if (gridClickStartRef.current && !rubberBand) {
+      const dx = Math.abs(e.clientX - gridClickStartRef.current.x);
+      const dy = Math.abs(e.clientY - gridClickStartRef.current.y);
+      if (dx < 3 && dy < 3) {
+        const rect = gridRef.current?.getBoundingClientRect();
+        if (rect) {
+          const x = e.clientX - rect.left + gridRef.current!.scrollLeft;
+          const y = e.clientY - rect.top + gridRef.current!.scrollTop;
+          if (y <= gridH) {
+            const row = Math.floor(y / rowHeight);
+            const midi = baseNote + (totalRows - row - 1);
+            const beat = x / cellW;
+            addNote(midi, beat);
+          }
+        }
+      }
+    }
+
     setRubberBand(null);
-  }, []);
+    setDragMode("none");
+    dragStartRef.current = null;
+    gridClickStartRef.current = null;
+  }, [rubberBand, gridH, totalRows, rowHeight, baseNote, cellW, addNote]);
 
   // ─── NOTE POINTER HANDLERS ────────────────────────────────────
   const handleNotePointerDown = useCallback((e: React.PointerEvent, noteId: string) => {
@@ -602,6 +628,9 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         }
         return next;
       });
+      // Clear drag mode and drag state after shift-click
+      setDragMode("none");
+      dragStartRef.current = null;
       return;
     }
 
@@ -677,16 +706,21 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   }, [dragMode, gridRes, snap, scaleSnap, rootMidi, scaleName, cellW, rowHeight, selectedNoteIds, patchNotes, velocityLaneHeight]);
 
   const handleNotePointerUp = useCallback((e: React.PointerEvent) => {
-    if (dragMode === "move" && dragStartRef.current && selectedNoteIds.size > 0) {
-      const firstNote = notes.find((n) => n.id === Array.from(selectedNoteIds)[0]);
-      if (firstNote && firstNote.midi !== dragStartRef.current.note.midi) {
-        previewNote(firstNote.midi, firstNote.velocity, target);
+    try {
+      if (dragMode === "move" && dragStartRef.current && selectedNoteIds.size > 0) {
+        const firstNote = notes.find((n) => n.id === Array.from(selectedNoteIds)[0]);
+        if (firstNote && firstNote.midi !== dragStartRef.current.note.midi) {
+          previewNote(firstNote.midi, firstNote.velocity, firstNote.track);
+        }
       }
+    } finally {
+      setDragMode("none");
+      dragStartRef.current = null;
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {}
     }
-    setDragMode("none");
-    dragStartRef.current = null;
-    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [dragMode, notes, selectedNoteIds, target]);
+  }, [dragMode, notes, selectedNoteIds]);
 
   const handleNoteContext = useCallback((e: React.MouseEvent, id: string) => {
     e.preventDefault();
@@ -1026,6 +1060,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
               const y = row * rowHeight;
               const w = Math.max(4, note.duration * cellW);
               const isSel = selectedNoteIds.has(note.id);
+              const noteColor = TARGET_COLORS[note.track];
 
               return (
                 <div
@@ -1040,11 +1075,11 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                     top: y + 1,
                     width: w,
                     height: rowHeight - 2,
-                    backgroundColor: accentColor,
+                    backgroundColor: noteColor,
                     opacity: 0.5 + note.velocity * 0.5,
                     outline: isSel ? "2px solid white" : "none",
                     outlineOffset: "-1px",
-                    boxShadow: isSel ? `0 0 12px ${accentColor}60` : "none",
+                    boxShadow: isSel ? `0 0 12px ${noteColor}60` : "none",
                     zIndex: isSel ? 10 : 1,
                     cursor: dragMode === "resize" ? "col-resize" : dragMode === "velocity" ? "ns-resize" : "grab",
                   }}
@@ -1090,6 +1125,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                 const w = Math.max(4, note.duration * cellW);
                 const h = note.velocity * velocityLaneHeight;
                 const isSel = selectedNoteIds.has(note.id);
+                const noteColor = TARGET_COLORS[note.track];
 
                 return (
                   <div
@@ -1112,7 +1148,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                       top: velocityLaneHeight - h,
                       width: w,
                       height: h,
-                      backgroundColor: accentColor,
+                      backgroundColor: noteColor,
                       opacity: 0.6 + note.velocity * 0.3,
                       cursor: "ns-resize",
                       outline: isSel ? "1px solid white" : "none",
