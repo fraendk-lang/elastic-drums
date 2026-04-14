@@ -2,6 +2,7 @@ import { useState } from "react";
 import { BassSequencer } from "./BassSequencer";
 import { ChordsSequencer } from "./ChordsSequencer";
 import { MelodySequencer } from "./MelodySequencer";
+import { useOverlayStore } from "../store/overlayStore";
 
 type SynthTab = "bass" | "chords" | "melody";
 
@@ -13,6 +14,7 @@ const TABS: { id: SynthTab; label: string; color: string }[] = [
 
 export function SynthSection() {
   const [active, setActive] = useState<SynthTab>("bass");
+  const overlay = useOverlayStore();
 
   return (
     <div>
@@ -38,6 +40,15 @@ export function SynthSection() {
             </button>
           );
         })}
+
+        {/* PIANO ROLL button */}
+        <button
+          onClick={() => overlay.openOverlay("pianoRoll")}
+          className="ml-auto px-3 py-1.5 text-[9px] font-bold tracking-[0.15em] transition-all border-b-2 border-transparent text-white/20 hover:text-white/40 bg-white/[0.02] hover:bg-white/[0.05]"
+          title="Open Piano Roll Editor"
+        >
+          PIANO ROLL
+        </button>
       </div>
 
       {/* Active sequencer */}

@@ -13,6 +13,7 @@ import { KitBrowser } from "./components/KitBrowser";
 import { VoiceEditor } from "./components/VoiceEditor";
 import { SynthSection } from "./components/SynthSection";
 import { MidiPlayerPanel } from "./components/MidiPlayerPanel";
+import { PianoRoll } from "./components/PianoRoll";
 import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
 import { melodyEngine } from "./audio/MelodyEngine";
@@ -280,6 +281,7 @@ export function App() {
       <FxPanel isOpen={overlay.isOpen("fxPanel")} onClose={() => overlay.closeOverlay("fxPanel")} />
       <KitBrowser isOpen={overlay.isOpen("kitBrowser")} onClose={() => overlay.closeOverlay("kitBrowser")} />
       <MidiPlayerPanel isOpen={overlay.isOpen("midiPlayer")} onClose={() => overlay.closeOverlay("midiPlayer")} />
+      <PianoRoll isOpen={overlay.isOpen("pianoRoll")} onClose={() => overlay.closeOverlay("pianoRoll")} />
     </div>
   );
 }
