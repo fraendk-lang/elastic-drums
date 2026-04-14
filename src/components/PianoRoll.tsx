@@ -397,7 +397,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const [rubberBand, setRubberBand] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 
   const gridRef = useRef<HTMLDivElement>(null);
-  const dragStartRef = useRef<{ x: number; y: number; note: PianoRollNote } | null>(null);
+  const dragStartRef = useRef<{ x: number; y: number; note: PianoRollNote; originals: Map<string, { start: number; midi: number }> } | null>(null);
   const gridClickStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const totalRows = 48;
@@ -675,7 +675,14 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     else if (relX > w - 6) mode = "resize";
 
     setDragMode(mode);
-    dragStartRef.current = { x: e.clientX, y: e.clientY, note: { ...note } };
+    // Store original positions of ALL selected notes (DAW-style: freeze on drag start)
+    const originals = new Map<string, { start: number; midi: number }>();
+    const sel = selectedNoteIds.has(noteId) ? selectedNoteIds : new Set([noteId]);
+    for (const id of sel) {
+      const n = notes.find((nn) => nn.id === id);
+      if (n) originals.set(id, { start: n.start, midi: n.midi });
+    }
+    dragStartRef.current = { x: e.clientX, y: e.clientY, note: { ...note }, originals };
     el.setPointerCapture(e.pointerId);
   }, [notes, selectedNoteIds]);
 
@@ -687,24 +694,20 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
 
     switch (dragMode) {
       case "move": {
-        // Calculate total delta from ORIGINAL drag start (not incremental)
-        const beatDelta = dx / cellW;
+        // DAW-style: calculate delta from drag start, apply to frozen originals
+        const { originals } = dragStartRef.current!;
+        const rawBeatDelta = dx / cellW;
         const pitchDelta = -Math.round(dy / rowHeight);
-
-        // Snap the delta itself
-        const snappedBeatDelta = snap ? Math.round(beatDelta / gridRes) * gridRes : beatDelta;
+        const beatDelta = snap ? Math.round(rawBeatDelta / gridRes) * gridRes : rawBeatDelta;
 
         setNotes((prev) => prev.map((n) => {
-          if (!selectedNoteIds.has(n.id)) return n;
-          // Each note moves by the same delta from its position at drag start
-          // We need to store original positions — use orig note as reference
-          const offsetStart = n.start - orig.start; // offset from dragged note
-          const offsetMidi = n.midi - orig.midi;
+          const original = originals.get(n.id);
+          if (!original) return n; // Not selected, don't move
 
-          let newStart = orig.start + snappedBeatDelta + offsetStart;
+          let newStart = original.start + beatDelta;
+          let newMidi = original.midi + pitchDelta;
+
           if (snap) newStart = Math.round(newStart / gridRes) * gridRes;
-
-          let newMidi = orig.midi + pitchDelta + offsetMidi;
           if (scaleSnap) newMidi = snapToScale(newMidi, rootMidi, scaleName);
 
           return {
@@ -1210,7 +1213,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                         setSelectedNoteIds(new Set([note.id]));
                       }
                       setDragMode("velocity");
-                      dragStartRef.current = { x: e.clientX, y: e.clientY, note: { ...note } };
+                      dragStartRef.current = { x: e.clientX, y: e.clientY, note: { ...note }, originals: new Map() };
                       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
                     }}
                     onPointerMove={handleNotePointerMove}
