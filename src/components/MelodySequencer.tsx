@@ -8,6 +8,7 @@ import { MELODY_INSTRUMENTS } from "../audio/SoundFontEngine";
 import { SCALES, ROOT_NOTES, scaleNote } from "../audio/BassEngine";
 import { useDrumStore } from "../store/drumStore";
 import { Knob } from "./Knob";
+import { SoundFontKnobs } from "./SoundFontKnobs";
 import { AutomationLane, type AutomationParam } from "./AutomationLane";
 
 const MELODY_AUTO_PARAMS: AutomationParam[] = [
@@ -194,17 +195,21 @@ export function MelodySequencer() {
         </div>
       </div>
 
-      {/* Compact Knobs Row — always visible */}
-      <div className="flex items-center gap-1 px-3 py-1.5 border-b border-white/5 overflow-x-auto">
-        <Knob value={params.cutoff} min={200} max={8000} defaultValue={2000} label="CUT" color={MELODY_COLOR} size={34} onChange={(v) => setParam("cutoff", v)} />
-        <Knob value={params.resonance} min={0} max={30} defaultValue={8} label="RES" color={MELODY_COLOR} size={34} onChange={(v) => setParam("resonance", v)} />
-        <Knob value={Math.round(params.envMod * 100)} min={0} max={100} defaultValue={40} label="ENV" color={MELODY_COLOR} size={34} onChange={(v) => setParam("envMod", v / 100)} />
-        <Knob value={params.decay} min={50} max={800} defaultValue={150} label="DEC" color={MELODY_COLOR} size={34} onChange={(v) => setParam("decay", v)} />
-        <Knob value={Math.round(params.accent * 100)} min={0} max={100} defaultValue={40} label="ACC" color={MELODY_COLOR} size={34} onChange={(v) => setParam("accent", v / 100)} />
-        <Knob value={params.slideTime} min={0} max={200} defaultValue={40} label="SLD" color={MELODY_COLOR} size={34} onChange={(v) => setParam("slideTime", v)} />
-        <Knob value={Math.round(params.distortion * 100)} min={0} max={100} defaultValue={15} label="DRV" color={MELODY_COLOR} size={34} onChange={(v) => setParam("distortion", v / 100)} />
-        <Knob value={Math.round(params.subOsc * 100)} min={0} max={100} defaultValue={10} label="SUB" color={MELODY_COLOR} size={34} onChange={(v) => setParam("subOsc", v / 100)} />
-      </div>
+      {/* Compact Knobs Row — show synth or Soundfont knobs based on instrument */}
+      {instrument === "_synth_" ? (
+        <div className="flex items-center gap-1 px-3 py-1.5 border-b border-white/5 overflow-x-auto">
+          <Knob value={params.cutoff} min={200} max={8000} defaultValue={2000} label="CUT" color={MELODY_COLOR} size={34} onChange={(v) => setParam("cutoff", v)} />
+          <Knob value={params.resonance} min={0} max={30} defaultValue={8} label="RES" color={MELODY_COLOR} size={34} onChange={(v) => setParam("resonance", v)} />
+          <Knob value={Math.round(params.envMod * 100)} min={0} max={100} defaultValue={40} label="ENV" color={MELODY_COLOR} size={34} onChange={(v) => setParam("envMod", v / 100)} />
+          <Knob value={params.decay} min={50} max={800} defaultValue={150} label="DEC" color={MELODY_COLOR} size={34} onChange={(v) => setParam("decay", v)} />
+          <Knob value={Math.round(params.accent * 100)} min={0} max={100} defaultValue={40} label="ACC" color={MELODY_COLOR} size={34} onChange={(v) => setParam("accent", v / 100)} />
+          <Knob value={params.slideTime} min={0} max={200} defaultValue={40} label="SLD" color={MELODY_COLOR} size={34} onChange={(v) => setParam("slideTime", v)} />
+          <Knob value={Math.round(params.distortion * 100)} min={0} max={100} defaultValue={15} label="DRV" color={MELODY_COLOR} size={34} onChange={(v) => setParam("distortion", v / 100)} />
+          <Knob value={Math.round(params.subOsc * 100)} min={0} max={100} defaultValue={10} label="SUB" color={MELODY_COLOR} size={34} onChange={(v) => setParam("subOsc", v / 100)} />
+        </div>
+      ) : (
+        <SoundFontKnobs channel={14} color={MELODY_COLOR} />
+      )}
 
       {/* Row 2: Pages + length */}
       <div className="flex items-center gap-2 px-3 py-1 border-b border-white/5">

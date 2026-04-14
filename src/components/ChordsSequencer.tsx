@@ -8,6 +8,7 @@ import { CHORDS_INSTRUMENTS } from "../audio/SoundFontEngine";
 import { SCALES, ROOT_NOTES, scaleNote } from "../audio/BassEngine";
 import { useDrumStore } from "../store/drumStore";
 import { Knob } from "./Knob";
+import { SoundFontKnobs } from "./SoundFontKnobs";
 import { AutomationLane, type AutomationParam } from "./AutomationLane";
 
 const CHORDS_AUTO_PARAMS: AutomationParam[] = [
@@ -208,17 +209,21 @@ export function ChordsSequencer() {
         </div>
       </div>
 
-      {/* Compact Knobs Row — always visible */}
-      <div className="flex items-center gap-1 px-3 py-1.5 border-b border-white/5 overflow-x-auto">
-        <Knob value={params.cutoff} min={200} max={12000} defaultValue={1200} label="CUT" color={CHORDS_COLOR} size={34} onChange={(v) => setParam("cutoff", v)} />
-        <Knob value={params.resonance} min={0} max={20} defaultValue={5} label="RES" color={CHORDS_COLOR} size={34} onChange={(v) => setParam("resonance", v)} />
-        <Knob value={Math.round(params.envMod * 100)} min={0} max={100} defaultValue={30} label="ENV" color={CHORDS_COLOR} size={34} onChange={(v) => setParam("envMod", v / 100)} />
-        <Knob value={params.attack} min={1} max={500} defaultValue={20} label="ATK" color={CHORDS_COLOR} size={34} onChange={(v) => setParam("attack", v)} />
-        <Knob value={params.release} min={50} max={2000} defaultValue={300} label="REL" color={CHORDS_COLOR} size={34} onChange={(v) => setParam("release", v)} />
-        <Knob value={params.detune} min={0} max={50} defaultValue={10} label="DET" color={CHORDS_COLOR} size={34} onChange={(v) => setParam("detune", v)} />
-        <Knob value={Math.round(params.distortion * 100)} min={0} max={100} defaultValue={10} label="DRV" color={CHORDS_COLOR} size={34} onChange={(v) => setParam("distortion", v / 100)} />
-        <Knob value={Math.round(params.subOsc * 100)} min={0} max={100} defaultValue={20} label="SUB" color={CHORDS_COLOR} size={34} onChange={(v) => setParam("subOsc", v / 100)} />
-      </div>
+      {/* Compact Knobs Row — show synth or Soundfont knobs based on instrument */}
+      {instrument === "_synth_" ? (
+        <div className="flex items-center gap-1 px-3 py-1.5 border-b border-white/5 overflow-x-auto">
+          <Knob value={params.cutoff} min={200} max={12000} defaultValue={1200} label="CUT" color={CHORDS_COLOR} size={34} onChange={(v) => setParam("cutoff", v)} />
+          <Knob value={params.resonance} min={0} max={20} defaultValue={5} label="RES" color={CHORDS_COLOR} size={34} onChange={(v) => setParam("resonance", v)} />
+          <Knob value={Math.round(params.envMod * 100)} min={0} max={100} defaultValue={30} label="ENV" color={CHORDS_COLOR} size={34} onChange={(v) => setParam("envMod", v / 100)} />
+          <Knob value={params.attack} min={1} max={500} defaultValue={20} label="ATK" color={CHORDS_COLOR} size={34} onChange={(v) => setParam("attack", v)} />
+          <Knob value={params.release} min={50} max={2000} defaultValue={300} label="REL" color={CHORDS_COLOR} size={34} onChange={(v) => setParam("release", v)} />
+          <Knob value={params.detune} min={0} max={50} defaultValue={10} label="DET" color={CHORDS_COLOR} size={34} onChange={(v) => setParam("detune", v)} />
+          <Knob value={Math.round(params.distortion * 100)} min={0} max={100} defaultValue={10} label="DRV" color={CHORDS_COLOR} size={34} onChange={(v) => setParam("distortion", v / 100)} />
+          <Knob value={Math.round(params.subOsc * 100)} min={0} max={100} defaultValue={20} label="SUB" color={CHORDS_COLOR} size={34} onChange={(v) => setParam("subOsc", v / 100)} />
+        </div>
+      ) : (
+        <SoundFontKnobs channel={13} color={CHORDS_COLOR} />
+      )}
 
       {/* Row 2: Pages + length */}
       <div className="flex items-center gap-2 px-3 py-1 border-b border-white/5">
