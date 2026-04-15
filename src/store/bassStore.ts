@@ -592,7 +592,6 @@ export const useBassStore = create<BassStore>((set, get) => ({
   }),
 
   setRootNote: (midi, name) => {
-    console.log(`[BassStore.setRootNote] midi=${midi}, name=${name}`, new Error().stack?.split("\n").slice(1, 4).join(" ← "));
     set({ rootNote: midi, rootName: name });
     syncScaleToOtherStores("bass", { rootNote: midi, rootName: name });
   },

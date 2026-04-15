@@ -490,6 +490,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const gridRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ x: number; y: number; note: PianoRollNote; originals: Map<string, { start: number; midi: number }> } | null>(null);
   const gridClickStartRef = useRef<{ x: number; y: number } | null>(null);
+  const [autoFollow, setAutoFollow] = useState(true);
 
   const totalRows = 48;
   const baseNote = 36;
@@ -660,6 +661,45 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [isOpen, notes, selectedNoteIds, copyNotes, pasteNotes, removeNotes, pushUndo, undo, redo]);
+
+  // ─── AUTO-SCROLL: follow playhead during playback ─────────────
+  const isPlaying = useDrumStore((s) => s.isPlaying);
+  useEffect(() => {
+    if (!isPlaying || !autoFollow || !gridRef.current || !isOpen) return;
+    const playheadX = (currentStep / 4) * cellW;
+    const container = gridRef.current;
+    const viewW = container.clientWidth;
+    // Scroll so playhead is at 30% from left edge
+    const targetScroll = playheadX - viewW * 0.3;
+    const clamped = Math.max(0, Math.min(targetScroll, container.scrollWidth - viewW));
+    // Smooth scroll only if difference is significant
+    if (Math.abs(container.scrollLeft - clamped) > viewW * 0.5) {
+      container.scrollTo({ left: clamped, behavior: "smooth" });
+    } else if (playheadX < container.scrollLeft || playheadX > container.scrollLeft + viewW) {
+      container.scrollTo({ left: clamped, behavior: "smooth" });
+    }
+  }, [currentStep, isPlaying, autoFollow, cellW, isOpen]);
+
+  // ─── ZOOM-TO-FIT: scroll to where notes are on open ──────────
+  useEffect(() => {
+    if (!isOpen || !gridRef.current || notes.length === 0) return;
+    const targetNotes = notes.filter((n) => n.track === target);
+    if (targetNotes.length === 0) return;
+    // Find bounding box of notes
+    const minMidi = Math.min(...targetNotes.map((n) => n.midi));
+    const maxMidi = Math.max(...targetNotes.map((n) => n.midi));
+    const minBeat = Math.min(...targetNotes.map((n) => n.start));
+    // Scroll to center on notes
+    const centerMidi = (minMidi + maxMidi) / 2;
+    const centerRow = (baseNote + totalRows) - centerMidi;
+    const targetScrollY = centerRow * rowHeight - gridRef.current.clientHeight / 2;
+    const targetScrollX = minBeat * cellW - 40;
+    gridRef.current.scrollTo({
+      left: Math.max(0, targetScrollX),
+      top: Math.max(0, targetScrollY),
+      behavior: "smooth",
+    });
+  }, [isOpen, target]); // Re-center when opening or switching lanes
 
   // ─── ZOOM ─────────────────────────────────────────────────────
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -1197,6 +1237,33 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
             Avg Vel {averageSelectedVelocity}%
           </span>
         )}
+        <button
+          onClick={() => setAutoFollow((f) => !f)}
+          className={`px-2.5 py-1 rounded-full text-[9px] font-bold tracking-[0.14em] border shrink-0 transition-colors ${
+            autoFollow
+              ? `border-[${accentColor}]/40 bg-[${accentColor}]/15 text-white/80`
+              : "border-white/8 bg-white/5 text-white/35"
+          }`}>
+          {autoFollow ? "FOLLOW ON" : "FOLLOW"}
+        </button>
+        <button
+          onClick={() => {
+            if (!gridRef.current || notes.length === 0) return;
+            const targetNotes = notes.filter((n) => n.track === target);
+            if (targetNotes.length === 0) return;
+            const minMidi = Math.min(...targetNotes.map((n) => n.midi));
+            const maxMidi = Math.max(...targetNotes.map((n) => n.midi));
+            const minBeat = Math.min(...targetNotes.map((n) => n.start));
+            const centerRow = (baseNote + totalRows) - (minMidi + maxMidi) / 2;
+            gridRef.current.scrollTo({
+              left: Math.max(0, minBeat * cellW - 40),
+              top: Math.max(0, centerRow * rowHeight - gridRef.current.clientHeight / 2),
+              behavior: "smooth",
+            });
+          }}
+          className="px-2.5 py-1 rounded-full text-[9px] font-bold tracking-[0.14em] border border-white/8 bg-white/5 text-white/35 hover:text-white/70 shrink-0 transition-colors">
+          FIT
+        </button>
         <span className="text-[9px] text-[var(--ed-text-muted)] ml-auto hidden lg:inline">
           Shift-click multi-select, Shift + Arrow Up/Down = octave, drag end for length, number keys set velocity
         </span>
