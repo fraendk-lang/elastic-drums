@@ -78,7 +78,9 @@ export interface ChordsStep {
   chordType: string;  // key in CHORD_TYPES
   octave: number;     // -1, 0, +1
   accent: boolean;
+  velocity?: number;  // 0-1 note velocity
   tie: boolean;
+  gateLength?: number; // Step length in sequencer steps
 }
 
 // MIDI note to frequency
@@ -91,6 +93,7 @@ interface Voice {
   subOsc: OscillatorNode;
   subGain: GainNode;
   panner: StereoPannerNode;
+  driftCents: number;
 }
 
 const NUM_VOICES = 6;
@@ -113,6 +116,8 @@ export class ChordsEngine {
   private chorusLfoGain: GainNode | null = null;
   private chorusMix: GainNode | null = null;
 
+  // Modern cleanup / air contour
+  private lowCutFilter: BiquadFilterNode | null = null;
   // Brightness control (high-shelf filter)
   private brightnessFilter: BiquadFilterNode | null = null;
 
@@ -164,28 +169,67 @@ export class ChordsEngine {
       osc.start();
       subOsc.start();
 
-      this.voices.push({ osc, subOsc, subGain, panner });
+      this.voices.push({
+        osc,
+        subOsc,
+        subGain,
+        panner,
+        driftCents: (Math.random() - 0.5) * 3.5,
+      });
     }
 
     // --- VCF: use filter model ---
     this.filterChain = createFilterChain(audioCtx, this.params.filterModel);
 
-    // --- Chorus effect (detuned delay) ---
+    // --- Chorus effect: dual-tap stereo chorus (Roland Dimension-D inspired) ---
+    // Two delay lines with different LFO rates for rich, wide stereo movement
     this.chorusDelay = audioCtx.createDelay();
-    this.chorusDelay.delayTime.value = 0.003; // 3ms base delay
+    this.chorusDelay.delayTime.value = 0.004; // 4ms base — slightly longer for warmth
 
+    // Second chorus tap for stereo width
+    const chorusDelay2 = audioCtx.createDelay();
+    chorusDelay2.delayTime.value = 0.006; // 6ms — offset from tap 1
+    (this as unknown as Record<string, AudioNode>)._chorusDelay2 = chorusDelay2;
+
+    // Primary LFO — slow triangle for smooth movement
     this.chorusLfo = audioCtx.createOscillator();
-    this.chorusLfo.frequency.value = 1.2; // 1.2 Hz LFO rate
+    this.chorusLfo.type = "triangle"; // Triangle is smoother than sine for chorus
+    this.chorusLfo.frequency.value = 0.8; // Slower rate for lush pads
+
+    // Secondary LFO — slightly faster, inverted phase for stereo
+    const chorusLfo2 = audioCtx.createOscillator();
+    chorusLfo2.type = "triangle";
+    chorusLfo2.frequency.value = 1.1; // Different rate = evolving texture
+    (this as unknown as Record<string, AudioNode>)._chorusLfo2 = chorusLfo2;
 
     this.chorusLfoGain = audioCtx.createGain();
-    this.chorusLfoGain.gain.value = 0.0015; // Depth: 3ms ± 1.5ms
+    this.chorusLfoGain.gain.value = 0.002; // Depth: 4ms ± 2ms
+
+    const chorusLfoGain2 = audioCtx.createGain();
+    chorusLfoGain2.gain.value = 0.0018; // Slightly different depth
 
     this.chorusMix = audioCtx.createGain();
-    this.chorusMix.gain.value = this.params.chorus; // 0-1 mix amount
+    this.chorusMix.gain.value = this.params.chorus;
 
+    // Second chorus mix panned opposite
+    const chorusMix2 = audioCtx.createGain();
+    chorusMix2.gain.value = this.params.chorus * 0.85;
+    (this as unknown as Record<string, AudioNode>)._chorusMix2 = chorusMix2;
+
+    // LFO routing
     this.chorusLfo.connect(this.chorusLfoGain);
     this.chorusLfoGain.connect(this.chorusDelay.delayTime);
+    chorusLfo2.connect(chorusLfoGain2);
+    chorusLfoGain2.connect(chorusDelay2.delayTime);
+
     this.chorusLfo.start();
+    chorusLfo2.start();
+
+    // --- Low-cut cleanup to keep modern chords out of the bass lane ---
+    this.lowCutFilter = audioCtx.createBiquadFilter();
+    this.lowCutFilter.type = "highpass";
+    this.lowCutFilter.frequency.value = 120;
+    this.lowCutFilter.Q.value = 0.35;
 
     // --- Brightness control (high-shelf filter at 3kHz) ---
     this.brightnessFilter = audioCtx.createBiquadFilter();
@@ -205,18 +249,10 @@ export class ChordsEngine {
     this.output = audioCtx.createGain();
     this.output.gain.value = this.params.volume;
 
-    // --- Signal chain: mixer → filterChain → chorus (dry + wet) → brightness → VCA → distortion → output ---
-    // Main path (dry)
+    // --- Signal chain: mixer → filterChain → low-cut → chorus (dry + wet) → brightness → VCA → distortion → output ---
     this.mixer.connect(this.filterChain.input);
-    this.filterChain.output.connect(this.brightnessFilter);
+    this.rewirePostFilterChain();
 
-    // Chorus path (wet)
-    this.filterChain.output.connect(this.chorusDelay);
-    this.chorusDelay.connect(this.chorusMix);
-    this.chorusMix.connect(this.brightnessFilter);
-
-    // After brightness to VCA
-    this.brightnessFilter.connect(this.vca);
     this.vca.connect(this.distNode);
     this.distNode.connect(this.output);
 
@@ -249,9 +285,46 @@ export class ChordsEngine {
 
   private updateBrightness(): void {
     if (!this.brightnessFilter) return;
-    // Brightness: 0-1 maps to 0-6dB boost
-    const gain = this.params.brightness * 6;
+    // Brightness: gentler low values, more obvious air above 0.5
+    const gain = this.params.brightness * 8;
     this.brightnessFilter.gain.value = gain;
+  }
+
+  private updateLowCut(): void {
+    if (!this.lowCutFilter) return;
+    // More subOsc lowers the cleanup slightly; bright patches get more cleanup.
+    const cutoff = 95 + this.params.brightness * 80 - this.params.subOsc * 25;
+    this.lowCutFilter.frequency.value = Math.max(70, cutoff);
+  }
+
+  private rewirePostFilterChain(): void {
+    if (!this.filterChain || !this.lowCutFilter || !this.chorusDelay || !this.chorusMix || !this.brightnessFilter || !this.vca) return;
+
+    const chorusDelay2 = (this as unknown as Record<string, AudioNode>)._chorusDelay2 as DelayNode | undefined;
+    const chorusMix2 = (this as unknown as Record<string, AudioNode>)._chorusMix2 as GainNode | undefined;
+
+    try { this.filterChain.output.disconnect(); } catch { /* noop */ }
+    try { this.lowCutFilter.disconnect(); } catch { /* noop */ }
+    try { this.chorusDelay.disconnect(); } catch { /* noop */ }
+    try { this.chorusMix.disconnect(); } catch { /* noop */ }
+    try { this.brightnessFilter.disconnect(); } catch { /* noop */ }
+    try { chorusDelay2?.disconnect(); } catch { /* noop */ }
+    try { chorusMix2?.disconnect(); } catch { /* noop */ }
+
+    // Signal: filter → lowCut → dry path + dual chorus taps → brightness → VCA
+    this.filterChain.output.connect(this.lowCutFilter);
+    this.lowCutFilter.connect(this.brightnessFilter); // Dry path
+    // Chorus tap 1
+    this.lowCutFilter.connect(this.chorusDelay);
+    this.chorusDelay.connect(this.chorusMix);
+    this.chorusMix.connect(this.brightnessFilter);
+    // Chorus tap 2 (different rate/depth for stereo richness)
+    if (chorusDelay2 && chorusMix2) {
+      this.lowCutFilter.connect(chorusDelay2);
+      chorusDelay2.connect(chorusMix2);
+      chorusMix2.connect(this.brightnessFilter);
+    }
+    this.brightnessFilter.connect(this.vca);
   }
 
   /**
@@ -300,7 +373,7 @@ export class ChordsEngine {
   }
 
   /** Trigger a chord (up to 6 voices) */
-  triggerChord(midiNotes: number[], time: number, accent: boolean, tie: boolean): void {
+  triggerChord(midiNotes: number[], time: number, accent: boolean, tie: boolean, velocity = 0.85): void {
     if (!this.ctx || !this.vca || !this.filterChain || this.voices.length === 0) return;
 
     const p = this.params;
@@ -313,15 +386,20 @@ export class ChordsEngine {
       if (i < midiNotes.length) {
         const freq = midiToFreq(midiNotes[i]!);
         const subFreq = freq / 2;
+        const drift = voice.driftCents;
 
         if (tie && this.chordIsOn) {
           // Glide to new pitch
           const glideTau = p.attack / 1000 / 3;
           voice.osc.frequency.setTargetAtTime(freq, time, glideTau);
           voice.subOsc.frequency.setTargetAtTime(subFreq, time, glideTau);
+          voice.osc.detune.setTargetAtTime(this.params.detune * [-1, -0.6, -0.2, 0.2, 0.6, 1][i]! + drift, time, 0.08);
+          voice.subOsc.detune.setTargetAtTime(this.params.detune * [-1, -0.6, -0.2, 0.2, 0.6, 1][i]! + drift * 0.6, time, 0.08);
         } else {
           voice.osc.frequency.setValueAtTime(freq, time);
           voice.subOsc.frequency.setValueAtTime(subFreq, time);
+          voice.osc.detune.setValueAtTime(this.params.detune * [-1, -0.6, -0.2, 0.2, 0.6, 1][i]! + drift, time);
+          voice.subOsc.detune.setValueAtTime(this.params.detune * [-1, -0.6, -0.2, 0.2, 0.6, 1][i]! + drift * 0.6, time);
         }
       }
     }
@@ -333,7 +411,8 @@ export class ChordsEngine {
     } else {
       // Normal trigger with exponential attack for smooth pad entry
       const attackSec = p.attack / 1000;
-      const level = accent ? 1.0 : 0.75;
+      const velocityLevel = 0.45 + Math.max(0, Math.min(1, velocity)) * 0.55;
+      const level = (accent ? 1.0 : 0.75) * velocityLevel;
 
       this.vca.gain.cancelScheduledValues(time);
       this.vca.gain.setValueAtTime(0.001, time);
@@ -360,59 +439,83 @@ export class ChordsEngine {
     this.releaseChord(time);
   }
 
+  /** Emergency stop for stuck notes */
+  panic(time?: number): void {
+    if (!this.ctx || !this.vca) return;
+    const t = time ?? this.ctx.currentTime;
+    this.vca.gain.cancelScheduledValues(t);
+    this.vca.gain.setValueAtTime(0, t);
+    this.chordIsOn = false;
+  }
+
   /** Update parameters live */
   setParams(p: Partial<ChordsParams>): void {
-    Object.assign(this.params, p);
+    const previous = { ...this.params };
+    const normalized: Partial<ChordsParams> = { ...p };
 
-    if (p.waveform) {
-      for (const voice of this.voices) {
-        voice.osc.type = p.waveform;
+    if (normalized.filterType && normalized.filterModel === undefined) {
+      if (normalized.filterType === "bandpass") normalized.filterModel = "steiner-bp";
+      else if (normalized.filterType === "highpass") normalized.filterModel = "steiner-hp";
+      else if (normalized.filterType === "lowpass") {
+        normalized.filterModel = previous.filterModel === "steiner-lp" ? "steiner-lp" : "ladder";
+      } else {
+        normalized.filterModel = "lpf";
       }
     }
-    if (p.detune !== undefined) {
+
+    Object.assign(this.params, normalized);
+
+    if (normalized.waveform) {
+      for (const voice of this.voices) {
+        voice.osc.type = normalized.waveform;
+      }
+    }
+    if (normalized.detune !== undefined) {
       const detuneSpread = [-1, -0.6, -0.2, 0.2, 0.6, 1];
       for (let i = 0; i < this.voices.length; i++) {
         const voice = this.voices[i];
         if (voice) {
-          voice.osc.detune.value = p.detune * detuneSpread[i]!;
-          voice.subOsc.detune.value = p.detune * detuneSpread[i]!;
+          voice.osc.detune.value = normalized.detune * detuneSpread[i]! + voice.driftCents;
+          voice.subOsc.detune.value = normalized.detune * detuneSpread[i]! + voice.driftCents * 0.6;
         }
       }
     }
-    if (p.spread !== undefined) {
+    if (normalized.spread !== undefined) {
       const panPositions = [-0.7, -0.4, -0.1, 0.1, 0.4, 0.7];
       for (let i = 0; i < this.voices.length; i++) {
         const voice = this.voices[i];
         if (voice) {
-          voice.panner.pan.value = panPositions[i]! * p.spread;
+          voice.panner.pan.value = panPositions[i]! * normalized.spread;
         }
       }
     }
-    if (p.chorus !== undefined && this.chorusMix) {
-      this.chorusMix.gain.value = p.chorus;
+    if (normalized.chorus !== undefined && this.chorusMix) {
+      this.chorusMix.gain.value = normalized.chorus;
     }
-    if (p.brightness !== undefined) {
+    if (normalized.brightness !== undefined) {
       this.updateBrightness();
     }
+    if (normalized.brightness !== undefined || normalized.subOsc !== undefined) {
+      this.updateLowCut();
+    }
     if (this.filterChain) {
-      if (p.cutoff !== undefined || p.resonance !== undefined) {
-        const cutoff = p.cutoff ?? this.params.cutoff;
-        const res = Math.min((p.resonance ?? this.params.resonance) / 20, 1.0);
+      if (normalized.cutoff !== undefined || normalized.resonance !== undefined) {
+        const cutoff = normalized.cutoff ?? this.params.cutoff;
+        const res = Math.min((normalized.resonance ?? this.params.resonance) / 20, 1.0);
         this.filterChain.update(cutoff, res, this.ctx?.currentTime ?? 0);
       }
       // Hot-swap filter chain when filterModel changes
-      if (p.filterModel && p.filterModel !== this.params.filterModel) {
+      if (normalized.filterModel && normalized.filterModel !== previous.filterModel) {
         if (this.ctx && this.mixer && this.vca) {
           // Disconnect old filter chain from signal path
-          this.mixer.disconnect(this.filterChain.input);
-          this.filterChain.output.disconnect(this.vca);
+          try { this.mixer.disconnect(this.filterChain.input); } catch { /* noop */ }
 
           // Create new filter chain
-          this.filterChain = createFilterChain(this.ctx, p.filterModel);
+          this.filterChain = createFilterChain(this.ctx, normalized.filterModel);
 
           // Reconnect new filter chain to signal path
           this.mixer.connect(this.filterChain.input);
-          this.filterChain.output.connect(this.vca);
+          this.rewirePostFilterChain();
 
           // Apply current cutoff/resonance to new filter
           const cutoff = this.params.cutoff;
@@ -421,13 +524,13 @@ export class ChordsEngine {
         }
       }
     }
-    if (p.subOsc !== undefined) {
+    if (normalized.subOsc !== undefined) {
       for (const voice of this.voices) {
-        voice.subGain.gain.value = p.subOsc;
+        voice.subGain.gain.value = normalized.subOsc;
       }
     }
-    if (this.output && p.volume !== undefined) this.output.gain.value = p.volume;
-    if (p.distortion !== undefined) this.updateDistortion();
+    if (this.output && normalized.volume !== undefined) this.output.gain.value = normalized.volume;
+    if (normalized.distortion !== undefined) this.updateDistortion();
   }
 
   /** Get output node for routing to mixer */

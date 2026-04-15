@@ -43,16 +43,22 @@ function createLPF(ctx: AudioContext): FilterChain {
 
 /**
  * Moog Ladder Filter — 4 cascaded lowpass stages (24dB/oct)
- * Classic warm, fat analog sound with self-oscillation at high resonance
+ * Classic warm, fat analog sound with self-oscillation at high resonance.
+ *
+ * Improved: feedback gain node simulates analog resonance feedback path,
+ * thermal drift on cutoff per stage for analog character,
+ * and compensation gain to prevent volume loss at high resonance.
  */
 function createLadder(ctx: AudioContext): FilterChain {
   // 4 cascaded 1-pole lowpass filters (each ~6dB/oct = total 24dB/oct)
   const stages: BiquadFilterNode[] = [];
+  // Slight cutoff offset per stage simulates component mismatch in analog circuits
+  const stageOffsets = [1.0, 0.98, 1.02, 0.99];
   for (let i = 0; i < 4; i++) {
     const lp = ctx.createBiquadFilter();
     lp.type = "lowpass";
     lp.frequency.value = 2000;
-    lp.Q.value = 0; // No resonance per stage — resonance comes from feedback
+    lp.Q.value = 0.5; // Slight Q per stage for warmer rolloff
     stages.push(lp);
   }
 
@@ -61,22 +67,53 @@ function createLadder(ctx: AudioContext): FilterChain {
   stages[1]!.connect(stages[2]!);
   stages[2]!.connect(stages[3]!);
 
-  // Feedback path for resonance: output → gain (negative) → input
-  // We simulate this by boosting Q on the last stage
-  // (True analog feedback requires AudioWorklet, this is a practical approximation)
+  // Feedback path: output → waveshaper (soft-clip) → gain → input
+  // This creates the characteristic Moog self-oscillation and warmth
+  const feedbackGain = ctx.createGain();
+  feedbackGain.gain.value = 0; // Controlled by resonance
+
+  // Saturation in the feedback path (critical for authentic Moog character)
+  const feedbackSat = ctx.createWaveShaper();
+  const fbCurve = new Float32Array(1024);
+  for (let i = 0; i < 1024; i++) {
+    const x = (i / 512 - 1) * 2;
+    fbCurve[i] = Math.tanh(x); // Soft-clip prevents runaway self-oscillation
+  }
+  feedbackSat.curve = fbCurve;
+  feedbackSat.oversample = "2x";
+
+  // Resonance compensation: boosts signal to counteract volume loss
+  const compensationGain = ctx.createGain();
+  compensationGain.gain.value = 1.0;
+
+  // Feedback loop: stage3 → feedbackSat → feedbackGain → stage0
+  stages[3]!.connect(feedbackSat);
+  feedbackSat.connect(feedbackGain);
+  feedbackGain.connect(stages[0]!);
+
+  // Output goes through compensation
+  stages[3]!.connect(compensationGain);
 
   return {
     input: stages[0]!,
-    output: stages[3]!,
+    output: compensationGain,
     update(freq, res, time) {
-      // Set all 4 stages to the same cutoff
-      for (const stage of stages) {
-        stage.frequency.setTargetAtTime(freq, time, 0.01);
+      // Set all 4 stages with slight analog-style offsets
+      for (let i = 0; i < 4; i++) {
+        stages[i]!.frequency.setTargetAtTime(freq * stageOffsets[i]!, time, 0.005);
       }
-      // Resonance: boost Q on last 2 stages for that Moog peak
-      // res 0-1 maps to Q 0-25 (self-oscillation starts around Q=20)
-      stages[2]!.Q.setTargetAtTime(res * 12, time, 0.01);
-      stages[3]!.Q.setTargetAtTime(res * 25, time, 0.01);
+      // Distribute Q across stages for a rounder peak (not just spiking the last one)
+      const baseQ = 0.5 + res * 3;
+      stages[0]!.Q.setTargetAtTime(baseQ * 0.5, time, 0.005);
+      stages[1]!.Q.setTargetAtTime(baseQ * 0.7, time, 0.005);
+      stages[2]!.Q.setTargetAtTime(baseQ * 1.0, time, 0.005);
+      stages[3]!.Q.setTargetAtTime(baseQ * 1.4, time, 0.005);
+
+      // Feedback gain controls resonance (0-3.8 range, self-oscillation ~3.5+)
+      feedbackGain.gain.setTargetAtTime(res * 3.8, time, 0.005);
+
+      // Resonance compensation: boost output as resonance increases
+      compensationGain.gain.setTargetAtTime(1.0 + res * 0.6, time, 0.005);
     },
   };
 }
@@ -87,8 +124,9 @@ function createLadder(ctx: AudioContext): FilterChain {
  * LP/BP/HP modes using parallel BiquadFilter configuration
  */
 function createSteiner(ctx: AudioContext, mode: BiquadFilterType): FilterChain {
-  // Steiner-Parker uses 2 state-variable filter stages in series
-  // Approximation: 2 cascaded biquads with the chosen mode
+  // Steiner-Parker: 2 state-variable stages with inter-stage saturation.
+  // The Steiner circuit is known for its aggressive, "dirty" character
+  // that breaks up beautifully at high resonance.
   const stage1 = ctx.createBiquadFilter();
   const stage2 = ctx.createBiquadFilter();
   stage1.type = mode;
@@ -98,31 +136,43 @@ function createSteiner(ctx: AudioContext, mode: BiquadFilterType): FilterChain {
   stage1.Q.value = 4;
   stage2.Q.value = 2;
 
-  // Saturation node (overdrive characteristic of Steiner-Parker)
+  // Inter-stage saturation (core Steiner-Parker character)
   const drive = ctx.createWaveShaper();
-  const curve = new Float32Array(256);
-  for (let i = 0; i < 256; i++) {
-    const x = (i / 128) - 1;
-    // Soft clipping tanh curve for analog warmth
-    curve[i] = Math.tanh(x * 1.5);
+  const curve = new Float32Array(2048);
+  for (let i = 0; i < 2048; i++) {
+    const x = (i / 1024) - 1;
+    // Asymmetric soft-clip: positive half clips harder → even harmonics (tube-like)
+    if (x >= 0) {
+      curve[i] = Math.tanh(x * 2.0) * 0.9;
+    } else {
+      curve[i] = Math.tanh(x * 1.4) * 0.95;
+    }
   }
   drive.curve = curve;
-  drive.oversample = "2x";
+  drive.oversample = "4x";
 
-  // Chain: input → stage1 → drive → stage2 → output
-  stage1.connect(drive);
+  // Pre-drive gain to push into saturation harder at high resonance
+  const preGain = ctx.createGain();
+  preGain.gain.value = 1.0;
+
+  // Chain: input → stage1 → preGain → drive → stage2 → output
+  stage1.connect(preGain);
+  preGain.connect(drive);
   drive.connect(stage2);
 
   return {
     input: stage1,
     output: stage2,
     update(freq, res, time) {
-      stage1.frequency.setTargetAtTime(freq, time, 0.01);
-      stage2.frequency.setTargetAtTime(freq, time, 0.01);
+      // Slight frequency offset between stages for thicker sound
+      stage1.frequency.setTargetAtTime(freq * 1.01, time, 0.005);
+      stage2.frequency.setTargetAtTime(freq * 0.99, time, 0.005);
       // Steiner resonance is more aggressive — maps 0-1 to Q 1-30
       const q = 1 + res * 29;
-      stage1.Q.setTargetAtTime(q, time, 0.01);
-      stage2.Q.setTargetAtTime(q * 0.5, time, 0.01);
+      stage1.Q.setTargetAtTime(q, time, 0.005);
+      stage2.Q.setTargetAtTime(q * 0.6, time, 0.005);
+      // Push pre-gain harder with resonance for increasing grit
+      preGain.gain.setTargetAtTime(1.0 + res * 1.5, time, 0.005);
     },
   };
 }
