@@ -259,10 +259,9 @@ export class VoiceRenderer {
 
     // Master output with soft-clip waveshaper
     const master = ctx.createGain();
-    // Compression-like envelope with slight overshoot for punch
+    // Clean attack envelope — no overshoot to avoid clipping
     master.gain.setValueAtTime(0, t);
-    master.gain.linearRampToValueAtTime(vol * 1.12, t + 0.0008); // Slight overshoot
-    master.gain.linearRampToValueAtTime(vol, t + 0.002); // Settle down
+    master.gain.linearRampToValueAtTime(vol * 0.8, t + 0.001); // Fast attack, reduced level
     master.gain.setValueAtTime(vol, t + decaySec * 0.85);
     master.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
 
@@ -282,7 +281,7 @@ export class VoiceRenderer {
     const eqLow = ctx.createBiquadFilter();
     eqLow.type = "lowshelf";
     eqLow.frequency.value = 100;
-    eqLow.gain.value = 6;
+    eqLow.gain.value = 3; // Gentle boost (was 6dB — caused clipping)
 
     const eqMidCut = ctx.createBiquadFilter();
     eqMidCut.type = "peaking";
