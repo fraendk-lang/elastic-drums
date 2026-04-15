@@ -82,8 +82,10 @@ export interface MelodyStep {
   note: number;      // Scale degree (0-based)
   octave: number;    // -1, 0, +1
   accent: boolean;
+  velocity?: number; // 0-1 note velocity
   slide: boolean;
   tie: boolean;       // Hold note across to next step (no re-trigger)
+  gateLength?: number; // Step length in sequencer steps
 }
 
 export class MelodyEngine {
@@ -119,6 +121,7 @@ export class MelodyEngine {
 
   private isRunning = false;
   private noteIsOn = false;
+  private _autoReleaseTimer: ReturnType<typeof setTimeout> | null = null;
 
   params: MelodyParams = { ...DEFAULT_MELODY_PARAMS };
 
@@ -309,7 +312,7 @@ export class MelodyEngine {
   }
 
   /** Trigger a melody note */
-  triggerNote(midiNote: number, time: number, accent: boolean, slide: boolean, tie: boolean): void {
+  triggerNote(midiNote: number, time: number, accent: boolean, slide: boolean, tie: boolean, velocity = 0.85): void {
     const p = this.params;
 
     // Dispatch based on synthesis type
@@ -319,7 +322,7 @@ export class MelodyEngine {
         if (!this.ctx || !this.vca) return;
         playFM(
           this.ctx, this.vca, time,
-          midiNote, p.volume, 0.3,  // duration placeholder
+          midiNote, p.volume * (0.45 + Math.max(0, Math.min(1, velocity)) * 0.55), 0.3,
           p.fmHarmonicity, p.fmModIndex,  // harmonicity, modIndex (from params)
           0.01, 0.2, 0.3, 0.1  // ADSR
         );
@@ -330,7 +333,7 @@ export class MelodyEngine {
         if (!this.ctx || !this.vca) return;
         playAM(
           this.ctx, this.vca, time,
-          midiNote, p.volume, 0.3,  // duration placeholder
+          midiNote, p.volume * (0.45 + Math.max(0, Math.min(1, velocity)) * 0.55), 0.3,
           2, 0.8,  // harmonicity, modDepth
           0.01, 0.15, 0.5, 0.1  // ADSR
         );
@@ -341,7 +344,7 @@ export class MelodyEngine {
         if (!this.ctx || !this.vca) return;
         playPluck(
           this.ctx, this.vca, time,
-          midiNote, p.volume, p.cutoff, 0.98  // Use cutoff as dampening frequency, high resonance
+          midiNote, p.volume * (0.45 + Math.max(0, Math.min(1, velocity)) * 0.55), p.cutoff, 0.98
         );
         break;
 
@@ -412,7 +415,8 @@ export class MelodyEngine {
           // Normal trigger or first note
           // VCA: fast attack (5ms for lead character)
           this.vca.gain.cancelScheduledValues(time);
-          const level = accent ? 1.0 : 0.75;
+          const velocityLevel = 0.45 + Math.max(0, Math.min(1, velocity)) * 0.55;
+          const level = (accent ? 1.0 : 0.75) * velocityLevel;
           this.vca.gain.setValueAtTime(0.001, time);
           this.vca.gain.linearRampToValueAtTime(level, time + 0.005);
 
@@ -421,6 +425,13 @@ export class MelodyEngine {
         }
 
         this.noteIsOn = true;
+
+        // Auto-release safety net (4s max)
+        if (this._autoReleaseTimer) clearTimeout(this._autoReleaseTimer);
+        this._autoReleaseTimer = setTimeout(() => {
+          this._autoReleaseTimer = null;
+          if (this.noteIsOn) this.releaseNote(this.ctx?.currentTime ?? 0);
+        }, 4000);
         break;
     }
   }
@@ -432,11 +443,21 @@ export class MelodyEngine {
     // Fairly fast release but not instant
     this.vca.gain.setTargetAtTime(0, time, 0.015);
     this.noteIsOn = false;
+    if (this._autoReleaseTimer) { clearTimeout(this._autoReleaseTimer); this._autoReleaseTimer = null; }
   }
 
   /** Rest (no note on this step) */
   rest(time: number): void {
     this.releaseNote(time);
+  }
+
+  /** Emergency stop for stuck notes */
+  panic(time?: number): void {
+    if (!this.ctx || !this.vca) return;
+    const t = time ?? this.ctx.currentTime;
+    this.vca.gain.cancelScheduledValues(t);
+    this.vca.gain.setValueAtTime(0, t);
+    this.noteIsOn = false;
   }
 
   /** Update parameters live */

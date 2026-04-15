@@ -91,8 +91,10 @@ export interface BassStep {
   note: number;      // Scale degree (0-based)
   octave: number;    // -1, 0, +1
   accent: boolean;
+  velocity?: number; // 0-1 note velocity
   slide: boolean;
-  tie: boolean;       // Hold note across to next step (no re-trigger)
+  tie: boolean;       // Legato continuation / no re-trigger from previous step
+  gateLength?: number; // Step length in sequencer steps (1 = default 16th)
 }
 
 export class BassEngine {
@@ -122,6 +124,8 @@ export class BassEngine {
   private isRunning = false;
   private noteIsOn = false;
   private _filterEnvTimer: ReturnType<typeof setInterval> | null = null;
+  // Auto-release safety net: setTimeout that cannot be killed by cancelScheduledValues
+  private _autoReleaseTimer: ReturnType<typeof setTimeout> | null = null;
 
   params: BassParams = { ...DEFAULT_BASS_PARAMS };
 
@@ -308,7 +312,7 @@ export class BassEngine {
   }
 
   /** Trigger a bass note */
-  triggerNote(midiNote: number, time: number, accent: boolean, slide: boolean, tie: boolean): void {
+  triggerNote(midiNote: number, time: number, accent: boolean, slide: boolean, tie: boolean, velocity = 0.85): void {
     if (!this.ctx || !this.osc || !this.subOsc || !this.filterChain || !this.vca) return;
 
     const freq = midiToFreq(midiNote);
@@ -335,7 +339,8 @@ export class BassEngine {
       // Normal trigger or first note
       // VCA: fast attack with transient punch for percussive character
       this.vca.gain.cancelScheduledValues(time);
-      const level = accent ? 1.0 : 0.75;
+      const velocityLevel = 0.45 + Math.max(0, Math.min(1, velocity)) * 0.55;
+      const level = (accent ? 1.0 : 0.75) * velocityLevel;
       const punchAmount = accent ? p.punch * 0.4 : p.punch * 0.15; // Scale punch by accent
 
       // Transient punch: brief overshoot at note onset for attack
@@ -348,6 +353,15 @@ export class BassEngine {
     }
 
     this.noteIsOn = true;
+
+    // Auto-release safety net: force-release after 4 seconds max.
+    // Uses setTimeout which CANNOT be cancelled by cancelScheduledValues.
+    // This guarantees no note hangs forever, regardless of scheduling conflicts.
+    if (this._autoReleaseTimer) clearTimeout(this._autoReleaseTimer);
+    this._autoReleaseTimer = setTimeout(() => {
+      this._autoReleaseTimer = null;
+      if (this.noteIsOn) this.releaseNote(this.ctx?.currentTime ?? 0);
+    }, 4000);
   }
 
   /** Release (note off) */
@@ -357,6 +371,8 @@ export class BassEngine {
     // 303-style release: fairly fast but not instant
     this.vca.gain.setTargetAtTime(0, time, 0.015);
     this.noteIsOn = false;
+    // Clear auto-release timer since we're releasing now
+    if (this._autoReleaseTimer) { clearTimeout(this._autoReleaseTimer); this._autoReleaseTimer = null; }
     // Clear any pending filter envelope
     if (this._filterEnvTimer) {
       clearInterval(this._filterEnvTimer);
@@ -367,6 +383,19 @@ export class BassEngine {
   /** Rest (no note on this step) */
   rest(time: number): void {
     this.releaseNote(time);
+  }
+
+  /** Emergency stop for stuck notes */
+  panic(time?: number): void {
+    if (!this.ctx || !this.vca) return;
+    const t = time ?? this.ctx.currentTime;
+    this.vca.gain.cancelScheduledValues(t);
+    this.vca.gain.setValueAtTime(0, t);
+    this.noteIsOn = false;
+    if (this._filterEnvTimer) {
+      clearInterval(this._filterEnvTimer);
+      this._filterEnvTimer = null;
+    }
   }
 
   /** Update parameters live */

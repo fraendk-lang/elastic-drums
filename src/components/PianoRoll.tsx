@@ -217,39 +217,50 @@ function harmonizeNotes(
   return result;
 }
 
-// Robust preview: schedule release at exact audio time, not via setTimeout
+// Preview a note with guaranteed release (setTimeout safety net + AudioParam scheduling)
+let _previewReleaseTimer: ReturnType<typeof setTimeout> | null = null;
+
 function previewNote(midi: number, velocity: number, target: SoundTarget): void {
   const now = audioEngine.currentTime;
-  const releaseAt = now + 0.25; // 250ms preview
+
+  // Clear any previous preview timer
+  if (_previewReleaseTimer) clearTimeout(_previewReleaseTimer);
+
   switch (target) {
     case "drums":
       audioEngine.triggerVoice(Math.max(0, Math.min(11, midi - 36)));
-      break;
+      return; // Drums don't need release
     case "bass":
       if (soundFontEngine.isLoaded("bass")) {
         soundFontEngine.playNote("bass", midi, now, velocity, 0.25);
-      } else {
-        bassEngine.triggerNote(midi, now, false, false, false);
-        bassEngine.releaseNote(releaseAt); // Schedule release in audio thread
+        return;
       }
+      bassEngine.triggerNote(midi, now, false, false, false);
       break;
     case "chords":
       if (soundFontEngine.isLoaded("chords")) {
         soundFontEngine.playNote("chords", midi, now, velocity, 0.25);
-      } else {
-        chordsEngine.triggerChord([midi], now, false, false);
-        chordsEngine.releaseChord(releaseAt);
+        return;
       }
+      chordsEngine.triggerChord([midi], now, false, false);
       break;
     case "melody":
       if (soundFontEngine.isLoaded("melody")) {
         soundFontEngine.playNote("melody", midi, now, velocity, 0.25);
-      } else {
-        melodyEngine.triggerNote(midi, now, false, false, false);
-        melodyEngine.releaseNote(releaseAt);
+        return;
       }
+      melodyEngine.triggerNote(midi, now, false, false, false);
       break;
   }
+
+  // setTimeout safety net: guaranteed release after 300ms (cannot be cancelled by cancelScheduledValues)
+  _previewReleaseTimer = setTimeout(() => {
+    _previewReleaseTimer = null;
+    const t = audioEngine.currentTime;
+    if (target === "bass") bassEngine.releaseNote(t);
+    else if (target === "chords") chordsEngine.releaseChord(t);
+    else if (target === "melody") melodyEngine.releaseNote(t);
+  }, 300);
 }
 
 function isNoteInScale(midi: number, rootMidi: number, scaleName: string): boolean {

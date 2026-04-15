@@ -128,6 +128,7 @@ export class ChordsEngine {
 
   private isRunning = false;
   private chordIsOn = false;
+  private _autoReleaseTimer: ReturnType<typeof setTimeout> | null = null;
 
   params: ChordsParams = { ...DEFAULT_CHORDS_PARAMS };
 
@@ -423,6 +424,13 @@ export class ChordsEngine {
     }
 
     this.chordIsOn = true;
+
+    // Auto-release safety net (4s max)
+    if (this._autoReleaseTimer) clearTimeout(this._autoReleaseTimer);
+    this._autoReleaseTimer = setTimeout(() => {
+      this._autoReleaseTimer = null;
+      if (this.chordIsOn) this.releaseChord(this.ctx?.currentTime ?? 0);
+    }, 4000);
   }
 
   /** Release chord (exponential release with configurable time) */
@@ -432,6 +440,7 @@ export class ChordsEngine {
     this.vca.gain.cancelScheduledValues(time);
     this.vca.gain.setTargetAtTime(0.001, time, releaseTau);
     this.chordIsOn = false;
+    if (this._autoReleaseTimer) { clearTimeout(this._autoReleaseTimer); this._autoReleaseTimer = null; }
   }
 
   /** Rest (no chord on this step) */
