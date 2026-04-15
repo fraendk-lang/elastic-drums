@@ -210,6 +210,8 @@ export function Transport({
 
         <Sep />
 
+        <ZoomControl />
+
         <button
           onClick={onToggleHelp}
           aria-label="Help"
@@ -219,6 +221,37 @@ export function Transport({
         </button>
       </div>
     </header>
+  );
+}
+
+function ZoomControl() {
+  const [zoom, setZoomState] = useState(() => {
+    const saved = localStorage.getItem("ed-ui-zoom");
+    return saved ? parseFloat(saved) : 1.0;
+  });
+
+  const applyZoom = useCallback((z: number) => {
+    const clamped = Math.max(0.8, Math.min(1.5, Math.round(z * 20) / 20)); // Step 0.05
+    setZoomState(clamped);
+    document.documentElement.style.setProperty("--ed-ui-zoom", String(clamped));
+    localStorage.setItem("ed-ui-zoom", String(clamped));
+  }, []);
+
+  // Apply saved zoom on mount
+  useEffect(() => {
+    document.documentElement.style.setProperty("--ed-ui-zoom", String(zoom));
+  }, []);
+
+  return (
+    <div className="flex items-center gap-1 ml-1">
+      <button onClick={() => applyZoom(zoom - 0.05)}
+        className="w-5 h-5 rounded text-[10px] font-bold bg-white/5 text-white/30 hover:text-white/60 hover:bg-white/10 transition-all">−</button>
+      <span className="text-[8px] font-bold text-white/25 min-w-[28px] text-center tabular-nums">
+        {Math.round(zoom * 100)}%
+      </span>
+      <button onClick={() => applyZoom(zoom + 0.05)}
+        className="w-5 h-5 rounded text-[10px] font-bold bg-white/5 text-white/30 hover:text-white/60 hover:bg-white/10 transition-all">+</button>
+    </div>
   );
 }
 

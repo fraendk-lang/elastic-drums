@@ -186,24 +186,9 @@ kbd {
   }
 }
 
-/* ─── Small screen scaling (13" MacBook, tablets) ─── */
-@media (max-width: 1440px) {
-  :root {
-    font-size: 15px; /* Bump from default 16px for better readability */
-  }
-  .app-shell {
-    zoom: 1.05; /* Slight zoom for small laptops */
-  }
-}
-@media (max-width: 1280px) {
-  .app-shell {
-    zoom: 1.1; /* Bigger zoom for 13" screens */
-  }
-}
-@media (max-height: 800px) {
-  .app-shell {
-    zoom: 1.08; /* Also handle short screens */
-  }
+/* ─── UI Scale: user-adjustable via CSS variable (default 1.0) ─── */
+.app-shell {
+  zoom: var(--ed-ui-zoom, 1);
 }
 
 /* Mobile voice editor slide-up panel */
