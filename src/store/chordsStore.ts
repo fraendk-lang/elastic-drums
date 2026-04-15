@@ -133,11 +133,7 @@ export const CHORDS_CORE_PRESETS = CHORDS_PRESETS.filter((preset) =>
   CHORDS_SIGNATURE_PRESET_NAMES.includes(preset.name as typeof CHORDS_SIGNATURE_PRESET_NAMES[number])
 );
 
-const getChordsCorePresetIndex = (index: number): number => {
-  const currentName = CHORDS_PRESETS[index]?.name;
-  const coreIndex = CHORDS_CORE_PRESETS.findIndex((preset) => preset.name === currentName);
-  return coreIndex >= 0 ? coreIndex : 0;
-};
+// getChordsCorePresetIndex removed — preset nav now cycles through all presets
 
 // ─── Chordline Agent: Genre Strategies ──────────────────
 
@@ -644,16 +640,12 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
   },
 
   nextPreset: () => {
-    const nextCore = (getChordsCorePresetIndex(get().presetIndex) + 1) % CHORDS_CORE_PRESETS.length;
-    const nextName = CHORDS_CORE_PRESETS[nextCore]?.name;
-    const nextIndex = CHORDS_PRESETS.findIndex((preset) => preset.name === nextName);
-    if (nextIndex >= 0) get().loadPreset(nextIndex);
+    const next = (get().presetIndex + 1) % CHORDS_PRESETS.length;
+    get().loadPreset(next);
   },
   prevPreset: () => {
-    const prevCore = (getChordsCorePresetIndex(get().presetIndex) - 1 + CHORDS_CORE_PRESETS.length) % CHORDS_CORE_PRESETS.length;
-    const prevName = CHORDS_CORE_PRESETS[prevCore]?.name;
-    const prevIndex = CHORDS_PRESETS.findIndex((preset) => preset.name === prevName);
-    if (prevIndex >= 0) get().loadPreset(prevIndex);
+    const prev = (get().presetIndex - 1 + CHORDS_PRESETS.length) % CHORDS_PRESETS.length;
+    get().loadPreset(prev);
   },
 
   setInstrument: async (id: string) => {

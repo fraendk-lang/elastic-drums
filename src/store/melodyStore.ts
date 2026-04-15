@@ -115,11 +115,7 @@ export const MELODY_CORE_PRESETS = MELODY_PRESETS.filter((preset) =>
   MELODY_SIGNATURE_PRESET_NAMES.includes(preset.name as typeof MELODY_SIGNATURE_PRESET_NAMES[number])
 );
 
-const getMelodyCorePresetIndex = (index: number): number => {
-  const currentName = MELODY_PRESETS[index]?.name;
-  const coreIndex = MELODY_CORE_PRESETS.findIndex((preset) => preset.name === currentName);
-  return coreIndex >= 0 ? coreIndex : 0;
-};
+// getMelodyCorePresetIndex removed — preset nav now cycles through all presets
 
 // ─── Melody Generation Strategies ────────────────────────
 
@@ -836,16 +832,12 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
   },
 
   nextPreset: () => {
-    const nextCore = (getMelodyCorePresetIndex(get().presetIndex) + 1) % MELODY_CORE_PRESETS.length;
-    const nextName = MELODY_CORE_PRESETS[nextCore]?.name;
-    const nextIndex = MELODY_PRESETS.findIndex((preset) => preset.name === nextName);
-    if (nextIndex >= 0) get().loadPreset(nextIndex);
+    const next = (get().presetIndex + 1) % MELODY_PRESETS.length;
+    get().loadPreset(next);
   },
   prevPreset: () => {
-    const prevCore = (getMelodyCorePresetIndex(get().presetIndex) - 1 + MELODY_CORE_PRESETS.length) % MELODY_CORE_PRESETS.length;
-    const prevName = MELODY_CORE_PRESETS[prevCore]?.name;
-    const prevIndex = MELODY_PRESETS.findIndex((preset) => preset.name === prevName);
-    if (prevIndex >= 0) get().loadPreset(prevIndex);
+    const prev = (get().presetIndex - 1 + MELODY_PRESETS.length) % MELODY_PRESETS.length;
+    get().loadPreset(prev);
   },
 
   setInstrument: async (id: string) => {

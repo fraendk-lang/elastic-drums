@@ -110,11 +110,7 @@ export const BASS_CORE_PRESETS = BASS_PRESETS.filter((preset) =>
   BASS_SIGNATURE_PRESET_NAMES.includes(preset.name as typeof BASS_SIGNATURE_PRESET_NAMES[number])
 );
 
-const getBassCorePresetIndex = (index: number): number => {
-  const currentName = BASS_PRESETS[index]?.name;
-  const coreIndex = BASS_CORE_PRESETS.findIndex((preset) => preset.name === currentName);
-  return coreIndex >= 0 ? coreIndex : 0;
-};
+// getBassCorePresetIndex removed — preset nav now cycles through all presets
 
 // ─── Bassline Agent: Genre Strategies ────────────────────
 
@@ -694,16 +690,12 @@ export const useBassStore = create<BassStore>((set, get) => ({
   },
 
   nextPreset: () => {
-    const nextCore = (getBassCorePresetIndex(get().presetIndex) + 1) % BASS_CORE_PRESETS.length;
-    const nextName = BASS_CORE_PRESETS[nextCore]?.name;
-    const nextIndex = BASS_PRESETS.findIndex((preset) => preset.name === nextName);
-    if (nextIndex >= 0) get().loadPreset(nextIndex);
+    const next = (get().presetIndex + 1) % BASS_PRESETS.length;
+    get().loadPreset(next);
   },
   prevPreset: () => {
-    const prevCore = (getBassCorePresetIndex(get().presetIndex) - 1 + BASS_CORE_PRESETS.length) % BASS_CORE_PRESETS.length;
-    const prevName = BASS_CORE_PRESETS[prevCore]?.name;
-    const prevIndex = BASS_PRESETS.findIndex((preset) => preset.name === prevName);
-    if (prevIndex >= 0) get().loadPreset(prevIndex);
+    const prev = (get().presetIndex - 1 + BASS_PRESETS.length) % BASS_PRESETS.length;
+    get().loadPreset(prev);
   },
 
   setInstrument: async (id: string) => {
