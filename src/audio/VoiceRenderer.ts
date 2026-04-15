@@ -25,6 +25,7 @@ export interface VoiceParamDef {
 export const VOICE_PARAM_DEFS: Record<number, VoiceParamDef[]> = {
   0: [ // Kick
     { id: "tune", label: "TUNE", min: 30, max: 120, default: 52 },
+    { id: "sampleTune", label: "TRNS", min: -24, max: 24, default: 0, step: 1 },
     { id: "decay", label: "DECAY", min: 100, max: 1200, default: 550 },
     { id: "click", label: "CLICK", min: 0, max: 100, default: 50 },
     { id: "drive", label: "DRIVE", min: 0, max: 100, default: 40 },
@@ -33,12 +34,14 @@ export const VOICE_PARAM_DEFS: Record<number, VoiceParamDef[]> = {
   ],
   1: [ // Snare
     { id: "tune", label: "TUNE", min: 100, max: 350, default: 180 },
+    { id: "sampleTune", label: "TRNS", min: -24, max: 24, default: 0, step: 1 },
     { id: "decay", label: "DECAY", min: 50, max: 500, default: 220 },
     { id: "tone", label: "TONE", min: 0, max: 100, default: 55 },
     { id: "snap", label: "SNAP", min: 0, max: 100, default: 70 },
     { id: "body", label: "BODY", min: 0, max: 100, default: 60 },
   ],
   2: [ // Clap
+    { id: "sampleTune", label: "TRNS", min: -24, max: 24, default: 0, step: 1 },
     { id: "decay", label: "DECAY", min: 80, max: 800, default: 350 },
     { id: "tone", label: "TONE", min: 500, max: 5000, default: 1800 },
     { id: "spread", label: "SPREAD", min: 0, max: 100, default: 50 },
@@ -46,45 +49,54 @@ export const VOICE_PARAM_DEFS: Record<number, VoiceParamDef[]> = {
   ],
   3: [ // Tom Lo — 808 style, ~166 Hz
     { id: "tune", label: "TUNE", min: 80, max: 300, default: 166 },
+    { id: "sampleTune", label: "TRNS", min: -24, max: 24, default: 0, step: 1 },
     { id: "decay", label: "DECAY", min: 80, max: 800, default: 350 },
     { id: "click", label: "CLICK", min: 0, max: 100, default: 40 },
   ],
   4: [ // Tom Mid — 808 style, ~220 Hz
     { id: "tune", label: "TUNE", min: 120, max: 400, default: 220 },
+    { id: "sampleTune", label: "TRNS", min: -24, max: 24, default: 0, step: 1 },
     { id: "decay", label: "DECAY", min: 60, max: 600, default: 280 },
     { id: "click", label: "CLICK", min: 0, max: 100, default: 45 },
   ],
   5: [ // Tom Hi — 808 style, ~310 Hz
     { id: "tune", label: "TUNE", min: 180, max: 600, default: 310 },
+    { id: "sampleTune", label: "TRNS", min: -24, max: 24, default: 0, step: 1 },
     { id: "decay", label: "DECAY", min: 40, max: 500, default: 220 },
     { id: "click", label: "CLICK", min: 0, max: 100, default: 50 },
   ],
   6: [ // HH Closed
     { id: "tune", label: "TUNE", min: 200, max: 600, default: 330 },
+    { id: "sampleTune", label: "TRNS", min: -24, max: 24, default: 0, step: 1 },
     { id: "decay", label: "DECAY", min: 10, max: 120, default: 45 },
     { id: "tone", label: "TONE", min: 0, max: 100, default: 60 },
   ],
   7: [ // HH Open
     { id: "tune", label: "TUNE", min: 200, max: 600, default: 330 },
+    { id: "sampleTune", label: "TRNS", min: -24, max: 24, default: 0, step: 1 },
     { id: "decay", label: "DECAY", min: 50, max: 600, default: 250 },
     { id: "tone", label: "TONE", min: 0, max: 100, default: 60 },
   ],
   8: [ // Cymbal
     { id: "tune", label: "TUNE", min: 250, max: 700, default: 380 },
+    { id: "sampleTune", label: "TRNS", min: -24, max: 24, default: 0, step: 1 },
     { id: "decay", label: "DECAY", min: 200, max: 2000, default: 800 },
   ],
   9: [ // Ride
     { id: "tune", label: "TUNE", min: 300, max: 800, default: 480 },
+    { id: "sampleTune", label: "TRNS", min: -24, max: 24, default: 0, step: 1 },
     { id: "decay", label: "DECAY", min: 200, max: 2000, default: 800 },
   ],
   10: [ // Perc 1
     { id: "type", label: "TYPE", min: 0, max: 7, default: 0, step: 1 },
+    { id: "sampleTune", label: "TRNS", min: -24, max: 24, default: 0, step: 1 },
     { id: "tune", label: "TUNE", min: 100, max: 4000, default: 800 },
     { id: "decay", label: "DECAY", min: 20, max: 800, default: 120 },
     { id: "tone", label: "TONE", min: 0, max: 100, default: 50 },
   ],
   11: [ // Perc 2
     { id: "type", label: "TYPE", min: 0, max: 7, default: 3, step: 1 },
+    { id: "sampleTune", label: "TRNS", min: -24, max: 24, default: 0, step: 1 },
     { id: "tune", label: "TUNE", min: 100, max: 4000, default: 1200 },
     { id: "decay", label: "DECAY", min: 20, max: 800, default: 120 },
     { id: "tone", label: "TONE", min: 0, max: 100, default: 50 },
@@ -117,6 +129,20 @@ export class VoiceRenderer {
   }
 
   /**
+   * Schedule cleanup of audio nodes after they've finished playing.
+   * This prevents memory leaks from accumulated disconnected nodes
+   * that would cause audio crackling after extended playback.
+   */
+  private scheduleCleanup(nodes: AudioNode[], delaySec: number): void {
+    const cleanupMs = Math.max(100, (delaySec + 0.1) * 1000); // Extra 100ms margin
+    setTimeout(() => {
+      for (const node of nodes) {
+        try { node.disconnect(); } catch { /* already disconnected */ }
+      }
+    }, cleanupMs);
+  }
+
+  /**
    * Anti-click: fade out previous voice instance before re-triggering.
    * Uses a very short 2ms fade to zero to avoid discontinuities.
    */
@@ -127,6 +153,8 @@ export class VoiceRenderer {
         prevGain.gain.cancelScheduledValues(t);
         prevGain.gain.setValueAtTime(prevGain.gain.value, t);
         prevGain.gain.linearRampToValueAtTime(0, t + 0.002); // 2ms fade-out
+        // Disconnect the old node after fade completes to free memory
+        this.scheduleCleanup([prevGain], 0.05);
       } catch {
         // Node may already be disconnected — safe to ignore
       }
@@ -205,17 +233,21 @@ export class VoiceRenderer {
     voiceOut.connect(out);
     this.activeVoiceGains[voice] = voiceOut;
 
+    const p = this.voiceParams[voice] ?? {};
+
+    // Estimate max decay for cleanup scheduling
+    const decayMs = (p.decay ?? 550);
+    const maxLifetimeSec = Math.max(0.5, (gateDurationSec ?? decayMs / 1000) + 0.2);
+
     // Check if this voice has a sample loaded — play sample instead of synth
     if (this.sampleLookup) {
       const buffer = this.sampleLookup(voice);
       if (buffer) {
-        // Note: tune param is 0 for samples (drum tune is a frequency, not semitones)
-        this.playSampleAtTime(ctx, buffer, voice, velocity, t, voiceOut, 0);
+        this.playSampleAtTime(ctx, buffer, voice, velocity, t, voiceOut, p.sampleTune ?? 0);
+        this.scheduleCleanup([voiceOut], buffer.duration + 0.2);
         return;
       }
     }
-
-    const p = this.voiceParams[voice] ?? {};
 
     switch (voice) {
       case 0: this.kick(ctx, t, velocity, voiceOut, p, gateDurationSec); break;
@@ -249,6 +281,14 @@ export class VoiceRenderer {
       case 10:
       case 11: this.perc(ctx, t, velocity, p.tune ?? 800, voiceOut, p, gateDurationSec); break;
     }
+
+    // Schedule cleanup: disconnect the wrapper gain after the voice has decayed.
+    // This prevents node accumulation that causes crackling after extended playback.
+    // Cymbals/rides can have long decays, so use a generous lifetime.
+    const cleanupDelay = voice === 8 || voice === 9
+      ? Math.max(maxLifetimeSec, 4) // Cymbals: at least 4 seconds
+      : maxLifetimeSec;
+    this.scheduleCleanup([voiceOut], cleanupDelay);
   }
 
   // ─── KICK ──────────────────────────────────────────────────
