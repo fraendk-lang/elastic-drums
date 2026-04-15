@@ -18,6 +18,14 @@ export interface BassPreset {
   params: BassParams;
 }
 
+export const BASS_SIGNATURE_PRESET_NAMES = [
+  "Deep Sub",
+  "Analog Warmth",
+  "House Groove",
+  "Tape Bass",
+  "Classic 303",
+] as const;
+
 const bp = (p: Partial<BassParams>): BassParams => ({ ...DEFAULT_BASS_PARAMS, ...p });
 
 // Factory helper to ensure filterModel is set (for backward compatibility)
@@ -27,13 +35,13 @@ function ensureFilterModel(p: BassParams): BassParams {
 
 export const BASS_PRESETS: BassPreset[] = [
   // ── Classic Acid ──
-  { name: "Classic 303", params: bp({}) },
+  { name: "Classic 303", params: bp({ cutoff: 420, resonance: 20, envMod: 0.78, decay: 135, accent: 0.58, slideTime: 42, distortion: 0.34, volume: 0.64, subOsc: 0.08, filterModel: "ladder", punch: 0.22, harmonics: 0.18, subFilter: 72 }) },
   { name: "Warm Vintage", params: bp({ waveform: "square", cutoff: 200, resonance: 4, envMod: 0.15, decay: 300, accent: 0.3, slideTime: 80, distortion: 0.35, volume: 0.7, subOsc: 0.6, filterModel: "ladder", punch: 0.15, harmonics: 0.2, subFilter: 60 }) },
   { name: "Acid Squelch", params: bp({ cutoff: 400, resonance: 22, envMod: 0.85, decay: 120, accent: 0.7, slideTime: 50, distortion: 0.4 }) },
   { name: "Acid Screamer", params: bp({ cutoff: 350, resonance: 28, envMod: 0.95, decay: 100, accent: 0.9, slideTime: 30, distortion: 0.6, volume: 0.65 }) },
   { name: "Acid Whistle", params: bp({ cutoff: 600, resonance: 26, envMod: 0.9, decay: 60, accent: 0.8, slideTime: 40, distortion: 0.3, volume: 0.6 }) },
   // ── Deep / Sub ──
-  { name: "Deep Sub", params: bp({ waveform: "square", cutoff: 300, resonance: 4, envMod: 0.1, decay: 400, accent: 0.3, slideTime: 80, distortion: 0, volume: 0.8, subOsc: 0.7 }) },
+  { name: "Deep Sub", params: bp({ waveform: "square", cutoff: 235, resonance: 3, envMod: 0.08, decay: 420, accent: 0.16, slideTime: 55, distortion: 0.04, volume: 0.82, subOsc: 0.9, filterModel: "ladder", punch: 0.16, harmonics: 0.03, subFilter: 46 }) },
   { name: "808 Sub", params: bp({ waveform: "square", cutoff: 200, resonance: 2, envMod: 0.05, decay: 600, accent: 0.2, slideTime: 0, distortion: 0, volume: 0.85, subOsc: 0.9, subFilter: 40 }) },
   { name: "Dub Pressure", params: bp({ cutoff: 280, resonance: 10, envMod: 0.25, decay: 450, accent: 0.35, slideTime: 90, distortion: 0.1, volume: 0.75, subOsc: 0.65 }) },
   // ── Pluck / Stab ──
@@ -53,13 +61,13 @@ export const BASS_PRESETS: BassPreset[] = [
   { name: "Techno Throb", params: bp({ waveform: "square", cutoff: 450, resonance: 18, envMod: 0.6, slideTime: 100, distortion: 0.35, subOsc: 0.5 }) },
   { name: "Minimal Dub", params: bp({ cutoff: 350, resonance: 8, envMod: 0.3, decay: 500, accent: 0.3, distortion: 0.1, volume: 0.75, subOsc: 0.6 }) },
   { name: "DnB Reese", params: bp({ cutoff: 550, resonance: 15, envMod: 0.55, decay: 160, accent: 0.6, slideTime: 60, distortion: 0.45, volume: 0.6, subOsc: 0.4 }) },
-  { name: "House Groove", params: bp({ cutoff: 650, resonance: 11, envMod: 0.45, decay: 140, accent: 0.45, slideTime: 25, distortion: 0.15, subOsc: 0.35 }) },
+  { name: "House Groove", params: bp({ waveform: "square", cutoff: 520, resonance: 9, envMod: 0.34, decay: 165, accent: 0.34, slideTime: 22, distortion: 0.12, volume: 0.72, subOsc: 0.42, filterModel: "ladder", punch: 0.34, harmonics: 0.12, subFilter: 62 }) },
   { name: "Lo-Fi Wobble", params: bp({ waveform: "square", cutoff: 380, resonance: 19, envMod: 0.65, decay: 170, accent: 0.55, slideTime: 80, distortion: 0.3, volume: 0.6, subOsc: 0.45 }) },
   { name: "Trance Gate", params: bp({ cutoff: 800, resonance: 13, envMod: 0.6, decay: 70, accent: 0.7, slideTime: 5, distortion: 0.25, volume: 0.6 }) },
   { name: "Dark Ambient", params: bp({ waveform: "square", cutoff: 250, resonance: 6, envMod: 0.2, decay: 700, accent: 0.2, slideTime: 150, distortion: 0, volume: 0.6, subOsc: 0.8 }) },
   // ── Professional New Presets ──
-  { name: "Analog Warmth", params: bp({ waveform: "square", cutoff: 500, resonance: 5, envMod: 0.2, decay: 350, accent: 0.25, slideTime: 60, distortion: 0.08, volume: 0.65, subOsc: 0.8, filterModel: "ladder", punch: 0.2, harmonics: 0.25, subFilter: 70 }) },
-  { name: "Tape Bass", params: bp({ waveform: "sawtooth", cutoff: 700, resonance: 8, envMod: 0.35, decay: 250, accent: 0.4, slideTime: 45, distortion: 0.45, volume: 0.6, subOsc: 0.4, harmonics: 0.4, punch: 0.25 }) },
+  { name: "Analog Warmth", params: bp({ waveform: "square", cutoff: 360, resonance: 4, envMod: 0.16, decay: 300, accent: 0.2, slideTime: 48, distortion: 0.09, volume: 0.68, subOsc: 0.78, filterModel: "ladder", punch: 0.22, harmonics: 0.14, subFilter: 64 }) },
+  { name: "Tape Bass", params: bp({ waveform: "sawtooth", cutoff: 430, resonance: 7, envMod: 0.22, decay: 210, accent: 0.28, slideTime: 36, distortion: 0.28, volume: 0.63, subOsc: 0.34, filterModel: "ladder", harmonics: 0.22, punch: 0.24, subFilter: 70 }) },
   { name: "Organic Evolve", params: bp({ waveform: "sawtooth", cutoff: 300, resonance: 6, envMod: 0.4, decay: 800, accent: 0.15, slideTime: 120, distortion: 0.08, volume: 0.55, subOsc: 0.7, filterModel: "ladder", punch: 0.05, harmonics: 0.12, subFilter: 55 }) },
   // ── Comprehensive Designer Presets ──
   { name: "Deep Sub", params: bp({ waveform: "square", cutoff: 200, resonance: 2, envMod: 0.1, decay: 400, accent: 0.1, slideTime: 0, distortion: 0.08, volume: 0.8, subOsc: 0.9, filterModel: "ladder", punch: 0.1, harmonics: 0, subFilter: 40 }) },
@@ -74,6 +82,16 @@ export const BASS_PRESETS: BassPreset[] = [
   { name: "Sub Growl", params: bp({ waveform: "sawtooth", cutoff: 200, resonance: 5, envMod: 0.2, decay: 150, accent: 0.35, slideTime: 0, distortion: 0.45, volume: 0.7, subOsc: 0.7, punch: 0.35, harmonics: 0.3 }) },
 ];
 
+export const BASS_CORE_PRESETS = BASS_PRESETS.filter((preset) =>
+  BASS_SIGNATURE_PRESET_NAMES.includes(preset.name as typeof BASS_SIGNATURE_PRESET_NAMES[number])
+);
+
+const getBassCorePresetIndex = (index: number): number => {
+  const currentName = BASS_PRESETS[index]?.name;
+  const coreIndex = BASS_CORE_PRESETS.findIndex((preset) => preset.name === currentName);
+  return coreIndex >= 0 ? coreIndex : 0;
+};
+
 // ─── Bassline Agent: Genre Strategies ────────────────────
 
 export interface BasslineStrategy {
@@ -82,15 +100,20 @@ export interface BasslineStrategy {
 }
 
 function makeStep(note: number, opts?: Partial<BassStep>): BassStep {
-  return { active: true, note, octave: 0, accent: false, slide: false, tie: false, ...opts };
+  return { active: true, note, octave: 0, accent: false, velocity: 0.82, slide: false, tie: false, gateLength: 1, ...opts };
 }
 
 function emptyStep(): BassStep {
-  return { active: false, note: 0, octave: 0, accent: false, slide: false, tie: false };
+  return { active: false, note: 0, octave: 0, accent: false, velocity: 0.82, slide: false, tie: false, gateLength: 1 };
 }
 
 function prob(p: number): boolean { return Math.random() < p; }
 function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]!; }
+function pickBassGate(style: "tight" | "groove" | "held" = "groove"): number {
+  if (style === "tight") return pick([1, 1, 1, 2, 2, 3]);
+  if (style === "held") return pick([2, 3, 4, 4, 6, 8]);
+  return pick([1, 1, 2, 2, 3, 4, 4]);
+}
 
 export const BASSLINE_STRATEGIES: BasslineStrategy[] = [
   {
@@ -115,14 +138,17 @@ export const BASSLINE_STRATEGIES: BasslineStrategy[] = [
     name: "Deep House",
     generate: (len, scaleLen) => {
       const steps: BassStep[] = [];
-      const rootNotes = [0, 0, 0, Math.min(4, scaleLen - 1), Math.min(3, scaleLen - 1)]; // heavy root
+      const rootNotes = [0, 0, 0, Math.min(4, scaleLen - 1), Math.min(3, scaleLen - 1)];
       for (let i = 0; i < 64; i++) {
         if (i >= len) { steps.push(emptyStep()); continue; }
-        if (prob(0.35)) {
+        const isAnchor = i % 4 === 0 || i % 8 === 6;
+        if ((isAnchor && prob(0.82)) || prob(0.12)) {
+          const gateLength = i % 8 === 0 ? pickBassGate("held") : pickBassGate("groove");
           steps.push(makeStep(pick(rootNotes), {
-            accent: prob(0.15),
-            slide: prob(0.1),
-            tie: prob(0.4),
+            accent: i % 8 === 0 ? prob(0.5) : prob(0.12),
+            slide: prob(0.08),
+            tie: gateLength >= 4 && prob(0.35),
+            gateLength,
             octave: prob(0.15) ? -1 : 0,
           }));
         } else { steps.push(emptyStep()); }
@@ -232,14 +258,19 @@ export const BASSLINE_STRATEGIES: BasslineStrategy[] = [
     name: "Random",
     generate: (len, scaleLen) => {
       const steps: BassStep[] = [];
+      let note = pick([0, 0, 0, 2, Math.min(4, scaleLen - 1)]);
       for (let i = 0; i < 64; i++) {
         if (i >= len) { steps.push(emptyStep()); continue; }
-        if (prob(0.65)) {
-          steps.push(makeStep(Math.floor(Math.random() * Math.min(scaleLen, 7)), {
-            octave: prob(0.3) ? pick([1, -1]) : 0,
-            accent: prob(0.3),
-            slide: prob(0.4),
-            tie: prob(0.2),
+        const isPhraseEdge = i % 4 === 0;
+        if ((isPhraseEdge && prob(0.78)) || prob(0.26)) {
+          note = Math.max(0, Math.min(Math.min(scaleLen, 7) - 1, note + pick([-2, -1, 0, 1, 1, 2])));
+          const gateLength = isPhraseEdge ? pickBassGate("groove") : pickBassGate("tight");
+          steps.push(makeStep(note, {
+            octave: prob(0.18) ? pick([1, -1]) : 0,
+            accent: isPhraseEdge ? prob(0.45) : prob(0.12),
+            slide: !isPhraseEdge && prob(0.22),
+            tie: gateLength >= 3 && prob(0.25),
+            gateLength,
           }));
         } else { steps.push(emptyStep()); }
       }
@@ -262,17 +293,18 @@ interface BassStore {
   presetIndex: number;
   strategyIndex: number;
   isPlaying: boolean;
-  automationData: Record<string, number[]>;
+  automationData: Record<string, Array<number | undefined>>;
   automationParam: string;
   instrument: string;
 
   toggleStep: (step: number) => void;
   setStepNote: (step: number, note: number) => void;
   setStepOctave: (step: number, octave: number) => void;
+  setStepVelocity: (step: number, velocity: number) => void;
   toggleAccent: (step: number) => void;
   toggleSlide: (step: number) => void;
   toggleTie: (step: number) => void;
-  setTieRange: (fromStep: number, toStep: number) => void;
+  setGateLength: (fromStep: number, toStep: number) => void;
   cycleOctave: (step: number) => void;
   setRootNote: (midi: number, name: string) => void;
   setScale: (name: string) => void;
@@ -290,7 +322,7 @@ interface BassStore {
   prevPreset: () => void;
   setInstrument: (id: string) => Promise<void>;
   // For save/load
-  setAutomationValue: (param: string, step: number, value: number) => void;
+  setAutomationValue: (param: string, step: number, value: number | undefined) => void;
   setAutomationParam: (param: string) => void;
   clearAutomation: (param: string) => void;
   loadBassPattern: (data: { steps: BassStep[]; length: number; params: BassParams; rootNote: number; rootName: string; scaleName: string }) => void;
@@ -298,7 +330,7 @@ interface BassStore {
 
 function createEmptySteps(): BassStep[] {
   return Array.from({ length: 64 }, () => ({
-    active: false, note: 0, octave: 0, accent: false, slide: false, tie: false,
+    active: false, note: 0, octave: 0, accent: false, velocity: 0.82, slide: false, tie: false, gateLength: 1,
   }));
 }
 
@@ -318,9 +350,23 @@ export function startBassScheduler() {
     const bpm = drumState.bpm;
     const secondsPerStep = 60.0 / bpm / 4;
 
+    const getLegacyTieLength = (steps: BassStep[], startIndex: number, sequenceLength: number) => {
+      let span = 1;
+      for (let i = 1; i < sequenceLength; i++) {
+        const nextIdx = (startIndex + i) % sequenceLength;
+        const next = steps[nextIdx];
+        if (!next?.active || !next.tie) break;
+        span += 1;
+        if (nextIdx === startIndex) break;
+      }
+      return span;
+    };
+
     while (nextBassStepTime < audioEngine.currentTime + 0.1) {
       const { steps, currentStep, length, rootNote, scaleName, automationData } = useBassStore.getState();
       const step = steps[currentStep % length];
+      const stepIndex = currentStep % length;
+      const prevStep = stepIndex > 0 ? steps[stepIndex - 1] : steps[length - 1];
 
       // Apply per-step automation
       for (const [param, vals] of Object.entries(automationData)) {
@@ -328,29 +374,50 @@ export function startBassScheduler() {
         if (val !== undefined) bassEngine.setParams({ [param]: val });
       }
 
-      if (step?.active) {
+      const isContinuationTie = Boolean(step?.active && step.tie && prevStep?.active);
+      let isHeldByPreviousGate = false;
+
+      if (!step?.active) {
+        for (let back = 1; back < length; back++) {
+          const candidateIndex = (stepIndex - back + length) % length;
+          const candidate = steps[candidateIndex];
+          if (!candidate?.active) continue;
+
+          const candidatePrev = candidateIndex > 0 ? steps[candidateIndex - 1] : steps[length - 1];
+          const candidateIsContinuation = Boolean(candidate.tie && candidatePrev?.active);
+
+          if (candidateIsContinuation) continue;
+
+          const explicitGateLength = Math.max(1, candidate.gateLength ?? 1);
+          const span = explicitGateLength > 1 ? explicitGateLength : getLegacyTieLength(steps, candidateIndex, length);
+          isHeldByPreviousGate = back < span;
+          break;
+        }
+      }
+
+      if (step?.active && !isContinuationTie) {
         const midiNote = scaleNote(rootNote, scaleName, step.note, step.octave);
         const { instrument } = useBassStore.getState();
+        const explicitGateLength = Math.max(1, step.gateLength ?? 1);
+        let sustainSteps = explicitGateLength;
+
+        // Backward compatibility for saved patterns that still store continuation ties.
+        if (explicitGateLength === 1) {
+          sustainSteps = getLegacyTieLength(steps, stepIndex, length);
+        }
+        const sustainDuration = secondsPerStep * sustainSteps;
 
         // Use soundfont if a non-synth instrument is selected
         if (instrument !== "_synth_") {
-          const velocity = step.accent ? 1.0 : 0.7;
-          const duration = secondsPerStep * 1.5;
+          const velocity = Math.max(0.2, Math.min(1, step.velocity ?? (step.accent ? 1.0 : 0.7)));
+          const duration = Math.max(secondsPerStep * 1.2, sustainDuration * 0.98);
           soundFontEngine.playNote("bass", midiNote, nextBassStepTime, velocity, duration);
         } else {
           // Use built-in synth
-          bassEngine.triggerNote(midiNote, nextBassStepTime, step.accent, step.slide, step.tie);
-
-          const nextStepIdx = (currentStep + 1) % length;
-          const nextStep = steps[nextStepIdx];
-          if (nextStep?.active && nextStep.tie) {
-            // Don't release — tie holds note
-          } else {
-            // Release before next step (whether next is active or not)
-            bassEngine.releaseNote(nextBassStepTime + secondsPerStep * 0.9);
-          }
+          bassEngine.triggerNote(midiNote, nextBassStepTime, step.accent, step.slide, false, step.velocity ?? (step.accent ? 1.0 : 0.7));
+          bassEngine.releaseNote(nextBassStepTime + Math.max(secondsPerStep * 0.92, sustainDuration * 0.98));
         }
-      } else {
+      } else if (!step?.active && !isHeldByPreviousGate) {
         // Only rest if this sequencer actually had a note playing
         // (don't kill notes from Piano Roll)
         if (steps.some(s => s.active)) {
@@ -404,6 +471,12 @@ export const useBassStore = create<BassStore>((set, get) => ({
     const newSteps = [...s.steps]; newSteps[step] = { ...newSteps[step]!, octave }; return { steps: newSteps };
   }),
 
+  setStepVelocity: (step, velocity) => set((s) => {
+    const newSteps = [...s.steps];
+    newSteps[step] = { ...newSteps[step]!, velocity: Math.max(0.2, Math.min(1, velocity)) };
+    return { steps: newSteps };
+  }),
+
   toggleAccent: (step) => set((s) => {
     const newSteps = [...s.steps]; newSteps[step] = { ...newSteps[step]!, accent: !newSteps[step]!.accent }; return { steps: newSteps };
   }),
@@ -416,26 +489,19 @@ export const useBassStore = create<BassStore>((set, get) => ({
     const newSteps = [...s.steps]; newSteps[step] = { ...newSteps[step]!, tie: !newSteps[step]!.tie }; return { steps: newSteps };
   }),
 
-  setTieRange: (fromStep, toStep) => set((s) => {
+  setGateLength: (fromStep, toStep) => set((s) => {
     const newSteps = [...s.steps];
     const sourceStep = newSteps[fromStep]!;
     if (!sourceStep.active) return { steps: newSteps };
 
-    // Steps from fromStep+1 to toStep become tie notes (same note/octave as source)
-    for (let i = fromStep + 1; i <= Math.min(toStep, 63); i++) {
-      newSteps[i] = {
-        active: true,
-        note: sourceStep.note,
-        octave: sourceStep.octave,
-        accent: false,
-        slide: false,
-        tie: true,
-      };
-    }
-    // Clear ties beyond the drag range (in case user shortened)
-    for (let i = toStep + 1; i <= 63; i++) {
+    const gateLength = Math.max(1, Math.min(64 - fromStep, toStep - fromStep + 1));
+    newSteps[fromStep] = { ...sourceStep, gateLength, tie: false }; // Clear tie on source — using explicit length now
+
+    // Clear legacy continuation ties directly after the source note so drag length
+    // behaves like a real note value instead of leaving old tie placeholders behind.
+    for (let i = fromStep + 1; i <= 63; i++) {
       if (newSteps[i]?.tie && newSteps[i]?.active) {
-        newSteps[i] = { active: false, note: 0, octave: 0, accent: false, slide: false, tie: false };
+        newSteps[i] = { active: false, note: 0, octave: 0, accent: false, velocity: 0.82, slide: false, tie: false, gateLength: 1 };
       } else break; // Stop at first non-tie
     }
     return { steps: newSteps };
@@ -514,7 +580,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
         if (noteMode === "ascending") note = i % Math.min(scale.length, 7);
         else if (noteMode === "random") note = Math.floor(Math.random() * Math.min(scale.length, 7));
         // "root" → note stays 0
-        newSteps[i] = { active: true, note, octave: 0, accent: i % 4 === 0, slide: false, tie: false };
+        newSteps[i] = { active: true, note, octave: 0, accent: i % 4 === 0, velocity: i % 4 === 0 ? 0.96 : 0.74, slide: false, tie: false, gateLength: 1 };
       }
     }
     set({ steps: newSteps });
@@ -528,16 +594,35 @@ export const useBassStore = create<BassStore>((set, get) => ({
     bassEngine.setParams(params);
   },
 
-  nextPreset: () => { const n = (get().presetIndex + 1) % BASS_PRESETS.length; get().loadPreset(n); },
-  prevPreset: () => { const p = (get().presetIndex - 1 + BASS_PRESETS.length) % BASS_PRESETS.length; get().loadPreset(p); },
+  nextPreset: () => {
+    const nextCore = (getBassCorePresetIndex(get().presetIndex) + 1) % BASS_CORE_PRESETS.length;
+    const nextName = BASS_CORE_PRESETS[nextCore]?.name;
+    const nextIndex = BASS_PRESETS.findIndex((preset) => preset.name === nextName);
+    if (nextIndex >= 0) get().loadPreset(nextIndex);
+  },
+  prevPreset: () => {
+    const prevCore = (getBassCorePresetIndex(get().presetIndex) - 1 + BASS_CORE_PRESETS.length) % BASS_CORE_PRESETS.length;
+    const prevName = BASS_CORE_PRESETS[prevCore]?.name;
+    const prevIndex = BASS_PRESETS.findIndex((preset) => preset.name === prevName);
+    if (prevIndex >= 0) get().loadPreset(prevIndex);
+  },
 
   setInstrument: async (id: string) => {
+    if (id === "_synth_") {
+      soundFontEngine.stopAll("bass");
+      set({ instrument: id });
+      return;
+    }
+
     set({ instrument: id });
     const ctx = audioEngine.getAudioContext();
     if (ctx) {
       const destination = audioEngine.getChannelOutput(12); // Bass = channel 12
       try {
-        await soundFontEngine.loadInstrument("bass", id, destination);
+        const ok = await soundFontEngine.loadInstrument("bass", id, destination);
+        if (!ok) {
+          set({ instrument: "_synth_" });
+        }
       } catch (err) {
         console.warn("Failed to load bass instrument:", err);
         set({ instrument: "_synth_" });
@@ -547,7 +632,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
 
   setAutomationValue: (param, step, value) => set((s) => {
     const data = { ...s.automationData };
-    if (!data[param]) data[param] = new Array(64).fill(0);
+    if (!data[param]) data[param] = new Array(64).fill(undefined);
     data[param] = [...data[param]!];
     data[param]![step] = value;
     return { automationData: data };
