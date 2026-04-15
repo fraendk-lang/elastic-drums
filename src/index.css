@@ -2,15 +2,16 @@
 
 :root {
   /* Elastic Drums Color Palette – Dark Theme with Warm Accents */
-  --ed-bg-primary: #0a0a0c;
-  --ed-bg-secondary: #121215;
-  --ed-bg-surface: #1a1a20;
-  --ed-bg-elevated: #222228;
-  --ed-border: #2a2a34;
-  --ed-border-subtle: #1e1e26;
-  --ed-text-primary: #e8e8ec;
-  --ed-text-secondary: #8888a0;
-  --ed-text-muted: #555568;
+  /* Lifted slightly for MacBook/Retina readability */
+  --ed-bg-primary: #101014;
+  --ed-bg-secondary: #18181d;
+  --ed-bg-surface: #212128;
+  --ed-bg-elevated: #2a2a32;
+  --ed-border: #333340;
+  --ed-border-subtle: #262630;
+  --ed-text-primary: #ededf0;
+  --ed-text-secondary: #9494ac;
+  --ed-text-muted: #62627a;
   --ed-accent-orange: #f59e0b;
   --ed-accent-amber: #d97706;
   --ed-accent-blue: #3b82f6;
@@ -34,8 +35,11 @@
   box-sizing: border-box;
 }
 
+html,
 body {
   margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
   background-color: var(--ed-bg-primary);
   color: var(--ed-text-primary);
   font-family: "Inter", system-ui, -apple-system, sans-serif;
@@ -46,8 +50,14 @@ body {
 }
 
 #root {
-  width: 100vw;
+  width: 100%;
   height: 100vh;
+  height: 100dvh;
+}
+
+.app-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 /* Noise texture overlay for depth */
