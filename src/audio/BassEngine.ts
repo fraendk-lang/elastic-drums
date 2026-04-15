@@ -181,7 +181,7 @@ export class BassEngine {
     // --- DC offset blocker ---
     this.dcBlocker = audioCtx.createBiquadFilter();
     this.dcBlocker.type = "highpass";
-    this.dcBlocker.frequency.value = 20;
+    this.dcBlocker.frequency.value = 30; // Higher cutoff to effectively remove DC offset
     this.dcBlocker.Q.value = 0.7;
 
     // --- Output ---
@@ -225,24 +225,14 @@ export class BassEngine {
       this.distNode.curve = null;
       return;
     }
-    // Professional analog-style saturation with tube bias
-    const samples = 4096; // Higher resolution for smoother harmonics
+    // Analog-style soft-clip saturation (no DC bias — was causing audible hum at idle)
+    const samples = 2048;
     const curve = new Float32Array(samples);
-    const gain = 1 + drive * 15; // Extended gain range
-    const bias = 0.15; // Tube-like DC bias for even harmonics
+    const driveGain = 1 + drive * 8;
     for (let i = 0; i < samples; i++) {
-      const x = (i / (samples / 2) - 1) * gain;
-      // Three-stage saturation:
-      // 1. Tube bias (asymmetric even harmonics)
-      const biased = x + bias;
-      // 2. Soft-knee compression
-      const knee = biased / (1 + Math.abs(biased) * 0.3);
-      // 3. Final tanh saturation with asymmetry
-      if (knee >= 0) {
-        curve[i] = Math.tanh(knee * 1.2) * 0.95;
-      } else {
-        curve[i] = Math.tanh(knee * 0.9) * 0.88; // Softer negative half = even harmonics
-      }
+      const x = (i / (samples / 2) - 1) * driveGain;
+      // Symmetric tanh saturation — clean, warm, no DC offset
+      curve[i] = Math.tanh(x);
     }
     this.distNode.curve = curve;
     this.distNode.oversample = "4x";
