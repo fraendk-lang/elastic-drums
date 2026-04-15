@@ -306,8 +306,10 @@ function pianoRollTick(currentStep: number, bpm: number): void {
     _pianoRollStepCounter = 0;
   }
 
-  const patternLen = useDrumStore.getState().pattern.length;
-  const wrappedStep = _pianoRollStepCounter % patternLen;
+  const drumPatternLen = useDrumStore.getState().pattern.length;
+  // Piano Roll loops over 4 bars (64 steps) minimum, regardless of drum pattern length
+  const pianoRollLen = Math.max(64, drumPatternLen);
+  const wrappedStep = _pianoRollStepCounter % pianoRollLen;
   const t = audioEngine.currentTime + 0.01;
   const secPerBeat = 60 / bpm;
 
@@ -323,13 +325,12 @@ function pianoRollTick(currentStep: number, bpm: number): void {
     // Check if this note should be released
     let shouldRelease = false;
 
-    if (noteEndStep <= patternLen) {
+    if (noteEndStep <= pianoRollLen) {
       // Normal note (doesn't wrap): release when current step >= end step
-      // Use > instead of >= when start and end are on different steps
       shouldRelease = wrappedStep >= noteEndStep && wrappedStep !== noteStartStep;
     } else {
       // Wrapping note: release when past effective end AND before start
-      const effectiveEnd = noteEndStep % patternLen;
+      const effectiveEnd = noteEndStep % pianoRollLen;
       shouldRelease = wrappedStep >= effectiveEnd && wrappedStep < noteStartStep;
     }
 
@@ -461,7 +462,9 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const [scaleSnap, setScaleSnap] = useState(false);
   // Sync piano roll length to drum pattern (1 bar = 4 beats)
   const patternLength = useDrumStore((s) => s.pattern.length);
-  const totalBeats = patternLength / 4; // 16 steps = 4 beats, 64 steps = 16 beats
+  // Always show at least 4 bars (16 beats / 64 steps) so user can edit full arrangements.
+  // Drum pattern might be 16 steps (1 bar) but MIDI/Piano Roll should span all 4 bars.
+  const totalBeats = Math.max(16, patternLength / 4); // Minimum 16 beats = 4 bars
 
   const [clipboard, setClipboard] = useState<PianoRollNote[]>([]);
   const [rubberBand, setRubberBand] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
