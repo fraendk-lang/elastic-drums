@@ -43,8 +43,9 @@ export function BassSequencer() {
   const {
     steps, length, currentStep, selectedPage, rootNote, rootName, scaleName, params, presetIndex, strategyIndex, instrument,
     automationData, automationParam,
+    globalOctave,
     toggleStep, setStepNote, setStepVelocity, toggleAccent, toggleSlide, toggleTie, setGateLength, cycleOctave,
-    setRootNote, setScale, setParam, setLength, setSelectedPage,
+    setRootNote, setGlobalOctave, setScale, setParam, setLength, setSelectedPage,
     clearSteps, generateBassline, nextStrategy, prevStrategy,
     loadPreset, loadBassPattern, setInstrument,
     setAutomationValue, setAutomationParam,
@@ -479,6 +480,18 @@ export function BassSequencer() {
             </>);
           })()}
         </div>
+        <div className="flex items-center gap-1 ml-2">
+          <button onClick={() => setGlobalOctave(globalOctave - 1)}
+            disabled={globalOctave <= -2}
+            className="w-5 h-5 rounded-md text-[10px] font-bold bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-white hover:bg-[var(--ed-bg-elevated)] disabled:opacity-30 transition-all">&minus;</button>
+          <span className={`text-[10px] font-mono min-w-[32px] text-center font-bold tabular-nums ${globalOctave !== 0 ? "text-[var(--ed-accent-bass)]" : "text-[var(--ed-text-muted)]"}`}>
+            {globalOctave > 0 ? `+${globalOctave}` : globalOctave}
+          </span>
+          <button onClick={() => setGlobalOctave(globalOctave + 1)}
+            disabled={globalOctave >= 2}
+            className="w-5 h-5 rounded-md text-[10px] font-bold bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-white hover:bg-[var(--ed-bg-elevated)] disabled:opacity-30 transition-all">+</button>
+          <span className="text-[7px] text-[var(--ed-text-muted)] font-bold">OCT</span>
+        </div>
         <div className="flex-1" />
         <span className="hidden lg:inline text-[7px] text-white/12">drag = pitch &middot; drag bright edge = note length &middot; rclick = accent &middot; shift = slide &middot; alt = legato tie</span>
       </div>
@@ -492,7 +505,7 @@ export function BassSequencer() {
           const isCurrent = isPlaying && currentStep === absStep;
           const isActive = step.active && absStep < length;
           const noteHeight = isActive ? Math.max(14, (step.note / maxNote) * 100) : 0;
-          const midi = isActive ? scaleNote(rootNote, scaleName, step.note, step.octave) : 0;
+          const midi = isActive ? scaleNote(rootNote, scaleName, step.note, step.octave + globalOctave) : 0;
           const prevStep = absStep > 0 ? steps[absStep - 1] : null;
           const isTiedFromPrev = isActive && step.tie && prevStep?.active;
           const isBeat = i % 4 === 0;

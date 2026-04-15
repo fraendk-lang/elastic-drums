@@ -361,6 +361,7 @@ interface BassStore {
   rootNote: number;
   rootName: string;
   scaleName: string;
+  globalOctave: number;  // -2 to +2, shifts all notes by octaves
   params: BassParams;
   presetIndex: number;
   strategyIndex: number;
@@ -379,6 +380,7 @@ interface BassStore {
   setGateLength: (fromStep: number, toStep: number) => void;
   cycleOctave: (step: number) => void;
   setRootNote: (midi: number, name: string) => void;
+  setGlobalOctave: (oct: number) => void;
   setScale: (name: string) => void;
   setParam: (key: keyof BassParams, value: number | string) => void;
   setLength: (len: number) => void;
@@ -435,7 +437,7 @@ export function startBassScheduler() {
     };
 
     while (nextBassStepTime < audioEngine.currentTime + 0.1) {
-      const { steps, currentStep, length, rootNote, scaleName, automationData } = useBassStore.getState();
+      const { steps, currentStep, length, rootNote, scaleName, automationData, globalOctave } = useBassStore.getState();
       const step = steps[currentStep % length];
       const stepIndex = currentStep % length;
       const prevStep = stepIndex > 0 ? steps[stepIndex - 1] : steps[length - 1];
@@ -468,7 +470,7 @@ export function startBassScheduler() {
       }
 
       if (step?.active && !isContinuationTie) {
-        const midiNote = scaleNote(rootNote, scaleName, step.note, step.octave);
+        const midiNote = scaleNote(rootNote, scaleName, step.note, step.octave + globalOctave);
         const { instrument } = useBassStore.getState();
         const explicitGateLength = Math.max(1, step.gateLength ?? 1);
         let sustainSteps = explicitGateLength;
@@ -522,6 +524,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
   rootNote: 36,
   rootName: "C",
   scaleName: "Minor",
+  globalOctave: 0,
   params: { ...DEFAULT_BASS_PARAMS },
   presetIndex: 0,
   strategyIndex: 0,
@@ -588,9 +591,9 @@ export const useBassStore = create<BassStore>((set, get) => ({
 
   setRootNote: (midi, name) => {
     set({ rootNote: midi, rootName: name });
-    // Sync to other stores (avoid circular — only push, don't listen)
     syncScaleToOtherStores("bass", { rootNote: midi, rootName: name });
   },
+  setGlobalOctave: (oct) => set({ globalOctave: Math.max(-2, Math.min(2, oct)) }),
   setScale: (name) => {
     set({ scaleName: name });
     syncScaleToOtherStores("bass", { scaleName: name });
