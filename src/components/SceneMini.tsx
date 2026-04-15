@@ -1,6 +1,6 @@
 /**
  * SceneMini — compact floating scene switcher panel.
- * Always accessible from any view. Shows 16 scene slots as small pads.
+ * Always accessible from any view via LIVE button. Same logic as Scene launcher.
  */
 
 import { useCallback } from "react";
@@ -21,7 +21,14 @@ export function SceneMini({ onClose }: SceneMiniProps) {
 
   const handleTap = useCallback((slot: number) => {
     if (!scenes[slot]) return;
-    if (isPlaying) {
+    // Always load immediately — same behavior as Scene launcher
+    loadScene(slot);
+  }, [scenes, loadScene]);
+
+  const handleShiftTap = useCallback((e: React.MouseEvent, slot: number) => {
+    if (!scenes[slot]) return;
+    if (e.shiftKey && isPlaying) {
+      // Shift+Click = queue for next bar (only while playing)
       queueScene(slot);
     } else {
       loadScene(slot);
@@ -32,22 +39,24 @@ export function SceneMini({ onClose }: SceneMiniProps) {
 
   return (
     <div
-      className="fixed bottom-16 right-3 z-40 rounded-xl border border-white/15 shadow-2xl"
+      className="fixed z-[999] rounded-xl border border-white/15 shadow-2xl"
       style={{
-        background: "rgba(14,14,20,0.95)",
-        backdropFilter: "blur(12px)",
-        width: 200,
+        background: "rgba(14,14,20,0.96)",
+        backdropFilter: "blur(16px)",
+        width: 210,
+        top: 48,
+        right: 8,
       }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/10">
-        <span className="text-[9px] font-bold tracking-[0.2em] text-white/50">SCENES</span>
+      <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+        <span className="text-[9px] font-bold tracking-[0.2em] text-[var(--ed-accent-orange)]">SCENES</span>
         <button onClick={onClose}
-          className="text-[10px] text-white/30 hover:text-white/70 transition-colors leading-none">✕</button>
+          className="w-5 h-5 rounded flex items-center justify-center text-[10px] text-white/30 hover:text-white/70 hover:bg-white/10 transition-colors">✕</button>
       </div>
 
       {/* 4×4 Grid */}
-      <div className="grid grid-cols-4 gap-1 p-2">
+      <div className="grid grid-cols-4 gap-1.5 p-2.5">
         {scenes.map((scene, i) => {
           const isActive = activeScene === i;
           const isQueued = nextScene === i;
@@ -56,10 +65,10 @@ export function SceneMini({ onClose }: SceneMiniProps) {
           return (
             <button
               key={i}
-              onClick={() => handleTap(i)}
+              onClick={(e) => handleShiftTap(e, i)}
               disabled={isEmpty}
-              title={scene?.name ?? `Slot ${i + 1}`}
-              className="relative aspect-square rounded-md border text-[8px] font-bold transition-all active:scale-90 flex items-center justify-center"
+              title={scene ? `${scene.name}${isPlaying ? " (Shift+Click = Queue)" : ""}` : `Empty slot ${i + 1}`}
+              className="relative aspect-square rounded-lg border text-[9px] font-bold transition-all active:scale-90 flex flex-col items-center justify-center gap-0.5"
               style={{
                 background: isActive
                   ? "rgba(245,158,11,0.2)"
@@ -72,33 +81,39 @@ export function SceneMini({ onClose }: SceneMiniProps) {
                     ? "#3b82f6"
                     : isEmpty ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.1)",
                 borderStyle: isEmpty ? "dashed" : "solid",
-                opacity: isEmpty ? 0.25 : 1,
+                borderWidth: isActive ? 2 : 1,
+                opacity: isEmpty ? 0.2 : 1,
                 color: isActive ? "#f59e0b" : isQueued ? "#60a5fa" : "rgba(255,255,255,0.6)",
               }}
             >
-              {i + 1}
+              <span>{i + 1}</span>
               {isActive && (
-                <div className="absolute inset-0 rounded-md border border-[#f59e0b] pointer-events-none"
+                <div className="absolute inset-0 rounded-lg border-2 border-[#f59e0b] pointer-events-none"
                   style={{ animation: "scene-mini-pulse 1.5s ease-in-out infinite" }} />
+              )}
+              {isQueued && !isActive && (
+                <span className="absolute bottom-0.5 text-[6px] text-blue-400 font-bold animate-pulse">NEXT</span>
               )}
             </button>
           );
         })}
       </div>
 
-      {/* Status */}
-      <div className="px-3 py-1.5 border-t border-white/8 text-[8px] text-white/30 flex justify-between">
-        <span>{filledCount} scenes</span>
-        {activeScene >= 0 && (
-          <span className="text-[#f59e0b] font-bold truncate ml-2">
-            {scenes[activeScene]?.name}
-          </span>
-        )}
-        {nextScene !== null && scenes[nextScene] && (
-          <span className="text-blue-400 font-bold animate-pulse ml-1">
-            → {scenes[nextScene]?.name}
-          </span>
-        )}
+      {/* Status bar */}
+      <div className="px-3 py-1.5 border-t border-white/8 text-[8px] flex justify-between items-center">
+        <span className="text-white/25">{filledCount} scenes</span>
+        <div className="flex items-center gap-1 truncate ml-2">
+          {activeScene >= 0 && (
+            <span className="text-[#f59e0b] font-bold truncate">
+              {scenes[activeScene]?.name}
+            </span>
+          )}
+          {nextScene !== null && scenes[nextScene] && (
+            <span className="text-blue-400 font-bold animate-pulse truncate">
+              → {scenes[nextScene]?.name}
+            </span>
+          )}
+        </div>
       </div>
 
       <style>{`
