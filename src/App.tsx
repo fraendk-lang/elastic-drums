@@ -38,9 +38,13 @@ export function App() {
   const [audioError, setAudioError] = useState<string | null>(null);
   const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saved" | "restored">("idle");
   const [fxRackOpen, setFxRackOpen] = useState(false);
+  const [bottomPanelHeight, setBottomPanelHeight] = useState(360);
+  const resizeStateRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const appShellRef = useRef<HTMLDivElement>(null);
 
   // Overlay store replaces individual useState booleans
   const overlay = useOverlayStore();
+  const minBottomPanelHeight = fxRackOpen ? 92 : 34;
 
   useKeyboard();
   useMidi();
@@ -121,6 +125,22 @@ export function App() {
         if (melodyOut && melodyCh) melodyOut.connect(melodyCh);
       }
       setAudioReady(true);
+
+      // Monitor AudioContext state — auto-resume if browser suspends it
+      // (happens on mobile tab switch, Bluetooth disconnect, etc.)
+      const ctx2 = audioEngine.getAudioContext();
+      if (ctx2) {
+        ctx2.onstatechange = () => {
+          if (ctx2.state === "interrupted" || ctx2.state === "suspended") {
+            console.warn("AudioContext suspended — attempting resume...");
+            ctx2.resume().catch(() => {
+              setAudioError("Audio was interrupted. Tap anywhere to resume.");
+            });
+          } else if (ctx2.state === "running") {
+            setAudioError(null); // Clear error when recovered
+          }
+        };
+      }
     } catch (err) {
       console.error("Audio init failed:", err);
       setAudioError(
@@ -163,10 +183,61 @@ export function App() {
     return unsub;
   }, []);
 
+  useEffect(() => {
+    const clampBottomHeight = () => {
+      const viewportHeight = window.innerHeight;
+      const maxHeight = Math.max(minBottomPanelHeight, Math.floor(viewportHeight * 0.62));
+      setBottomPanelHeight((prev) => Math.min(maxHeight, Math.max(minBottomPanelHeight, prev)));
+    };
+
+    clampBottomHeight();
+    window.addEventListener("resize", clampBottomHeight);
+    return () => window.removeEventListener("resize", clampBottomHeight);
+  }, [minBottomPanelHeight]);
+
+  const handleBottomPanelResizeStart = useCallback((event: React.PointerEvent<HTMLDivElement> | React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    resizeStateRef.current = { startY: event.clientY, startHeight: bottomPanelHeight };
+
+    if ("pointerId" in event && typeof event.currentTarget.setPointerCapture === "function") {
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // Safari can be picky here; window listeners below are the real fallback.
+      }
+    }
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const drag = moveEvent.clientY - (resizeStateRef.current?.startY ?? moveEvent.clientY);
+      const viewportHeight = window.innerHeight;
+      const minHeight = minBottomPanelHeight;
+      const maxHeight = Math.max(minHeight, Math.floor(viewportHeight * 0.62));
+      const nextHeight = Math.max(minHeight, Math.min(maxHeight, (resizeStateRef.current?.startHeight ?? bottomPanelHeight) - drag));
+      setBottomPanelHeight(nextHeight);
+      document.body.style.cursor = "row-resize";
+      document.body.style.userSelect = "none";
+    };
+
+    const stopResize = () => {
+      resizeStateRef.current = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      window.removeEventListener("mousemove", handlePointerMove as unknown as EventListener);
+      window.removeEventListener("mouseup", stopResize);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResize);
+    window.addEventListener("mousemove", handlePointerMove as unknown as EventListener);
+    window.addEventListener("mouseup", stopResize);
+  }, [bottomPanelHeight, minBottomPanelHeight]);
+
   // ─── Audio Init Overlay ──────────────────────────────────
   if (!audioReady) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-[var(--ed-bg-primary)] ed-noise gap-4">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-[var(--ed-bg-primary)] ed-noise gap-4 app-shell">
         <button
           onClick={startAudio}
           aria-label="Start audio engine"
@@ -195,7 +266,7 @@ export function App() {
 
   // ─── Main App ───────────────────────────────────────────
   return (
-    <div className="flex flex-col h-screen bg-[var(--ed-bg-primary)] relative ed-noise">
+    <div ref={appShellRef} className="flex flex-col min-h-screen bg-[var(--ed-bg-primary)] relative ed-noise app-shell">
       {/* Auto-save indicator */}
       {autoSaveStatus === "restored" && (
         <div className="absolute top-0 left-1/2 -translate-x-1/2 z-50 px-3 py-1 bg-[var(--ed-accent-green)]/10 border border-[var(--ed-accent-green)]/30 rounded-b-lg text-[9px] text-[var(--ed-accent-green)] font-bold tracking-wider animate-pulse">
@@ -217,7 +288,7 @@ export function App() {
 
       {/* Keyboard Help Bar */}
       {overlay.isOpen("help") && (
-        <div className="flex items-center gap-6 px-4 py-1.5 bg-[var(--ed-bg-surface)]/80 backdrop-blur-sm border-b border-[var(--ed-border)] text-[10px] text-[var(--ed-text-muted)]" role="status" aria-label="Keyboard shortcuts">
+        <div className="flex items-center gap-6 px-4 py-1.5 bg-[var(--ed-bg-surface)]/80 backdrop-blur-sm border-b border-[var(--ed-border)] text-[10px] text-[var(--ed-text-muted)] overflow-x-auto overflow-y-hidden" role="status" aria-label="Keyboard shortcuts">
           <span><kbd className="px-1.5 py-0.5 bg-[var(--ed-bg-elevated)] rounded text-[var(--ed-text-secondary)] border border-[var(--ed-border)]/50">Q W E R</kbd> <kbd className="px-1.5 py-0.5 bg-[var(--ed-bg-elevated)] rounded text-[var(--ed-text-secondary)] border border-[var(--ed-border)]/50">A S D F</kbd> <kbd className="px-1.5 py-0.5 bg-[var(--ed-bg-elevated)] rounded text-[var(--ed-text-secondary)] border border-[var(--ed-border)]/50">Z X C V</kbd> = Pads</span>
           <span><kbd className="px-1.5 py-0.5 bg-[var(--ed-bg-elevated)] rounded text-[var(--ed-text-secondary)] border border-[var(--ed-border)]/50">Space</kbd> = Play/Stop</span>
           <span><kbd className="px-1.5 py-0.5 bg-[var(--ed-bg-elevated)] rounded text-[var(--ed-text-secondary)] border border-[var(--ed-border)]/50">1-6</kbd> = Presets</span>
@@ -227,41 +298,71 @@ export function App() {
         </div>
       )}
 
-      {/* Main Content — responsive: stack on small screens */}
-      <div className="flex flex-1 min-h-0 relative z-10 overflow-hidden">
-        {/* Left: Pad Grid + Voice Editor (hidden on small screens) */}
-        <div className="hidden md:flex flex-col w-72 lg:w-80 border-r border-[var(--ed-border)] shrink-0">
-          <PadGrid />
-          <VoiceEditor />
-        </div>
-
-        {/* Center: Step Sequencer (always visible) */}
-        <div className="flex-1 min-w-0 flex flex-col overflow-auto">
-          {/* Mobile: compact pad row above sequencer + edit button */}
-          <div className="md:hidden">
+      <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
+        {/* Main Content — responsive: stack on small screens */}
+        <div className="flex min-h-0 flex-1 relative z-10 overflow-hidden">
+          {/* Left: Pad Grid + Voice Editor (hidden on small screens) */}
+          <div className="hidden md:flex flex-col w-72 lg:w-80 border-r border-[var(--ed-border)] shrink-0">
             <PadGrid />
-            <button
-              onClick={() => overlay.openOverlay("mobileVoice")}
-              aria-label="Open voice editor"
-              className="w-full py-1.5 text-[9px] font-bold tracking-wider text-[var(--ed-accent-orange)]/60 hover:text-[var(--ed-accent-orange)] bg-[var(--ed-bg-surface)]/50 border-t border-b border-[var(--ed-border)]/50 transition-colors"
-            >
-              VOICE EDITOR
-            </button>
+            <VoiceEditor />
           </div>
-          <StepSequencer />
+
+          {/* Center: Step Sequencer (always visible) */}
+          <div className="flex-1 min-w-0 flex flex-col overflow-auto">
+            {/* Mobile: compact pad row above sequencer + edit button */}
+            <div className="md:hidden">
+              <PadGrid />
+              <button
+                onClick={() => overlay.openOverlay("mobileVoice")}
+                aria-label="Open voice editor"
+                className="w-full py-1.5 text-[9px] font-bold tracking-wider text-[var(--ed-accent-orange)]/60 hover:text-[var(--ed-accent-orange)] bg-[var(--ed-bg-surface)]/50 border-t border-b border-[var(--ed-border)]/50 transition-colors"
+              >
+                VOICE EDITOR
+              </button>
+            </div>
+            <StepSequencer />
+          </div>
+
+          {/* Right: Mini Mixer (hidden on small screens) */}
+          <div className="hidden lg:block w-44 border-l border-[var(--ed-border)] shrink-0">
+            <MixerStrip onOpenMixer={() => overlay.openOverlay("mixer")} />
+          </div>
         </div>
 
-        {/* Right: Mini Mixer (hidden on small screens) */}
-        <div className="hidden lg:block w-44 border-l border-[var(--ed-border)] shrink-0">
-          <MixerStrip onOpenMixer={() => overlay.openOverlay("mixer")} />
+        <div className="relative shrink-0">
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            onPointerDown={handleBottomPanelResizeStart}
+            onMouseDown={handleBottomPanelResizeStart}
+            className="group flex h-6 w-full cursor-row-resize touch-none select-none items-center justify-center border-t border-[var(--ed-border)]/35 bg-[linear-gradient(180deg,rgba(8,8,10,0.65),rgba(14,14,18,0.88))] transition-colors hover:bg-[linear-gradient(180deg,rgba(16,16,22,0.9),rgba(20,20,26,0.95))]"
+            aria-label="Resize drum and synth workspace"
+            title="Nach oben oder unten ziehen, um den Drumcomputer zu vergroessern"
+            style={{ touchAction: "none" }}
+          >
+            <div className="flex items-center gap-2 text-[8px] font-bold tracking-[0.24em] text-white/22 group-hover:text-white/42">
+              <span className="text-[10px] leading-none">⋮</span>
+              <span>DRAG WORKSPACE</span>
+              <span className="text-[10px] leading-none">⋮</span>
+            </div>
+          </div>
+        </div>
+
+        <div
+          className="shrink-0 overflow-hidden border-t border-[var(--ed-border)]/20 bg-[var(--ed-bg-primary)]"
+          style={{ height: bottomPanelHeight }}
+        >
+          <div className="flex h-full min-h-0 flex-col overflow-hidden">
+            {/* FX Rack: 7 effect modules (Reverb, Delay, Filter, Drive, Sidechain, Chorus, Comp) */}
+            <FxRack isOpen={fxRackOpen} onToggle={() => setFxRackOpen(o => !o)} />
+
+            {/* Synth Section: Bass / Chords / Melody */}
+            <div className="min-h-0 flex-1 overflow-auto">
+              <SynthSection />
+            </div>
+          </div>
         </div>
       </div>
-
-      {/* FX Rack: 7 effect modules (Reverb, Delay, Filter, Drive, Sidechain, Chorus, Comp) */}
-      <FxRack isOpen={fxRackOpen} onToggle={() => setFxRackOpen(o => !o)} />
-
-      {/* Synth Section: Bass / Chords / Melody */}
-      <SynthSection />
 
       {/* Mobile Voice Editor Overlay */}
       {overlay.isOpen("mobileVoice") && (
@@ -285,7 +386,11 @@ export function App() {
       <SceneLauncher isOpen={overlay.isOpen("scene")} onClose={() => overlay.closeOverlay("scene")} />
       <FxPanel isOpen={overlay.isOpen("fxPanel")} onClose={() => overlay.closeOverlay("fxPanel")} />
       <KitBrowser isOpen={overlay.isOpen("kitBrowser")} onClose={() => overlay.closeOverlay("kitBrowser")} />
-      <MidiPlayerPanel isOpen={overlay.isOpen("midiPlayer")} onClose={() => overlay.closeOverlay("midiPlayer")} />
+      <MidiPlayerPanel
+        isOpen={overlay.isOpen("midiPlayer")}
+        onClose={() => overlay.closeOverlay("midiPlayer")}
+        onOpenEditor={() => overlay.openOverlay("pianoRoll")}
+      />
       <PianoRoll isOpen={overlay.isOpen("pianoRoll")} onClose={() => overlay.closeOverlay("pianoRoll")} />
     </div>
   );

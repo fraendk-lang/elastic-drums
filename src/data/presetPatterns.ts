@@ -159,4 +159,46 @@ export const PRESET_PATTERNS: PatternData[] = [
     7: { steps: [6, 14], vel: [50, 45] },
     3: { steps: [10], vel: [60] },
   }),
+  // ── New patterns with advanced features ──
+  createPresetPattern("Garage 2-Step", 16, 54, {
+    0: { steps: [0, 10], vel: [120, 100] },                    // Kick: sparse, off-grid
+    1: { steps: [4, 12], vel: [110, 100] },                    // Snare: backbeat
+    2: { steps: [7, 15], vel: [80, 70] },                      // Clap: shuffle
+    6: { steps: [0,2,4,6,8,10,12,14], vel: [90,40,80,40,90,40,80,40] }, // HH: ghost dynamics
+    7: { steps: [3, 11], vel: [60, 50] },                      // OH: offbeat
+    10: { steps: [5, 13], vel: [50, 45] },                     // Perc: shaker
+  }),
+  createPresetPattern("Dub Techno", 16, 50, {
+    0: { steps: [0, 4, 8, 12], vel: [110, 105, 110, 105] },   // Kick: steady four
+    2: { steps: [4, 12], vel: [75, 70] },                      // Clap: soft backbeat
+    9: { steps: [0,2,4,6,8,10,12,14], vel: [60,35,55,35,60,35,55,35] }, // Ride: subtle
+    6: { steps: [2, 6, 10, 14], vel: [50, 40, 50, 40] },      // HH: sparse offbeats
+    11: { steps: [3, 7, 11, 15], vel: [30, 25, 30, 25] },     // Perc2: rimshot ghost
+  }),
+  createPresetPattern("Broken Beat", 16, 52, {
+    0: { steps: [0, 3, 6, 10, 13], vel: [127, 80, 110, 100, 75] }, // Kick: syncopated
+    1: { steps: [4, 11], vel: [120, 100] },                    // Snare: offbeat accent
+    6: { steps: [0,1,2,4,5,6,8,9,10,12,13,14], vel: [90,40,60,90,40,60,90,40,60,90,40,60] }, // HH: busy
+    10: { steps: [2, 7, 14], vel: [70, 60, 65] },              // Perc: congas
+    8: { steps: [0], vel: [40] },                               // Cymbal: ride bell
+  }),
+  createPresetPattern("Minimal House", 16, 51, {
+    0: { steps: [0, 4, 8, 12], vel: [115, 110, 115, 110] },   // Kick: four on floor
+    2: { steps: [4, 12], vel: [60, 55] },                      // Clap: soft
+    6: { steps: [2, 6, 10, 14], vel: [80, 60, 80, 60] },      // HH: just offbeats
+    10: { steps: [7], vel: [45] },                              // Perc: single hit
+  }),
+  createPresetPattern("Jersey Club", 16, 50, {
+    0: { steps: [0, 2, 4, 6, 8, 10, 12, 14], vel: [127,70,110,70,127,70,110,70] }, // Kick: fast
+    1: { steps: [4, 12], vel: [120, 115] },                    // Snare: hard
+    2: { steps: [2, 6, 10, 14], vel: [100, 80, 100, 80] },    // Clap: offbeat stacks
+    6: { steps: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15], vel: [100,50,80,50,100,50,80,50,100,50,80,50,100,50,80,50] }, // HH: all 16ths
+  }),
+  createPresetPattern("Reggae One Drop", 16, 55, {
+    0: { steps: [12], vel: [120] },                             // Kick: only on 3
+    1: { steps: [12], vel: [110] },                             // Snare: stacks with kick
+    9: { steps: [0,4,8,12], vel: [70,50,65,55] },              // Ride: steady
+    6: { steps: [2, 6, 10, 14], vel: [60, 50, 60, 50] },      // HH: skank
+    10: { steps: [0, 4, 8], vel: [55, 45, 50] },               // Perc: cross-stick
+  }),
 ];

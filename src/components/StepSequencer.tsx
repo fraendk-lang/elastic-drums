@@ -59,7 +59,7 @@ const StepButton = React.memo(function StepButton({
       onMouseDown={onMouseDown}
       onPointerDown={onPointerDown}
       aria-label={`Step ${absoluteStep + 1}, ${VOICE_LABELS[track]}, ${activeText}${velText ? ", " + velText : ""}`}
-      className={`ed-step-btn h-[28px] rounded-[3px] relative overflow-hidden ${
+      className={`ed-step-btn h-[28px] rounded-[3px] relative ${hasGate ? "overflow-visible z-20" : "overflow-hidden"} ${
         isHeld ? "ring-2 ring-[var(--ed-accent-green)] z-10" : ""
       } ${
         isActive
@@ -77,6 +77,16 @@ const StepButton = React.memo(function StepButton({
         opacity: 0.2,
       } : undefined}
     >
+      {hasGate && (
+        <div
+          className="absolute left-[4px] top-1/2 -translate-y-1/2 h-[16px] rounded-[4px] pointer-events-none"
+          style={{
+            width: `calc(${gateLength * 100}% + ${(gateLength - 1) * 2}px - 8px)`,
+            background: `linear-gradient(90deg, ${trackColor}88 0%, ${trackColor}55 82%, ${trackColor}22 100%)`,
+            boxShadow: `0 0 0 1px ${trackColor}55 inset, 0 0 10px ${trackColor}25`,
+          }}
+        />
+      )}
       {isCurrent && (
         <div className="absolute inset-0 bg-white/15 rounded-[3px]" />
       )}
@@ -92,16 +102,23 @@ const StepButton = React.memo(function StepButton({
           style={{ backgroundColor: "#fff", opacity: 0.5, width: "100%" }}
         />
       )}
+      {hasGate && (
+        <span className="absolute right-[8px] top-[2px] text-[6px] font-black leading-none text-black/55 pointer-events-none">
+          {gateLength}
+        </span>
+      )}
       {isTiedStep && (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="w-2 h-[2px] rounded-full bg-white/40" />
         </div>
       )}
       {isActive && (
-        <div className="absolute right-0 top-0 bottom-0 w-[6px] cursor-e-resize opacity-0 hover:opacity-100 transition-opacity bg-white/30 rounded-r-[3px]" />
+        <div className={`absolute right-0 top-0 bottom-0 w-[10px] cursor-e-resize transition-opacity rounded-r-[3px] ${
+          hasGate ? "opacity-100 bg-white/35" : "opacity-70 hover:opacity-100 bg-white/18"
+        }`} />
       )}
       {hasLocks && (
-        <div className="absolute top-[2px] right-[8px] w-[5px] h-[5px] rounded-full bg-[var(--ed-accent-green)] shadow-[0_0_4px_rgba(34,197,94,0.5)]" />
+        <div className="absolute top-[1px] right-[1px] w-[6px] h-[6px] rounded-full bg-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.6)] border border-yellow-500/50" title="P-Lock" />
       )}
       {hasRatchet && (
         <span className="absolute bottom-[1px] left-[2px] text-[6px] font-bold leading-none text-black/50">
@@ -165,7 +182,7 @@ const TrackRow = React.memo(function TrackRow({
       <button
         onClick={() => onSelectTrack(track)}
         aria-label={`Select track: ${label}`}
-        className={`flex items-center text-[9px] font-semibold pr-1 h-[28px] rounded-l transition-all ${
+        className={`flex min-w-0 items-center text-[9px] font-semibold pr-1 h-[28px] rounded-l transition-all whitespace-nowrap overflow-hidden ${
           isSelectedTrack
             ? "text-[var(--ed-text-primary)]"
             : "text-[var(--ed-text-muted)] hover:text-[var(--ed-text-secondary)]"
@@ -175,7 +192,7 @@ const TrackRow = React.memo(function TrackRow({
           backgroundColor: isSelectedTrack ? color : color + "30",
           boxShadow: isSelectedTrack ? `0 0 6px ${color}30` : "none",
         }} />
-        {label}
+        <span className="truncate leading-none">{label}</span>
       </button>
 
       {Array.from({ length: 16 }, (_, stepIdx) => {
@@ -269,6 +286,16 @@ export function StepSequencer() {
   } = useDrumStore();
 
   const pageOffset = selectedPage * 16;
+  const totalActiveSteps = pattern.tracks.reduce((sum, track) => (
+    sum + track.steps.slice(0, pattern.length).filter((step) => step.active).length
+  ), 0);
+  const activeTracks = pattern.tracks.filter((track) => (
+    track.steps.slice(0, pattern.length).some((step) => step.active)
+  )).length;
+  const currentPageActive = pattern.tracks.reduce((sum, track) => (
+    sum + track.steps.slice(pageOffset, pageOffset + 16).filter((step) => step.active).length
+  ), 0);
+  const selectedTrack = pattern.tracks[selectedVoice];
 
   // ─── Gate-Length Drag State ─────────────────────────────
   const [gateDrag, setGateDrag] = useState<{ track: number; startStep: number } | null>(null);
@@ -347,7 +374,7 @@ export function StepSequencer() {
 
     const rect = e.currentTarget.getBoundingClientRect();
     const offsetX = e.clientX - rect.left;
-    if (offsetX < rect.width - 8) return;
+    if (offsetX < rect.width - 12) return;
 
     e.preventDefault();
     e.stopPropagation();
@@ -391,13 +418,99 @@ export function StepSequencer() {
 
   return (
     <div className="flex flex-col h-full p-3" onMouseUp={() => { releaseStep(); handleGateDragEnd(); }} onPointerMove={handleGateDragMove}>
+      <div className="mb-2 rounded-xl border border-white/6 bg-[linear-gradient(180deg,rgba(255,255,255,0.025),rgba(255,255,255,0.01))] px-3 py-2">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black tracking-[0.18em] text-[var(--ed-accent-orange)]">
+              DRUM ARRANGER
+            </span>
+            <span className="text-[8px] font-bold tracking-[0.15em] text-white/20">
+              STEP / MOTION / PERFORMANCE
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 text-[8px] font-bold tracking-[0.12em] text-white/40">
+            <span className="rounded-full border border-white/8 bg-black/25 px-2 py-0.5">
+              {pattern.name}
+            </span>
+            <span className="rounded-full border border-white/8 bg-black/25 px-2 py-0.5">
+              {activeTracks} TRACKS ACTIVE
+            </span>
+            <span className="rounded-full border border-white/8 bg-black/25 px-2 py-0.5">
+              {totalActiveSteps} TRIGS
+            </span>
+            <span className="rounded-full border border-white/8 bg-black/25 px-2 py-0.5">
+              PAGE {selectedPage + 1} · {currentPageActive} STEPS
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1.6fr)_minmax(260px,1fr)]">
+          <div className="grid grid-cols-4 gap-1.5">
+            {[0, 1, 2, 3].map((page) => {
+              const start = page * 16;
+              const pageCount = pattern.tracks.reduce((sum, track) => (
+                sum + track.steps.slice(start, start + 16).filter((step) => step.active).length
+              ), 0);
+              const density = Math.min(1, pageCount / 48);
+              return (
+                <button
+                  key={`overview-page-${page}`}
+                  onClick={() => setSelectedPage(page)}
+                  className={`relative overflow-hidden rounded-lg border px-2 py-2 text-left transition-all ${
+                    selectedPage === page
+                      ? "border-[var(--ed-accent-orange)]/40 bg-[var(--ed-accent-orange)]/10"
+                      : "border-white/6 bg-black/20 hover:border-white/12"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[8px] font-black tracking-[0.16em] text-white/70">PAGE {page + 1}</span>
+                    <span className="text-[8px] font-mono text-white/35">{pageCount}</span>
+                  </div>
+                  <div className="mt-2 h-1.5 rounded-full bg-white/6">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${Math.max(8, density * 100)}%`,
+                        background: "linear-gradient(90deg, rgba(245,158,11,0.95), rgba(245,158,11,0.35))",
+                      }}
+                    />
+                  </div>
+                  <div className="mt-1 text-[7px] font-bold tracking-[0.12em] text-white/25">
+                    {start + 1}-{start + 16}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-white/6 bg-black/20 px-3 py-2">
+            <span className="text-[8px] font-black tracking-[0.16em] text-white/55">
+              SELECTED LANE
+            </span>
+            <span className="text-[10px] font-bold tracking-[0.12em]" style={{ color: TRACK_COLORS[selectedVoice] }}>
+              {VOICE_LABELS[selectedVoice]}
+            </span>
+            <span className="text-[8px] font-bold tracking-[0.12em] text-white/30">
+              VOL {selectedTrack?.volume ?? 100}
+            </span>
+            <span className="text-[8px] font-bold tracking-[0.12em] text-white/30">
+              LEN {selectedTrack?.length ?? pattern.length}
+            </span>
+            <span className={`text-[8px] font-bold tracking-[0.14em] ${isPlaying ? "text-[var(--ed-accent-green)]" : "text-white/30"}`}>
+              {isPlaying ? `PLAYHEAD ${currentStep + 1}` : "STOPPED"}
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Header: Pages + Status */}
       <div className="flex items-center gap-2 mb-2.5">
         {/* Page buttons */}
         <div className="flex gap-1">
           {[0, 1, 2, 3].map((page) => (
             <button
-              key={page}
+              key={`header-page-${page}`}
               onClick={() => setSelectedPage(page)}
               aria-label={`Page ${page + 1}, steps ${page * 16 + 1} to ${(page + 1) * 16}`}
               className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-all ${
@@ -474,31 +587,36 @@ export function StepSequencer() {
         <span className="text-[9px] text-[var(--ed-text-muted)] hidden lg:block truncate max-w-[300px]">
           {heldStep
             ? <span className="text-[var(--ed-accent-green)]">P-LOCK: {VOICE_LABELS[heldStep.track]} Step {heldStep.step + 1}</span>
-            : <span className="opacity-40">hold step = P-Lock &middot; rclick = vel &middot; shift+rclick = ratchet &middot; drag edge = gate</span>
+            : <span className="opacity-40">hold step = P-Lock &middot; rclick = vel &middot; shift+rclick = ratchet &middot; drag bright edge = note length</span>
           }
         </span>
       </div>
 
       {/* Step Grid */}
       <div className="flex-1 overflow-auto">
-        <div className="grid gap-[2px]" style={{ gridTemplateColumns: "52px repeat(16, 1fr)" }}>
+        <div className="grid gap-[2px]" style={{ gridTemplateColumns: "72px repeat(16, 1fr)" }}>
 
           {/* Header: step numbers */}
-          <div />
+          <div className="flex items-end pb-0.5">
+            <span className="text-[8px] font-black tracking-[0.16em] text-white/20">RULER</span>
+          </div>
           {Array.from({ length: 16 }, (_, i) => {
             const absIdx = pageOffset + i;
             const isCurrent = isPlaying && currentStep === absIdx;
             return (
               <div
                 key={i}
-                className={`text-center text-[9px] font-mono pb-0.5 transition-colors ${
+                className={`text-center text-[9px] font-mono pb-0.5 transition-colors border-b ${
                   isCurrent
                     ? "text-[var(--ed-accent-orange)] font-bold"
                     : i % 4 === 0
                       ? "text-[var(--ed-text-secondary)]"
                       : "text-[var(--ed-text-muted)]/60"
-                }`}
+                } ${i % 4 === 0 ? "border-white/10" : "border-white/5"}`}
               >
+                <div className="text-[6px] font-black tracking-[0.18em] text-white/20">
+                  {Math.floor(i / 4) + 1}.{(i % 4) + 1}
+                </div>
                 {absIdx + 1}
               </div>
             );
