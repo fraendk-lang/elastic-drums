@@ -46,8 +46,8 @@ const OCTAVE_PATTERN = [
 
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const PIANO_WIDTH = 68;
-const DEFAULT_CELL_W = 80; // Wider cells so grid fills the screen
-const DEFAULT_ROW_HEIGHT = 18;
+const DEFAULT_CELL_W = 90; // Wider cells for better visibility
+const DEFAULT_ROW_HEIGHT = 20; // Taller rows for easier note editing
 
 // Piano key colors
 const PIANO_WHITE_BG = "linear-gradient(180deg, #2a2a30 0%, #222228 100%)";
@@ -466,6 +466,27 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const [clipboard, setClipboard] = useState<PianoRollNote[]>([]);
   const [rubberBand, setRubberBand] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 
+  // ─── Undo/Redo history ───
+  const undoStackRef = useRef<PianoRollNote[][]>([]);
+  const redoStackRef = useRef<PianoRollNote[][]>([]);
+  const pushUndo = useCallback(() => {
+    undoStackRef.current.push(JSON.parse(JSON.stringify(notes)));
+    if (undoStackRef.current.length > 50) undoStackRef.current.shift(); // Limit to 50
+    redoStackRef.current = []; // Clear redo on new action
+  }, [notes]);
+  const undo = useCallback(() => {
+    const prev = undoStackRef.current.pop();
+    if (!prev) return;
+    redoStackRef.current.push(JSON.parse(JSON.stringify(notes)));
+    setNotes(prev);
+  }, [notes, setNotes]);
+  const redo = useCallback(() => {
+    const next = redoStackRef.current.pop();
+    if (!next) return;
+    undoStackRef.current.push(JSON.parse(JSON.stringify(notes)));
+    setNotes(next);
+  }, [notes, setNotes]);
+
   const gridRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ x: number; y: number; note: PianoRollNote; originals: Map<string, { start: number; midi: number }> } | null>(null);
   const gridClickStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -564,13 +585,15 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
       if (e.ctrlKey || e.metaKey) {
         if (e.key === "a") { e.preventDefault(); setSelectedNoteIds(new Set(notes.map((n) => n.id))); }
         else if (e.key === "c") { e.preventDefault(); copyNotes(); }
-        else if (e.key === "v") { e.preventDefault(); pasteNotes(); }
+        else if (e.key === "v") { e.preventDefault(); pushUndo(); pasteNotes(); }
+        else if (e.key === "z" && e.shiftKey) { e.preventDefault(); redo(); }
+        else if (e.key === "z") { e.preventDefault(); undo(); }
         return;
       }
 
       // ─── Delete ───
       if ((e.key === "Delete" || e.key === "Backspace") && hasSel) {
-        e.preventDefault(); removeNotes(selectedNoteIds); return;
+        e.preventDefault(); pushUndo(); removeNotes(selectedNoteIds); return;
       }
 
       // ─── Arrow keys: move notes ───
@@ -636,7 +659,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [isOpen, notes, selectedNoteIds, copyNotes, pasteNotes, removeNotes]);
+  }, [isOpen, notes, selectedNoteIds, copyNotes, pasteNotes, removeNotes, pushUndo, undo, redo]);
 
   // ─── ZOOM ─────────────────────────────────────────────────────
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -803,6 +826,30 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     if (relY > h - 5) mode = "velocity";
     else if (relX > w - 6) mode = "resize";
 
+    // Alt+Drag = duplicate selected notes, then drag the copies
+    if (e.altKey && mode === "move") {
+      pushUndo();
+      const sel = selectedNoteIds.has(noteId) ? selectedNoteIds : new Set([noteId]);
+      const dupes: PianoRollNote[] = [];
+      for (const id of sel) {
+        const n = notes.find((nn) => nn.id === id);
+        if (n) dupes.push({ ...n, id: uid() });
+      }
+      if (dupes.length > 0) {
+        setNotes((prev) => [...prev, ...dupes]);
+        const newIds = new Set(dupes.map((d) => d.id));
+        setSelectedNoteIds(newIds);
+        // Set originals for the NEW (duplicate) notes
+        const originals = new Map<string, { start: number; midi: number }>();
+        for (const d of dupes) originals.set(d.id, { start: d.start, midi: d.midi });
+        setDragMode("move");
+        dragStartRef.current = { x: e.clientX, y: e.clientY, note: { ...dupes[0]! }, originals };
+        el.setPointerCapture(e.pointerId);
+        return;
+      }
+    }
+
+    pushUndo();
     setDragMode(mode);
     // Store original positions of ALL selected notes (DAW-style: freeze on drag start)
     const originals = new Map<string, { start: number; midi: number }>();
@@ -813,7 +860,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     }
     dragStartRef.current = { x: e.clientX, y: e.clientY, note: { ...note }, originals };
     el.setPointerCapture(e.pointerId);
-  }, [notes, selectedNoteIds]);
+  }, [notes, selectedNoteIds, pushUndo, setNotes]);
 
   const handleNotePointerMove = useCallback((e: React.PointerEvent) => {
     if (dragMode === "none" || !dragStartRef.current) return;
@@ -1151,7 +1198,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
           </span>
         )}
         <span className="text-[9px] text-[var(--ed-text-muted)] ml-auto hidden lg:inline">
-          Shift-click multi-select, drag end for length, number keys set velocity
+          Shift-click multi-select, Shift + Arrow Up/Down = octave, drag end for length, number keys set velocity
         </span>
       </div>
 
@@ -1303,18 +1350,18 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                   onPointerMove={handleNotePointerMove}
                   onPointerUp={handleNotePointerUp}
                   onContextMenu={(e) => handleNoteContext(e, note.id)}
-                  className="absolute rounded-[4px] touch-none select-none transition-shadow"
+                  className="absolute rounded-[3px] touch-none select-none transition-shadow"
                   style={{
                     left: x,
                     top: y + 1,
                     width: w,
                     height: rowHeight - 2,
-                    background: `linear-gradient(180deg, ${noteColor}cc 0%, ${noteColor}88 100%)`,
-                    opacity: 0.65 + note.velocity * 0.35,
-                    border: isSel ? "1px solid rgba(255,255,255,0.8)" : "none",
+                    background: `linear-gradient(180deg, ${noteColor}dd 0%, ${noteColor}99 100%)`,
+                    opacity: 0.7 + note.velocity * 0.3,
+                    border: isSel ? `2px solid rgba(255,255,255,0.85)` : `1px solid ${noteColor}55`,
                     boxShadow: isSel
-                      ? `0 0 8px ${noteColor}40, inset 0 1px 2px rgba(255,255,255,0.2)`
-                      : `inset 0 1px 2px rgba(255,255,255,0.1), 0 2px 4px rgba(0,0,0,0.3)`,
+                      ? `0 0 10px ${noteColor}50, inset 0 1px 2px rgba(255,255,255,0.25)`
+                      : `inset 0 1px 2px rgba(255,255,255,0.12), 0 1px 3px rgba(0,0,0,0.4)`,
                     zIndex: isSel ? 10 : 1,
                     cursor: dragMode === "resize" ? "col-resize" : dragMode === "velocity" ? "ns-resize" : "grab",
                   }}
