@@ -2,9 +2,9 @@
  * Melody Sequencer — Piano-roll with pages, presets, melody agent, CLR
  */
 
-import { useCallback, useRef } from "react";
-import { useMelodyStore, MELODY_PRESETS, MELODY_STRATEGIES } from "../store/melodyStore";
-import { MELODY_INSTRUMENTS } from "../audio/SoundFontEngine";
+import { useCallback, useRef, useState } from "react";
+import { useMelodyStore, MELODY_PRESETS, MELODY_STRATEGIES, MELODY_SIGNATURE_PRESET_NAMES, MELODY_CORE_PRESETS } from "../store/melodyStore";
+import { MELODY_INSTRUMENTS, findInstrumentOption } from "../audio/SoundFontEngine";
 import { SCALES, ROOT_NOTES, scaleNote } from "../audio/BassEngine";
 import { useDrumStore } from "../store/drumStore";
 import { Knob } from "./Knob";
@@ -24,6 +24,15 @@ const SCALE_NAMES = Object.keys(SCALES);
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const VALID_LENGTHS = [4, 8, 12, 16, 24, 32, 48, 64];
 const MELODY_COLOR = "var(--ed-accent-melody)";
+const MELODY_INSTRUMENT_GROUPS = MELODY_INSTRUMENTS.reduce<Record<string, typeof MELODY_INSTRUMENTS>>((groups, instrument) => {
+  const key = instrument.reliability === "core" ? "Reliable" : "Optional GM";
+  groups[key] ??= [];
+  groups[key].push(instrument);
+  return groups;
+}, {});
+const MELODY_PRESET_GROUPS = {
+  Core: MELODY_CORE_PRESETS.map((preset) => ({ preset, index: MELODY_PRESETS.findIndex((candidate) => candidate.name === preset.name) })).filter(({ index }) => index >= 0),
+};
 
 function midiToName(midi: number): string {
   return NOTE_NAMES[midi % 12] + String(Math.floor(midi / 12) - 1);
@@ -33,7 +42,7 @@ export function MelodySequencer() {
   const {
     steps, length, currentStep, selectedPage, rootNote, rootName, scaleName, params, presetIndex, strategyIndex, instrument,
     automationData, automationParam,
-    toggleStep, setStepNote, toggleAccent, toggleSlide, toggleTie, cycleOctave,
+    toggleStep, setStepNote, setStepVelocity, toggleAccent, toggleSlide, toggleTie, setGateLength, cycleOctave,
     setRootNote, setScale, setParam, setLength, setSelectedPage,
     clearSteps, generateMelodiline, nextStrategy, prevStrategy,
     loadPreset, setInstrument,
@@ -42,9 +51,15 @@ export function MelodySequencer() {
 
   const isPlaying = useDrumStore((s) => s.isPlaying);
   const dragRef = useRef<{ step: number; startY: number; startNote: number } | null>(null);
+  const [durationDrag, setDurationDrag] = useState<{ sourceStep: number; endStep: number } | null>(null);
+  const stepElRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const [velocityLaneExpanded, setVelocityLaneExpanded] = useState(true);
   // Knobs always visible (no collapse)
 
   const pageOffset = selectedPage * 16;
+  const instrumentMeta = findInstrumentOption(MELODY_INSTRUMENTS, instrument);
+  const currentPresetName = MELODY_PRESETS[presetIndex]?.name ?? "Preset";
+  const isSignaturePreset = MELODY_SIGNATURE_PRESET_NAMES.includes(currentPresetName as typeof MELODY_SIGNATURE_PRESET_NAMES[number]);
   const strategyName = MELODY_STRATEGIES[strategyIndex]?.name ?? "Random";
 
   const handleMouseDown = useCallback((e: React.MouseEvent, absStep: number) => {
@@ -78,6 +93,48 @@ export function MelodySequencer() {
     }
   }, [steps, toggleStep, setStepNote, toggleSlide, toggleTie, cycleOctave]);
 
+  const handleDurationDragStart = useCallback((e: React.PointerEvent, absStep: number) => {
+    const s = steps[absStep];
+    const prev = absStep > 0 ? steps[absStep - 1] : null;
+    const isContinuationTie = Boolean(s?.active && s.tie && prev?.active);
+    if (!s?.active || isContinuationTie) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const offsetX = e.clientX - rect.left;
+    if (offsetX < rect.width - 16) return; // Wider grab area
+
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDurationDrag({ sourceStep: absStep, endStep: absStep });
+  }, [steps]);
+
+  const handleDurationDragMove = useCallback((e: React.PointerEvent) => {
+    if (!durationDrag) return;
+    for (let i = 0; i < 16; i++) {
+      const absStep = pageOffset + i;
+      const el = stepElRefs.current.get(absStep);
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (e.clientX >= rect.left && e.clientX < rect.right && absStep >= durationDrag.sourceStep) {
+        setDurationDrag((prev) => prev ? { ...prev, endStep: absStep } : null);
+        break;
+      }
+    }
+  }, [durationDrag, pageOffset]);
+
+  const handleDurationDragEnd = useCallback(() => {
+    if (!durationDrag) return;
+    setGateLength(durationDrag.sourceStep, durationDrag.endStep);
+    setDurationDrag(null);
+  }, [durationDrag, setGateLength]);
+
+  const handleVelocityDraw = useCallback((e: React.MouseEvent<HTMLDivElement>, absStep: number) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = 1 - (e.clientY - rect.top) / rect.height;
+    setStepVelocity(absStep, Math.max(0.2, Math.min(1, ratio)));
+  }, [setStepVelocity]);
+
   const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
   const maxNote = Math.max(7, scale.length + 3);
 
@@ -96,10 +153,22 @@ export function MelodySequencer() {
           onChange={(e) => setInstrument(e.target.value)}
           className="h-6 px-1.5 text-[9px] bg-black/30 border border-white/8 rounded-md text-[var(--ed-accent-melody)]/70 focus:outline-none appearance-none cursor-pointer hover:border-[var(--ed-accent-melody)]/30 transition-colors min-w-[90px]"
         >
-          {MELODY_INSTRUMENTS.map((inst) => (
-            <option key={inst.id} value={inst.id}>{inst.name}</option>
+          {Object.entries(MELODY_INSTRUMENT_GROUPS).map(([label, items]) => (
+            <optgroup key={label} label={label}>
+              {items.map((inst) => (
+                <option key={inst.id} value={inst.id}>{inst.name}</option>
+              ))}
+            </optgroup>
           ))}
         </select>
+
+        <span className={`h-6 inline-flex items-center rounded-full border px-2 text-[8px] font-bold tracking-[0.14em] ${
+          (instrumentMeta?.reliability ?? "core") === "core"
+            ? "border-[var(--ed-accent-melody)]/25 bg-[var(--ed-accent-melody)]/10 text-[var(--ed-accent-melody)]"
+            : "border-white/8 bg-white/[0.04] text-white/45"
+        }`}>
+          {(instrumentMeta?.reliability ?? "core") === "core" ? "CORE" : "GM COLOR"}
+        </span>
 
         <Sep />
 
@@ -110,10 +179,22 @@ export function MelodySequencer() {
           className={`h-6 px-1.5 text-[9px] bg-black/30 border border-white/8 rounded-md text-[var(--ed-accent-melody)]/70 focus:outline-none appearance-none cursor-pointer hover:border-[var(--ed-accent-melody)]/30 transition-colors min-w-[90px] ${instrument !== "_synth_" ? "opacity-40 cursor-not-allowed" : ""}`}
           disabled={instrument !== "_synth_"}
         >
-          {MELODY_PRESETS.map((p, i) => (
-            <option key={i} value={i}>{p.name}</option>
+          {Object.entries(MELODY_PRESET_GROUPS).map(([label, items]) => (
+            <optgroup key={label} label={label}>
+              {items.map(({ preset, index }) => (
+                <option key={index} value={index}>{preset.name}</option>
+              ))}
+            </optgroup>
           ))}
         </select>
+
+        <span className={`h-6 inline-flex items-center rounded-full border px-2 text-[8px] font-bold tracking-[0.14em] ${
+          isSignaturePreset
+            ? "border-[var(--ed-accent-melody)]/25 bg-[var(--ed-accent-melody)]/10 text-[var(--ed-accent-melody)]"
+            : "border-white/8 bg-white/[0.04] text-white/45"
+        }`}>
+          {isSignaturePreset ? "CORE" : "HIDDEN"}
+        </span>
 
         <Sep />
 
@@ -240,11 +321,11 @@ export function MelodySequencer() {
           })()}
         </div>
         <div className="flex-1" />
-        <span className="hidden lg:inline text-[7px] text-white/12">drag = pitch &middot; rclick = accent &middot; shift = slide &middot; alt = tie</span>
+        <span className="hidden lg:inline text-[7px] text-white/12">drag = pitch &middot; drag bright edge = note length &middot; rclick = accent &middot; shift = slide &middot; alt = legato tie</span>
       </div>
 
       {/* Piano Roll + Automation */}
-      <div className="flex gap-1.5 px-3 py-1.5 h-20 sm:h-28">
+      <div className="flex gap-1.5 px-3 py-1.5 h-20 sm:h-28" onPointerMove={handleDurationDragMove} onPointerUp={handleDurationDragEnd}>
       <div className="flex gap-[1px] flex-1 min-w-0">
         {Array.from({ length: 16 }, (_, i) => {
           const absStep = pageOffset + i;
@@ -257,16 +338,41 @@ export function MelodySequencer() {
           const isTiedFromPrev = isActive && step.tie && prevStep?.active;
           const isBeat = i % 4 === 0;
           const beyondLength = absStep >= length;
+          const isInDragRange = durationDrag && absStep > durationDrag.sourceStep && absStep <= durationDrag.endStep;
+          let noteLength = Math.max(1, step.gateLength ?? 1);
+          if (isActive && !isTiedFromPrev && (step.gateLength ?? 1) <= 1) {
+            for (let j = absStep + 1; j < length; j++) {
+              const next = steps[j]!;
+              if (!next.active || !next.tie) break;
+              noteLength += 1;
+            }
+          }
+          const visibleLength = Math.max(1, Math.min(noteLength, 16 - i, length - absStep));
 
           return (
-            <div key={i} className={`flex-1 flex flex-col justify-end min-w-0 relative ${beyondLength ? "opacity-25" : ""}`}
+            <div key={i}
+              ref={(el) => { if (el) stepElRefs.current.set(absStep, el); else stepElRefs.current.delete(absStep); }}
+              className={`flex-1 flex flex-col justify-end min-w-0 relative ${beyondLength ? "opacity-25" : ""}`}
               onMouseDown={(e) => { e.preventDefault(); handleMouseDown(e, absStep); }}
+              onPointerDown={(e) => handleDurationDragStart(e, absStep)}
               onContextMenu={(e) => { e.preventDefault(); if (isActive) toggleAccent(absStep); }}
               onAuxClick={(e) => { if (e.button === 1 && isActive) { e.preventDefault(); cycleOctave(absStep); } }}>
               {isBeat && <div className="absolute top-0 bottom-0 left-0 w-px bg-white/[0.04]" />}
               {isCurrent && (
                 <div className="absolute top-0 left-0 right-0 h-[2px] rounded-full"
                   style={{ background: "linear-gradient(90deg, var(--ed-accent-melody), transparent)", boxShadow: "0 0 8px rgba(244,114,182,0.4)" }} />
+              )}
+              {isActive && !isTiedFromPrev && visibleLength > 1 && (
+                <div
+                  className="absolute left-[2px] rounded-[6px] pointer-events-none z-0"
+                  style={{
+                    bottom: 18,
+                    height: `max(16px, ${noteHeight}%)`,
+                    width: `calc(${visibleLength * 100}% + ${(visibleLength - 1)}px - 4px)`,
+                    background: "linear-gradient(90deg, rgba(244,114,182,0.55) 0%, rgba(244,114,182,0.32) 82%, rgba(244,114,182,0.16) 100%)",
+                    boxShadow: "0 0 0 1px rgba(244,114,182,0.24) inset, 0 0 12px rgba(244,114,182,0.12)",
+                  }}
+                />
               )}
               <div className={`w-full transition-all duration-75 flex flex-col items-center justify-end pb-0.5 select-none ${isActive ? "cursor-ns-resize" : "cursor-pointer rounded-sm"}`}
                 style={{
@@ -280,10 +386,29 @@ export function MelodySequencer() {
                   borderTopLeftRadius: isTiedFromPrev ? 0 : 3, borderTopRightRadius: 3, borderBottomLeftRadius: 0,
                   marginLeft: isTiedFromPrev ? -1 : 0,
                   boxShadow: isActive && isCurrent ? "0 0 10px rgba(244,114,182,0.25)" : isActive ? "inset 0 1px 0 rgba(255,255,255,0.05)" : "none",
+                  overflow: isActive && !isTiedFromPrev && visibleLength > 1 ? "visible" : "hidden",
                 }}
                 onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.055)"; }}
                 onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.025)"; }}>
                 {isActive && <span className="text-[8px] font-bold font-mono text-white/90 leading-none drop-shadow-sm">{midiToName(midi)}</span>}
+                {isActive && !isTiedFromPrev && noteLength > 1 && (
+                  <span className="absolute right-[8px] top-[3px] text-[7px] font-black text-black/55 leading-none pointer-events-none">
+                    {noteLength}
+                  </span>
+                )}
+                {isActive && !isTiedFromPrev && (
+                  <div className="absolute right-0 top-0 bottom-0 w-[14px] cursor-e-resize rounded-r group/handle"
+                    style={{
+                      background: noteLength > 1
+                        ? "linear-gradient(90deg, transparent, rgba(251,146,60,0.4))"
+                        : "linear-gradient(90deg, transparent, rgba(255,255,255,0.12))",
+                    }}>
+                    <div className="absolute right-[2px] top-[20%] bottom-[20%] w-[2px] rounded-full bg-white/40 group-hover/handle:bg-white/70 transition-colors" />
+                  </div>
+                )}
+                {isInDragRange && !isActive && (
+                  <div className="absolute inset-0 rounded-sm" style={{ backgroundColor: "rgba(34,211,238,0.25)" }} />
+                )}
               </div>
               <div className={`text-center text-[7px] font-mono mt-0.5 ${isCurrent ? "text-[var(--ed-accent-melody)] font-bold" : isBeat ? "text-white/15" : "text-white/8"}`}>{absStep + 1}</div>
               {isActive && (
@@ -310,6 +435,79 @@ export function MelodySequencer() {
         onSelectParam={setAutomationParam}
         onChange={(step, value) => setAutomationValue(automationParam, step, value)}
       />
+      </div>
+      <div className="px-3 pb-2">
+        <div className="mb-1 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-[8px] font-black tracking-[0.16em] text-[var(--ed-accent-melody)]">VELOCITY LANE</span>
+            <span className="text-[7px] text-white/22">draw dynamics without zoom</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[7px] text-white/25">drag bars</span>
+            <button
+              onClick={() => setVelocityLaneExpanded((prev) => !prev)}
+              className={`h-5 rounded-full border px-2 text-[7px] font-bold tracking-[0.14em] transition-colors ${
+                velocityLaneExpanded
+                  ? "border-[var(--ed-accent-melody)]/30 bg-[var(--ed-accent-melody)]/12 text-[var(--ed-accent-melody)]"
+                  : "border-white/8 bg-white/[0.03] text-white/45 hover:text-white/70"
+              }`}
+            >
+              {velocityLaneExpanded ? "COMPACT" : "LARGE"}
+            </button>
+          </div>
+        </div>
+        <div className="flex gap-1.5">
+          <div className={`relative flex flex-1 min-w-0 gap-[1px] rounded-lg border border-white/6 bg-black/20 px-1.5 pb-1.5 pt-4 ${velocityLaneExpanded ? "h-24" : "h-14"}`}>
+            <div className="pointer-events-none absolute inset-x-1.5 top-4 bottom-1.5">
+              {[0.2, 0.6, 1].map((mark) => (
+                <div
+                  key={mark}
+                  className="absolute inset-x-0 border-t border-dashed border-white/8"
+                  style={{ bottom: `${mark * 100}%` }}
+                />
+              ))}
+            </div>
+            <div className="pointer-events-none absolute left-1.5 top-1 flex items-center gap-3 text-[7px] font-bold tracking-[0.12em] text-white/20">
+              <span>100</span>
+              <span>60</span>
+              <span>20</span>
+            </div>
+            {Array.from({ length: 16 }, (_, i) => {
+              const absStep = pageOffset + i;
+              const step = steps[absStep]!;
+              const velocity = step.velocity ?? (step.accent ? 1 : 0.7);
+              const isCurrent = isPlaying && currentStep === absStep;
+              return (
+                <div
+                  key={`vel-${i}`}
+                  className={`relative flex-1 rounded-md border cursor-ns-resize transition-colors ${absStep >= length ? "opacity-25" : ""} ${isCurrent ? "border-[var(--ed-accent-melody)]/45 bg-[var(--ed-accent-melody)]/[0.06]" : "border-white/6 bg-white/[0.025] hover:bg-white/[0.045]"}`}
+                  onMouseDown={(e) => handleVelocityDraw(e, absStep)}
+                  onMouseMove={(e) => {
+                    if (e.buttons === 1) handleVelocityDraw(e, absStep);
+                  }}
+                >
+                  {step.active && (
+                    <div
+                      className="absolute inset-x-[3px] bottom-[3px] rounded-sm shadow-[0_0_14px_rgba(244,114,182,0.16)]"
+                      style={{
+                        height: `${Math.max(12, velocity * 100)}%`,
+                        background: step.accent
+                          ? "linear-gradient(180deg, rgba(248,113,113,0.9), rgba(244,114,182,0.7))"
+                          : "linear-gradient(180deg, rgba(251,207,232,0.9), rgba(244,114,182,0.45))",
+                      }}
+                    />
+                  )}
+                  {step.active && velocityLaneExpanded && (
+                    <span className="pointer-events-none absolute left-1 top-1 text-[8px] font-black text-white/50">
+                      {Math.round(velocity * 100)}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="hidden sm:block w-32 shrink-0" />
+        </div>
       </div>
     </div>
   );

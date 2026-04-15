@@ -124,10 +124,12 @@ export const BASSLINE_STRATEGIES: BasslineStrategy[] = [
         if (i >= len) { steps.push(emptyStep()); continue; }
         if (prob(0.8)) {
           const note = Math.floor(Math.random() * Math.min(scaleLen, 7));
+          const gateLength = prob(0.3) ? pick([2, 3, 4]) : 1; // Mix of short and long notes
           steps.push(makeStep(note, {
             accent: i % 4 === 0 ? prob(0.6) : prob(0.2),
             slide: prob(0.45),
             octave: prob(0.2) ? pick([1, -1]) : 0,
+            gateLength,
           }));
         } else { steps.push(emptyStep()); }
       }
@@ -162,12 +164,14 @@ export const BASSLINE_STRATEGIES: BasslineStrategy[] = [
       const steps: BassStep[] = [];
       for (let i = 0; i < 64; i++) {
         if (i >= len) { steps.push(emptyStep()); continue; }
-        // Driving 16th notes on root
-        if (prob(0.7)) {
+        // Driving pattern with held notes on downbeats
+        const isDownbeat = i % 4 === 0;
+        if (prob(isDownbeat ? 0.85 : 0.55)) {
+          const gateLength = isDownbeat ? pick([2, 3, 4]) : pick([1, 1, 2]);
           steps.push(makeStep(0, {
-            accent: i % 4 === 0 ? prob(0.5) : prob(0.1),
+            accent: isDownbeat ? prob(0.5) : prob(0.1),
             slide: false,
-            tie: prob(0.15),
+            gateLength,
             octave: i % 8 === 0 && prob(0.3) ? -1 : 0,
           }));
         } else { steps.push(emptyStep()); }
@@ -181,13 +185,15 @@ export const BASSLINE_STRATEGIES: BasslineStrategy[] = [
       const steps: BassStep[] = [];
       for (let i = 0; i < 64; i++) {
         if (i >= len) { steps.push(emptyStep()); continue; }
-        // Syncopated with wide intervals
+        // Syncopated with wide intervals and varied note lengths
         const synco = [0, 3, 6, 7, 10, 11, 14].includes(i % 16);
         if (synco || prob(0.3)) {
+          const gateLength = synco ? pick([1, 2, 2, 3]) : pick([1, 1, 2]);
           steps.push(makeStep(Math.floor(Math.random() * Math.min(scaleLen, 8)), {
             accent: prob(0.35),
             slide: prob(0.5),
             octave: prob(0.3) ? pick([1, -1]) : 0,
+            gateLength,
           }));
         } else { steps.push(emptyStep()); }
       }
@@ -202,10 +208,11 @@ export const BASSLINE_STRATEGIES: BasslineStrategy[] = [
       for (let i = 0; i < 64; i++) {
         if (i >= len) { steps.push(emptyStep()); continue; }
         if (i % 4 === 0 && prob(0.7) || prob(0.12)) {
+          const gateLength = i % 8 === 0 ? pick([4, 6, 8]) : pick([2, 3, 4]); // Long held notes
           steps.push(makeStep(pick(notes), {
             accent: prob(0.2),
             slide: false,
-            tie: prob(0.6), // Long held notes
+            gateLength,
             octave: prob(0.1) ? -1 : 0,
           }));
         } else { steps.push(emptyStep()); }
@@ -249,6 +256,71 @@ export const BASSLINE_STRATEGIES: BasslineStrategy[] = [
           note += dir;
           if (note >= maxDeg) { note = maxDeg - 1; dir = -1; }
           if (note < 0) { note = 0; dir = 1; }
+        } else { steps.push(emptyStep()); }
+      }
+      return steps;
+    },
+  },
+  {
+    name: "Hip-Hop",
+    generate: (len, scaleLen) => {
+      const steps: BassStep[] = [];
+      const roots = [0, 0, 0, Math.min(2, scaleLen - 1), Math.min(4, scaleLen - 1)];
+      for (let i = 0; i < 64; i++) {
+        if (i >= len) { steps.push(emptyStep()); continue; }
+        const beat = i % 4 === 0;
+        const and = i % 4 === 2;
+        if ((beat && prob(0.85)) || (and && prob(0.35)) || prob(0.08)) {
+          const gateLength = beat ? pick([2, 3, 4, 4, 6]) : pick([1, 1, 2]);
+          steps.push(makeStep(pick(roots), {
+            accent: beat ? prob(0.5) : prob(0.1),
+            slide: prob(0.1),
+            gateLength,
+            octave: prob(0.2) ? -1 : 0,
+          }));
+        } else { steps.push(emptyStep()); }
+      }
+      return steps;
+    },
+  },
+  {
+    name: "Minimal",
+    generate: (len) => {
+      const steps: BassStep[] = [];
+      // Minimal: root note, long held, sparse
+      for (let i = 0; i < 64; i++) {
+        if (i >= len) { steps.push(emptyStep()); continue; }
+        if (i % 8 === 0 && prob(0.9)) {
+          const gateLength = pick([4, 6, 8, 8, 12]);
+          steps.push(makeStep(0, {
+            accent: i % 16 === 0 ? prob(0.5) : false,
+            gateLength,
+          }));
+        } else if (i % 8 === 6 && prob(0.3)) {
+          steps.push(makeStep(0, { gateLength: pick([1, 2]) }));
+        } else { steps.push(emptyStep()); }
+      }
+      return steps;
+    },
+  },
+  {
+    name: "Reggaeton",
+    generate: (len, scaleLen) => {
+      const steps: BassStep[] = [];
+      const notes = [0, 0, Math.min(3, scaleLen - 1), Math.min(4, scaleLen - 1)];
+      // Dembow-inspired: strong off-beat pattern
+      for (let i = 0; i < 64; i++) {
+        if (i >= len) { steps.push(emptyStep()); continue; }
+        const pos = i % 8;
+        const hit = [0, 3, 4, 6].includes(pos);
+        if (hit && prob(0.82)) {
+          const gateLength = pos === 0 ? pick([2, 3, 4]) : pick([1, 2]);
+          steps.push(makeStep(pick(notes), {
+            accent: pos === 0 || pos === 4,
+            slide: pos === 3 && prob(0.4),
+            gateLength,
+            octave: prob(0.12) ? -1 : 0,
+          }));
         } else { steps.push(emptyStep()); }
       }
       return steps;
