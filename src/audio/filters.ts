@@ -102,18 +102,19 @@ function createLadder(ctx: AudioContext): FilterChain {
       for (let i = 0; i < 4; i++) {
         stages[i]!.frequency.setTargetAtTime(freq * stageOffsets[i]!, time, 0.005);
       }
-      // Distribute Q across stages for a rounder peak (not just spiking the last one)
-      const baseQ = 0.5 + res * 3;
-      stages[0]!.Q.setTargetAtTime(baseQ * 0.5, time, 0.005);
-      stages[1]!.Q.setTargetAtTime(baseQ * 0.7, time, 0.005);
-      stages[2]!.Q.setTargetAtTime(baseQ * 1.0, time, 0.005);
-      stages[3]!.Q.setTargetAtTime(baseQ * 1.4, time, 0.005);
+      // Gentle Q distribution — keeps warmth without harsh resonance peaks
+      const baseQ = 0.5 + res * 1.2;
+      stages[0]!.Q.setTargetAtTime(baseQ * 0.3, time, 0.005);
+      stages[1]!.Q.setTargetAtTime(baseQ * 0.5, time, 0.005);
+      stages[2]!.Q.setTargetAtTime(baseQ * 0.7, time, 0.005);
+      stages[3]!.Q.setTargetAtTime(baseQ * 1.0, time, 0.005);
 
-      // Feedback gain controls resonance (0-3.8 range, self-oscillation ~3.5+)
-      feedbackGain.gain.setTargetAtTime(res * 3.8, time, 0.005);
+      // Feedback: gentle warmth, not screaming self-oscillation
+      // res 0-1 maps to 0-1.2 feedback (self-oscillation would be ~3+, we stay well below)
+      feedbackGain.gain.setTargetAtTime(res * 1.2, time, 0.005);
 
-      // Resonance compensation: boost output as resonance increases
-      compensationGain.gain.setTargetAtTime(1.0 + res * 0.6, time, 0.005);
+      // Mild compensation for volume loss at higher resonance
+      compensationGain.gain.setTargetAtTime(1.0 + res * 0.25, time, 0.005);
     },
   };
 }
