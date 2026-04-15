@@ -19,12 +19,6 @@ export function SceneMini({ onClose }: SceneMiniProps) {
   const loadScene = useSceneStore((s) => s.loadScene);
   const queueScene = useSceneStore((s) => s.queueScene);
 
-  const handleTap = useCallback((slot: number) => {
-    if (!scenes[slot]) return;
-    // Always load immediately — same behavior as Scene launcher
-    loadScene(slot);
-  }, [scenes, loadScene]);
-
   const handleShiftTap = useCallback((e: React.MouseEvent, slot: number) => {
     if (!scenes[slot]) return;
     if (e.shiftKey && isPlaying) {
