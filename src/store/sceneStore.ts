@@ -14,7 +14,7 @@ import { bassEngine, type BassStep, type BassParams } from "../audio/BassEngine"
 import { chordsEngine, type ChordsStep, type ChordsParams } from "../audio/ChordsEngine";
 import { melodyEngine, type MelodyStep, type MelodyParams } from "../audio/MelodyEngine";
 import { audioEngine } from "../audio/AudioEngine";
-import { soundFontEngine } from "../audio/SoundFontEngine";
+// soundFontEngine import removed — no longer needed for scene switching
 import { ROOT_NOTES } from "../audio/BassEngine";
 
 // ─── Types ──────────────────────────────────────────────
@@ -158,15 +158,11 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     const scene = get().scenes[slot];
     if (!scene) return;
 
-    // Hard-stop any sustained voices before swapping scene state.
-    // Without this, held notes from the previous scene can layer with the next one.
-    const now = audioEngine.getAudioContext()?.currentTime;
-    bassEngine.panic(now);
-    chordsEngine.panic(now);
-    melodyEngine.panic(now);
-    soundFontEngine.stopAll("bass");
-    soundFontEngine.stopAll("chords");
-    soundFontEngine.stopAll("melody");
+    // Gentle release instead of hard panic — avoids click/gap on scene switch
+    const now = audioEngine.getAudioContext()?.currentTime ?? 0;
+    bassEngine.releaseNote(now);
+    chordsEngine.releaseChord(now);
+    melodyEngine.releaseNote(now);
 
     // Apply drum pattern
     useDrumStore.setState({ pattern: deepClone(scene.drumPattern) });
