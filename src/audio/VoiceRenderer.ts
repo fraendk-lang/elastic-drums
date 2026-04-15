@@ -128,38 +128,10 @@ export class VoiceRenderer {
     }
   }
 
-  /**
-   * Schedule cleanup of audio nodes after they've finished playing.
-   * This prevents memory leaks from accumulated disconnected nodes
-   * that would cause audio crackling after extended playback.
-   */
-  private scheduleCleanup(nodes: AudioNode[], delaySec: number): void {
-    const cleanupMs = Math.max(100, (delaySec + 0.1) * 1000); // Extra 100ms margin
-    setTimeout(() => {
-      for (const node of nodes) {
-        try { node.disconnect(); } catch { /* already disconnected */ }
-      }
-    }, cleanupMs);
-  }
-
-  /**
-   * Anti-click: fade out previous voice instance before re-triggering.
-   * Uses a very short 2ms fade to zero to avoid discontinuities.
-   */
-  private fadeOutPrevious(voice: number, t: number): void {
-    const prevGain = this.activeVoiceGains[voice];
-    if (prevGain) {
-      try {
-        prevGain.gain.cancelScheduledValues(t);
-        prevGain.gain.setValueAtTime(prevGain.gain.value, t);
-        prevGain.gain.linearRampToValueAtTime(0, t + 0.002); // 2ms fade-out
-        // Disconnect the old node after fade completes to free memory
-        this.scheduleCleanup([prevGain], 0.05);
-      } catch {
-        // Node may already be disconnected — safe to ignore
-      }
-    }
-  }
+  // Note: Per-trigger wrapper GainNode + scheduleCleanup approach was removed
+  // because it caused audio jitter. Voices connect directly to channel output. — the per-trigger wrapper GainNode
+  // + cleanup timer approach caused audio jitter. Voices now connect directly to
+  // the channel output. Oscillator nodes self-clean via .stop() timing.
 
   // ─── Voice Parameter Management ────────────────────────────
 
@@ -224,71 +196,54 @@ export class VoiceRenderer {
   }
 
   scheduleVoice(ctx: AudioContext, voice: number, velocity: number, t: number, out: AudioNode, gateDurationSec?: number): void {
-    // Anti-click: fade out any previous instance of this voice
-    this.fadeOutPrevious(voice, t);
-
-    // Create a wrapper gain node to track this voice instance for future re-trigger fadeout
-    const voiceOut = ctx.createGain();
-    voiceOut.gain.setValueAtTime(1.0, t);
-    voiceOut.connect(out);
-    this.activeVoiceGains[voice] = voiceOut;
-
     const p = this.voiceParams[voice] ?? {};
-
-    // Estimate max decay for cleanup scheduling
-    const decayMs = (p.decay ?? 550);
-    const maxLifetimeSec = Math.max(0.5, (gateDurationSec ?? decayMs / 1000) + 0.2);
 
     // Check if this voice has a sample loaded — play sample instead of synth
     if (this.sampleLookup) {
       const buffer = this.sampleLookup(voice);
       if (buffer) {
-        this.playSampleAtTime(ctx, buffer, voice, velocity, t, voiceOut, p.sampleTune ?? 0);
-        this.scheduleCleanup([voiceOut], buffer.duration + 0.2);
+        this.playSampleAtTime(ctx, buffer, voice, velocity, t, out, p.sampleTune ?? 0);
         return;
       }
     }
 
+    // Route directly to channel output — no wrapper GainNode overhead
     switch (voice) {
-      case 0: this.kick(ctx, t, velocity, voiceOut, p, gateDurationSec); break;
-      case 1: this.snare(ctx, t, velocity, voiceOut, p, gateDurationSec); break;
-      case 2: this.clap(ctx, t, velocity, voiceOut, p, gateDurationSec); break;
+      case 0: this.kick(ctx, t, velocity, out, p, gateDurationSec); break;
+      case 1: this.snare(ctx, t, velocity, out, p, gateDurationSec); break;
+      case 2: this.clap(ctx, t, velocity, out, p, gateDurationSec); break;
       case 3:
       case 4:
-      case 5: this.tom(ctx, t, velocity, p.tune ?? 140, voiceOut, p, gateDurationSec); break;
+      case 5: this.tom(ctx, t, velocity, p.tune ?? 140, out, p, gateDurationSec); break;
       case 6:
-        // Closed hat chokes open hat — use smooth 2ms fade instead of hard cut
+        // Closed hat chokes open hat
         if (this.lastHHOpenGain) {
-          this.lastHHOpenGain.gain.cancelScheduledValues(t);
-          this.lastHHOpenGain.gain.setValueAtTime(this.lastHHOpenGain.gain.value, t);
-          this.lastHHOpenGain.gain.linearRampToValueAtTime(0, t + 0.002);
+          try {
+            this.lastHHOpenGain.gain.cancelScheduledValues(t);
+            this.lastHHOpenGain.gain.setValueAtTime(this.lastHHOpenGain.gain.value, t);
+            this.lastHHOpenGain.gain.linearRampToValueAtTime(0, t + 0.003);
+          } catch { /* already disconnected */ }
           this.lastHHOpenGain = null;
         }
-        this.lastHHClosedGain = this.hihat(ctx, t, velocity, true, voiceOut, p, gateDurationSec);
+        this.lastHHClosedGain = this.hihat(ctx, t, velocity, true, out, p, gateDurationSec);
         break;
       case 7:
-        // Open hat chokes closed hat — use smooth 2ms fade instead of hard cut
+        // Open hat chokes closed hat
         if (this.lastHHClosedGain) {
-          this.lastHHClosedGain.gain.cancelScheduledValues(t);
-          this.lastHHClosedGain.gain.setValueAtTime(this.lastHHClosedGain.gain.value, t);
-          this.lastHHClosedGain.gain.linearRampToValueAtTime(0, t + 0.002);
+          try {
+            this.lastHHClosedGain.gain.cancelScheduledValues(t);
+            this.lastHHClosedGain.gain.setValueAtTime(this.lastHHClosedGain.gain.value, t);
+            this.lastHHClosedGain.gain.linearRampToValueAtTime(0, t + 0.003);
+          } catch { /* already disconnected */ }
           this.lastHHClosedGain = null;
         }
-        this.lastHHOpenGain = this.hihat(ctx, t, velocity, false, voiceOut, p, gateDurationSec);
+        this.lastHHOpenGain = this.hihat(ctx, t, velocity, false, out, p, gateDurationSec);
         break;
       case 8:
-      case 9: this.cymbal(ctx, t, velocity, p.tune ?? 400, voiceOut, p, gateDurationSec); break;
+      case 9: this.cymbal(ctx, t, velocity, p.tune ?? 400, out, p, gateDurationSec); break;
       case 10:
-      case 11: this.perc(ctx, t, velocity, p.tune ?? 800, voiceOut, p, gateDurationSec); break;
+      case 11: this.perc(ctx, t, velocity, p.tune ?? 800, out, p, gateDurationSec); break;
     }
-
-    // Schedule cleanup: disconnect the wrapper gain after the voice has decayed.
-    // This prevents node accumulation that causes crackling after extended playback.
-    // Cymbals/rides can have long decays, so use a generous lifetime.
-    const cleanupDelay = voice === 8 || voice === 9
-      ? Math.max(maxLifetimeSec, 4) // Cymbals: at least 4 seconds
-      : maxLifetimeSec;
-    this.scheduleCleanup([voiceOut], cleanupDelay);
   }
 
   // ─── KICK ──────────────────────────────────────────────────

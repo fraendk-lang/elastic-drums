@@ -61,7 +61,7 @@ export class AudioEngine {
 
       // ─── Master output chain ─────────────────────────────
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.value = 0.85;
+      this.masterGain.gain.value = 0.7; // Lower headroom to prevent digital clipping
 
       this.masterAnalyser = this.ctx.createAnalyser();
       this.masterAnalyser.fftSize = 2048;
@@ -81,12 +81,12 @@ export class AudioEngine {
       this.masterEqHigh.type = "highshelf";
       this.masterEqHigh.frequency.value = 8000;
 
-      // Bus Compressor
+      // Bus Compressor (gentle glue — not heavy squashing)
       this.masterCompressor = this.ctx.createDynamicsCompressor();
-      this.masterCompressor.threshold.value = -12;
-      this.masterCompressor.ratio.value = 4;
-      this.masterCompressor.attack.value = 0.01;
-      this.masterCompressor.release.value = 0.15;
+      this.masterCompressor.threshold.value = -8;
+      this.masterCompressor.ratio.value = 2.5;
+      this.masterCompressor.attack.value = 0.02;
+      this.masterCompressor.release.value = 0.2;
       this.masterCompressor.knee.value = 6;
 
       // Brick-wall Limiter
