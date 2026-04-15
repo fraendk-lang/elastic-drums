@@ -335,15 +335,15 @@ export function App() {
             aria-orientation="horizontal"
             onPointerDown={handleBottomPanelResizeStart}
             onMouseDown={handleBottomPanelResizeStart}
-            className="group flex h-6 w-full cursor-row-resize touch-none select-none items-center justify-center border-t border-[var(--ed-border)]/35 bg-[linear-gradient(180deg,rgba(8,8,10,0.65),rgba(14,14,18,0.88))] transition-colors hover:bg-[linear-gradient(180deg,rgba(16,16,22,0.9),rgba(20,20,26,0.95))]"
+            className="group flex h-[14px] w-full cursor-row-resize touch-none select-none items-center justify-center border-t border-[var(--ed-border)]/50 bg-[var(--ed-bg-secondary)] hover:bg-[var(--ed-bg-elevated)] transition-colors"
             aria-label="Resize drum and synth workspace"
-            title="Nach oben oder unten ziehen, um den Drumcomputer zu vergroessern"
+            title="Drag to resize"
             style={{ touchAction: "none" }}
           >
-            <div className="flex items-center gap-2 text-[8px] font-bold tracking-[0.24em] text-white/22 group-hover:text-white/42">
-              <span className="text-[10px] leading-none">⋮</span>
-              <span>DRAG WORKSPACE</span>
-              <span className="text-[10px] leading-none">⋮</span>
+            {/* Visible grab handle — three horizontal lines */}
+            <div className="flex flex-col gap-[2px] items-center opacity-30 group-hover:opacity-60 transition-opacity">
+              <div className="w-8 h-[1.5px] rounded-full bg-white/60" />
+              <div className="w-5 h-[1.5px] rounded-full bg-white/40" />
             </div>
           </div>
         </div>
