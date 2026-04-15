@@ -168,7 +168,14 @@ class MidiPlayer {
     }, 100);
   }
 
-  /** Stop playback */
+  private onStopCallback: (() => void) | null = null;
+
+  /** Register a callback to release all voices when playback stops */
+  setOnStop(cb: () => void): void {
+    this.onStopCallback = cb;
+  }
+
+  /** Stop playback and release all active notes */
   stop(): void {
     this.playing = false;
     for (const timer of this.scheduledEvents) clearTimeout(timer);
@@ -177,6 +184,8 @@ class MidiPlayer {
       clearInterval(this.progressTimer);
       this.progressTimer = null;
     }
+    // Release all active notes to prevent hangs
+    this.onStopCallback?.();
   }
 
   /** Pause/resume */

@@ -340,16 +340,35 @@ function pianoRollTick(currentStep: number, bpm: number): void {
     }
 
     // ─── Note OFF (use >= to catch long notes that span multiple steps) ───
-    if (noteEndStep <= wrappedStep && _activePlaybackNotes.has(note.id) && noteStartStep < wrappedStep) {
+    // Also handle wrap-around: if note started late in pattern and we're past the end
+    const noteWrapsAround = noteEndStep > patternLen;
+    const effectiveEnd = noteWrapsAround ? noteEndStep % patternLen : noteEndStep;
+    const shouldRelease = _activePlaybackNotes.has(note.id) && (
+      // Normal case: note ends at or before current step
+      (noteEndStep <= wrappedStep && noteStartStep < wrappedStep) ||
+      // Wrap-around case: note crossed loop boundary and we're past its effective end
+      (noteWrapsAround && wrappedStep >= effectiveEnd && wrappedStep < noteStartStep)
+    );
+
+    if (shouldRelease) {
       _activePlaybackNotes.delete(note.id);
-      if (target === "bass" && !soundFontEngine.isLoaded("bass")) bassEngine.releaseNote(t);
-      else if (target === "chords" && !soundFontEngine.isLoaded("chords")) chordsEngine.releaseChord(t);
-      else if (target === "melody" && !soundFontEngine.isLoaded("melody")) melodyEngine.releaseNote(t);
+      // Always release synth engines, regardless of SoundFont state —
+      // SoundFont handles its own duration, but synth engines need explicit note-off
+      if (target === "bass") bassEngine.releaseNote(t);
+      else if (target === "chords") chordsEngine.releaseChord(t);
+      else if (target === "melody") melodyEngine.releaseNote(t);
     }
   }
 
-  // Reset at loop boundary
-  if (wrappedStep === 0) _activePlaybackNotes.clear();
+  // Reset at loop boundary — release any still-active synth notes to prevent hangs
+  if (wrappedStep === 0) {
+    if (_activePlaybackNotes.size > 0) {
+      bassEngine.releaseNote(t);
+      chordsEngine.releaseChord(t);
+      melodyEngine.releaseNote(t);
+    }
+    _activePlaybackNotes.clear();
+  }
 }
 
 // Subscribe to transport — this runs globally, not tied to component lifecycle
@@ -358,7 +377,16 @@ useTransportStore.subscribe((state, prev) => {
     const bpm = useDrumStore.getState().bpm;
     const isPlaying = useDrumStore.getState().isPlaying;
     if (isPlaying) pianoRollTick(state.currentStep, bpm);
-    else { _lastPlaybackStep = -1; _pianoRollStepCounter = 0; _activePlaybackNotes.clear(); }
+    else {
+      // Playback stopped — release any hanging notes
+      if (_activePlaybackNotes.size > 0) {
+        const now = audioEngine.currentTime + 0.005;
+        bassEngine.releaseNote(now);
+        chordsEngine.releaseChord(now);
+        melodyEngine.releaseNote(now);
+      }
+      _lastPlaybackStep = -1; _pianoRollStepCounter = 0; _activePlaybackNotes.clear();
+    }
   }
 });
 
@@ -826,6 +854,12 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
 
   const playheadBeat = currentStep / 4;
   const zoomPercentage = Math.round((cellW / DEFAULT_CELL_W) * 100);
+  const selectedCount = selectedNoteIds.size;
+  const targetNoteCount = notes.filter((note) => note.track === target).length;
+  const selectedNotes = notes.filter((note) => selectedNoteIds.has(note.id));
+  const averageSelectedVelocity = selectedNotes.length > 0
+    ? Math.round((selectedNotes.reduce((sum, note) => sum + note.velocity, 0) / selectedNotes.length) * 100)
+    : null;
 
   /* ═══════════════════════════════════════════════════════════════════════
      RENDER
@@ -835,9 +869,14 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     <div className="fixed inset-0 z-50 bg-[var(--ed-bg-primary)] flex flex-col">
       {/* ─── TOOLBAR ──────────────────────────────────────────────── */}
       <div className="flex items-center gap-2.5 px-3 py-2 border-b border-[var(--ed-border)] bg-[var(--ed-bg-secondary)]/60 overflow-x-auto">
-        <span className="text-[10px] font-black tracking-[0.15em] shrink-0" style={{ color: accentColor }}>
-          PIANO ROLL
-        </span>
+        <div className="shrink-0 min-w-[150px]">
+          <div className="text-[10px] font-black tracking-[0.18em]" style={{ color: accentColor }}>
+            PIANO ROLL
+          </div>
+          <div className="text-[9px] text-[var(--ed-text-muted)]">
+            Clip editing with DAW-style lane workflow
+          </div>
+        </div>
 
         <div className="w-px h-4 bg-white/15 shrink-0" />
 
@@ -1043,6 +1082,39 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         </button>
       </div>
 
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--ed-border)]/60 bg-[var(--ed-bg-secondary)]/35 overflow-x-auto">
+        <span className="px-2.5 py-1 rounded-full text-[9px] font-bold tracking-[0.14em] border border-white/8 bg-white/5 text-[var(--ed-text-secondary)] shrink-0">
+          Lane {target.toUpperCase()}
+        </span>
+        <span className="px-2.5 py-1 rounded-full text-[9px] font-bold tracking-[0.14em] border border-white/8 bg-white/5 text-[var(--ed-text-secondary)] shrink-0">
+          {targetNoteCount} lane notes
+        </span>
+        <span className="px-2.5 py-1 rounded-full text-[9px] font-bold tracking-[0.14em] border border-white/8 bg-white/5 text-[var(--ed-text-secondary)] shrink-0">
+          {selectedCount} selected
+        </span>
+        <span className="px-2.5 py-1 rounded-full text-[9px] font-bold tracking-[0.14em] border border-white/8 bg-white/5 text-[var(--ed-text-secondary)] shrink-0">
+          Playhead {playheadBeat.toFixed(2)} beats
+        </span>
+        <span className="px-2.5 py-1 rounded-full text-[9px] font-bold tracking-[0.14em] border border-white/8 bg-white/5 text-[var(--ed-text-secondary)] shrink-0">
+          Grid {gridRes === 0.125 ? "1/32" : gridRes === 0.25 ? "1/16" : gridRes === 0.5 ? "1/8" : "1/4"}
+        </span>
+        <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold tracking-[0.14em] border shrink-0 ${
+          dragMode !== "none"
+            ? "border-white/20 bg-white/10 text-white/80"
+            : "border-white/8 bg-white/5 text-white/35"
+        }`}>
+          Tool {dragMode === "none" ? "SELECT" : dragMode.toUpperCase()}
+        </span>
+        {averageSelectedVelocity !== null && (
+          <span className="px-2.5 py-1 rounded-full text-[9px] font-bold tracking-[0.14em] border border-white/8 bg-white/5 text-[var(--ed-text-secondary)] shrink-0">
+            Avg Vel {averageSelectedVelocity}%
+          </span>
+        )}
+        <span className="text-[9px] text-[var(--ed-text-muted)] ml-auto hidden lg:inline">
+          Shift-click multi-select, drag end for length, number keys set velocity
+        </span>
+      </div>
+
       {/* ─── MAIN GRID ────────────────────────────────────────────– */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Piano keys */}
@@ -1207,6 +1279,13 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                     cursor: dragMode === "resize" ? "col-resize" : dragMode === "velocity" ? "ns-resize" : "grab",
                   }}
                 >
+                  {isSel && (
+                    <div
+                      className="absolute -inset-[2px] rounded-[6px] border border-white/25 pointer-events-none"
+                      style={{ boxShadow: `0 0 12px ${noteColor}55` }}
+                    />
+                  )}
+
                   {/* Ghost outline when dragging */}
                   {dragMode === "move" && dragStartRef.current?.note.id === note.id && (
                     <div
@@ -1222,9 +1301,16 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
 
                   {/* Note name - show if width > 24px */}
                   {w > 24 && (
-                    <span className="absolute left-1 top-0.5 text-[6px] font-bold text-white/70 leading-none pointer-events-none select-none">
-                      {midiNoteName(note.midi)}
-                    </span>
+                    <div className="absolute left-1 right-2 top-0.5 flex items-center justify-between gap-1 pointer-events-none select-none">
+                      <span className="truncate text-[6px] font-bold text-white/80 leading-none">
+                        {midiNoteName(note.midi)}
+                      </span>
+                      {isSel && (
+                        <span className="rounded bg-black/35 px-1 py-[1px] text-[6px] font-black text-white/70">
+                          {Math.round(note.velocity * 100)}
+                        </span>
+                      )}
+                    </div>
                   )}
 
                   {/* Velocity bar - colored by track, rounded top */}
@@ -1237,7 +1323,9 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                   />
 
                   {/* Resize handle */}
-                  <div className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-white/30 rounded-r-[3px] transition-colors opacity-0 hover:opacity-100" />
+                  <div className={`absolute right-0 top-0 bottom-0 w-2 cursor-col-resize rounded-r-[3px] transition-colors ${
+                    isSel ? "bg-white/25" : "opacity-0 hover:opacity-100 hover:bg-white/30"
+                  }`} />
                 </div>
               );
             })}
@@ -1254,7 +1342,18 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
               }}
             >
               {/* Velocity lane label */}
-              <div className="absolute left-1 top-1 text-[7px] font-bold text-white/30 pointer-events-none">VEL</div>
+              <div className="absolute left-1 top-1 right-2 flex items-center justify-between text-[7px] font-bold pointer-events-none">
+                <span className="text-white/30">VELOCITY LANE</span>
+                <span className="text-white/20">drag bars or note footer to shape dynamics</span>
+              </div>
+
+              {[25, 50, 75, 100].map((pct) => (
+                <div
+                  key={`vel-grid-${pct}`}
+                  className="absolute left-0 right-0 border-t border-white/6 pointer-events-none"
+                  style={{ top: `${velocityLaneHeight - (velocityLaneHeight * pct) / 100}px` }}
+                />
+              ))}
 
               {/* Velocity bars */}
               {notes.map((note) => {
