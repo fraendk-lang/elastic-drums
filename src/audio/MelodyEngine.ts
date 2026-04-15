@@ -199,7 +199,7 @@ export class MelodyEngine {
 
     // --- Output ---
     this.output = audioCtx.createGain();
-    this.output.gain.value = this.params.volume;
+    this.output.gain.value = 0; // Muted until first note trigger
 
     // --- Signal chain ---
     // Main osc → mixer
@@ -313,6 +313,11 @@ export class MelodyEngine {
 
   /** Trigger a melody note */
   triggerNote(midiNote: number, time: number, accent: boolean, slide: boolean, tie: boolean, velocity = 0.85): void {
+    // Unmute output on first trigger
+    if (this.output && this.output.gain.value === 0) {
+      this.output.gain.value = this.params.volume;
+    }
+
     const p = this.params;
 
     // Dispatch based on synthesis type

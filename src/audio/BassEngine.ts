@@ -184,9 +184,9 @@ export class BassEngine {
     this.dcBlocker.frequency.value = 30; // Higher cutoff to effectively remove DC offset
     this.dcBlocker.Q.value = 0.7;
 
-    // --- Output ---
+    // --- Output (starts muted — unmuted on first triggerNote) ---
     this.output = audioCtx.createGain();
-    this.output.gain.value = this.params.volume;
+    this.output.gain.value = 0;
 
     // --- Signal chain (improved architecture) ---
     // Main osc → filter chain → VCA → distortion → DC blocker
@@ -308,6 +308,11 @@ export class BassEngine {
     const freq = midiToFreq(midiNote);
     const subFreq = freq / 2; // One octave below
     const p = this.params;
+
+    // Unmute output on first note (was muted at init to prevent idle noise)
+    if (this.output && this.output.gain.value === 0) {
+      this.output.gain.value = this.params.volume;
+    }
 
     // --- Pitch ---
     if (slide && p.slideTime > 0) {

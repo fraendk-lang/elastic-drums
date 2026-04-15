@@ -222,7 +222,7 @@ export class ChordsEngine {
 
     // --- Output ---
     this.output = audioCtx.createGain();
-    this.output.gain.value = this.params.volume;
+    this.output.gain.value = 0; // Muted until first chord trigger
 
     // --- Signal chain: mixer → filterChain → low-cut → chorus (dry + wet) → brightness → VCA → distortion → output ---
     this.mixer.connect(this.filterChain.input);
@@ -338,6 +338,11 @@ export class ChordsEngine {
   /** Trigger a chord (up to 6 voices) */
   triggerChord(midiNotes: number[], time: number, accent: boolean, tie: boolean, velocity = 0.85): void {
     if (!this.ctx || !this.vca || !this.filterChain || this.voices.length === 0) return;
+
+    // Unmute output on first trigger
+    if (this.output && this.output.gain.value === 0) {
+      this.output.gain.value = this.params.volume;
+    }
 
     const p = this.params;
 
