@@ -193,24 +193,24 @@ export class AudioEngine {
   getVoiceParams(voice: number): Record<string, number> { return voiceRenderer.getVoiceParams(voice); }
   setSampleLookup(fn: (voice: number) => AudioBuffer | null): void { voiceRenderer.setSampleLookup(fn); }
 
-  triggerVoice(voice: number, velocity = 0.8): void {
+  triggerVoice(voice: number, velocity = 0.8, gateDurationSec?: number): void {
     const ctx = this.getContext();
     if (ctx.state === "suspended") ctx.resume();
     if (this.wasmMode) {
       this.postToWorklet({ type: "trigger", voice, velocity });
     } else {
       const out = mixerRouter.getChannelOutput(voice);
-      voiceRenderer.scheduleVoice(ctx, voice, velocity, ctx.currentTime, out);
+      voiceRenderer.scheduleVoice(ctx, voice, velocity, ctx.currentTime, out, gateDurationSec);
     }
     // Sidechain: kick ducks bass
     if (voice === 0 && this.sidechainEnabled) this.applySidechainDuck(ctx.currentTime);
   }
 
-  triggerVoiceAtTime(voice: number, velocity: number, time: number): void {
+  triggerVoiceAtTime(voice: number, velocity: number, time: number, gateDurationSec?: number): void {
     const ctx = this.getContext();
     if (this.wasmMode) return;
     const out = mixerRouter.getChannelOutput(voice);
-    voiceRenderer.scheduleVoice(ctx, voice, velocity, time, out);
+    voiceRenderer.scheduleVoice(ctx, voice, velocity, time, out, gateDurationSec);
     // Sidechain: kick ducks bass
     if (voice === 0 && this.sidechainEnabled) this.applySidechainDuck(time);
   }
@@ -222,11 +222,12 @@ export class AudioEngine {
     const now = time;
     const duck = this.sidechainAmount;
     const rel = this.sidechainRelease;
-    // Fast duck down, smooth release back up
+    // Cancel only future events, then smoothly ramp from current value
+    // Using setTargetAtTime instead of cancelScheduledValues + setValueAtTime
+    // to avoid the abrupt value jump that causes clicks
     bassGain.gain.cancelScheduledValues(now);
-    bassGain.gain.setValueAtTime(bassGain.gain.value, now);
-    bassGain.gain.linearRampToValueAtTime(1 - duck, now + 0.005); // 5ms attack
-    bassGain.gain.linearRampToValueAtTime(1.0, now + 0.005 + rel); // smooth release
+    bassGain.gain.setTargetAtTime(1 - duck, now, 0.002); // ~2ms exponential duck
+    bassGain.gain.setTargetAtTime(1.0, now + 0.008, rel * 0.5); // smooth exponential release
   }
 
   /** Enable/disable bass sidechain (kick → bass duck) */
@@ -270,8 +271,11 @@ export class AudioEngine {
   setGroupVolume(group: string, volume: number): void { mixerRouter.setGroupVolume(group, volume); }
   getGroupNames(): string[] { return mixerRouter.getGroupNames(); }
   getChannelGroup(channel: number): string { return mixerRouter.getChannelGroup(channel); }
+  getChannelReverbSend(channel: number): number { return sendFxManager.getChannelReverbSend(channel); }
+  getChannelDelaySend(channel: number): number { return sendFxManager.getChannelDelaySend(channel); }
 
   setReverbLevel(level: number): void { sendFxManager.setReverbLevel(level); }
+  getReverbLevel(): number { return sendFxManager.getReverbLevel(); }
   setReverbType(type: "room" | "hall" | "plate" | "ambient"): void { sendFxManager.setReverbType(type); }
   getReverbType(): string { return sendFxManager.getReverbType(); }
   setReverbSize(size: number): void { sendFxManager.setReverbSize(size); }
@@ -281,6 +285,7 @@ export class AudioEngine {
 
   setDelayParams(time: number, feedback: number, filterFreq: number): void { sendFxManager.setDelayParams(time, feedback, filterFreq); }
   setDelayLevel(level: number): void { sendFxManager.setDelayLevel(level); }
+  getDelayLevel(): number { return sendFxManager.getDelayLevel(); }
   syncDelayToBpm(bpm: number, division?: number): void { sendFxManager.syncDelayToBpm(bpm, division); }
   setDelayDivision(divName: string, bpm: number): void { sendFxManager.setDelayDivision(divName, bpm); }
   setDelayType(type: "stereo" | "pingpong" | "tape"): void { sendFxManager.setDelayType(type); }
@@ -328,6 +333,52 @@ export class AudioEngine {
   getMasterLevel(): number {
     if (!this.masterAnalyser) return 0;
     return meteringEngine.getMasterLevel(this.masterAnalyser);
+  }
+
+  getGroupMeter(group: string): { rmsDb: number; peakDb: number; rmsLinear: number; peakLinear: number } {
+    const analyser = mixerRouter.getGroupAnalyser(group);
+    if (!analyser) return { rmsDb: -Infinity, peakDb: -Infinity, rmsLinear: 0, peakLinear: 0 };
+    return meteringEngine.getChannelMeter(100 + group.length, analyser);
+  }
+
+  getReturnMeter(type: "reverb" | "delay"): { rmsDb: number; peakDb: number; rmsLinear: number; peakLinear: number } {
+    const analyser = sendFxManager.getReturnAnalyser(type);
+    if (!analyser) return { rmsDb: -Infinity, peakDb: -Infinity, rmsLinear: 0, peakLinear: 0 };
+    return meteringEngine.getChannelMeter(type === "reverb" ? 201 : 202, analyser);
+  }
+
+  getChannelSpectrum(channel: number): {
+    sub: number;
+    low: number;
+    mid: number;
+    high: number;
+    air: number;
+    centroidHz: number;
+    rolloffHz: number;
+    tilt: number;
+  } {
+    const analyser = this.channelAnalysers[channel];
+    const ctx = this.ctx;
+    if (!analyser || !ctx) {
+      return { sub: 0, low: 0, mid: 0, high: 0, air: 0, centroidHz: 0, rolloffHz: 0, tilt: 0 };
+    }
+    return meteringEngine.getSpectrumSummary(analyser, ctx.sampleRate);
+  }
+
+  getMasterSpectrum(): {
+    sub: number;
+    low: number;
+    mid: number;
+    high: number;
+    air: number;
+    centroidHz: number;
+    rolloffHz: number;
+    tilt: number;
+  } {
+    if (!this.masterAnalyser || !this.ctx) {
+      return { sub: 0, low: 0, mid: 0, high: 0, air: 0, centroidHz: 0, rolloffHz: 0, tilt: 0 };
+    }
+    return meteringEngine.getSpectrumSummary(this.masterAnalyser, this.ctx.sampleRate);
   }
 
   static linearToDb(linear: number): number { return MeteringEngine.linearToDb(linear); }

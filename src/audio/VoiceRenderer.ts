@@ -100,6 +100,9 @@ export class VoiceRenderer {
   private lastHHOpenGain: GainNode | null = null;
   private sampleLookup: ((voice: number) => AudioBuffer | null) | null = null;
 
+  // ─── Anti-click: track active voice output gains for fade-out on re-trigger ───
+  private activeVoiceGains: (GainNode | null)[] = [];
+
   constructor() {
     // Initialize all voice parameters to defaults
     for (let v = 0; v < 12; v++) {
@@ -109,6 +112,24 @@ export class VoiceRenderer {
         params[d.id] = d.default;
       }
       this.voiceParams.push(params);
+      this.activeVoiceGains.push(null);
+    }
+  }
+
+  /**
+   * Anti-click: fade out previous voice instance before re-triggering.
+   * Uses a very short 2ms fade to zero to avoid discontinuities.
+   */
+  private fadeOutPrevious(voice: number, t: number): void {
+    const prevGain = this.activeVoiceGains[voice];
+    if (prevGain) {
+      try {
+        prevGain.gain.cancelScheduledValues(t);
+        prevGain.gain.setValueAtTime(prevGain.gain.value, t);
+        prevGain.gain.linearRampToValueAtTime(0, t + 0.002); // 2ms fade-out
+      } catch {
+        // Node may already be disconnected — safe to ignore
+      }
     }
   }
 
@@ -169,13 +190,27 @@ export class VoiceRenderer {
     src.start(time);
   }
 
-  scheduleVoice(ctx: AudioContext, voice: number, velocity: number, t: number, out: AudioNode): void {
+  private getSustainedDecay(baseDecaySec: number, gateDurationSec?: number, ceilingSec = 4): number {
+    if (!gateDurationSec) return baseDecaySec;
+    return Math.min(ceilingSec, Math.max(baseDecaySec, gateDurationSec * 0.92));
+  }
+
+  scheduleVoice(ctx: AudioContext, voice: number, velocity: number, t: number, out: AudioNode, gateDurationSec?: number): void {
+    // Anti-click: fade out any previous instance of this voice
+    this.fadeOutPrevious(voice, t);
+
+    // Create a wrapper gain node to track this voice instance for future re-trigger fadeout
+    const voiceOut = ctx.createGain();
+    voiceOut.gain.setValueAtTime(1.0, t);
+    voiceOut.connect(out);
+    this.activeVoiceGains[voice] = voiceOut;
+
     // Check if this voice has a sample loaded — play sample instead of synth
     if (this.sampleLookup) {
       const buffer = this.sampleLookup(voice);
       if (buffer) {
         // Note: tune param is 0 for samples (drum tune is a frequency, not semitones)
-        this.playSampleAtTime(ctx, buffer, voice, velocity, t, out, 0);
+        this.playSampleAtTime(ctx, buffer, voice, velocity, t, voiceOut, 0);
         return;
       }
     }
@@ -183,35 +218,45 @@ export class VoiceRenderer {
     const p = this.voiceParams[voice] ?? {};
 
     switch (voice) {
-      case 0: this.kick(ctx, t, velocity, out, p); break;
-      case 1: this.snare(ctx, t, velocity, out, p); break;
-      case 2: this.clap(ctx, t, velocity, out, p); break;
+      case 0: this.kick(ctx, t, velocity, voiceOut, p, gateDurationSec); break;
+      case 1: this.snare(ctx, t, velocity, voiceOut, p, gateDurationSec); break;
+      case 2: this.clap(ctx, t, velocity, voiceOut, p, gateDurationSec); break;
       case 3:
       case 4:
-      case 5: this.tom(ctx, t, velocity, p.tune ?? 140, out, p); break;
+      case 5: this.tom(ctx, t, velocity, p.tune ?? 140, voiceOut, p, gateDurationSec); break;
       case 6:
-        // Closed hat chokes open hat
-        if (this.lastHHOpenGain) { this.lastHHOpenGain.gain.setValueAtTime(0, t); this.lastHHOpenGain = null; }
-        this.lastHHClosedGain = this.hihat(ctx, t, velocity, true, out, p);
+        // Closed hat chokes open hat — use smooth 2ms fade instead of hard cut
+        if (this.lastHHOpenGain) {
+          this.lastHHOpenGain.gain.cancelScheduledValues(t);
+          this.lastHHOpenGain.gain.setValueAtTime(this.lastHHOpenGain.gain.value, t);
+          this.lastHHOpenGain.gain.linearRampToValueAtTime(0, t + 0.002);
+          this.lastHHOpenGain = null;
+        }
+        this.lastHHClosedGain = this.hihat(ctx, t, velocity, true, voiceOut, p, gateDurationSec);
         break;
       case 7:
-        // Open hat chokes closed hat
-        if (this.lastHHClosedGain) { this.lastHHClosedGain.gain.setValueAtTime(0, t); this.lastHHClosedGain = null; }
-        this.lastHHOpenGain = this.hihat(ctx, t, velocity, false, out, p);
+        // Open hat chokes closed hat — use smooth 2ms fade instead of hard cut
+        if (this.lastHHClosedGain) {
+          this.lastHHClosedGain.gain.cancelScheduledValues(t);
+          this.lastHHClosedGain.gain.setValueAtTime(this.lastHHClosedGain.gain.value, t);
+          this.lastHHClosedGain.gain.linearRampToValueAtTime(0, t + 0.002);
+          this.lastHHClosedGain = null;
+        }
+        this.lastHHOpenGain = this.hihat(ctx, t, velocity, false, voiceOut, p, gateDurationSec);
         break;
       case 8:
-      case 9: this.cymbal(ctx, t, velocity, p.tune ?? 400, out, p); break;
+      case 9: this.cymbal(ctx, t, velocity, p.tune ?? 400, voiceOut, p, gateDurationSec); break;
       case 10:
-      case 11: this.perc(ctx, t, velocity, p.tune ?? 800, out, p); break;
+      case 11: this.perc(ctx, t, velocity, p.tune ?? 800, voiceOut, p, gateDurationSec); break;
     }
   }
 
   // ─── KICK ──────────────────────────────────────────────────
   // Improved 808-style: punchy attack + sophisticated pitch envelope + 2nd harmonic + phase distortion
-  private kick(ctx: AudioContext, t: number, vel: number, out: AudioNode, p: VoiceParams): void {
+  private kick(ctx: AudioContext, t: number, vel: number, out: AudioNode, p: VoiceParams, gateDurationSec?: number): void {
     const vol = vel * 1.0;
     const baseFreq = p.tune ?? 52;
-    const decaySec = (p.decay ?? 550) / 1000;
+    const decaySec = this.getSustainedDecay((p.decay ?? 550) / 1000, gateDurationSec);
     const clickAmt = (p.click ?? 50) / 100;
     const driveAmt = (p.drive ?? 40) / 100;
     const subAmt = (p.sub ?? 60) / 100;
@@ -333,10 +378,10 @@ export class VoiceRenderer {
 
   // ─── SNARE ─────────────────────────────────────────────────
   // Improved: 3-oscillator body + bandpass noise shaping + two-stage decay
-  private snare(ctx: AudioContext, t: number, vel: number, out: AudioNode, p: VoiceParams): void {
+  private snare(ctx: AudioContext, t: number, vel: number, out: AudioNode, p: VoiceParams, gateDurationSec?: number): void {
     const vol = vel * 0.80;
     const tune = p.tune ?? 180;
-    const decaySec = (p.decay ?? 220) / 1000;
+    const decaySec = this.getSustainedDecay((p.decay ?? 220) / 1000, gateDurationSec, 2.5);
     const toneMix = (p.tone ?? 55) / 100;
     const snap = (p.snap ?? 70) / 100;
     const bodyAmt = (p.body ?? 60) / 100;
@@ -435,10 +480,10 @@ export class VoiceRenderer {
 
   // ─── CLAP ──────────────────────────────────────────────────
   // Improved: randomized burst timing + variable bandpass + comb filter reverb + stereo
-  private clap(ctx: AudioContext, t: number, vel: number, out: AudioNode, p: VoiceParams): void {
+  private clap(ctx: AudioContext, t: number, vel: number, out: AudioNode, p: VoiceParams, gateDurationSec?: number): void {
     const levelBoost = (p.level ?? 100) / 100;
     const vol = vel * 0.88 * levelBoost;
-    const decaySec = (p.decay ?? 350) / 1000;
+    const decaySec = this.getSustainedDecay((p.decay ?? 350) / 1000, gateDurationSec, 2.5);
     const toneFreq = p.tone ?? 1800;
     const spread = (p.spread ?? 50) / 100;
 
@@ -508,9 +553,9 @@ export class VoiceRenderer {
 
   // ─── TOM ───────────────────────────────────────────────────
   // 808-style: warm sine body + overtone + click, deep pitch sweep
-  private tom(ctx: AudioContext, t: number, vel: number, tune: number, out: AudioNode, p: VoiceParams): void {
+  private tom(ctx: AudioContext, t: number, vel: number, tune: number, out: AudioNode, p: VoiceParams, gateDurationSec?: number): void {
     const vol = vel * 0.8; // Louder for presence
-    const decaySec = (p.decay ?? 300) / 1000;
+    const decaySec = this.getSustainedDecay((p.decay ?? 300) / 1000, gateDurationSec, 3);
     const clickAmt = (p.click ?? 40) / 100;
 
     // Master VCA — punchy envelope with sustain
@@ -601,9 +646,9 @@ export class VoiceRenderer {
 
   // ─── HIHAT ─────────────────────────────────────────────────
   // Improved: ring modulation between oscillator pairs + 6th-order highpass + dynamic HPF sweep
-  private hihat(ctx: AudioContext, t: number, vel: number, closed: boolean, out: AudioNode, p: VoiceParams): GainNode {
+  private hihat(ctx: AudioContext, t: number, vel: number, closed: boolean, out: AudioNode, p: VoiceParams, gateDurationSec?: number): GainNode {
     const vol = vel * (closed ? 0.65 : 0.70);
-    const decaySec = (p.decay ?? (closed ? 45 : 250)) / 1000;
+    const decaySec = this.getSustainedDecay((p.decay ?? (closed ? 45 : 250)) / 1000, gateDurationSec, 2);
     const toneAmt = (p.tone ?? 60) / 100;
 
     const master = ctx.createGain();
@@ -709,9 +754,9 @@ export class VoiceRenderer {
 
   // ─── CYMBAL / RIDE ─────────────────────────────────────────
   // Improved: inharmonic partials + amplitude modulation + bell attack + multi-stage decay
-  private cymbal(ctx: AudioContext, t: number, vel: number, baseFreq: number, out: AudioNode, p: VoiceParams): void {
+  private cymbal(ctx: AudioContext, t: number, vel: number, baseFreq: number, out: AudioNode, p: VoiceParams, gateDurationSec?: number): void {
     const vol = vel * 0.65;
-    const decaySec = (p.decay ?? 800) / 1000;
+    const decaySec = this.getSustainedDecay((p.decay ?? 800) / 1000, gateDurationSec, 4);
     const toneAmt = (p.tone ?? 60) / 100;
 
     const master = ctx.createGain();
@@ -811,10 +856,10 @@ export class VoiceRenderer {
   // ─── PERCUSSION (Multi-Mode) ────────────────────────────────
   // TYPE 0=Conga, 1=Bongo, 2=Rim/Sidestick, 3=Cowbell,
   //      4=Shaker, 5=Claves, 6=Tambourine, 7=Triangle
-  private perc(ctx: AudioContext, t: number, vel: number, freq: number, out: AudioNode, p: VoiceParams): void {
+  private perc(ctx: AudioContext, t: number, vel: number, freq: number, out: AudioNode, p: VoiceParams, gateDurationSec?: number): void {
     const type = Math.round(p.type ?? 0);
     const tune = p.tune ?? freq;
-    const decaySec = (p.decay ?? 120) / 1000;
+    const decaySec = this.getSustainedDecay((p.decay ?? 120) / 1000, gateDurationSec, 2.5);
     const toneAmt = (p.tone ?? 50) / 100;
     const vol = vel * 0.78;
 

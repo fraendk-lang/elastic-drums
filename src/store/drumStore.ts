@@ -82,7 +82,7 @@ let cycleCount = 0;
 let fillMode = false;
 let prevStepTriggered: boolean[] = new Array(12).fill(false);
 
-// P-Lock timer tracking to prevent memory leaks
+// P-Lock timer tracking (legacy, kept for stopScheduler cleanup compatibility)
 const activePLockTimers = new Set<ReturnType<typeof setTimeout>>();
 
 export function setFillMode(on: boolean) { fillMode = on; }
@@ -440,26 +440,26 @@ function startScheduler() {
         const nudge = (step.microTiming ?? 0) * (secondsPerStep / 24); // ±23 ticks → seconds
         const trigTime = nextStepTime + nudge;
         const ratchets = step.ratchetCount ?? 1;
+        const gateDurationSec = Math.max(secondsPerStep, stepDuration * (step.gateLength ?? 1));
         if (ratchets <= 1) {
-          audioEngine.triggerVoiceAtTime(track, vel, trigTime);
+          audioEngine.triggerVoiceAtTime(track, vel, trigTime, gateDurationSec);
         } else {
           const ratchetInterval = stepDuration / ratchets;
           for (let r = 0; r < ratchets; r++) {
             const rVel = vel * (1 - r * 0.15);
-            audioEngine.triggerVoiceAtTime(track, Math.max(rVel, 0.1), trigTime + r * ratchetInterval);
+            audioEngine.triggerVoiceAtTime(track, Math.max(rVel, 0.1), trigTime + r * ratchetInterval, Math.max(ratchetInterval, gateDurationSec / ratchets));
           }
         }
 
-        // Restore P-Locks after a brief delay to ensure they apply to the scheduled voice
+        // Restore P-Locks immediately after scheduling.
+        // Voice params are read synchronously during scheduleVoice() and baked into
+        // the Web Audio nodes, so restoring immediately is safe and avoids the race
+        // condition where a setTimeout could fire too early or interfere with the
+        // next step's P-Locks.
         if (lockKeys.length > 0) {
-          const restoreDelay = Math.max(5, stepDuration * 500); // ms, at least 5ms
-          const timerId = setTimeout(() => {
-            for (const key of lockKeys) {
-              audioEngine.setVoiceParam(track, key, savedValues[key]!);
-            }
-            activePLockTimers.delete(timerId);
-          }, restoreDelay);
-          activePLockTimers.add(timerId);
+          for (const key of lockKeys) {
+            audioEngine.setVoiceParam(track, key, savedValues[key]!);
+          }
         }
       }
 
@@ -563,7 +563,13 @@ interface DrumStore {
   // Song Mode
   setSongMode: (mode: SongMode) => void;
   addToSongChain: (sceneIndex: number, repeats?: number) => void;
+  insertIntoSongChain: (index: number, sceneIndex: number, repeats?: number) => void;
   removeFromSongChain: (index: number) => void;
+  duplicateSongEntry: (index: number) => void;
+  moveSongEntry: (from: number, to: number) => void;
+  updateSongEntryRepeats: (index: number, repeats: number) => void;
+  updateSongEntryScene: (index: number, sceneIndex: number) => void;
+  setSongPosition: (index: number) => void;
   clearSongChain: () => void;
 
   // Euclidean generator
@@ -839,9 +845,58 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
       songChain: [...state.songChain, { sceneIndex, repeats }],
     })),
 
+  insertIntoSongChain: (index, sceneIndex, repeats = 1) =>
+    set((state) => {
+      const next = [...state.songChain];
+      const insertAt = Math.max(0, Math.min(index, next.length));
+      next.splice(insertAt, 0, { sceneIndex, repeats });
+      return { songChain: next };
+    }),
+
   removeFromSongChain: (index) =>
     set((state) => ({
       songChain: state.songChain.filter((_, i) => i !== index),
+    })),
+
+  duplicateSongEntry: (index) =>
+    set((state) => {
+      const entry = state.songChain[index];
+      if (!entry) return {};
+      const next = [...state.songChain];
+      next.splice(index + 1, 0, structuredClone(entry));
+      return { songChain: next };
+    }),
+
+  moveSongEntry: (from, to) =>
+    set((state) => {
+      if (from === to) return {};
+      const next = [...state.songChain];
+      const fromIndex = Math.max(0, Math.min(from, next.length - 1));
+      const toIndex = Math.max(0, Math.min(to, next.length - 1));
+      const [entry] = next.splice(fromIndex, 1);
+      if (!entry) return {};
+      next.splice(toIndex, 0, entry);
+      return { songChain: next };
+    }),
+
+  updateSongEntryRepeats: (index, repeats) =>
+    set((state) => ({
+      songChain: state.songChain.map((entry, i) => (
+        i === index ? { ...entry, repeats: Math.max(1, Math.min(16, repeats)) } : entry
+      )),
+    })),
+
+  updateSongEntryScene: (index, sceneIndex) =>
+    set((state) => ({
+      songChain: state.songChain.map((entry, i) => (
+        i === index ? { ...entry, sceneIndex } : entry
+      )),
+    })),
+
+  setSongPosition: (index) =>
+    set((state) => ({
+      songPosition: Math.max(0, Math.min(index, Math.max(0, state.songChain.length - 1))),
+      songRepeatCount: 0,
     })),
 
   clearSongChain: () => set({ songChain: [], songPosition: 0, songRepeatCount: 0 }),
