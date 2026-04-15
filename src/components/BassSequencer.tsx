@@ -3,7 +3,7 @@
  */
 
 import { useCallback, useRef, useState, useEffect } from "react";
-import { useBassStore, BASS_PRESETS, BASSLINE_STRATEGIES, BASS_SIGNATURE_PRESET_NAMES, BASS_CORE_PRESETS } from "../store/bassStore";
+import { useBassStore, BASS_PRESETS, BASSLINE_STRATEGIES, BASS_SIGNATURE_PRESET_NAMES } from "../store/bassStore";
 import { BASS_INSTRUMENTS, findInstrumentOption } from "../audio/SoundFontEngine";
 import { SCALES, ROOT_NOTES, scaleNote } from "../audio/BassEngine";
 import { useDrumStore } from "../store/drumStore";
@@ -23,7 +23,7 @@ const BASS_INSTRUMENT_GROUPS = BASS_INSTRUMENTS.reduce<Record<string, typeof BAS
   return groups;
 }, {});
 const BASS_PRESET_GROUPS = {
-  Core: BASS_CORE_PRESETS.map((preset) => ({ preset, index: BASS_PRESETS.findIndex((candidate) => candidate.name === preset.name) })).filter(({ index }) => index >= 0),
+  All: BASS_PRESETS.map((preset, index) => ({ preset, index })),
 };
 
 const BASS_AUTO_PARAMS: AutomationParam[] = [

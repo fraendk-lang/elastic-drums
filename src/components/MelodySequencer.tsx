@@ -3,7 +3,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useMelodyStore, MELODY_PRESETS, MELODY_STRATEGIES, MELODY_SIGNATURE_PRESET_NAMES, MELODY_CORE_PRESETS } from "../store/melodyStore";
+import { useMelodyStore, MELODY_PRESETS, MELODY_STRATEGIES, MELODY_SIGNATURE_PRESET_NAMES } from "../store/melodyStore";
 import { MELODY_INSTRUMENTS, findInstrumentOption } from "../audio/SoundFontEngine";
 import { SCALES, ROOT_NOTES, scaleNote } from "../audio/BassEngine";
 import { useDrumStore } from "../store/drumStore";
@@ -31,7 +31,7 @@ const MELODY_INSTRUMENT_GROUPS = MELODY_INSTRUMENTS.reduce<Record<string, typeof
   return groups;
 }, {});
 const MELODY_PRESET_GROUPS = {
-  Core: MELODY_CORE_PRESETS.map((preset) => ({ preset, index: MELODY_PRESETS.findIndex((candidate) => candidate.name === preset.name) })).filter(({ index }) => index >= 0),
+  All: MELODY_PRESETS.map((preset, index) => ({ preset, index })),
 };
 
 function midiToName(midi: number): string {

@@ -3,7 +3,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useChordsStore, CHORDS_PRESETS, CHORDLINE_STRATEGIES, CHORD_TYPE_NAMES, CHORDS_SIGNATURE_PRESET_NAMES, CHORDS_CORE_PRESETS } from "../store/chordsStore";
+import { useChordsStore, CHORDS_PRESETS, CHORDLINE_STRATEGIES, CHORD_TYPE_NAMES, CHORDS_SIGNATURE_PRESET_NAMES } from "../store/chordsStore";
 import { CHORDS_INSTRUMENTS, findInstrumentOption } from "../audio/SoundFontEngine";
 import { SCALES, ROOT_NOTES, scaleNote } from "../audio/BassEngine";
 import { useDrumStore } from "../store/drumStore";
@@ -31,7 +31,7 @@ const CHORDS_INSTRUMENT_GROUPS = CHORDS_INSTRUMENTS.reduce<Record<string, typeof
   return groups;
 }, {});
 const CHORDS_PRESET_GROUPS = {
-  Core: CHORDS_CORE_PRESETS.map((preset) => ({ preset, index: CHORDS_PRESETS.findIndex((candidate) => candidate.name === preset.name) })).filter(({ index }) => index >= 0),
+  All: CHORDS_PRESETS.map((preset, index) => ({ preset, index })),
 };
 
 function chordLabel(midi: number, chordType: string): string {
