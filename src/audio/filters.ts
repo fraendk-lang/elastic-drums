@@ -29,14 +29,15 @@ function createLPF(ctx: AudioContext): FilterChain {
   const filter = ctx.createBiquadFilter();
   filter.type = "lowpass";
   filter.frequency.value = 2000;
-  filter.Q.value = 2;
+  filter.Q.value = 1;
 
   return {
     input: filter,
     output: filter,
     update(freq, res, time) {
-      filter.frequency.setTargetAtTime(freq, time, 0.01);
-      filter.Q.setTargetAtTime(res * 20, time, 0.01); // 0-1 → 0-20 Q
+      filter.frequency.setTargetAtTime(freq, time, 0.008);
+      // res 0-1 → Q 0.5-8 (musical range, no screaming resonance)
+      filter.Q.setTargetAtTime(0.5 + res * 7.5, time, 0.008);
     },
   };
 }
@@ -99,8 +100,8 @@ function createSteiner(ctx: AudioContext, mode: BiquadFilterType): FilterChain {
   stage2.type = mode;
   stage1.frequency.value = 2000;
   stage2.frequency.value = 2000;
-  stage1.Q.value = 4;
-  stage2.Q.value = 2;
+  stage1.Q.value = 1;
+  stage2.Q.value = 0.7;
 
   // Inter-stage saturation (core Steiner-Parker character)
   const drive = ctx.createWaveShaper();
@@ -131,14 +132,14 @@ function createSteiner(ctx: AudioContext, mode: BiquadFilterType): FilterChain {
     output: stage2,
     update(freq, res, time) {
       // Slight frequency offset between stages for thicker sound
-      stage1.frequency.setTargetAtTime(freq * 1.01, time, 0.005);
-      stage2.frequency.setTargetAtTime(freq * 0.99, time, 0.005);
-      // Steiner resonance is more aggressive — maps 0-1 to Q 1-30
-      const q = 1 + res * 29;
+      stage1.frequency.setTargetAtTime(freq * 1.005, time, 0.005);
+      stage2.frequency.setTargetAtTime(freq * 0.995, time, 0.005);
+      // Steiner: more aggressive than Ladder but still musical (Q 1-12)
+      const q = 1 + res * 11;
       stage1.Q.setTargetAtTime(q, time, 0.005);
-      stage2.Q.setTargetAtTime(q * 0.6, time, 0.005);
-      // Push pre-gain harder with resonance for increasing grit
-      preGain.gain.setTargetAtTime(1.0 + res * 1.5, time, 0.005);
+      stage2.Q.setTargetAtTime(q * 0.5, time, 0.005);
+      // Mild pre-gain boost with resonance (1.0-1.4x, not 2.5x)
+      preGain.gain.setTargetAtTime(1.0 + res * 0.4, time, 0.005);
     },
   };
 }

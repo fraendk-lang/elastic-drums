@@ -182,49 +182,23 @@ export class ChordsEngine {
     // --- VCF: use filter model ---
     this.filterChain = createFilterChain(audioCtx, this.params.filterModel);
 
-    // --- Chorus effect: dual-tap stereo chorus (Roland Dimension-D inspired) ---
-    // Two delay lines with different LFO rates for rich, wide stereo movement
+    // --- Chorus effect: simple, clean single-tap chorus ---
     this.chorusDelay = audioCtx.createDelay();
-    this.chorusDelay.delayTime.value = 0.004; // 4ms base — slightly longer for warmth
+    this.chorusDelay.delayTime.value = 0.004; // 4ms base delay
 
-    // Second chorus tap for stereo width
-    const chorusDelay2 = audioCtx.createDelay();
-    chorusDelay2.delayTime.value = 0.006; // 6ms — offset from tap 1
-    (this as unknown as Record<string, AudioNode>)._chorusDelay2 = chorusDelay2;
-
-    // Primary LFO — slow triangle for smooth movement
     this.chorusLfo = audioCtx.createOscillator();
-    this.chorusLfo.type = "triangle"; // Triangle is smoother than sine for chorus
-    this.chorusLfo.frequency.value = 0.8; // Slower rate for lush pads
-
-    // Secondary LFO — slightly faster, inverted phase for stereo
-    const chorusLfo2 = audioCtx.createOscillator();
-    chorusLfo2.type = "triangle";
-    chorusLfo2.frequency.value = 1.1; // Different rate = evolving texture
-    (this as unknown as Record<string, AudioNode>)._chorusLfo2 = chorusLfo2;
+    this.chorusLfo.type = "triangle";
+    this.chorusLfo.frequency.value = 0.9; // Slow triangle for smooth chorus
 
     this.chorusLfoGain = audioCtx.createGain();
-    this.chorusLfoGain.gain.value = 0.002; // Depth: 4ms ± 2ms
-
-    const chorusLfoGain2 = audioCtx.createGain();
-    chorusLfoGain2.gain.value = 0.0018; // Slightly different depth
+    this.chorusLfoGain.gain.value = 0.0015; // Depth: ±1.5ms modulation
 
     this.chorusMix = audioCtx.createGain();
     this.chorusMix.gain.value = this.params.chorus;
 
-    // Second chorus mix panned opposite
-    const chorusMix2 = audioCtx.createGain();
-    chorusMix2.gain.value = this.params.chorus * 0.85;
-    (this as unknown as Record<string, AudioNode>)._chorusMix2 = chorusMix2;
-
-    // LFO routing
     this.chorusLfo.connect(this.chorusLfoGain);
     this.chorusLfoGain.connect(this.chorusDelay.delayTime);
-    chorusLfo2.connect(chorusLfoGain2);
-    chorusLfoGain2.connect(chorusDelay2.delayTime);
-
     this.chorusLfo.start();
-    chorusLfo2.start();
 
     // --- Low-cut cleanup to keep modern chords out of the bass lane ---
     this.lowCutFilter = audioCtx.createBiquadFilter();
@@ -301,30 +275,18 @@ export class ChordsEngine {
   private rewirePostFilterChain(): void {
     if (!this.filterChain || !this.lowCutFilter || !this.chorusDelay || !this.chorusMix || !this.brightnessFilter || !this.vca) return;
 
-    const chorusDelay2 = (this as unknown as Record<string, AudioNode>)._chorusDelay2 as DelayNode | undefined;
-    const chorusMix2 = (this as unknown as Record<string, AudioNode>)._chorusMix2 as GainNode | undefined;
-
     try { this.filterChain.output.disconnect(); } catch { /* noop */ }
     try { this.lowCutFilter.disconnect(); } catch { /* noop */ }
     try { this.chorusDelay.disconnect(); } catch { /* noop */ }
     try { this.chorusMix.disconnect(); } catch { /* noop */ }
     try { this.brightnessFilter.disconnect(); } catch { /* noop */ }
-    try { chorusDelay2?.disconnect(); } catch { /* noop */ }
-    try { chorusMix2?.disconnect(); } catch { /* noop */ }
 
-    // Signal: filter → lowCut → dry path + dual chorus taps → brightness → VCA
+    // Signal: filter → lowCut → dry + chorus wet → brightness → VCA
     this.filterChain.output.connect(this.lowCutFilter);
     this.lowCutFilter.connect(this.brightnessFilter); // Dry path
-    // Chorus tap 1
-    this.lowCutFilter.connect(this.chorusDelay);
+    this.lowCutFilter.connect(this.chorusDelay);       // Chorus wet
     this.chorusDelay.connect(this.chorusMix);
     this.chorusMix.connect(this.brightnessFilter);
-    // Chorus tap 2 (different rate/depth for stereo richness)
-    if (chorusDelay2 && chorusMix2) {
-      this.lowCutFilter.connect(chorusDelay2);
-      chorusDelay2.connect(chorusMix2);
-      chorusMix2.connect(this.brightnessFilter);
-    }
     this.brightnessFilter.connect(this.vca);
   }
 
