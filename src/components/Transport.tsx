@@ -15,10 +15,11 @@ interface TransportProps {
   onOpenKits: () => void;
   onToggleHelp: () => void;
   onOpenMidi: () => void;
+  onOpenPerformance?: () => void;
 }
 
 export function Transport({
-  onOpenBrowser, onOpenEuclidean, onOpenSong, onOpenScenes, onOpenFx, onOpenMixer, onOpenKits, onOpenMidi, onToggleHelp,
+  onOpenBrowser, onOpenEuclidean, onOpenSong, onOpenScenes, onOpenFx, onOpenMixer, onOpenKits, onOpenMidi, onToggleHelp, onOpenPerformance,
 }: TransportProps) {
   const {
     bpm, isPlaying, swing, pattern,
@@ -72,7 +73,7 @@ export function Transport({
   }, [handleTap]);
 
   return (
-    <header className="flex items-center h-11 px-3 border-b border-[var(--ed-border)]/70 bg-gradient-to-b from-[#111116] to-[#0d0d11] gap-1.5 relative z-20">
+    <header className="flex items-center h-11 px-3 border-b border-[var(--ed-border)]/70 bg-gradient-to-b from-[#111116] to-[#0d0d11] gap-1.5 relative z-20 overflow-x-auto overflow-y-hidden">
 
       {/* ── Brand ── */}
       <span className="text-[10px] font-black tracking-[0.25em] text-[var(--ed-accent-orange)] mr-1.5 hidden lg:block">
@@ -134,7 +135,7 @@ export function Transport({
       </div>
 
       {/* Length */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 shrink-0">
         <span className="text-[7px] text-white/25 uppercase font-bold">Len</span>
         <select
           value={pattern.length}
@@ -145,7 +146,7 @@ export function Transport({
           className="h-5 px-0.5 text-[9px] bg-black/30 border border-white/8 rounded text-white/70 focus:outline-none"
         >
           {[4, 8, 12, 16, 24, 32, 48, 64].map((l) => (
-            <option key={l} value={l}>{l}</option>
+            <option key={`transport-len-${l}`} value={l}>{l}</option>
           ))}
         </select>
       </div>
@@ -189,12 +190,13 @@ export function Transport({
       <div className="flex-1" />
 
       {/* ── Tools ── */}
-      <div className="flex items-center gap-[2px]">
+      <div className="flex items-center gap-[2px] shrink-0">
         <ToolBtn onClick={onOpenKits} label="KITS" />
         <ToolBtn onClick={onOpenMidi} label="MIDI" />
         <ToolBtn onClick={onOpenEuclidean} label="EUCLID" />
         <ToolBtn onClick={onOpenSong} label="SONG" />
         <ToolBtn onClick={onOpenScenes} label="SCENE" />
+        {onOpenPerformance && <ToolBtn onClick={onOpenPerformance} label="LIVE" accent />}
         <ToolBtn onClick={onOpenFx} label="FX" accent />
         <ToolBtn onClick={onOpenMixer} label="MIXER" accent />
 
