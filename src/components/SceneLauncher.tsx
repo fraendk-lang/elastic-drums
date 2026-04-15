@@ -28,6 +28,7 @@ interface ContextMenuProps {
   menu: ContextMenuState;
   onClose: () => void;
   onCapture: (slot: number) => void;
+  onUpdate: (slot: number) => void;
   onLoad: (slot: number) => void;
   onQueue: (slot: number) => void;
   onRename: (slot: number) => void;
@@ -35,7 +36,7 @@ interface ContextMenuProps {
   onDuplicate: (slot: number) => void;
 }
 
-function SceneContextMenu({ menu, onClose, onCapture, onLoad, onQueue, onRename, onClear, onDuplicate }: ContextMenuProps) {
+function SceneContextMenu({ menu, onClose, onCapture, onUpdate, onLoad, onQueue, onRename, onClear, onDuplicate }: ContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -60,7 +61,8 @@ function SceneContextMenu({ menu, onClose, onCapture, onLoad, onQueue, onRename,
         { label: "divider" },
         { label: "Rename", icon: "✎", action: () => onRename(menu.slotIndex) },
         { label: "Duplicate", icon: "⧉", action: () => onDuplicate(menu.slotIndex) },
-        { label: "Overwrite", icon: "⏺", action: () => onCapture(menu.slotIndex), color: "var(--ed-accent-green)" },
+        { label: "Update (Save Edits)", icon: "↻", action: () => onUpdate(menu.slotIndex), color: "var(--ed-accent-green)" },
+        { label: "Overwrite (Fresh)", icon: "⏺", action: () => onCapture(menu.slotIndex) },
         { label: "divider" },
         { label: "Delete", icon: "✕", action: () => onClear(menu.slotIndex), color: "#ef4444" },
       ]
@@ -73,6 +75,8 @@ function SceneContextMenu({ menu, onClose, onCapture, onLoad, onQueue, onRename,
       ref={ref}
       className="fixed z-[60] min-w-[140px] py-1 bg-[#1a1a20] border border-[var(--ed-border)] rounded-lg shadow-2xl"
       style={{ left: menu.x, top: menu.y }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
     >
       {items.map((item, i) => {
         if (item.label === "divider") {
@@ -81,7 +85,16 @@ function SceneContextMenu({ menu, onClose, onCapture, onLoad, onQueue, onRename,
         return (
           <button
             key={item.label}
-            onClick={() => { item.action?.(); onClose(); }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              item.action?.();
+              onClose();
+            }}
             className="w-full flex items-center gap-2 px-3 py-1.5 text-[10px] text-left hover:bg-white/5 transition-colors"
             style={{ color: item.color ?? "var(--ed-text-secondary)" }}
           >
@@ -225,7 +238,7 @@ function SceneSlot({ index, scene, isActive, isQueued, onLoad, onQueue, onContex
 // ─── Scene Launcher Modal ───────────────────────────────
 
 export function SceneLauncher({ isOpen, onClose }: SceneLauncherProps) {
-  const { scenes, activeScene, nextScene, captureScene, loadScene, queueScene, clearScene, renameScene } = useSceneStore();
+  const { scenes, activeScene, nextScene, captureScene, updateScene, loadScene, queueScene, clearScene, renameScene, duplicateScene } = useSceneStore();
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renamingSlot, setRenamingSlot] = useState<number | null>(null);
 
@@ -243,16 +256,12 @@ export function SceneLauncher({ isOpen, onClose }: SceneLauncherProps) {
   }, [captureScene]);
 
   const handleDuplicate = useCallback((slot: number) => {
-    // Find next empty slot and copy this scene there
-    const emptyIndex = scenes.findIndex((s, i) => s === null && i !== slot);
-    if (emptyIndex === -1) return;
-    // Capture current state to empty slot, then copy the source scene's data
-    const sourceScene = scenes[slot];
-    if (!sourceScene) return;
-    // Load the source scene first, then capture to the empty slot
-    loadScene(slot);
-    setTimeout(() => captureScene(emptyIndex), 50);
-  }, [scenes, loadScene, captureScene]);
+    duplicateScene(slot);
+  }, [duplicateScene]);
+
+  const handleUpdate = useCallback((slot: number) => {
+    updateScene(slot);
+  }, [updateScene]);
 
   const handleStartRename = useCallback((slot: number) => {
     setRenamingSlot(slot);
@@ -367,6 +376,7 @@ export function SceneLauncher({ isOpen, onClose }: SceneLauncherProps) {
           menu={contextMenu}
           onClose={() => setContextMenu(null)}
           onCapture={handleCapture}
+          onUpdate={handleUpdate}
           onLoad={loadScene}
           onQueue={queueScene}
           onRename={handleStartRename}
