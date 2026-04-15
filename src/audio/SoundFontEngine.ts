@@ -20,79 +20,81 @@ export function findInstrumentOption(options: InstrumentOption[], id: string): I
   return options.find((option) => option.id === id);
 }
 
-// ── Bass: only real bass instruments (low-register, fundamental-carrying) ──
+// ── BASS: Only real bass sounds — low-register, sub-heavy ──
 export const BASS_INSTRUMENTS: InstrumentOption[] = [
-  { id: "_synth_", name: "Built-in 303 Synth", category: "Synth", reliability: "core" },
+  { id: "_synth_", name: "303 Acid Synth", category: "Synth", reliability: "core" },
   { id: "synth_bass_1", name: "Synth Bass 1", category: "Synth", reliability: "core" },
   { id: "synth_bass_2", name: "Synth Bass 2", category: "Synth", reliability: "core" },
   { id: "electric_bass_finger", name: "Finger Bass", category: "Electric", reliability: "core" },
   { id: "electric_bass_pick", name: "Pick Bass", category: "Electric", reliability: "core" },
   { id: "fretless_bass", name: "Fretless Bass", category: "Electric", reliability: "core" },
-  { id: "slap_bass_1", name: "Slap Bass 1", category: "Electric", reliability: "core" },
-  { id: "slap_bass_2", name: "Slap Bass 2", category: "Electric", reliability: "color" },
-  { id: "acoustic_bass", name: "Acoustic Upright", category: "Acoustic", reliability: "core" },
-  { id: "contrabass", name: "Contrabass", category: "Acoustic", reliability: "color" },
-  { id: "tuba", name: "Tuba", category: "Color", reliability: "color" },
+  { id: "slap_bass_1", name: "Slap Bass", category: "Electric", reliability: "core" },
+  { id: "acoustic_bass", name: "Upright Bass", category: "Acoustic", reliability: "core" },
 ];
 
-// ── Chords: polyphonic instruments suited for harmony/pads ──
+// ── CHORDS: E-Pianos, Organs, Stabs, Pads, Strings — polyphonic harmony sounds ──
 export const CHORDS_INSTRUMENTS: InstrumentOption[] = [
-  { id: "_synth_", name: "Built-in Chord Synth", category: "Synth", reliability: "core" },
+  // ─ Built-in
+  { id: "_synth_", name: "Poly Synth", category: "Synth", reliability: "core" },
+  // ─ Keys (E-Pianos, Clavs — classic house/funk chord sounds)
+  { id: "electric_piano_1", name: "Rhodes E-Piano", category: "Keys", reliability: "core" },
+  { id: "electric_piano_2", name: "DX E-Piano", category: "Keys", reliability: "core" },
+  { id: "clavinet", name: "Clavinet", category: "Keys", reliability: "core" },
+  { id: "bright_acoustic_piano", name: "Bright Piano", category: "Keys", reliability: "core" },
+  { id: "acoustic_grand_piano", name: "Grand Piano", category: "Keys", reliability: "color" },
+  { id: "harpsichord", name: "Harpsichord", category: "Keys", reliability: "color" },
+  // ─ Organs (House, Deep House, Gospel)
+  { id: "rock_organ", name: "House Organ", category: "Organ", reliability: "core" },
+  { id: "church_organ", name: "Church Organ", category: "Organ", reliability: "core" },
+  { id: "reed_organ", name: "Reed Organ", category: "Organ", reliability: "color" },
+  // ─ Synth Stabs & Pads (Juno-style, chords, stabs)
+  { id: "pad_3_polysynth", name: "Juno Poly", category: "Stabs", reliability: "core" },
   { id: "pad_2_warm", name: "Warm Pad", category: "Pads", reliability: "core" },
-  { id: "pad_3_polysynth", name: "Polysynth", category: "Pads", reliability: "core" },
   { id: "pad_1_new_age", name: "New Age Pad", category: "Pads", reliability: "core" },
   { id: "pad_4_choir", name: "Choir Pad", category: "Pads", reliability: "core" },
-  { id: "pad_6_metallic", name: "Metallic Pad", category: "Pads", reliability: "color" },
   { id: "pad_7_halo", name: "Halo Pad", category: "Pads", reliability: "color" },
   { id: "pad_8_sweep", name: "Sweep Pad", category: "Pads", reliability: "color" },
-  { id: "electric_piano_1", name: "E-Piano 1 (Rhodes)", category: "Keys", reliability: "core" },
-  { id: "electric_piano_2", name: "E-Piano 2 (DX)", category: "Keys", reliability: "core" },
-  { id: "acoustic_grand_piano", name: "Grand Piano", category: "Keys", reliability: "core" },
-  { id: "bright_acoustic_piano", name: "Bright Piano", category: "Keys", reliability: "core" },
-  { id: "clavinet", name: "Clavinet", category: "Keys", reliability: "color" },
-  { id: "harpsichord", name: "Harpsichord", category: "Keys", reliability: "color" },
+  // ─ Strings (lush harmony layers)
   { id: "synth_strings_1", name: "Synth Strings", category: "Strings", reliability: "core" },
-  { id: "synth_strings_2", name: "Synth Strings 2", category: "Strings", reliability: "color" },
   { id: "string_ensemble_1", name: "String Ensemble", category: "Strings", reliability: "core" },
   { id: "string_ensemble_2", name: "Slow Strings", category: "Strings", reliability: "color" },
-  { id: "church_organ", name: "Church Organ", category: "Organ", reliability: "core" },
-  { id: "rock_organ", name: "Rock Organ", category: "Organ", reliability: "color" },
-  { id: "reed_organ", name: "Reed Organ", category: "Organ", reliability: "color" },
+  // ─ Mallet (vibes, marimba — rhythmic chord voicings)
   { id: "vibraphone", name: "Vibraphone", category: "Mallet", reliability: "core" },
   { id: "marimba", name: "Marimba", category: "Mallet", reliability: "color" },
 ];
 
-// ── Melody: monophonic/lead instruments for top-line melodies ──
+// ── MELODY: Leads, plucks, and short melodic sounds ──
 export const MELODY_INSTRUMENTS: InstrumentOption[] = [
-  { id: "_synth_", name: "Built-in Lead Synth", category: "Synth", reliability: "core" },
-  { id: "lead_1_square", name: "Square Lead", category: "Synth", reliability: "core" },
-  { id: "lead_2_sawtooth", name: "Saw Lead", category: "Synth", reliability: "core" },
-  { id: "lead_5_charang", name: "Charang", category: "Synth", reliability: "core" },
-  { id: "lead_6_voice", name: "Voice Lead", category: "Synth", reliability: "color" },
-  { id: "lead_7_fifths", name: "Fifths Lead", category: "Synth", reliability: "color" },
-  { id: "lead_8_bass_lead", name: "Bass + Lead", category: "Synth", reliability: "color" },
+  // ─ Built-in
+  { id: "_synth_", name: "Lead Synth", category: "Synth", reliability: "core" },
+  // ─ Synth Leads (saw, square, aggressive)
+  { id: "lead_2_sawtooth", name: "Saw Lead", category: "Leads", reliability: "core" },
+  { id: "lead_1_square", name: "Square Lead", category: "Leads", reliability: "core" },
+  { id: "lead_5_charang", name: "Charang", category: "Leads", reliability: "core" },
+  { id: "lead_7_fifths", name: "Fifths Lead", category: "Leads", reliability: "color" },
+  { id: "lead_6_voice", name: "Voice Lead", category: "Leads", reliability: "color" },
+  // ─ Plucky & Short (kalimba, celesta, guitar, clavinet — rhythmic melodies)
+  { id: "kalimba", name: "Kalimba", category: "Plucks", reliability: "core" },
+  { id: "celesta", name: "Celesta", category: "Plucks", reliability: "core" },
+  { id: "music_box", name: "Music Box", category: "Plucks", reliability: "core" },
+  { id: "acoustic_guitar_nylon", name: "Nylon Guitar", category: "Plucks", reliability: "core" },
+  { id: "acoustic_guitar_steel", name: "Steel Guitar", category: "Plucks", reliability: "color" },
+  { id: "electric_guitar_clean", name: "Clean E-Guitar", category: "Plucks", reliability: "color" },
+  { id: "sitar", name: "Sitar", category: "Plucks", reliability: "color" },
+  { id: "koto", name: "Koto", category: "Plucks", reliability: "color" },
+  // ─ Wind & Brass (melodic solo instruments)
   { id: "flute", name: "Flute", category: "Wind", reliability: "core" },
   { id: "clarinet", name: "Clarinet", category: "Wind", reliability: "core" },
-  { id: "oboe", name: "Oboe", category: "Wind", reliability: "color" },
-  { id: "soprano_sax", name: "Soprano Sax", category: "Wind", reliability: "color" },
-  { id: "alto_sax", name: "Alto Sax", category: "Wind", reliability: "color" },
-  { id: "tenor_sax", name: "Tenor Sax", category: "Wind", reliability: "color" },
-  { id: "shakuhachi", name: "Shakuhachi", category: "Wind", reliability: "color" },
-  { id: "whistle", name: "Whistle", category: "Wind", reliability: "color" },
+  { id: "alto_sax", name: "Alto Sax", category: "Wind", reliability: "core" },
   { id: "trumpet", name: "Trumpet", category: "Brass", reliability: "core" },
   { id: "muted_trumpet", name: "Muted Trumpet", category: "Brass", reliability: "color" },
-  { id: "french_horn", name: "French Horn", category: "Brass", reliability: "color" },
-  { id: "electric_piano_1", name: "E-Piano", category: "Keys", reliability: "core" },
-  { id: "celesta", name: "Celesta", category: "Keys", reliability: "color" },
-  { id: "kalimba", name: "Kalimba", category: "Keys", reliability: "color" },
-  { id: "acoustic_guitar_nylon", name: "Nylon Guitar", category: "Guitar", reliability: "color" },
-  { id: "acoustic_guitar_steel", name: "Steel Guitar", category: "Guitar", reliability: "color" },
-  { id: "electric_guitar_clean", name: "Clean E-Guitar", category: "Guitar", reliability: "color" },
-  { id: "sitar", name: "Sitar", category: "World", reliability: "color" },
+  // ─ Solo Strings (violin, fiddle — expressive melodic lines)
   { id: "violin", name: "Violin", category: "Strings", reliability: "core" },
   { id: "fiddle", name: "Fiddle", category: "Strings", reliability: "color" },
-  { id: "fx_3_crystal", name: "Crystal FX", category: "FX", reliability: "color" },
-  { id: "fx_4_atmosphere", name: "Atmosphere FX", category: "FX", reliability: "color" },
+  // ─ FX (atmospheric leads)
+  { id: "fx_3_crystal", name: "Crystal", category: "FX", reliability: "color" },
+  { id: "fx_4_atmosphere", name: "Atmosphere", category: "FX", reliability: "color" },
+  { id: "shakuhachi", name: "Shakuhachi", category: "FX", reliability: "color" },
 ];
 
 // ── Instrument Slot ──────────────────────────────────────
