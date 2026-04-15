@@ -15,7 +15,7 @@ import { FxRack } from "./components/FxRack";
 import { SynthSection } from "./components/SynthSection";
 import { MidiPlayerPanel } from "./components/MidiPlayerPanel";
 import { PianoRoll } from "./components/PianoRoll";
-import { PerformanceMode } from "./components/PerformanceMode";
+import { SceneMini } from "./components/SceneMini";
 import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
 import { melodyEngine } from "./audio/MelodyEngine";
@@ -39,7 +39,7 @@ export function App() {
   const [audioError, setAudioError] = useState<string | null>(null);
   const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saved" | "restored">("idle");
   const [fxRackOpen, setFxRackOpen] = useState(false);
-  const [performanceMode, setPerformanceMode] = useState(false);
+  const [sceneMiniOpen, setSceneMiniOpen] = useState(false);
   const [bottomPanelHeight, setBottomPanelHeight] = useState(360);
   const resizeStateRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const appShellRef = useRef<HTMLDivElement>(null);
@@ -286,7 +286,7 @@ export function App() {
         onOpenKits={() => overlay.openOverlay("kitBrowser")}
         onOpenMidi={() => overlay.openOverlay("midiPlayer")}
         onToggleHelp={() => overlay.toggle("help")}
-        onOpenPerformance={() => setPerformanceMode(true)}
+        onOpenPerformance={() => setSceneMiniOpen((o) => !o)}
       />
 
       {/* Keyboard Help Bar */}
@@ -395,7 +395,7 @@ export function App() {
         onOpenEditor={() => overlay.openOverlay("pianoRoll")}
       />
       <PianoRoll isOpen={overlay.isOpen("pianoRoll")} onClose={() => overlay.closeOverlay("pianoRoll")} />
-      {performanceMode && <PerformanceMode onClose={() => setPerformanceMode(false)} />}
+      {sceneMiniOpen && <SceneMini onClose={() => setSceneMiniOpen(false)} />}
     </div>
   );
 }
