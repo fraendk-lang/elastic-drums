@@ -158,8 +158,12 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     if (bassBefore !== bassAfter) {
       console.warn(`[Scene Capture] Bass rootNote changed: ${bassBefore} → ${bassAfter}`);
     }
-    // Also log what was captured vs what's live
-    console.log(`[Scene Capture] Saved rootNote=${scene.rootNote}, live bass=${bassAfter}, live chords=${useChordsStore.getState().rootNote}, live melody=${useMelodyStore.getState().rootNote}`);
+    // Log what was captured
+    console.log(`[Scene Capture] rootNote: saved=${scene.rootNote}, live bass=${bassAfter}, chords=${useChordsStore.getState().rootNote}, melody=${useMelodyStore.getState().rootNote}`);
+    if (scene.bassParams) {
+      const liveParams = useBassStore.getState().params;
+      console.log(`[Scene Capture] Bass params: saved cutoff=${scene.bassParams.cutoff} res=${scene.bassParams.resonance} | live cutoff=${liveParams.cutoff} res=${liveParams.resonance}`);
+    }
   },
 
   loadScene: (slot: number) => {
@@ -198,6 +202,7 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
       globalOctave: scene.bassGlobalOctave ?? 0,
     };
     if (scene.bassParams) {
+      console.log(`[Scene Load] Bass params from scene: cutoff=${scene.bassParams.cutoff} res=${scene.bassParams.resonance} envMod=${scene.bassParams.envMod}`);
       bassUpdate.params = deepClone(scene.bassParams);
       bassEngine.setParams(scene.bassParams);
     }
