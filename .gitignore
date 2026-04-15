@@ -41,3 +41,4 @@ dist-test*/
 .claude/
 samples/*
 *.asd
+dist-audio-fix/
