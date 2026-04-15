@@ -297,112 +297,115 @@ function pianoRollTick(currentStep: number, bpm: number): void {
   if (!_pianoRollEnabled || _pianoRollNotes.length === 0) return;
   if (currentStep === _lastPlaybackStep) return;
 
-  // Detect step advancement (drum sequencer step changed)
   const drumStepAdvanced = _lastPlaybackStep >= 0;
   _lastPlaybackStep = currentStep;
 
-  // Advance our own counter (wraps at piano roll length, not drum pattern length)
   if (drumStepAdvanced) {
     _pianoRollStepCounter++;
   } else {
-    _pianoRollStepCounter = 0; // Reset on first tick
+    _pianoRollStepCounter = 0;
   }
 
-  // Sync to drum pattern length (not fixed 64)
-  const patternLen = useDrumStore.getState().pattern.length; // e.g. 16, 32, 64
+  const patternLen = useDrumStore.getState().pattern.length;
   const wrappedStep = _pianoRollStepCounter % patternLen;
   const t = audioEngine.currentTime + 0.01;
-  const secPerBeat = 60 / bpm; // seconds per quarter note
+  const secPerBeat = 60 / bpm;
 
+  // ─── PHASE 1: Release notes that have ended ─────────────────────
+  // Run BEFORE Note ON to ensure proper cleanup, including at loop boundary
   for (const note of _pianoRollNotes) {
-    const noteStartStep = Math.round(note.start * 4); // beats → steps (4 steps per beat)
+    if (!_activePlaybackNotes.has(note.id)) continue;
+
+    const noteStartStep = Math.round(note.start * 4);
     const noteEndStep = Math.round((note.start + note.duration) * 4);
-    const target = note.track;  // Use per-note track instead of global
+    const target = note.track;
 
-    // ─── Note ON ───
-    if (noteStartStep === wrappedStep && !_activePlaybackNotes.has(note.id)) {
-      _activePlaybackNotes.add(note.id);
-      const durSec = note.duration * secPerBeat;
+    // Check if this note should be released
+    let shouldRelease = false;
 
-      // Clear any previous safety timer for this note (in case of loop restart)
-      const prevTimer = _noteReleaseTimers.get(note.id);
-      if (prevTimer) clearTimeout(prevTimer);
-
-      switch (target) {
-        case "drums":
-          audioEngine.triggerVoice(Math.max(0, Math.min(11, note.midi - 36)));
-          break;
-        case "bass":
-          if (soundFontEngine.isLoaded("bass")) {
-            soundFontEngine.playNote("bass", note.midi, t, note.velocity, durSec);
-          } else {
-            bassEngine.triggerNote(note.midi, t, false, false, false);
-          }
-          break;
-        case "chords":
-          if (soundFontEngine.isLoaded("chords")) {
-            soundFontEngine.playNote("chords", note.midi, t, note.velocity, durSec);
-          } else {
-            chordsEngine.triggerChord([note.midi], t, false, false);
-          }
-          break;
-        case "melody":
-          if (soundFontEngine.isLoaded("melody")) {
-            soundFontEngine.playNote("melody", note.midi, t, note.velocity, durSec);
-          } else {
-            melodyEngine.triggerNote(note.midi, t, false, false, false);
-          }
-          break;
-      }
-
-      // SAFETY NET: setTimeout-based release that CANNOT be cancelled by triggerNote's
-      // cancelScheduledValues. This guarantees every note stops, period.
-      if (target !== "drums") {
-        const safetyMs = durSec * 1000 + 50; // duration + 50ms margin
-        const timer = setTimeout(() => {
-          _noteReleaseTimers.delete(note.id);
-          if (!_activePlaybackNotes.has(note.id)) return; // Already released by step logic
-          _activePlaybackNotes.delete(note.id);
-          const now = audioEngine.currentTime;
-          if (target === "bass") bassEngine.releaseNote(now);
-          else if (target === "chords") chordsEngine.releaseChord(now);
-          else if (target === "melody") melodyEngine.releaseNote(now);
-        }, safetyMs);
-        _noteReleaseTimers.set(note.id, timer);
-      }
+    if (noteEndStep <= patternLen) {
+      // Normal note (doesn't wrap): release when current step >= end step
+      // Use > instead of >= when start and end are on different steps
+      shouldRelease = wrappedStep >= noteEndStep && wrappedStep !== noteStartStep;
+    } else {
+      // Wrapping note: release when past effective end AND before start
+      const effectiveEnd = noteEndStep % patternLen;
+      shouldRelease = wrappedStep >= effectiveEnd && wrappedStep < noteStartStep;
     }
 
-    // ─── Note OFF (step-based — provides earlier/tighter release when step logic works) ───
-    if (_activePlaybackNotes.has(note.id) && noteStartStep !== wrappedStep) {
-      const pastEnd = (noteEndStep <= wrappedStep && noteStartStep < wrappedStep);
-      const noteWrapsAround = noteEndStep > patternLen;
-      const effectiveEnd = noteWrapsAround ? noteEndStep % patternLen : noteEndStep;
-      const pastWrap = noteWrapsAround && wrappedStep >= effectiveEnd && wrappedStep < noteStartStep;
+    // Also release at loop boundary for notes that should have ended
+    if (wrappedStep === 0 && noteStartStep !== 0) {
+      shouldRelease = true;
+    }
 
-      if (pastEnd || pastWrap) {
+    if (shouldRelease) {
+      _activePlaybackNotes.delete(note.id);
+      const timer = _noteReleaseTimers.get(note.id);
+      if (timer) { clearTimeout(timer); _noteReleaseTimers.delete(note.id); }
+      if (target === "bass") bassEngine.releaseNote(t);
+      else if (target === "chords") chordsEngine.releaseChord(t);
+      else if (target === "melody") melodyEngine.releaseNote(t);
+    }
+  }
+
+  // ─── PHASE 2: Trigger notes that start on this step ─────────────
+  for (const note of _pianoRollNotes) {
+    const noteStartStep = Math.round(note.start * 4);
+    const target = note.track;
+
+    if (noteStartStep !== wrappedStep || _activePlaybackNotes.has(note.id)) continue;
+
+    _activePlaybackNotes.add(note.id);
+    const durSec = note.duration * secPerBeat;
+
+    // Clear any leftover timer from previous loop
+    const prevTimer = _noteReleaseTimers.get(note.id);
+    if (prevTimer) clearTimeout(prevTimer);
+
+    switch (target) {
+      case "drums":
+        audioEngine.triggerVoice(Math.max(0, Math.min(11, note.midi - 36)));
+        break;
+      case "bass":
+        if (soundFontEngine.isLoaded("bass")) {
+          soundFontEngine.playNote("bass", note.midi, t, note.velocity, durSec);
+        } else {
+          bassEngine.triggerNote(note.midi, t, false, false, false);
+        }
+        break;
+      case "chords":
+        if (soundFontEngine.isLoaded("chords")) {
+          soundFontEngine.playNote("chords", note.midi, t, note.velocity, durSec);
+        } else {
+          chordsEngine.triggerChord([note.midi], t, false, false);
+        }
+        break;
+      case "melody":
+        if (soundFontEngine.isLoaded("melody")) {
+          soundFontEngine.playNote("melody", note.midi, t, note.velocity, durSec);
+        } else {
+          melodyEngine.triggerNote(note.midi, t, false, false, false);
+        }
+        break;
+    }
+
+    // SAFETY NET: setTimeout fires AFTER note duration — cannot be killed by cancelScheduledValues
+    if (target !== "drums") {
+      const safetyMs = durSec * 1000 + 80;
+      const timer = setTimeout(() => {
+        _noteReleaseTimers.delete(note.id);
+        if (!_activePlaybackNotes.has(note.id)) return;
         _activePlaybackNotes.delete(note.id);
-        // Cancel the safety timer since step logic handled it
-        const timer = _noteReleaseTimers.get(note.id);
-        if (timer) { clearTimeout(timer); _noteReleaseTimers.delete(note.id); }
-        if (target === "bass") bassEngine.releaseNote(t);
-        else if (target === "chords") chordsEngine.releaseChord(t);
-        else if (target === "melody") melodyEngine.releaseNote(t);
-      }
+        const now = audioEngine.currentTime;
+        if (target === "bass") bassEngine.releaseNote(now);
+        else if (target === "chords") chordsEngine.releaseChord(now);
+        else if (target === "melody") melodyEngine.releaseNote(now);
+      }, safetyMs);
+      _noteReleaseTimers.set(note.id, timer);
     }
   }
-
-  // Reset at loop boundary — release any still-active synth notes to prevent hangs
-  if (wrappedStep === 0) {
-    if (_activePlaybackNotes.size > 0) {
-      bassEngine.releaseNote(t);
-      chordsEngine.releaseChord(t);
-      melodyEngine.releaseNote(t);
-    }
-    _activePlaybackNotes.clear();
-    // Clear all safety timers
-    for (const timer of _noteReleaseTimers.values()) clearTimeout(timer);
-    _noteReleaseTimers.clear();
-  }
+  // NOTE: No blanket loop-boundary reset here — Phase 1 handles per-note cleanup,
+  // and safety timers are NOT cleared (they must be allowed to fire).
 }
 
 // Subscribe to transport — this runs globally, not tied to component lifecycle
