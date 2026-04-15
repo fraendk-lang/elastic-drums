@@ -106,6 +106,27 @@ export const CHORDS_PRESETS: ChordsPreset[] = [
   { name: "DH Juno Pad", params: cp({ waveform: "sawtooth", cutoff: 2400, resonance: 2, envMod: 0.1, attack: 300, release: 1000, detune: 12, distortion: 0, volume: 0.55, subOsc: 0.15, chorus: 0.65, spread: 0.7, brightness: 0.25 }) },
   { name: "DH Organ Stab", params: cp({ waveform: "triangle", cutoff: 1500, resonance: 3, envMod: 0.25, attack: 2, release: 100, detune: 4, distortion: 0.1, volume: 0.6, subOsc: 0.08, chorus: 0.05, spread: 0.15, brightness: 0.3 }) },
   { name: "DH Soulful Pad", params: cp({ waveform: "sawtooth", cutoff: 1600, resonance: 2, envMod: 0.08, attack: 250, release: 900, detune: 10, distortion: 0, volume: 0.5, subOsc: 0.2, chorus: 0.4, spread: 0.8, brightness: 0.15 }) },
+  // ── Producer Essentials: Chords that sit perfectly in a mix ──
+  { name: "Wurlitzer Warm", params: cp({ waveform: "triangle", cutoff: 1800, resonance: 3, envMod: 0.15, attack: 5, release: 250, detune: 2, distortion: 0.08, volume: 0.58, subOsc: 0, chorus: 0.08, spread: 0.2, brightness: 0.15 }) },
+  { name: "Chill Keys", params: cp({ waveform: "triangle", cutoff: 2500, resonance: 2, envMod: 0.1, attack: 12, release: 400, detune: 3, distortion: 0.03, volume: 0.55, subOsc: 0, chorus: 0.12, spread: 0.3, brightness: 0.25 }) },
+  { name: "Gospel Organ", params: cp({ waveform: "triangle", cutoff: 1200, resonance: 2, envMod: 0.2, attack: 2, release: 80, detune: 3, distortion: 0.12, volume: 0.6, subOsc: 0.1, chorus: 0.04, spread: 0.12, brightness: 0.35 }) },
+  { name: "Garage Stab", params: cp({ waveform: "sawtooth", cutoff: 2200, resonance: 5, envMod: 0.5, attack: 2, release: 80, detune: 6, distortion: 0.1, volume: 0.62, subOsc: 0.08, chorus: 0.3, spread: 0.5, brightness: 0.2 }) },
+  { name: "90s House Organ", params: cp({ waveform: "triangle", cutoff: 1400, resonance: 3, envMod: 0.3, attack: 1, release: 60, detune: 2, distortion: 0.15, volume: 0.6, subOsc: 0.05, chorus: 0.03, spread: 0.1, brightness: 0.4 }) },
+  { name: "Detroit Strings", params: cp({ waveform: "sawtooth", cutoff: 3000, resonance: 1, envMod: 0.08, attack: 350, release: 1200, detune: 14, distortion: 0, volume: 0.55, subOsc: 0, chorus: 0.55, spread: 0.9, brightness: 0.2 }) },
+  { name: "Prophet Pad", params: cp({ waveform: "sawtooth", cutoff: 2000, resonance: 3, envMod: 0.12, attack: 200, release: 800, detune: 10, distortion: 0.05, volume: 0.55, subOsc: 0.15, chorus: 0.35, spread: 0.6, brightness: 0.18 }) },
+  { name: "OB-Xa Brass", params: cp({ waveform: "sawtooth", cutoff: 1600, resonance: 4, envMod: 0.35, attack: 15, release: 200, detune: 6, distortion: 0.08, volume: 0.6, subOsc: 0.2, chorus: 0.15, spread: 0.4, brightness: 0.25 }) },
+  { name: "Vocal Pad", params: cp({ waveform: "sawtooth", cutoff: 1200, resonance: 5, envMod: 0.15, attack: 400, release: 1500, detune: 8, distortion: 0, volume: 0.5, subOsc: 0.1, chorus: 0.3, spread: 0.7, brightness: 0.1 }) },
+  { name: "Ambient Shimmer", params: cp({ waveform: "triangle", cutoff: 5000, resonance: 1, envMod: 0.05, attack: 500, release: 2000, detune: 20, distortion: 0, volume: 0.45, subOsc: 0, chorus: 0.5, spread: 1.0, brightness: 0.5 }) },
+  { name: "Tape Chords", params: cp({ waveform: "sawtooth", cutoff: 1800, resonance: 2, envMod: 0.1, attack: 10, release: 300, detune: 5, distortion: 0.18, volume: 0.58, subOsc: 0.1, chorus: 0.08, spread: 0.3, brightness: 0.08 }) },
+  { name: "Lo-Fi Keys", params: cp({ waveform: "triangle", cutoff: 1600, resonance: 3, envMod: 0.12, attack: 8, release: 350, detune: 4, distortion: 0.2, volume: 0.55, subOsc: 0, chorus: 0.06, spread: 0.2, brightness: 0.05 }) },
+  { name: "Afro Stab", params: cp({ waveform: "sawtooth", cutoff: 2500, resonance: 4, envMod: 0.45, attack: 2, release: 100, detune: 5, distortion: 0.06, volume: 0.6, subOsc: 0.05, chorus: 0.2, spread: 0.4, brightness: 0.3 }) },
+  { name: "Neo Soul Keys", params: cp({ waveform: "triangle", cutoff: 2000, resonance: 2, envMod: 0.08, attack: 10, release: 450, detune: 3, distortion: 0.02, volume: 0.55, subOsc: 0, chorus: 0.1, spread: 0.25, brightness: 0.2 }) },
+  { name: "Synthwave Pad", params: cp({ waveform: "sawtooth", cutoff: 3500, resonance: 3, envMod: 0.15, attack: 150, release: 600, detune: 18, distortion: 0.05, volume: 0.55, subOsc: 0.1, chorus: 0.6, spread: 0.8, brightness: 0.35 }) },
+  { name: "Glass Stab", params: cp({ waveform: "triangle", cutoff: 4000, resonance: 5, envMod: 0.55, attack: 1, release: 60, detune: 3, distortion: 0, volume: 0.55, subOsc: 0, chorus: 0.15, spread: 0.3, brightness: 0.5 }) },
+  { name: "Warm Blanket", params: cp({ waveform: "sawtooth", cutoff: 1000, resonance: 1, envMod: 0.05, attack: 500, release: 1800, detune: 12, distortion: 0, volume: 0.48, subOsc: 0.25, chorus: 0.45, spread: 0.9, brightness: 0 }) },
+  { name: "Disco Strings", params: cp({ waveform: "sawtooth", cutoff: 3500, resonance: 2, envMod: 0.12, attack: 250, release: 800, detune: 15, distortion: 0, volume: 0.55, subOsc: 0, chorus: 0.5, spread: 0.85, brightness: 0.3 }) },
+  { name: "Trance Pad", params: cp({ waveform: "sawtooth", cutoff: 2800, resonance: 4, envMod: 0.2, attack: 200, release: 1000, detune: 20, distortion: 0.03, volume: 0.55, subOsc: 0.1, chorus: 0.4, spread: 0.7, brightness: 0.4 }) },
+  { name: "Minimal Stab", params: cp({ waveform: "square", cutoff: 1500, resonance: 6, envMod: 0.5, attack: 1, release: 40, detune: 2, distortion: 0.05, volume: 0.58, subOsc: 0, chorus: 0, spread: 0.1, brightness: 0.2 }) },
 ];
 
 export const CHORDS_CORE_PRESETS = CHORDS_PRESETS.filter((preset) =>
