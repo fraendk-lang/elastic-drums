@@ -50,71 +50,36 @@ function createLPF(ctx: AudioContext): FilterChain {
  * and compensation gain to prevent volume loss at high resonance.
  */
 function createLadder(ctx: AudioContext): FilterChain {
-  // 4 cascaded 1-pole lowpass filters (each ~6dB/oct = total 24dB/oct)
+  // 4 cascaded lowpass stages (24dB/oct) — no feedback loop, pure cascade.
+  // Resonance via Q on the last 2 stages (warm peak without self-oscillation).
   const stages: BiquadFilterNode[] = [];
-  // Slight cutoff offset per stage simulates component mismatch in analog circuits
-  const stageOffsets = [1.0, 0.98, 1.02, 0.99];
+  const stageOffsets = [1.0, 0.99, 1.01, 0.995]; // Subtle analog drift
   for (let i = 0; i < 4; i++) {
     const lp = ctx.createBiquadFilter();
     lp.type = "lowpass";
     lp.frequency.value = 2000;
-    lp.Q.value = 0.5; // Slight Q per stage for warmer rolloff
+    lp.Q.value = 0.5;
     stages.push(lp);
   }
 
-  // Chain: stage0 → stage1 → stage2 → stage3
+  // Simple cascade: stage0 → stage1 → stage2 → stage3
   stages[0]!.connect(stages[1]!);
   stages[1]!.connect(stages[2]!);
   stages[2]!.connect(stages[3]!);
 
-  // Feedback path: output → waveshaper (soft-clip) → gain → input
-  // This creates the characteristic Moog self-oscillation and warmth
-  const feedbackGain = ctx.createGain();
-  feedbackGain.gain.value = 0; // Controlled by resonance
-
-  // Saturation in the feedback path (critical for authentic Moog character)
-  const feedbackSat = ctx.createWaveShaper();
-  const fbCurve = new Float32Array(1024);
-  for (let i = 0; i < 1024; i++) {
-    const x = (i / 512 - 1) * 2;
-    fbCurve[i] = Math.tanh(x); // Soft-clip prevents runaway self-oscillation
-  }
-  feedbackSat.curve = fbCurve;
-  feedbackSat.oversample = "2x";
-
-  // Resonance compensation: boosts signal to counteract volume loss
-  const compensationGain = ctx.createGain();
-  compensationGain.gain.value = 1.0;
-
-  // Feedback loop: stage3 → feedbackSat → feedbackGain → stage0
-  stages[3]!.connect(feedbackSat);
-  feedbackSat.connect(feedbackGain);
-  feedbackGain.connect(stages[0]!);
-
-  // Output goes through compensation
-  stages[3]!.connect(compensationGain);
-
   return {
     input: stages[0]!,
-    output: compensationGain,
+    output: stages[3]!,
     update(freq, res, time) {
-      // Set all 4 stages with slight analog-style offsets
       for (let i = 0; i < 4; i++) {
         stages[i]!.frequency.setTargetAtTime(freq * stageOffsets[i]!, time, 0.005);
       }
-      // Gentle Q distribution — keeps warmth without harsh resonance peaks
-      const baseQ = 0.5 + res * 1.2;
-      stages[0]!.Q.setTargetAtTime(baseQ * 0.3, time, 0.005);
-      stages[1]!.Q.setTargetAtTime(baseQ * 0.5, time, 0.005);
-      stages[2]!.Q.setTargetAtTime(baseQ * 0.7, time, 0.005);
-      stages[3]!.Q.setTargetAtTime(baseQ * 1.0, time, 0.005);
-
-      // Feedback: gentle warmth, not screaming self-oscillation
-      // res 0-1 maps to 0-1.2 feedback (self-oscillation would be ~3+, we stay well below)
-      feedbackGain.gain.setTargetAtTime(res * 1.2, time, 0.005);
-
-      // Mild compensation for volume loss at higher resonance
-      compensationGain.gain.setTargetAtTime(1.0 + res * 0.25, time, 0.005);
+      // Resonance: Q only on last 2 stages for a warm Moog-style peak
+      // res 0-1 → Q 0-18 on last stage, 0-10 on third stage
+      stages[0]!.Q.setTargetAtTime(0.5, time, 0.005);
+      stages[1]!.Q.setTargetAtTime(0.5, time, 0.005);
+      stages[2]!.Q.setTargetAtTime(res * 10, time, 0.005);
+      stages[3]!.Q.setTargetAtTime(res * 18, time, 0.005);
     },
   };
 }
