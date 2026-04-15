@@ -19,6 +19,8 @@ import { soundFontEngine } from "../audio/SoundFontEngine";
 import { generateEuclidean } from "./drumStore";
 import { syncScaleToOtherStores, registerScaleStore } from "./bassStore";
 
+export const CHORDS_MAX_CLIP_STEPS = 256;
+
 // ─── Chord Type Names (for cycling) ────────────────────────
 
 export const CHORD_TYPE_NAMES = Object.keys(CHORD_TYPES);
@@ -30,6 +32,15 @@ export interface ChordsPreset {
   params: ChordsParams;
 }
 
+export const CHORDS_SIGNATURE_PRESET_NAMES = [
+  "House Organ",
+  "Deep House",
+  "Neo Soul Velvet",
+  "Future RnB Stack",
+  "Warm Analog Pad",
+  "Airy Pluck Bed",
+] as const;
+
 const cp = (p: Partial<ChordsParams>): ChordsParams => ({ ...DEFAULT_CHORDS_PARAMS, ...p });
 
 // Factory helper to ensure filterModel is set (for backward compatibility)
@@ -39,7 +50,13 @@ function ensureFilterModel(p: ChordsParams): ChordsParams {
 
 export const CHORDS_PRESETS: ChordsPreset[] = [
   // ── Professional Pads ──
-  { name: "Warm Analog Pad", params: cp({ waveform: "sawtooth", filterModel: "ladder", cutoff: 800, resonance: 2, envMod: 0.15, attack: 100, release: 600, detune: 20, distortion: 0, volume: 0.5, subOsc: 0.3, chorus: 0.4, spread: 0.6, brightness: 0.2 }) },
+  { name: "Neo Soul Velvet", params: cp({ waveform: "triangle", filterModel: "ladder", cutoff: 1850, resonance: 2, envMod: 0.1, attack: 24, release: 420, detune: 5, distortion: 0.03, volume: 0.54, subOsc: 0.08, chorus: 0.14, spread: 0.34, brightness: 0.34 }) },
+  { name: "Wide Cinema Pad", params: cp({ waveform: "sawtooth", filterModel: "ladder", cutoff: 1600, resonance: 3, envMod: 0.22, attack: 280, release: 1800, detune: 28, distortion: 0.06, volume: 0.48, subOsc: 0.18, chorus: 0.78, spread: 0.96, brightness: 0.58 }) },
+  { name: "Hyper Pop Glass", params: cp({ waveform: "triangle", filterModel: "steiner-bp", cutoff: 4200, resonance: 7, envMod: 0.1, attack: 18, release: 360, detune: 12, distortion: 0.08, volume: 0.5, subOsc: 0, chorus: 0.26, spread: 0.74, brightness: 0.88 }) },
+  { name: "Future RnB Stack", params: cp({ waveform: "sawtooth", filterModel: "ladder", cutoff: 1600, resonance: 4, envMod: 0.16, attack: 20, release: 330, detune: 9, distortion: 0.06, volume: 0.52, subOsc: 0.12, chorus: 0.24, spread: 0.48, brightness: 0.36 }) },
+  { name: "Airy Pluck Bed", params: cp({ waveform: "triangle", filterModel: "steiner-hp", cutoff: 2500, resonance: 4, envMod: 0.14, attack: 8, release: 160, detune: 5, distortion: 0.02, volume: 0.48, subOsc: 0, chorus: 0.08, spread: 0.32, brightness: 0.62 }) },
+  { name: "Midnight Texture", params: cp({ waveform: "sawtooth", filterModel: "steiner-lp", cutoff: 900, resonance: 8, envMod: 0.24, attack: 140, release: 1300, detune: 20, distortion: 0.14, volume: 0.44, subOsc: 0.24, chorus: 0.46, spread: 0.82, brightness: 0.2 }) },
+  { name: "Warm Analog Pad", params: cp({ waveform: "sawtooth", filterModel: "ladder", cutoff: 980, resonance: 2, envMod: 0.12, attack: 55, release: 420, detune: 11, distortion: 0.02, volume: 0.48, subOsc: 0.18, chorus: 0.22, spread: 0.42, brightness: 0.18 }) },
   { name: "Glass Keys", params: cp({ waveform: "triangle", filterModel: "steiner-bp", cutoff: 3000, resonance: 3, envMod: 0.05, attack: 50, release: 800, detune: 8, distortion: 0, volume: 0.45, subOsc: 0, chorus: 0.2, spread: 0.4, brightness: 0.7 }) },
   { name: "Reese Pad", params: cp({ waveform: "sawtooth", filterModel: "ladder", cutoff: 1200, resonance: 12, envMod: 0.3, attack: 150, release: 1000, detune: 18, distortion: 0.05, volume: 0.5, subOsc: 0.2, chorus: 0.6, spread: 0.7, brightness: 0.25 }) },
   { name: "Ambient Wash", params: cp({ waveform: "triangle", filterModel: "lpf", cutoff: 600, resonance: 1, envMod: 0.08, attack: 250, release: 2000, detune: 30, distortion: 0, volume: 0.35, subOsc: 0.4, chorus: 0.5, spread: 1.0, brightness: 0.1 }) },
@@ -47,11 +64,11 @@ export const CHORDS_PRESETS: ChordsPreset[] = [
   // ── Classic Pads (original) ──
   { name: "Ethereal Pad", params: cp({ waveform: "triangle", filterModel: "lpf", cutoff: 1200, resonance: 4, envMod: 0.08, attack: 300, release: 2000, detune: 30, distortion: 0, volume: 0.35, subOsc: 0.6, chorus: 0.3, spread: 0.5, brightness: 0.3 }) },
   { name: "String Machine", params: cp({ waveform: "sawtooth", filterModel: "lpf", cutoff: 900, resonance: 2, envMod: 0.12, attack: 120, release: 800, detune: 18, distortion: 0.05, volume: 0.5, subOsc: 0.2, chorus: 0.3, spread: 0.5, brightness: 0.3 }) },
-  { name: "Glass Pad", params: cp({ waveform: "triangle", filterModel: "steiner-lp", cutoff: 2500, resonance: 8, envMod: 0.05, attack: 150, release: 1200, detune: 10, distortion: 0, volume: 0.4, subOsc: 0, chorus: 0.3, spread: 0.5, brightness: 0.3 }) },
+  { name: "Glass Pad Classic", params: cp({ waveform: "triangle", filterModel: "steiner-lp", cutoff: 2500, resonance: 8, envMod: 0.05, attack: 150, release: 1200, detune: 10, distortion: 0, volume: 0.4, subOsc: 0, chorus: 0.3, spread: 0.5, brightness: 0.3 }) },
   // ── Stabs ──
   { name: "Bright Stabs", params: cp({ waveform: "sawtooth", cutoff: 2000, resonance: 8, envMod: 0.5, attack: 5, release: 100, detune: 8, distortion: 0.2, volume: 0.5, subOsc: 0 }) },
   { name: "Techno Stabs", params: cp({ waveform: "square", cutoff: 1800, resonance: 12, envMod: 0.7, attack: 3, release: 80, detune: 3, distortion: 0.3, volume: 0.5, subOsc: 0 }) },
-  { name: "House Organ", params: cp({ waveform: "sawtooth", cutoff: 1600, resonance: 6, envMod: 0.4, attack: 8, release: 120, detune: 6, distortion: 0.1, volume: 0.5, subOsc: 0.15 }) },
+  { name: "House Organ", params: cp({ waveform: "triangle", filterModel: "ladder", cutoff: 1350, resonance: 4, envMod: 0.26, attack: 5, release: 105, detune: 4, distortion: 0.08, volume: 0.54, subOsc: 0.08, chorus: 0.05, spread: 0.18, brightness: 0.3 }) },
   { name: "Disco Chords", params: cp({ waveform: "sawtooth", cutoff: 1500, resonance: 10, envMod: 0.6, attack: 10, release: 150, detune: 5, distortion: 0.15, volume: 0.5, subOsc: 0 }) },
   { name: "Funk Clav", params: cp({ waveform: "square", cutoff: 2200, resonance: 9, envMod: 0.6, attack: 2, release: 60, detune: 2, distortion: 0.25, volume: 0.55, subOsc: 0 }) },
   // ── Dirty / Heavy ──
@@ -64,7 +81,7 @@ export const CHORDS_PRESETS: ChordsPreset[] = [
   { name: "Chip Arps", params: cp({ waveform: "square", cutoff: 3000, resonance: 3, envMod: 0.3, attack: 2, release: 70, detune: 0, distortion: 0.1, volume: 0.5, subOsc: 0 }) },
   // ── Genre ──
   { name: "Trance Supersaw", params: cp({ waveform: "sawtooth", cutoff: 1100, resonance: 5, envMod: 0.3, attack: 15, release: 250, detune: 22, distortion: 0.15, volume: 0.5, subOsc: 0.2 }) },
-  { name: "Deep House", params: cp({ waveform: "sawtooth", cutoff: 700, resonance: 7, envMod: 0.35, attack: 20, release: 180, detune: 12, distortion: 0.08, volume: 0.5, subOsc: 0.25 }) },
+  { name: "Deep House", params: cp({ waveform: "triangle", filterModel: "ladder", cutoff: 820, resonance: 5, envMod: 0.22, attack: 10, release: 155, detune: 6, distortion: 0.06, volume: 0.52, subOsc: 0.16, chorus: 0.08, spread: 0.24, brightness: 0.22 }) },
   { name: "Garage Stab", params: cp({ waveform: "sawtooth", cutoff: 1800, resonance: 11, envMod: 0.55, attack: 4, release: 110, detune: 7, distortion: 0.2, volume: 0.5, subOsc: 0 }) },
   { name: "Dub Swell", params: cp({ waveform: "triangle", cutoff: 500, resonance: 8, envMod: 0.25, attack: 100, release: 600, detune: 20, distortion: 0.05, volume: 0.45, subOsc: 0.5 }) },
   // ── Professional New Presets ──
@@ -75,14 +92,24 @@ export const CHORDS_PRESETS: ChordsPreset[] = [
   { name: "Juno Strings", params: cp({ waveform: "sawtooth", cutoff: 4000, resonance: 2, envMod: 0.15, attack: 400, release: 1200, detune: 8, distortion: 0, volume: 0.65, subOsc: 0, chorus: 0.7, spread: 0.8, brightness: 0.3 }) },
   { name: "Dream Pad", params: cp({ waveform: "sawtooth", cutoff: 3000, resonance: 2, envMod: 0.15, attack: 350, release: 1500, detune: 15, distortion: 0, volume: 0.6, subOsc: 0.2, chorus: 0.6, spread: 0.9, brightness: 0.2 }) },
   { name: "Analog Pad", params: cp({ waveform: "sawtooth", cutoff: 2000, resonance: 2, envMod: 0.15, attack: 300, release: 800, detune: 8, distortion: 0.08, volume: 0.55, subOsc: 0.3, chorus: 0, spread: 0.3, brightness: 0.1 }) },
-  { name: "Glass Pad", params: cp({ waveform: "triangle", cutoff: 5000, resonance: 3, envMod: 0.1, attack: 250, release: 1000, detune: 5, distortion: 0, volume: 0.6, subOsc: 0, chorus: 0.2, spread: 0.3, brightness: 0.6 }) },
+  { name: "Glass Pad Bright", params: cp({ waveform: "triangle", cutoff: 5000, resonance: 3, envMod: 0.1, attack: 250, release: 1000, detune: 5, distortion: 0, volume: 0.6, subOsc: 0, chorus: 0.2, spread: 0.3, brightness: 0.6 }) },
   { name: "Dark Pad", params: cp({ waveform: "sawtooth", cutoff: 2000, resonance: 2, envMod: 0.1, attack: 150, release: 900, detune: 3, distortion: 0, volume: 0.5, subOsc: 0, chorus: 0.5, spread: 0.5, brightness: 0 }) },
   { name: "Choir Pad", params: cp({ waveform: "sawtooth", cutoff: 3000, resonance: 2, envMod: 0.15, attack: 400, release: 1200, detune: 10, distortion: 0, volume: 0.6, subOsc: 0, chorus: 0.3, spread: 0.9, brightness: 0.4 }) },
   { name: "Cinematic Pad", params: cp({ waveform: "sawtooth", cutoff: 5000, resonance: 2, envMod: 0.2, attack: 500, release: 2000, detune: 25, distortion: 0, volume: 0.6, subOsc: 0.1, chorus: 0.4, spread: 0.8, brightness: 0.5 }) },
   { name: "PWM Pad", params: cp({ waveform: "square", cutoff: 3000, resonance: 2, envMod: 0.15, attack: 300, release: 1000, detune: 8, distortion: 0, volume: 0.55, subOsc: 0.2, chorus: 0.6, spread: 0.5, brightness: 0.2 }) },
-  { name: "Ambient Wash", params: cp({ waveform: "sawtooth", cutoff: 6000, resonance: 1, envMod: 0.1, attack: 500, release: 2000, detune: 12, distortion: 0, volume: 0.45, subOsc: 0.3, chorus: 0.3, spread: 1.0, brightness: 0.3 }) },
+  { name: "Ambient Wash Wide", params: cp({ waveform: "sawtooth", cutoff: 6000, resonance: 1, envMod: 0.1, attack: 500, release: 2000, detune: 12, distortion: 0, volume: 0.45, subOsc: 0.3, chorus: 0.3, spread: 1.0, brightness: 0.3 }) },
   { name: "Soft Keys", params: cp({ waveform: "triangle", cutoff: 2000, resonance: 1, envMod: 0.08, attack: 80, release: 400, detune: 2, distortion: 0, volume: 0.55, subOsc: 0, chorus: 0, spread: 0.2, brightness: 0.1 }) },
 ];
+
+export const CHORDS_CORE_PRESETS = CHORDS_PRESETS.filter((preset) =>
+  CHORDS_SIGNATURE_PRESET_NAMES.includes(preset.name as typeof CHORDS_SIGNATURE_PRESET_NAMES[number])
+);
+
+const getChordsCorePresetIndex = (index: number): number => {
+  const currentName = CHORDS_PRESETS[index]?.name;
+  const coreIndex = CHORDS_CORE_PRESETS.findIndex((preset) => preset.name === currentName);
+  return coreIndex >= 0 ? coreIndex : 0;
+};
 
 // ─── Chordline Agent: Genre Strategies ──────────────────
 
@@ -92,15 +119,20 @@ export interface ChordlineStrategy {
 }
 
 function makeStep(note: number, chordType: string, opts?: Partial<ChordsStep>): ChordsStep {
-  return { active: true, note, chordType, octave: 0, accent: false, tie: false, ...opts };
+  return { active: true, note, chordType, octave: 0, accent: false, velocity: 0.8, tie: false, gateLength: 1, ...opts };
 }
 
 function emptyStep(): ChordsStep {
-  return { active: false, note: 0, chordType: "Min", octave: 0, accent: false, tie: false };
+  return { active: false, note: 0, chordType: "Min", octave: 0, accent: false, velocity: 0.8, tie: false, gateLength: 1 };
 }
 
 function prob(p: number): boolean { return Math.random() < p; }
 function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]!; }
+function pickChordGate(style: "stab" | "groove" | "hold" = "groove"): number {
+  if (style === "stab") return pick([1, 1, 2, 2]);
+  if (style === "hold") return pick([3, 4, 4, 6, 8]);
+  return pick([2, 2, 3, 4, 4, 6]);
+}
 
 export const CHORDLINE_STRATEGIES: ChordlineStrategy[] = [
   {
@@ -133,20 +165,22 @@ export const CHORDLINE_STRATEGIES: ChordlineStrategy[] = [
   {
     name: "House",
     generate: (len, scaleLen) => {
-      // 4-on-floor stabs, Maj7/Min7, medium density
+      // House stabs with occasional held suspensions
       const steps: ChordsStep[] = [];
-      const chordTypes = ["Maj7", "Min7", "7th", "Min7"];
+      const chordTypes = ["Maj7", "Min7", "7th", "9th"];
       for (let i = 0; i < 64; i++) {
         if (i >= len) { steps.push(emptyStep()); continue; }
-        // Stabs on beats and some offbeats
-        if (i % 4 === 0 && prob(0.8)) {
-          const note = Math.floor(Math.random() * Math.min(scaleLen, 5));
+        if (i % 4 === 0 && prob(0.82)) {
+          const note = pick([0, 0, Math.min(3, scaleLen - 1), Math.min(4, scaleLen - 1)]);
+          const gateLength = i % 8 === 0 ? pickChordGate("groove") : pickChordGate("stab");
           steps.push(makeStep(note, pick(chordTypes), {
             accent: i % 8 === 0,
+            gateLength,
           }));
-        } else if (i % 2 === 0 && prob(0.25)) {
-          steps.push(makeStep(0, pick(["Min7", "Maj7"]), {
+        } else if (i % 8 === 6 && prob(0.35)) {
+          steps.push(makeStep(0, pick(["Min7", "Maj7", "Sus2"]), {
             accent: false,
+            gateLength: pickChordGate("hold"),
           }));
         } else {
           steps.push(emptyStep());
@@ -229,18 +263,22 @@ export const CHORDLINE_STRATEGIES: ChordlineStrategy[] = [
   {
     name: "Random",
     generate: (len, scaleLen) => {
-      // Fully random chord types and placement
+      // Constrained random with house/deep-house friendly harmony
       const steps: ChordsStep[] = [];
+      const chordPalette = ["Min7", "Maj7", "7th", "9th", "Sus2", "Add9"];
       for (let i = 0; i < 64; i++) {
         if (i >= len) { steps.push(emptyStep()); continue; }
-        if (prob(0.45)) {
+        const phraseEdge = i % 4 === 0;
+        if ((phraseEdge && prob(0.7)) || prob(0.16)) {
+          const gateLength = phraseEdge ? pickChordGate("groove") : pickChordGate("stab");
           steps.push(makeStep(
-            Math.floor(Math.random() * Math.min(scaleLen, 7)),
-            pick(CHORD_TYPE_NAMES),
+            pick([0, 0, 1, Math.min(3, scaleLen - 1), Math.min(4, scaleLen - 1)]),
+            pick(chordPalette),
             {
               octave: prob(0.2) ? pick([1, -1]) : 0,
-              accent: prob(0.25),
-              tie: prob(0.2),
+              accent: phraseEdge ? prob(0.45) : prob(0.12),
+              tie: gateLength >= 4 && prob(0.2),
+              gateLength,
             },
           ));
         } else {
@@ -262,26 +300,30 @@ interface ChordsStore {
   rootNote: number;
   rootName: string;
   scaleName: string;
+  globalOctave: number;
   params: ChordsParams;
   presetIndex: number;
   strategyIndex: number;
-  automationData: Record<string, number[]>;
+  automationData: Record<string, Array<number | undefined>>;
   automationParam: string;
   isPlaying: boolean;
   instrument: string;
 
-  setAutomationValue: (param: string, step: number, value: number) => void;
+  setAutomationValue: (param: string, step: number, value: number | undefined) => void;
   setAutomationParam: (param: string) => void;
   clearAutomation: (param: string) => void;
   toggleStep: (step: number) => void;
   setStepNote: (step: number, note: number) => void;
   setStepOctave: (step: number, octave: number) => void;
+  setStepVelocity: (step: number, velocity: number) => void;
   cycleChordType: (step: number) => void;
   setStepChordType: (step: number, chordType: string) => void;
   toggleAccent: (step: number) => void;
   toggleTie: (step: number) => void;
+  setGateLength: (fromStep: number, toStep: number) => void;
   cycleOctave: (step: number) => void;
   setRootNote: (midi: number, name: string) => void;
+  setGlobalOctave: (oct: number) => void;
   setScale: (name: string) => void;
   setParam: (key: keyof ChordsParams, value: number | string) => void;
   setLength: (len: number) => void;
@@ -301,8 +343,8 @@ interface ChordsStore {
 }
 
 function createEmptySteps(): ChordsStep[] {
-  return Array.from({ length: 64 }, () => ({
-    active: false, note: 0, chordType: "Min", octave: 0, accent: false, tie: false,
+  return Array.from({ length: CHORDS_MAX_CLIP_STEPS }, () => ({
+    active: false, note: 0, chordType: "Min", octave: 0, accent: false, velocity: 0.8, tie: false, gateLength: 1,
   }));
 }
 
@@ -322,9 +364,23 @@ export function startChordsScheduler() {
     const bpm = drumState.bpm;
     const secondsPerStep = 60.0 / bpm / 4;
 
+    const getLegacyTieLength = (sequence: ChordsStep[], startIndex: number, sequenceLength: number) => {
+      let span = 1;
+      for (let i = 1; i < sequenceLength; i++) {
+        const nextIdx = (startIndex + i) % sequenceLength;
+        const next = sequence[nextIdx];
+        if (!next?.active || !next.tie) break;
+        span += 1;
+        if (nextIdx === startIndex) break;
+      }
+      return span;
+    };
+
     while (nextChordsStepTime < audioEngine.currentTime + 0.1) {
-      const { steps, currentStep, length, rootNote, scaleName, automationData } = useChordsStore.getState();
-      const step = steps[currentStep % length];
+      const { steps, currentStep, length, rootNote, scaleName, automationData, globalOctave } = useChordsStore.getState();
+      const stepIndex = currentStep % length;
+      const step = steps[stepIndex];
+      const prevStep = stepIndex > 0 ? steps[stepIndex - 1] : steps[length - 1];
 
       // Apply per-step automation
       for (const [param, vals] of Object.entries(automationData)) {
@@ -332,34 +388,48 @@ export function startChordsScheduler() {
         if (val !== undefined) chordsEngine.setParams({ [param]: val });
       }
 
-      if (step?.active) {
+      const isContinuationTie = Boolean(step?.active && step.tie && prevStep?.active);
+      let isHeldByPreviousGate = false;
+
+      if (!step?.active) {
+        for (let back = 1; back < length; back++) {
+          const candidateIndex = (stepIndex - back + length) % length;
+          const candidate = steps[candidateIndex];
+          if (!candidate?.active) continue;
+
+          const candidatePrev = candidateIndex > 0 ? steps[candidateIndex - 1] : steps[length - 1];
+          const candidateIsContinuation = Boolean(candidate.tie && candidatePrev?.active);
+          if (candidateIsContinuation) continue;
+
+          const explicitGateLength = Math.max(1, candidate.gateLength ?? 1);
+          const span = explicitGateLength > 1 ? explicitGateLength : getLegacyTieLength(steps, candidateIndex, length);
+          isHeldByPreviousGate = back < span;
+          break;
+        }
+      }
+
+      if (step?.active && !isContinuationTie) {
         // Convert scale degree + chord type to MIDI note array
-        const rootMidi = scaleNote(rootNote, scaleName, step.note, step.octave);
+        const rootMidi = scaleNote(rootNote, scaleName, step.note, step.octave + globalOctave);
         const intervals = CHORD_TYPES[step.chordType] ?? CHORD_TYPES["Min"]!;
         const midiNotes = intervals.map((interval) => rootMidi + interval);
+        const explicitGateLength = Math.max(1, step.gateLength ?? 1);
+        const sustainSteps = explicitGateLength > 1 ? explicitGateLength : getLegacyTieLength(steps, stepIndex, length);
+        const sustainDuration = secondsPerStep * sustainSteps;
 
         const { instrument } = useChordsStore.getState();
 
         // Use soundfont if a non-synth instrument is selected
         if (instrument !== "_synth_") {
-          const velocity = step.accent ? 1.0 : 0.7;
-          const duration = secondsPerStep * 2.0;
-          // Play the root note only for soundfont (can't play full chords easily)
-          soundFontEngine.playNote("chords", rootMidi, nextChordsStepTime, velocity, duration);
+          const velocity = Math.max(0.2, Math.min(1, step.velocity ?? (step.accent ? 1.0 : 0.7)));
+          const duration = Math.max(secondsPerStep * 1.5, sustainDuration * 0.98);
+          soundFontEngine.playChord("chords", midiNotes, nextChordsStepTime, velocity, duration);
         } else {
           // Use built-in synth
-          chordsEngine.triggerChord(midiNotes, nextChordsStepTime, step.accent, step.tie);
-
-          // Check next step for tie/release
-          const nextStepIdx = (currentStep + 1) % length;
-          const nextStep = steps[nextStepIdx];
-          if (nextStep?.active && nextStep.tie) {
-            // Don't release — tie holds chord
-          } else {
-            chordsEngine.releaseChord(nextChordsStepTime + secondsPerStep * 0.9);
-          }
+          chordsEngine.triggerChord(midiNotes, nextChordsStepTime, step.accent, false, step.velocity ?? (step.accent ? 1.0 : 0.7));
+          chordsEngine.releaseChord(nextChordsStepTime + Math.max(secondsPerStep * 0.92, sustainDuration * 0.98));
         }
-      } else {
+      } else if (!step?.active && !isHeldByPreviousGate) {
         if (steps.some(s => s.active)) {
           chordsEngine.rest(nextChordsStepTime);
         }
@@ -388,6 +458,7 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
   rootNote: 48,
   rootName: "C",
   scaleName: "Minor",
+  globalOctave: 0,
   params: { ...DEFAULT_CHORDS_PARAMS },
   presetIndex: 0,
   strategyIndex: 0,
@@ -399,7 +470,7 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
   toggleStep: (step) => set((s) => {
     const newSteps = [...s.steps];
     newSteps[step] = { ...newSteps[step]!, active: !newSteps[step]!.active };
-    const newLen = step >= s.length ? Math.min(64, step + 1) : s.length;
+    const newLen = step >= s.length ? Math.min(CHORDS_MAX_CLIP_STEPS, step + 1) : s.length;
     return { steps: newSteps, length: newLen };
   }),
 
@@ -409,6 +480,12 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
 
   setStepOctave: (step, octave) => set((s) => {
     const newSteps = [...s.steps]; newSteps[step] = { ...newSteps[step]!, octave }; return { steps: newSteps };
+  }),
+
+  setStepVelocity: (step, velocity) => set((s) => {
+    const newSteps = [...s.steps];
+    newSteps[step] = { ...newSteps[step]!, velocity: Math.max(0.2, Math.min(1, velocity)) };
+    return { steps: newSteps };
   }),
 
   cycleChordType: (step) => set((s) => {
@@ -434,6 +511,23 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
     const newSteps = [...s.steps]; newSteps[step] = { ...newSteps[step]!, tie: !newSteps[step]!.tie }; return { steps: newSteps };
   }),
 
+  setGateLength: (fromStep, toStep) => set((s) => {
+    const newSteps = [...s.steps];
+    const sourceStep = newSteps[fromStep]!;
+    if (!sourceStep.active) return { steps: newSteps };
+
+    const gateLength = Math.max(1, Math.min(CHORDS_MAX_CLIP_STEPS - fromStep, toStep - fromStep + 1));
+    newSteps[fromStep] = { ...sourceStep, gateLength };
+
+    for (let i = fromStep + 1; i < CHORDS_MAX_CLIP_STEPS; i++) {
+      if (newSteps[i]?.tie && newSteps[i]?.active) {
+        newSteps[i] = { active: false, note: 0, chordType: "Min", octave: 0, accent: false, velocity: 0.8, tie: false, gateLength: 1 };
+      } else break;
+    }
+
+    return { steps: newSteps };
+  }),
+
   cycleOctave: (step) => set((s) => {
     const newSteps = [...s.steps];
     const cur = newSteps[step]!.octave;
@@ -445,6 +539,7 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
     set({ rootNote: midi, rootName: name });
     syncScaleToOtherStores("chords", { rootNote: midi, rootName: name });
   },
+  setGlobalOctave: (oct) => set({ globalOctave: Math.max(-2, Math.min(2, oct)) }),
   setScale: (name) => {
     set({ scaleName: name });
     syncScaleToOtherStores("chords", { scaleName: name });
@@ -459,7 +554,7 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
     const { isPlaying, currentStep, length, automationData } = get();
     if (isPlaying && typeof value === "number") {
       const data = { ...automationData };
-      if (!data[key]) data[key] = new Array(length).fill(undefined);
+      if (!data[key]) data[key] = new Array(CHORDS_MAX_CLIP_STEPS).fill(undefined);
       const arr = [...data[key]!];
       arr[currentStep % length] = value;
       data[key] = arr;
@@ -467,7 +562,7 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
     }
   },
 
-  setLength: (len) => set({ length: Math.max(4, Math.min(64, len)) }),
+  setLength: (len) => set({ length: Math.max(4, Math.min(CHORDS_MAX_CLIP_STEPS, len)) }),
   setSelectedPage: (page) => set({ selectedPage: page }),
   clearSteps: () => set({ steps: createEmptySteps() }),
 
@@ -506,7 +601,7 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
         if (noteMode === "ascending") note = i % Math.min(scale.length, 7);
         else if (noteMode === "random") note = Math.floor(Math.random() * Math.min(scale.length, 7));
         // "root" → note stays 0
-        newSteps[i] = { active: true, note, chordType: "Min", octave: 0, accent: i % 4 === 0, tie: false };
+        newSteps[i] = { active: true, note, chordType: "Min", octave: 0, accent: i % 4 === 0, velocity: i % 4 === 0 ? 0.95 : 0.72, tie: false, gateLength: 1 };
       }
     }
     set({ steps: newSteps });
@@ -520,16 +615,35 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
     chordsEngine.setParams(params);
   },
 
-  nextPreset: () => { const n = (get().presetIndex + 1) % CHORDS_PRESETS.length; get().loadPreset(n); },
-  prevPreset: () => { const p = (get().presetIndex - 1 + CHORDS_PRESETS.length) % CHORDS_PRESETS.length; get().loadPreset(p); },
+  nextPreset: () => {
+    const nextCore = (getChordsCorePresetIndex(get().presetIndex) + 1) % CHORDS_CORE_PRESETS.length;
+    const nextName = CHORDS_CORE_PRESETS[nextCore]?.name;
+    const nextIndex = CHORDS_PRESETS.findIndex((preset) => preset.name === nextName);
+    if (nextIndex >= 0) get().loadPreset(nextIndex);
+  },
+  prevPreset: () => {
+    const prevCore = (getChordsCorePresetIndex(get().presetIndex) - 1 + CHORDS_CORE_PRESETS.length) % CHORDS_CORE_PRESETS.length;
+    const prevName = CHORDS_CORE_PRESETS[prevCore]?.name;
+    const prevIndex = CHORDS_PRESETS.findIndex((preset) => preset.name === prevName);
+    if (prevIndex >= 0) get().loadPreset(prevIndex);
+  },
 
   setInstrument: async (id: string) => {
+    if (id === "_synth_") {
+      soundFontEngine.stopAll("chords");
+      set({ instrument: id });
+      return;
+    }
+
     set({ instrument: id });
     const ctx = audioEngine.getAudioContext();
     if (ctx) {
       const destination = audioEngine.getChannelOutput(13); // Chords = channel 13
       try {
-        await soundFontEngine.loadInstrument("chords", id, destination);
+        const ok = await soundFontEngine.loadInstrument("chords", id, destination);
+        if (!ok) {
+          set({ instrument: "_synth_" });
+        }
       } catch (err) {
         console.warn("Failed to load chords instrument:", err);
         set({ instrument: "_synth_" });
@@ -539,7 +653,7 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
 
   setAutomationValue: (param, step, value) => set((s) => {
     const data = { ...s.automationData };
-    if (!data[param]) data[param] = new Array(64).fill(0);
+    if (!data[param]) data[param] = new Array(CHORDS_MAX_CLIP_STEPS).fill(undefined);
     data[param] = [...data[param]!];
     data[param]![step] = value;
     return { automationData: data };

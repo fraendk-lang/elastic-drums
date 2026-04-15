@@ -2,7 +2,7 @@
  * Melody Sequencer — Piano-roll with pages, presets, melody agent, CLR
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMelodyStore, MELODY_PRESETS, MELODY_STRATEGIES, MELODY_SIGNATURE_PRESET_NAMES, MELODY_CORE_PRESETS } from "../store/melodyStore";
 import { MELODY_INSTRUMENTS, findInstrumentOption } from "../audio/SoundFontEngine";
 import { SCALES, ROOT_NOTES, scaleNote } from "../audio/BassEngine";
@@ -22,7 +22,7 @@ const MELODY_AUTO_PARAMS: AutomationParam[] = [
 
 const SCALE_NAMES = Object.keys(SCALES);
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-const VALID_LENGTHS = [4, 8, 12, 16, 24, 32, 48, 64];
+const VALID_LENGTHS = [4, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256];
 const MELODY_COLOR = "var(--ed-accent-melody)";
 const MELODY_INSTRUMENT_GROUPS = MELODY_INSTRUMENTS.reduce<Record<string, typeof MELODY_INSTRUMENTS>>((groups, instrument) => {
   const key = instrument.reliability === "core" ? "Reliable" : "Optional GM";
@@ -42,8 +42,9 @@ export function MelodySequencer() {
   const {
     steps, length, currentStep, selectedPage, rootNote, rootName, scaleName, params, presetIndex, strategyIndex, instrument,
     automationData, automationParam,
-    toggleStep, setStepNote, setStepVelocity, toggleAccent, toggleSlide, toggleTie, setGateLength, cycleOctave,
-    setRootNote, setScale, setParam, setLength, setSelectedPage,
+    globalOctave,
+    toggleStep, setStepNote, setStepVelocity, toggleAccent, toggleSlide, toggleTie, setGateLength, setStepOctave, cycleOctave,
+    setRootNote, setGlobalOctave, setScale, setParam, setLength, setSelectedPage,
     clearSteps, generateMelodiline, nextStrategy, prevStrategy,
     loadPreset, setInstrument,
     setAutomationValue, setAutomationParam,
@@ -51,16 +52,41 @@ export function MelodySequencer() {
 
   const isPlaying = useDrumStore((s) => s.isPlaying);
   const dragRef = useRef<{ step: number; startY: number; startNote: number } | null>(null);
+  const [selectedStep, setSelectedStep] = useState<number | null>(null);
   const [durationDrag, setDurationDrag] = useState<{ sourceStep: number; endStep: number } | null>(null);
   const stepElRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [velocityLaneExpanded, setVelocityLaneExpanded] = useState(true);
   // Knobs always visible (no collapse)
 
   const pageOffset = selectedPage * 16;
+  const totalPages = Math.max(1, Math.ceil(length / 16));
+  const pageNumbers = Array.from({ length: totalPages }, (_, page) => page);
   const instrumentMeta = findInstrumentOption(MELODY_INSTRUMENTS, instrument);
   const currentPresetName = MELODY_PRESETS[presetIndex]?.name ?? "Preset";
   const isSignaturePreset = MELODY_SIGNATURE_PRESET_NAMES.includes(currentPresetName as typeof MELODY_SIGNATURE_PRESET_NAMES[number]);
   const strategyName = MELODY_STRATEGIES[strategyIndex]?.name ?? "Random";
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!e.shiftKey || selectedStep === null) return;
+      const target = e.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      const selected = steps[selectedStep];
+      if (!selected?.active) return;
+
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        e.preventDefault();
+        const delta = e.key === "ArrowUp" ? 1 : -1;
+        const nextOctave = Math.max(-2, Math.min(2, selected.octave + delta));
+        if (nextOctave !== selected.octave) {
+          setStepOctave(selectedStep, nextOctave);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedStep, setStepOctave, steps]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent, absStep: number) => {
     const s = steps[absStep];
@@ -69,7 +95,8 @@ export function MelodySequencer() {
       if (e.altKey) { e.preventDefault(); toggleTie(absStep); return; }
       if (e.ctrlKey || e.metaKey || e.button === 1) { e.preventDefault(); cycleOctave(absStep); return; }
     }
-    if (!s?.active) { toggleStep(absStep); return; }
+    if (!s?.active) { toggleStep(absStep); setSelectedStep(absStep); return; }
+    setSelectedStep(absStep);
     if (e.button === 0) {
       dragRef.current = { step: absStep, startY: e.clientY, startNote: s.note };
       let didDrag = false;
@@ -182,7 +209,7 @@ export function MelodySequencer() {
           {Object.entries(MELODY_PRESET_GROUPS).map(([label, items]) => (
             <optgroup key={label} label={label}>
               {items.map(({ preset, index }) => (
-                <option key={index} value={index}>{preset.name}</option>
+                <option key={`melody-preset-${label}-${index}`} value={index}>{preset.name}</option>
               ))}
             </optgroup>
           ))}
@@ -295,8 +322,8 @@ export function MelodySequencer() {
       {/* Row 2: Pages + length */}
       <div className="flex items-center gap-2 px-3 py-1 border-b border-white/5">
         <div className="flex gap-1">
-          {[0, 1, 2, 3].map((page) => (
-            <button key={page} onClick={() => setSelectedPage(page)}
+          {pageNumbers.map((page) => (
+            <button key={`page-tab-${page}`} onClick={() => setSelectedPage(page)}
               className={`px-2 py-0.5 text-[9px] font-medium rounded-md transition-all ${
                 selectedPage === page
                   ? "bg-[var(--ed-accent-melody)] text-black font-bold shadow-[0_0_8px_rgba(244,114,182,0.2)]"
@@ -320,8 +347,20 @@ export function MelodySequencer() {
             </>);
           })()}
         </div>
+        <div className="flex items-center gap-1 ml-2">
+          <button onClick={() => setGlobalOctave(globalOctave - 1)}
+            disabled={globalOctave <= -2}
+            className="w-5 h-5 rounded-md text-[10px] font-bold bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-white hover:bg-[var(--ed-bg-elevated)] disabled:opacity-30 transition-all">&minus;</button>
+          <span className={`text-[10px] font-mono min-w-[32px] text-center font-bold tabular-nums ${globalOctave !== 0 ? "text-[var(--ed-accent-melody)]" : "text-[var(--ed-text-muted)]"}`}>
+            {globalOctave > 0 ? `+${globalOctave}` : globalOctave}
+          </span>
+          <button onClick={() => setGlobalOctave(globalOctave + 1)}
+            disabled={globalOctave >= 2}
+            className="w-5 h-5 rounded-md text-[10px] font-bold bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-white hover:bg-[var(--ed-bg-elevated)] disabled:opacity-30 transition-all">+</button>
+          <span className="text-[7px] text-[var(--ed-text-muted)] font-bold">OCT</span>
+        </div>
         <div className="flex-1" />
-        <span className="hidden lg:inline text-[7px] text-white/12">drag = pitch &middot; drag bright edge = note length &middot; rclick = accent &middot; shift = slide &middot; alt = legato tie</span>
+        <span className="hidden lg:inline text-[7px] text-white/12">click = select &middot; Shift + ↑/↓ = octave &middot; drag = pitch &middot; drag bright edge = note length &middot; rclick = accent &middot; shift = slide &middot; alt = legato tie</span>
       </div>
 
       {/* Piano Roll + Automation */}
@@ -333,12 +372,13 @@ export function MelodySequencer() {
           const isCurrent = isPlaying && currentStep === absStep;
           const isActive = step.active && absStep < length;
           const noteHeight = isActive ? Math.max(14, (step.note / maxNote) * 100) : 0;
-          const midi = isActive ? scaleNote(rootNote, scaleName, step.note, step.octave) : 0;
+          const midi = isActive ? scaleNote(rootNote, scaleName, step.note, step.octave + globalOctave) : 0;
           const prevStep = absStep > 0 ? steps[absStep - 1] : null;
           const isTiedFromPrev = isActive && step.tie && prevStep?.active;
           const isBeat = i % 4 === 0;
           const beyondLength = absStep >= length;
           const isInDragRange = durationDrag && absStep > durationDrag.sourceStep && absStep <= durationDrag.endStep;
+          const isSelected = selectedStep === absStep;
           let noteLength = Math.max(1, step.gateLength ?? 1);
           if (isActive && !isTiedFromPrev && (step.gateLength ?? 1) <= 1) {
             for (let j = absStep + 1; j < length; j++) {
@@ -352,7 +392,7 @@ export function MelodySequencer() {
           return (
             <div key={i}
               ref={(el) => { if (el) stepElRefs.current.set(absStep, el); else stepElRefs.current.delete(absStep); }}
-              className={`flex-1 flex flex-col justify-end min-w-0 relative ${beyondLength ? "opacity-25" : ""}`}
+              className={`flex-1 flex flex-col justify-end min-w-0 relative ${beyondLength ? "opacity-25" : ""} ${isSelected && isActive ? "ring-1 ring-[var(--ed-accent-melody)]/55 rounded-sm" : ""}`}
               onMouseDown={(e) => { e.preventDefault(); handleMouseDown(e, absStep); }}
               onPointerDown={(e) => handleDurationDragStart(e, absStep)}
               onContextMenu={(e) => { e.preventDefault(); if (isActive) toggleAccent(absStep); }}
@@ -521,7 +561,7 @@ function Sel({ value, options, onChange }: { value: string; options: string[]; o
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)}
       className="h-6 px-1.5 text-[9px] bg-black/30 border border-white/8 rounded-md text-white/60 focus:outline-none appearance-none cursor-pointer hover:border-[var(--ed-accent-melody)]/30 transition-colors">
-      {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      {options.map((o) => <option key={`melody-sel-${o}`} value={o}>{o}</option>)}
     </select>
   );
 }

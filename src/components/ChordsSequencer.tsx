@@ -2,7 +2,7 @@
  * Chords Sequencer — Piano-roll with pages, presets, chordline agent
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useChordsStore, CHORDS_PRESETS, CHORDLINE_STRATEGIES, CHORD_TYPE_NAMES, CHORDS_SIGNATURE_PRESET_NAMES, CHORDS_CORE_PRESETS } from "../store/chordsStore";
 import { CHORDS_INSTRUMENTS, findInstrumentOption } from "../audio/SoundFontEngine";
 import { SCALES, ROOT_NOTES, scaleNote } from "../audio/BassEngine";
@@ -22,7 +22,7 @@ const CHORDS_AUTO_PARAMS: AutomationParam[] = [
 
 const SCALE_NAMES = Object.keys(SCALES);
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-const VALID_LENGTHS = [4, 8, 12, 16, 24, 32, 48, 64];
+const VALID_LENGTHS = [4, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256];
 const CHORDS_COLOR = "var(--ed-accent-chords)";
 const CHORDS_INSTRUMENT_GROUPS = CHORDS_INSTRUMENTS.reduce<Record<string, typeof CHORDS_INSTRUMENTS>>((groups, instrument) => {
   const key = instrument.reliability === "core" ? "Reliable" : "Optional GM";
@@ -48,8 +48,9 @@ export function ChordsSequencer() {
   const {
     steps, length, currentStep, selectedPage, rootNote, rootName, scaleName, params, presetIndex, strategyIndex, instrument,
     automationData, automationParam,
-    toggleStep, setStepNote, setStepVelocity, toggleTie, setGateLength, cycleOctave, cycleChordType, setStepChordType,
-    setRootNote, setScale, setParam, setLength, setSelectedPage,
+    globalOctave,
+    toggleStep, setStepNote, setStepVelocity, toggleTie, setGateLength, setStepOctave, cycleOctave, cycleChordType, setStepChordType,
+    setRootNote, setGlobalOctave, setScale, setParam, setLength, setSelectedPage,
     clearSteps, generateChordline, nextStrategy, prevStrategy,
     loadPreset, setInstrument,
     setAutomationValue, setAutomationParam,
@@ -63,10 +64,34 @@ export function ChordsSequencer() {
   const [velocityLaneExpanded, setVelocityLaneExpanded] = useState(true);
 
   const pageOffset = selectedPage * 16;
+  const totalPages = Math.max(1, Math.ceil(length / 16));
+  const pageNumbers = Array.from({ length: totalPages }, (_, page) => page);
   const instrumentMeta = findInstrumentOption(CHORDS_INSTRUMENTS, instrument);
   const currentPresetName = CHORDS_PRESETS[presetIndex]?.name ?? "Preset";
   const isSignaturePreset = CHORDS_SIGNATURE_PRESET_NAMES.includes(currentPresetName as typeof CHORDS_SIGNATURE_PRESET_NAMES[number]);
   const strategyName = CHORDLINE_STRATEGIES[strategyIndex]?.name ?? "Random";
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!e.shiftKey || selectedStep === null) return;
+      const target = e.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      const selected = steps[selectedStep];
+      if (!selected?.active) return;
+
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        e.preventDefault();
+        const delta = e.key === "ArrowUp" ? 1 : -1;
+        const nextOctave = Math.max(-2, Math.min(2, selected.octave + delta));
+        if (nextOctave !== selected.octave) {
+          setStepOctave(selectedStep, nextOctave);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedStep, setStepOctave, steps]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent, absStep: number) => {
     const s = steps[absStep];
@@ -188,7 +213,7 @@ export function ChordsSequencer() {
           {Object.entries(CHORDS_PRESET_GROUPS).map(([label, items]) => (
             <optgroup key={label} label={label}>
               {items.map(({ preset, index }) => (
-                <option key={index} value={index}>{preset.name}</option>
+                <option key={`chords-preset-${label}-${index}`} value={index}>{preset.name}</option>
               ))}
             </optgroup>
           ))}
@@ -308,8 +333,8 @@ export function ChordsSequencer() {
       {/* Row 2: Pages + length */}
       <div className="flex items-center gap-2 px-3 py-1 border-b border-white/5">
         <div className="flex gap-1">
-          {[0, 1, 2, 3].map((page) => (
-            <button key={page} onClick={() => setSelectedPage(page)}
+          {pageNumbers.map((page) => (
+            <button key={`page-tab-${page}`} onClick={() => setSelectedPage(page)}
               className={`px-2 py-0.5 text-[9px] font-medium rounded-md transition-all ${
                 selectedPage === page
                   ? "bg-[var(--ed-accent-chords)] text-black font-bold shadow-[0_0_8px_rgba(167,139,250,0.2)]"
@@ -333,8 +358,20 @@ export function ChordsSequencer() {
             </>);
           })()}
         </div>
+        <div className="flex items-center gap-1 ml-2">
+          <button onClick={() => setGlobalOctave(globalOctave - 1)}
+            disabled={globalOctave <= -2}
+            className="w-5 h-5 rounded-md text-[10px] font-bold bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-white hover:bg-[var(--ed-bg-elevated)] disabled:opacity-30 transition-all">&minus;</button>
+          <span className={`text-[10px] font-mono min-w-[32px] text-center font-bold tabular-nums ${globalOctave !== 0 ? "text-[var(--ed-accent-chords)]" : "text-[var(--ed-text-muted)]"}`}>
+            {globalOctave > 0 ? `+${globalOctave}` : globalOctave}
+          </span>
+          <button onClick={() => setGlobalOctave(globalOctave + 1)}
+            disabled={globalOctave >= 2}
+            className="w-5 h-5 rounded-md text-[10px] font-bold bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] hover:text-white hover:bg-[var(--ed-bg-elevated)] disabled:opacity-30 transition-all">+</button>
+          <span className="text-[7px] text-[var(--ed-text-muted)] font-bold">OCT</span>
+        </div>
         <div className="flex-1" />
-        <span className="hidden lg:inline text-[7px] text-white/12">click = select &middot; TYPE buttons = chord &middot; drag = pitch &middot; drag bright edge = note length &middot; rclick = cycle &middot; alt = legato tie</span>
+        <span className="hidden lg:inline text-[7px] text-white/12">click = select &middot; Shift + ↑/↓ = octave &middot; TYPE buttons = chord &middot; drag = pitch &middot; drag bright edge = note length &middot; rclick = cycle &middot; alt = legato tie</span>
       </div>
 
       {/* Piano Roll + Automation */}
@@ -346,7 +383,7 @@ export function ChordsSequencer() {
           const isCurrent = isPlaying && currentStep === absStep;
           const isActive = step.active && absStep < length;
           const noteHeight = isActive ? Math.max(14, (step.note / maxNote) * 100) : 0;
-          const midi = isActive ? scaleNote(rootNote, scaleName, step.note, step.octave) : 0;
+          const midi = isActive ? scaleNote(rootNote, scaleName, step.note, step.octave + globalOctave) : 0;
           const prevStep = absStep > 0 ? steps[absStep - 1] : null;
           const isTiedFromPrev = isActive && step.tie && prevStep?.active;
           const isBeat = i % 4 === 0;
@@ -534,7 +571,7 @@ function Sel({ value, options, onChange }: { value: string; options: string[]; o
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)}
       className="h-6 px-1.5 text-[9px] bg-black/30 border border-white/8 rounded-md text-white/60 focus:outline-none appearance-none cursor-pointer hover:border-[var(--ed-accent-chords)]/30 transition-colors">
-      {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      {options.map((o) => <option key={`chords-sel-${o}`} value={o}>{o}</option>)}
     </select>
   );
 }

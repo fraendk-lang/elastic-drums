@@ -25,6 +25,7 @@ class SampleManagerClass {
   /** Load a sample from a File (drag & drop or file picker) */
   async loadFromFile(file: File, voiceIndex: number): Promise<LoadedSample> {
     const arrayBuffer = await file.arrayBuffer();
+    await audioEngine.resume();
     const ctx = audioEngine.getAudioContext();
     if (!ctx) throw new Error("AudioContext not initialized");
 
@@ -48,7 +49,11 @@ class SampleManagerClass {
   /** Load sample from URL */
   async loadFromUrl(url: string, name: string, voiceIndex: number): Promise<LoadedSample> {
     const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Sample request failed (${response.status}) for ${url}`);
+    }
     const arrayBuffer = await response.arrayBuffer();
+    await audioEngine.resume();
     const ctx = audioEngine.getAudioContext();
     if (!ctx) throw new Error("AudioContext not initialized");
 

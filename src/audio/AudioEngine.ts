@@ -16,6 +16,7 @@ import { soundFontEngine } from './SoundFontEngine';
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private noiseBuffer: AudioBuffer | null = null;
+  private contextMode: "stable" | "live" = "stable";
 
   private masterGain: GainNode | null = null;
   private masterAnalyser: AnalyserNode | null = null;
@@ -38,12 +39,24 @@ export class AudioEngine {
   private wasmMode = false;
   private workletNode: AudioWorkletNode | null = null;
   private wasmReady = false;
+  private workletInitAttempted = false;
 
   constructor() {}
 
+  private shouldUseWasmWorklet(): boolean {
+    // The shipped public/drum-worklet.js currently does not match the import
+    // contract of the generated Emscripten module in Safari, which causes noisy
+    // console errors and repeated failed init attempts. Keep the stable TS path
+    // as the default runtime until the WASM worklet build pipeline is aligned.
+    return false;
+  }
+
   private getContext(): AudioContext {
     if (!this.ctx) {
-      this.ctx = new AudioContext({ sampleRate: 48000 });
+      const latencyHint: AudioContextLatencyCategory = this.contextMode === "live" ? "interactive" : "playback";
+      // Let the browser / OS choose the native output sample rate. Forcing 48 kHz
+      // can cause extra resampling work and make Safari more fragile over time.
+      this.ctx = new AudioContext({ latencyHint });
       this.noiseBuffer = this.generateNoiseBuffer(this.ctx, 2.0);
 
       // ─── Master output chain ─────────────────────────────
@@ -51,7 +64,7 @@ export class AudioEngine {
       this.masterGain.gain.value = 0.85;
 
       this.masterAnalyser = this.ctx.createAnalyser();
-      this.masterAnalyser.fftSize = 4096;
+      this.masterAnalyser.fftSize = 2048;
       this.masterAnalyser.smoothingTimeConstant = 0.15;
 
       // 3-Band EQ
@@ -145,7 +158,9 @@ export class AudioEngine {
   async resume(): Promise<void> {
     const ctx = this.getContext();
     if (ctx.state === "suspended") await ctx.resume();
-    if (!this.wasmReady && !this.workletNode) {
+    if (!this.shouldUseWasmWorklet()) return;
+    if (!this.workletInitAttempted && !this.wasmReady && !this.workletNode) {
+      this.workletInitAttempted = true;
       try {
         await this.initWasmWorklet(ctx);
       } catch (err) {
@@ -187,6 +202,31 @@ export class AudioEngine {
 
   getAudioContext(): AudioContext | null { return this.ctx; }
   getMasterGainNode(): GainNode | null { return this.masterGain; }
+  getContextMode(): "stable" | "live" { return this.contextMode; }
+  setContextMode(mode: "stable" | "live"): void {
+    if (this.contextMode === mode) return;
+    this.contextMode = mode;
+    if (!this.ctx) return;
+    // Rebuild the context lazily on the next user interaction / resume so we do
+    // not keep a running context with the wrong latency profile.
+    this.destroy();
+  }
+  getAudioPerformanceInfo(): {
+    mode: "stable" | "live";
+    sampleRate: number;
+    baseLatency: number | null;
+    outputLatency: number | null;
+    state: AudioContextState | "uninitialized";
+  } {
+    const ctx = this.ctx;
+    return {
+      mode: this.contextMode,
+      sampleRate: ctx?.sampleRate ?? 0,
+      baseLatency: ctx?.baseLatency ?? null,
+      outputLatency: typeof ctx?.outputLatency === "number" ? ctx.outputLatency : null,
+      state: ctx?.state ?? "uninitialized",
+    };
+  }
 
   setVoiceParam(voice: number, paramId: string, value: number): void { voiceRenderer.setVoiceParam(voice, paramId, value); }
   getVoiceParam(voice: number, paramId: string): number { return voiceRenderer.getVoiceParam(voice, paramId); }
@@ -436,6 +476,10 @@ export class AudioEngine {
   destroy(): void {
     soundFontEngine.destroy();
     sendFxManager.destroy();
+    this.workletNode = null;
+    this.wasmReady = false;
+    this.wasmMode = false;
+    this.workletInitAttempted = false;
     if (this.ctx) {
       try {
         this.ctx.close();

@@ -183,6 +183,10 @@ export class MixerRouter {
     return Math.sqrt(sum / data.length) * 2;
   }
 
+  getGroupAnalyser(group: string): AnalyserNode | null {
+    return this.groupBuses.get(group)?.analyser ?? null;
+  }
+
   setGroupVolume(group: string, volume: number): void {
     const bus = this.groupBuses.get(group);
     if (bus) bus.gain.gain.value = volume;

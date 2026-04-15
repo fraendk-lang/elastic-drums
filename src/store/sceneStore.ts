@@ -148,12 +148,18 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     newScenes[slot] = scene;
     set({ scenes: newScenes });
 
-    // Capture must be write-only. Some UI flows around scene confirmation can
-    // cause follow-up state churn; re-assert the live tuning state so saving a
-    // scene never changes the currently playing pitch.
+    // Capture must be write-only — re-assert live tuning state.
+    // Log before/after to diagnose octave drift.
+    const bassBefore = useBassStore.getState().rootNote;
     useBassStore.setState(liveScaleState.bass);
     useChordsStore.setState(liveScaleState.chords);
     useMelodyStore.setState(liveScaleState.melody);
+    const bassAfter = useBassStore.getState().rootNote;
+    if (bassBefore !== bassAfter) {
+      console.warn(`[Scene Capture] Bass rootNote changed: ${bassBefore} → ${bassAfter}`);
+    }
+    // Also log what was captured vs what's live
+    console.log(`[Scene Capture] Saved rootNote=${scene.rootNote}, live bass=${bassAfter}, live chords=${useChordsStore.getState().rootNote}, live melody=${useMelodyStore.getState().rootNote}`);
   },
 
   loadScene: (slot: number) => {

@@ -14,6 +14,7 @@ export class MeteringEngine {
   private readonly PEAK_DECAY = 0.995;
   private readonly RMS_SMOOTH = 0.5;
   private meterBuffer: Float32Array<ArrayBuffer> | null = null;
+  private frequencyBuffer: Float32Array<ArrayBuffer> | null = null;
 
   constructor(channelCount = 15) {
     this.peakLevels = new Float32Array(channelCount);
@@ -111,12 +112,96 @@ export class MeteringEngine {
     return this.getMasterMeter(analyser).rmsLinear * 2;
   }
 
+  /**
+   * FFT summary for more meaningful visual analysis than raw bins.
+   * Returns musically useful bands plus centroid/rolloff so the UI can show
+   * whether a signal is dark, bright, or tilted toward the highs.
+   */
+  getSpectrumSummary(analyser: AnalyserNode, sampleRate: number): {
+    sub: number;
+    low: number;
+    mid: number;
+    high: number;
+    air: number;
+    centroidHz: number;
+    rolloffHz: number;
+    tilt: number;
+  } {
+    const binCount = analyser.frequencyBinCount;
+    if (!this.frequencyBuffer || this.frequencyBuffer.length < binCount) {
+      this.frequencyBuffer = new Float32Array(binCount);
+    }
+
+    analyser.getFloatFrequencyData(this.frequencyBuffer);
+    const data = this.frequencyBuffer;
+    const nyquist = sampleRate / 2;
+    const binHz = nyquist / binCount;
+
+    let weightedFreq = 0;
+    let energySum = 0;
+    const magnitudes = new Float32Array(binCount);
+
+    const bands = {
+      sub: 0,
+      low: 0,
+      mid: 0,
+      high: 0,
+      air: 0,
+    };
+
+    for (let i = 0; i < binCount; i++) {
+      const db = data[i]!;
+      const magnitude = Number.isFinite(db) ? Math.pow(10, db / 20) : 0;
+      magnitudes[i] = magnitude;
+      const freq = i * binHz;
+
+      energySum += magnitude;
+      weightedFreq += magnitude * freq;
+
+      if (freq < 80) bands.sub += magnitude;
+      else if (freq < 320) bands.low += magnitude;
+      else if (freq < 2500) bands.mid += magnitude;
+      else if (freq < 8000) bands.high += magnitude;
+      else bands.air += magnitude;
+    }
+
+    const centroidHz = energySum > 0 ? weightedFreq / energySum : 0;
+
+    let cumulative = 0;
+    const rolloffTarget = energySum * 0.85;
+    let rolloffHz = 0;
+    for (let i = 0; i < binCount; i++) {
+      cumulative += magnitudes[i]!;
+      if (cumulative >= rolloffTarget) {
+        rolloffHz = i * binHz;
+        break;
+      }
+    }
+
+    const normalizeBand = (value: number) => Math.min(1, value * 2.5);
+    const lowEnergy = bands.sub + bands.low + 1e-6;
+    const highEnergy = bands.high + bands.air + 1e-6;
+    const tilt = Math.max(-1, Math.min(1, Math.log10(highEnergy / lowEnergy)));
+
+    return {
+      sub: normalizeBand(bands.sub),
+      low: normalizeBand(bands.low),
+      mid: normalizeBand(bands.mid),
+      high: normalizeBand(bands.high),
+      air: normalizeBand(bands.air),
+      centroidHz,
+      rolloffHz,
+      tilt,
+    };
+  }
+
   /** Reset peak/RMS for a channel count */
   reset(channelCount: number): void {
     this.peakLevels = new Float32Array(channelCount);
     this.rmsLevels = new Float32Array(channelCount);
     this.masterPeakLevel = 0;
     this.masterRmsLevel = 0;
+    this.frequencyBuffer = null;
   }
 }
 

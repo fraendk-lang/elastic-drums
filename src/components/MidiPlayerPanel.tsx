@@ -198,10 +198,8 @@ export function MidiPlayerPanel({ isOpen, onClose, onOpenEditor }: MidiPlayerPan
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-3 md:p-6">
-      <div className="absolute inset-0" onClick={handleClose} />
-
-      <div className="relative w-full max-w-6xl h-[min(84vh,820px)] bg-[var(--ed-bg-secondary)] border border-[var(--ed-border)] rounded-2xl overflow-hidden shadow-[0_20px_120px_rgba(0,0,0,0.55)]">
+    <div className="fixed inset-0 z-50 pointer-events-none flex items-start justify-end p-3 md:p-6">
+      <div className="pointer-events-auto relative w-full max-w-6xl h-[min(84vh,820px)] bg-[var(--ed-bg-secondary)] border border-[var(--ed-border)] rounded-2xl overflow-hidden shadow-[0_20px_120px_rgba(0,0,0,0.55)]">
         <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--ed-border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0))]">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-xl bg-[var(--ed-accent-orange)]/10 border border-[var(--ed-accent-orange)]/30 flex items-center justify-center text-[var(--ed-accent-orange)] text-sm font-black">

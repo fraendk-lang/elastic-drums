@@ -3,7 +3,6 @@ import { useDrumStore } from "../store/drumStore";
 import { useOverlayStore } from "../store/overlayStore";
 import { useCustomKitStore } from "../store/customKitStore";
 import { sampleManager } from "../audio/SampleManager";
-import { audioEngine } from "../audio/AudioEngine";
 import { WaveformPreview } from "./WaveformPreview";
 import { SampleBrowser } from "./SampleBrowser";
 import type { LibrarySample } from "../audio/SampleLibrary";
@@ -22,13 +21,18 @@ const VOICE_COLORS = [
 
 export function PadGrid() {
   const { selectedVoice, setSelectedVoice, triggerVoice } = useDrumStore();
-  const { isOpen: isBrowserOpen, openOverlay: openBrowser, closeOverlay: closeBrowser } = useOverlayStore();
+  const overlay = useOverlayStore();
   const { voiceSamples, setVoiceSample } = useCustomKitStore();
   const [triggered, setTriggered] = useState<Set<number>>(new Set());
   const [dragOver, setDragOver] = useState<number | null>(null);
-  const [sampleNames, setSampleNames] = useState<Map<number, string>>(new Map());
+  const [sampleNames, setSampleNames] = useState<Map<number, string>>(
+    () => new Map(
+      Array.from(sampleManager.getLoadedSamples().entries()).map(([voiceIndex, sample]) => [voiceIndex, sample.name])
+    )
+  );
   const [browserVoiceIndex, setBrowserVoiceIndex] = useState<number | null>(null);
   const timeouts = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  const fileInputs = useRef<Array<HTMLInputElement | null>>([]);
 
   const handlePadDown = useCallback((i: number) => {
     triggerVoice(i);
@@ -91,19 +95,52 @@ export function PadGrid() {
     if (sampleManager.hasSample(i)) {
       e.preventDefault();
       sampleManager.clearSample(i);
+      setVoiceSample(i, null);
       setSampleNames((prev) => {
         const next = new Map(prev);
         next.delete(i);
         return next;
       });
     }
-  }, []);
+  }, [setVoiceSample]);
+
+  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>, voiceIndex: number) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    const isAudio = file.type.startsWith("audio/") || file.name.match(/\.(wav|mp3|ogg|flac|m4a|aac|webm|aif|aiff)$/i);
+    if (!isAudio) {
+      console.warn("Not a supported audio file:", file.name);
+      return;
+    }
+
+    try {
+      const sample = await sampleManager.loadFromFile(file, voiceIndex);
+      setSampleNames((prev) => new Map(prev).set(voiceIndex, sample.name));
+      setVoiceSample(voiceIndex, null);
+      setSelectedVoice(voiceIndex);
+      triggerVoice(voiceIndex);
+    } catch (err) {
+      console.error("Failed to decode audio:", file.name, err);
+      setDragOver(voiceIndex);
+      setTimeout(() => setDragOver(null), 500);
+    }
+  }, [setSelectedVoice, setVoiceSample, triggerVoice]);
 
   const handleBrowseClick = useCallback((e: React.MouseEvent, voiceIndex: number) => {
     e.stopPropagation();
-    setBrowserVoiceIndex(voiceIndex);
-    openBrowser("sampleBrowser");
-  }, [openBrowser]);
+    if (e.shiftKey || e.altKey || e.metaKey) {
+      fileInputs.current[voiceIndex]?.click();
+      return;
+    }
+
+    if (e.button === 0) {
+      setBrowserVoiceIndex(voiceIndex);
+      overlay.openOverlay("sampleBrowser");
+      return;
+    }
+  }, [overlay]);
 
   const handleSampleSelect = useCallback(async (sample: LibrarySample | null) => {
     if (browserVoiceIndex === null) return;
@@ -117,26 +154,17 @@ export function PadGrid() {
         return next;
       });
       setVoiceSample(browserVoiceIndex, null);
-    } else {
-      // Load sample
-      try {
-        const response = await fetch(sample.path);
-        const arrayBuffer = await response.arrayBuffer();
-        const ctx = audioEngine.getAudioContext();
-        if (!ctx) throw new Error("AudioContext not initialized");
-
-        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-        sampleManager.loadFromBuffer(audioBuffer, sample.name, browserVoiceIndex);
-        setSampleNames((prev) => new Map(prev).set(browserVoiceIndex, sample.name));
-        setVoiceSample(browserVoiceIndex, sample.id);
-        triggerVoice(browserVoiceIndex);
-      } catch (err) {
-        console.error("Failed to load sample:", err);
-      }
+      overlay.closeOverlay("sampleBrowser");
+      return;
     }
 
-    closeBrowser("sampleBrowser");
-  }, [browserVoiceIndex, setVoiceSample, triggerVoice, closeBrowser]);
+    await sampleManager.loadFromUrl(sample.path, sample.name, browserVoiceIndex);
+    setSampleNames((prev) => new Map(prev).set(browserVoiceIndex, sample.name));
+    setVoiceSample(browserVoiceIndex, sample.id);
+    setSelectedVoice(browserVoiceIndex);
+    triggerVoice(browserVoiceIndex);
+    overlay.closeOverlay("sampleBrowser");
+  }, [browserVoiceIndex, overlay, setSelectedVoice, setVoiceSample, triggerVoice]);
 
   return (
     <div className="p-3">
@@ -153,13 +181,25 @@ export function PadGrid() {
               key={i}
               className="relative group"
             >
+              <input
+                ref={(node) => {
+                  fileInputs.current[i] = node;
+                }}
+                type="file"
+                accept="audio/*,.wav,.mp3,.ogg,.flac,.m4a,.aac,.webm,.aif,.aiff"
+                className="hidden"
+                onChange={(e) => handleFileChange(e, i)}
+              />
               <button
                 onMouseDown={() => handlePadDown(i)}
+                onPointerDown={(e) => {
+                  if (e.pointerType !== "mouse") handlePadDown(i);
+                }}
                 onDragOver={(e) => handleDragOver(e, i)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, i)}
                 onContextMenu={(e) => handleContextMenu(e, i)}
-                className={`ed-pad-press w-full relative flex flex-col items-center justify-center h-[68px] rounded-lg overflow-hidden ${
+                className={`ed-pad-press touch-manipulation w-full relative flex flex-col items-center justify-center h-[68px] rounded-lg overflow-hidden ${
                   isDragTarget
                     ? "ring-2 ring-[var(--ed-accent-green)]"
                     : isSelected
@@ -228,8 +268,9 @@ export function PadGrid() {
               {/* Sample Browser button (folder icon) */}
               <button
                 onClick={(e) => handleBrowseClick(e, i)}
-                className="absolute top-1 right-1 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 hover:bg-black/60"
-                title="Browse samples"
+                aria-label={`Browse samples for ${label}`}
+                className="absolute top-1 right-1 p-1 rounded opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity bg-black/40 hover:bg-black/60"
+                title="Open stock sample library (Shift-click for local file)"
               >
                 <svg className="w-3 h-3 text-[var(--ed-accent-green)]" fill="currentColor" viewBox="0 0 16 16">
                   <path d="M7 2H2a1 1 0 00-1 1v11a1 1 0 001 1h12a1 1 0 001-1V6a1 1 0 00-1-1h-4L7 2z" />
@@ -240,15 +281,15 @@ export function PadGrid() {
         })}
       </div>
       <p className="text-[8px] text-[var(--ed-text-muted)] mt-2 text-center opacity-60">
-        drop audio &middot; right-click to clear &middot; hover &amp; click folder to browse
+        folder = stock library &middot; Shift-click = file import &middot; drop audio &middot; right-click to clear
       </p>
 
       {/* Sample Browser Modal */}
       <SampleBrowser
-        isOpen={isBrowserOpen("sampleBrowser") && browserVoiceIndex !== null}
+        isOpen={overlay.isOpen("sampleBrowser") && browserVoiceIndex !== null}
         voiceIndex={browserVoiceIndex ?? 0}
         selectedSampleId={browserVoiceIndex !== null ? voiceSamples[browserVoiceIndex] ?? undefined : undefined}
-        onClose={() => closeBrowser("sampleBrowser")}
+        onClose={() => overlay.closeOverlay("sampleBrowser")}
         onSelect={handleSampleSelect}
       />
     </div>

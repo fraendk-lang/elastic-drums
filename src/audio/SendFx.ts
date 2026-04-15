@@ -29,6 +29,7 @@ export class SendFxManager {
   private sendABus: GainNode | null = null;
   private reverbNode: ConvolverNode | null = null;
   private reverbGain: GainNode | null = null;
+  private reverbAnalyser: AnalyserNode | null = null;
   private reverbDamping: BiquadFilterNode | null = null;
   private reverbPreDelay: DelayNode | null = null;
 
@@ -43,6 +44,7 @@ export class SendFxManager {
   private delayFeedback: GainNode | null = null;
   private delayFilter: BiquadFilterNode | null = null;
   private delayGain: GainNode | null = null;
+  private delayAnalyser: AnalyserNode | null = null;
   private delayPanner: StereoPannerNode | null = null;
   private delayTapeLfo: OscillatorNode | null = null;
   private delayTapeLfoGain: GainNode | null = null;
@@ -115,6 +117,9 @@ export class SendFxManager {
 
     this.reverbGain = ctx.createGain();
     this.reverbGain.gain.value = 0.35;
+    this.reverbAnalyser = ctx.createAnalyser();
+    this.reverbAnalyser.fftSize = 2048;
+    this.reverbAnalyser.smoothingTimeConstant = 0.18;
 
     this.reverbPreDelay = ctx.createDelay(0.2);
     this.reverbPreDelay.delayTime.value = 0.012;
@@ -132,7 +137,8 @@ export class SendFxManager {
     this.reverbPreDelay.connect(this.reverbNode);
     this.reverbNode.connect(this.reverbDamping);
     this.reverbDamping.connect(this.reverbGain);
-    this.reverbGain.connect(masterGain);
+    this.reverbGain.connect(this.reverbAnalyser);
+    this.reverbAnalyser.connect(masterGain);
 
     // Send B: Stereo Delay (ping-pong style)
     this.sendBBus = ctx.createGain();
@@ -150,6 +156,9 @@ export class SendFxManager {
 
     this.delayGain = ctx.createGain();
     this.delayGain.gain.value = 0.3;
+    this.delayAnalyser = ctx.createAnalyser();
+    this.delayAnalyser.fftSize = 2048;
+    this.delayAnalyser.smoothingTimeConstant = 0.18;
 
     this.delayPanner = ctx.createStereoPanner();
     this.delayPanner.pan.value = 0;
@@ -172,7 +181,8 @@ export class SendFxManager {
     this.delayFeedback.connect(this.delayNode); // Feedback loop
     this.delayFilter.connect(this.delayPanner);
     this.delayPanner.connect(this.delayGain);
-    this.delayGain.connect(masterGain);
+    this.delayGain.connect(this.delayAnalyser);
+    this.delayAnalyser.connect(masterGain);
 
     // === Dedicated Flanger FX ===
     // Flanger uses its OWN short delay (1–10ms) + LFO sweep, NOT the global delay
@@ -375,9 +385,21 @@ export class SendFxManager {
     if (send) send.gain.value = amount;
   }
 
+  getChannelReverbSend(channel: number): number {
+    return this.sendAGains[channel]?.gain.value ?? 0;
+  }
+
+  getChannelDelaySend(channel: number): number {
+    return this.sendBGains[channel]?.gain.value ?? 0;
+  }
+
   /** Set reverb wet level */
   setReverbLevel(level: number): void {
     if (this.reverbGain) this.reverbGain.gain.value = level;
+  }
+
+  getReverbLevel(): number {
+    return this.reverbGain?.gain.value ?? 0;
   }
 
   /** Set reverb type — regenerates IR */
@@ -433,6 +455,10 @@ export class SendFxManager {
     if (this.delayGain) this.delayGain.gain.value = level;
   }
 
+  getDelayLevel(): number {
+    return this.delayGain?.gain.value ?? 0;
+  }
+
   /** Sync delay time to BPM with named division */
   syncDelayToBpm(bpm: number, division?: number): void {
     const beatSec = 60 / bpm;
@@ -470,6 +496,10 @@ export class SendFxManager {
   /** Get current delay division */
   getDelayDivision(): string {
     return this.delayDivision;
+  }
+
+  getReturnAnalyser(type: "reverb" | "delay"): AnalyserNode | null {
+    return type === "reverb" ? this.reverbAnalyser : this.delayAnalyser;
   }
 
   // ─── Performance FX Methods ────────────────────────────

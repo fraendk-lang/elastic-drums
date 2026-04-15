@@ -52,6 +52,34 @@ const MODE_CONFIG: Record<FxMode, ModeConfig> = {
 
 const FX_MODES: FxMode[] = ["FILTER", "DELAY", "REVERB", "FLANGER", "CRUSH"];
 
+const FX_MODE_PRESETS: Record<FxMode, { label: string; x: number; y: number }[]> = {
+  FILTER: [
+    { label: "Warm LP", x: 0.18, y: 0.42 },
+    { label: "Sweep Peak", x: 0.48, y: 0.84 },
+    { label: "Thin HP", x: 0.82, y: 0.38 },
+  ],
+  DELAY: [
+    { label: "Dub 1/8", x: 0.56, y: 0.64 },
+    { label: "Ping 1/4", x: 0.82, y: 0.55 },
+    { label: "Tight Slap", x: 0.24, y: 0.28 },
+  ],
+  REVERB: [
+    { label: "Wide Hall", x: 0.32, y: 0.8 },
+    { label: "Dark Wash", x: 0.76, y: 0.72 },
+    { label: "Short Room", x: 0.18, y: 0.3 },
+  ],
+  FLANGER: [
+    { label: "Slow Jet", x: 0.22, y: 0.6 },
+    { label: "Fast Metal", x: 0.84, y: 0.88 },
+    { label: "Soft Chorus", x: 0.34, y: 0.36 },
+  ],
+  CRUSH: [
+    { label: "Telephone", x: 0.2, y: 0.48 },
+    { label: "Dusty Drive", x: 0.62, y: 0.54 },
+    { label: "Hard Smash", x: 0.88, y: 0.92 },
+  ],
+};
+
 // ─── Musical Value Formatters ────────────────────────────
 
 function getMusicalValue(mode: FxMode, x: number, y: number, _bpm: number): MusicalValue {
@@ -369,6 +397,31 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
   const padRef = useRef<HTMLDivElement>(null);
   const beatFxListRef = useRef(createBeatFxList());
 
+  const applyPadState = useCallback((x: number, y: number, latch = false) => {
+    setPadX(x);
+    setPadY(y);
+    activateFxMode(activeMode, x, y, fxTarget, bpm);
+    if (latch) {
+      setHoldMode(true);
+      setHoldLocked(true);
+    }
+  }, [activeMode, bpm, fxTarget]);
+
+  const resetFxState = useCallback(() => {
+    releaseFxMode(activeMode, fxTarget);
+    beatFxListRef.current.forEach((fx, index) => {
+      if (activeBeatFx.has(index)) fx.deactivate(bpm);
+    });
+    motionRecorder.stopPlayback();
+    setIsPlayingMotion(false);
+    setActiveBeatFx(new Set());
+    setPadActive(false);
+    setHoldLocked(false);
+    setHoldMode(false);
+    setPadX(0.5);
+    setPadY(0.5);
+  }, [activeBeatFx, activeMode, bpm, fxTarget]);
+
   // ─── XY Pad Handlers ────────────────────────────────
 
   const calcXY = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -526,6 +579,12 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
             HOLD
           </button>
           <button
+            onClick={resetFxState}
+            className="px-3 py-1 rounded text-xs font-bold tracking-wider text-[var(--ed-text-muted)] border border-white/10 hover:text-[var(--ed-text-primary)] hover:bg-white/5 transition-colors"
+          >
+            RESET
+          </button>
+          <button
             onClick={() => {
               if (holdLocked) releaseHold();
               onClose();
@@ -606,6 +665,23 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
                 </button>
               )}
             </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 mb-3 px-1">
+            {FX_MODE_PRESETS[activeMode].map((preset) => (
+              <button
+                key={preset.label}
+                onClick={() => applyPadState(preset.x, preset.y, true)}
+                className="px-3 py-1.5 rounded-full text-[10px] font-bold tracking-[0.14em] border transition-colors"
+                style={{
+                  color: modeColor,
+                  borderColor: `${modeColor}35`,
+                  backgroundColor: `${modeColor}10`,
+                }}
+              >
+                {preset.label}
+              </button>
+            ))}
           </div>
 
           {/* Pad area */}
@@ -744,6 +820,49 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
 
         {/* Right: Beat FX Buttons — bigger, more dramatic */}
         <div className="w-52 flex flex-col p-3 pl-0 gap-2">
+          <div className="rounded-2xl border border-[var(--ed-border)] bg-[var(--ed-bg-surface)]/35 p-3 space-y-2">
+            <div className="text-[9px] font-bold tracking-[0.2em] text-[var(--ed-text-muted)]">
+              PERFORMANCE STATE
+            </div>
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-[var(--ed-text-muted)]">Mode</span>
+              <span className="font-bold" style={{ color: modeColor }}>{activeMode}</span>
+            </div>
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-[var(--ed-text-muted)]">Target</span>
+              <span className="font-bold text-[var(--ed-text-primary)]">{fxTarget.toUpperCase()}</span>
+            </div>
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-[var(--ed-text-muted)]">Hold</span>
+              <span className={holdLocked ? "font-bold text-[var(--ed-accent-green)]" : "text-[var(--ed-text-muted)]"}>
+                {holdLocked ? "Latched" : holdMode ? "Armed" : "Off"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-[var(--ed-text-muted)]">Motion</span>
+              <span className={isRecording ? "font-bold text-[#ef4444]" : isPlayingMotion ? "font-bold text-[var(--ed-accent-green)]" : "text-[var(--ed-text-muted)]"}>
+                {isRecording ? "Recording" : isPlayingMotion ? "Playing" : "Idle"}
+              </span>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--ed-border)] bg-[var(--ed-bg-surface)]/35 p-3 space-y-2">
+            <div className="text-[9px] font-bold tracking-[0.2em] text-[var(--ed-text-muted)]">
+              MACRO VALUES
+            </div>
+            <div className="text-[11px] text-[var(--ed-text-primary)] flex items-center justify-between">
+              <span>X</span>
+              <span className="font-mono">{Math.round(padX * 100)}%</span>
+            </div>
+            <div className="text-[11px] text-[var(--ed-text-primary)] flex items-center justify-between">
+              <span>Y</span>
+              <span className="font-mono">{Math.round(padY * 100)}%</span>
+            </div>
+            <div className="text-[10px] leading-4 text-[var(--ed-text-muted)]">
+              Presets above drop the pad into musical sweet spots and latch them automatically.
+            </div>
+          </div>
+
           <div className="text-[9px] font-bold tracking-[0.2em] text-[var(--ed-text-muted)] text-center mb-1">
             BEAT FX
           </div>

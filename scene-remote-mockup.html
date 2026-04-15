@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Elastic Drums — Scene Remote Mockup</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #101014;
+    --surface: #1a1a22;
+    --elevated: #252530;
+    --border: #333340;
+    --text: #ededf0;
+    --muted: #62627a;
+    --orange: #f59e0b;
+    --green: #10b981;
+    --blue: #3b82f6;
+    --red: #ef4444;
+    --purple: #a78bfa;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ─── HEADER ─── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .logo {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.2em;
+    color: var(--orange);
+  }
+  .connection {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+  .dot.offline { background: var(--red); }
+
+  /* ─── TRANSPORT BAR ─── */
+  .transport {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .play-btn {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    border: 2px solid var(--orange);
+    background: transparent;
+    color: var(--orange);
+    font-size: 18px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+  }
+  .play-btn:hover { background: rgba(245,158,11,0.12); }
+  .play-btn.playing { background: var(--orange); color: #000; }
+
+  .bpm-control {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+  }
+  .bpm-value {
+    font-size: 28px; font-weight: 900; font-variant-numeric: tabular-nums;
+    color: var(--text); line-height: 1;
+  }
+  .bpm-label { font-size: 8px; font-weight: 700; color: var(--muted); letter-spacing: 0.15em; }
+
+  .transport-info {
+    margin-left: auto;
+    text-align: right;
+  }
+  .scene-name {
+    font-size: 13px; font-weight: 700; color: var(--orange);
+  }
+  .bar-counter {
+    font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums;
+  }
+
+  /* ─── SCENE GRID ─── */
+  .scene-section {
+    flex: 1;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .section-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    color: var(--muted);
+  }
+  .scene-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    flex: 1;
+  }
+  .scene-pad {
+    aspect-ratio: 1;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: all 0.12s;
+    position: relative;
+    overflow: hidden;
+  }
+  .scene-pad:hover { background: var(--elevated); border-color: rgba(255,255,255,0.15); }
+  .scene-pad:active { transform: scale(0.95); }
+
+  .scene-pad.active {
+    border-color: var(--orange);
+    background: rgba(245,158,11,0.08);
+    box-shadow: 0 0 20px rgba(245,158,11,0.15), inset 0 0 20px rgba(245,158,11,0.05);
+  }
+  .scene-pad.queued {
+    border-color: var(--blue);
+    background: rgba(59,130,246,0.08);
+  }
+  .scene-pad.empty {
+    opacity: 0.35;
+    border-style: dashed;
+    cursor: default;
+  }
+
+  .scene-pad .number {
+    font-size: 10px; font-weight: 700; color: var(--muted);
+    position: absolute; top: 6px; left: 8px;
+  }
+  .scene-pad .name {
+    font-size: 11px; font-weight: 700; color: var(--text);
+    text-align: center; padding: 0 4px;
+  }
+  .scene-pad .badge {
+    font-size: 7px; font-weight: 800; letter-spacing: 0.1em;
+    padding: 2px 6px; border-radius: 4px;
+    position: absolute; bottom: 6px;
+  }
+  .badge.live { background: var(--orange); color: #000; }
+  .badge.next { background: var(--blue); color: #fff; }
+
+  /* Progress ring on active scene */
+  .scene-pad.active::after {
+    content: "";
+    position: absolute; inset: -1px;
+    border-radius: 10px;
+    border: 2px solid var(--orange);
+    animation: pulse-border 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse-border {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* ─── QUICK MIXER ─── */
+  .mixer-section {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .mixer-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .mixer-channel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .mixer-label {
+    font-size: 7px; font-weight: 700; color: var(--muted); letter-spacing: 0.1em;
+  }
+  .mixer-fader {
+    width: 100%;
+    height: 4px;
+    background: var(--elevated);
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
+  }
+  .mixer-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.1s;
+  }
+  .mixer-fill.drums { background: var(--orange); width: 78%; }
+  .mixer-fill.bass { background: var(--green); width: 65%; }
+  .mixer-fill.chords { background: var(--purple); width: 52%; }
+  .mixer-fill.melody { background: #f472b6; width: 45%; }
+  .mixer-fill.master { background: var(--text); width: 72%; }
+
+  /* ─── SONG CHAIN (bottom) ─── */
+  .song-strip {
+    display: flex;
+    gap: 4px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+    overflow-x: auto;
+  }
+  .chain-clip {
+    flex-shrink: 0;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 9px;
+    font-weight: 700;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.1s;
+    white-space: nowrap;
+  }
+  .chain-clip:hover { background: var(--elevated); }
+  .chain-clip.current {
+    border-color: var(--orange);
+    background: rgba(245,158,11,0.1);
+    color: var(--orange);
+  }
+  .chain-clip .repeats {
+    font-size: 8px; color: var(--muted); margin-left: 4px;
+  }
+
+  /* ─── MODE TABS ─── */
+  .mode-tabs {
+    display: flex;
+    gap: 0;
+    padding: 0 16px;
+  }
+  .mode-tab {
+    flex: 1;
+    padding: 8px 0;
+    text-align: center;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .mode-tab:hover { color: var(--text); }
+  .mode-tab.active {
+    color: var(--orange);
+    border-bottom-color: var(--orange);
+  }
+
+  /* ─── Annotations ─── */
+  .annotation {
+    position: absolute;
+    font-size: 10px;
+    color: var(--red);
+    font-weight: 600;
+    background: rgba(239,68,68,0.1);
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(239,68,68,0.3);
+    pointer-events: none;
+    z-index: 10;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="logo">ELASTIC DRUMS</div>
+    <div class="connection">
+      <div class="dot"></div>
+      <span>Connected</span>
+    </div>
+  </div>
+
+  <!-- MODE TABS -->
+  <div class="mode-tabs">
+    <div class="mode-tab active">SCENES</div>
+    <div class="mode-tab">SONG</div>
+    <div class="mode-tab">MIXER</div>
+  </div>
+
+  <!-- TRANSPORT -->
+  <div class="transport">
+    <button class="play-btn playing">&#9654;</button>
+    <div class="bpm-control">
+      <div class="bpm-value">122</div>
+      <div class="bpm-label">BPM</div>
+    </div>
+    <div class="transport-info">
+      <div class="scene-name">Deep House</div>
+      <div class="bar-counter">Bar 5 / 8 &middot; Pattern</div>
+    </div>
+  </div>
+
+  <!-- SCENE GRID -->
+  <div class="scene-section">
+    <div class="section-label">SCENES</div>
+    <div class="scene-grid">
+      <div class="scene-pad active">
+        <span class="number">1</span>
+        <span class="name">Deep House</span>
+        <span class="badge live">LIVE</span>
+      </div>
+      <div class="scene-pad queued">
+        <span class="number">2</span>
+        <span class="name">Breakdown</span>
+        <span class="badge next">NEXT</span>
+      </div>
+      <div class="scene-pad">
+        <span class="number">3</span>
+        <span class="name">Drop</span>
+      </div>
+      <div class="scene-pad">
+        <span class="number">4</span>
+        <span class="name">Outro</span>
+      </div>
+      <div class="scene-pad">
+        <span class="number">5</span>
+        <span class="name">Acid Bass</span>
+      </div>
+      <div class="scene-pad">
+        <span class="number">6</span>
+        <span class="name">Minimal</span>
+      </div>
+      <div class="scene-pad">
+        <span class="number">7</span>
+        <span class="name">Build Up</span>
+      </div>
+      <div class="scene-pad">
+        <span class="number">8</span>
+        <span class="name">Half Time</span>
+      </div>
+      <div class="scene-pad empty"><span class="number">9</span></div>
+      <div class="scene-pad empty"><span class="number">10</span></div>
+      <div class="scene-pad empty"><span class="number">11</span></div>
+      <div class="scene-pad empty"><span class="number">12</span></div>
+      <div class="scene-pad empty"><span class="number">13</span></div>
+      <div class="scene-pad empty"><span class="number">14</span></div>
+      <div class="scene-pad empty"><span class="number">15</span></div>
+      <div class="scene-pad empty"><span class="number">16</span></div>
+    </div>
+  </div>
+
+  <!-- QUICK MIXER -->
+  <div class="mixer-section">
+    <div class="section-label" style="margin-bottom: 8px">QUICK MIX</div>
+    <div class="mixer-row">
+      <div class="mixer-channel">
+        <div class="mixer-fader"><div class="mixer-fill drums"></div></div>
+        <div class="mixer-label">DRUMS</div>
+      </div>
+      <div class="mixer-channel">
+        <div class="mixer-fader"><div class="mixer-fill bass"></div></div>
+        <div class="mixer-label">BASS</div>
+      </div>
+      <div class="mixer-channel">
+        <div class="mixer-fader"><div class="mixer-fill chords"></div></div>
+        <div class="mixer-label">CHORDS</div>
+      </div>
+      <div class="mixer-channel">
+        <div class="mixer-fader"><div class="mixer-fill melody"></div></div>
+        <div class="mixer-label">MELODY</div>
+      </div>
+      <div class="mixer-channel">
+        <div class="mixer-fader"><div class="mixer-fill master"></div></div>
+        <div class="mixer-label">MST</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SONG CHAIN STRIP -->
+  <div class="song-strip">
+    <div class="chain-clip current">Deep House <span class="repeats">x4</span></div>
+    <div class="chain-clip">Breakdown <span class="repeats">x2</span></div>
+    <div class="chain-clip">Drop <span class="repeats">x8</span></div>
+    <div class="chain-clip">Breakdown <span class="repeats">x2</span></div>
+    <div class="chain-clip">Outro <span class="repeats">x4</span></div>
+  </div>
+
+</body>
+</html>

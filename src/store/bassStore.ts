@@ -11,6 +11,8 @@ import { audioEngine } from "../audio/AudioEngine";
 import { soundFontEngine } from "../audio/SoundFontEngine";
 import { generateEuclidean } from "./drumStore";
 
+export const BASS_MAX_CLIP_STEPS = 256;
+
 // ─── Factory Sound Presets ───────────────────────────────
 
 export interface BassPreset {
@@ -70,7 +72,7 @@ export const BASS_PRESETS: BassPreset[] = [
   { name: "Tape Bass", params: bp({ waveform: "sawtooth", cutoff: 430, resonance: 7, envMod: 0.22, decay: 210, accent: 0.28, slideTime: 36, distortion: 0.28, volume: 0.63, subOsc: 0.34, filterModel: "ladder", harmonics: 0.22, punch: 0.24, subFilter: 70 }) },
   { name: "Organic Evolve", params: bp({ waveform: "sawtooth", cutoff: 300, resonance: 6, envMod: 0.4, decay: 800, accent: 0.15, slideTime: 120, distortion: 0.08, volume: 0.55, subOsc: 0.7, filterModel: "ladder", punch: 0.05, harmonics: 0.12, subFilter: 55 }) },
   // ── Comprehensive Designer Presets ──
-  { name: "Deep Sub", params: bp({ waveform: "square", cutoff: 200, resonance: 2, envMod: 0.1, decay: 400, accent: 0.1, slideTime: 0, distortion: 0.08, volume: 0.8, subOsc: 0.9, filterModel: "ladder", punch: 0.1, harmonics: 0, subFilter: 40 }) },
+  { name: "Deep Sub XL", params: bp({ waveform: "square", cutoff: 200, resonance: 2, envMod: 0.1, decay: 400, accent: 0.1, slideTime: 0, distortion: 0.08, volume: 0.8, subOsc: 0.9, filterModel: "ladder", punch: 0.1, harmonics: 0, subFilter: 40 }) },
   { name: "Punch Bass", params: bp({ waveform: "sawtooth", cutoff: 250, resonance: 4, envMod: 0.15, decay: 120, accent: 0.5, slideTime: 0, distortion: 0.3, volume: 0.7, subOsc: 0.6, punch: 0.5 }) },
   { name: "Acid Bass", params: bp({ waveform: "sawtooth", cutoff: 400, resonance: 22, envMod: 0.6, decay: 100, accent: 0.3, slideTime: 0, distortion: 0.5, filterModel: "ladder", punch: 0.3 }) },
   { name: "Analog Bass", params: bp({ waveform: "square", cutoff: 200, resonance: 3, envMod: 0.1, decay: 350, accent: 0.15, slideTime: 0, distortion: 0.1, volume: 0.7, subOsc: 0.7, punch: 0.15, harmonics: 0.25 }) },
@@ -403,7 +405,7 @@ interface BassStore {
 }
 
 function createEmptySteps(): BassStep[] {
-  return Array.from({ length: 64 }, () => ({
+  return Array.from({ length: BASS_MAX_CLIP_STEPS }, () => ({
     active: false, note: 0, octave: 0, accent: false, velocity: 0.82, slide: false, tie: false, gateLength: 1,
   }));
 }
@@ -534,7 +536,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
   toggleStep: (step) => set((s) => {
     const newSteps = [...s.steps];
     newSteps[step] = { ...newSteps[step]!, active: !newSteps[step]!.active };
-    const newLen = step >= s.length ? Math.min(64, step + 1) : s.length;
+    const newLen = step >= s.length ? Math.min(BASS_MAX_CLIP_STEPS, step + 1) : s.length;
     return { steps: newSteps, length: newLen };
   }),
 
@@ -569,12 +571,12 @@ export const useBassStore = create<BassStore>((set, get) => ({
     const sourceStep = newSteps[fromStep]!;
     if (!sourceStep.active) return { steps: newSteps };
 
-    const gateLength = Math.max(1, Math.min(64 - fromStep, toStep - fromStep + 1));
+    const gateLength = Math.max(1, Math.min(BASS_MAX_CLIP_STEPS - fromStep, toStep - fromStep + 1));
     newSteps[fromStep] = { ...sourceStep, gateLength, tie: false }; // Clear tie on source — using explicit length now
 
     // Clear legacy continuation ties directly after the source note so drag length
     // behaves like a real note value instead of leaving old tie placeholders behind.
-    for (let i = fromStep + 1; i <= 63; i++) {
+    for (let i = fromStep + 1; i < BASS_MAX_CLIP_STEPS; i++) {
       if (newSteps[i]?.tie && newSteps[i]?.active) {
         newSteps[i] = { active: false, note: 0, octave: 0, accent: false, velocity: 0.82, slide: false, tie: false, gateLength: 1 };
       } else break; // Stop at first non-tie
@@ -590,6 +592,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
   }),
 
   setRootNote: (midi, name) => {
+    console.log(`[BassStore.setRootNote] midi=${midi}, name=${name}`, new Error().stack?.split("\n").slice(1, 4).join(" ← "));
     set({ rootNote: midi, rootName: name });
     syncScaleToOtherStores("bass", { rootNote: midi, rootName: name });
   },
@@ -608,7 +611,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
     const { isPlaying, currentStep, length, automationData } = get();
     if (isPlaying && typeof value === "number") {
       const data = { ...automationData };
-      if (!data[key]) data[key] = new Array(length).fill(undefined);
+      if (!data[key]) data[key] = new Array(BASS_MAX_CLIP_STEPS).fill(undefined);
       const arr = [...data[key]!];
       arr[currentStep % length] = value;
       data[key] = arr;
@@ -616,7 +619,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
     }
   },
 
-  setLength: (len) => set({ length: Math.max(4, Math.min(64, len)) }),
+  setLength: (len) => set({ length: Math.max(4, Math.min(BASS_MAX_CLIP_STEPS, len)) }),
   setSelectedPage: (page) => set({ selectedPage: page }),
   clearSteps: () => set({ steps: createEmptySteps() }),
 
@@ -707,7 +710,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
 
   setAutomationValue: (param, step, value) => set((s) => {
     const data = { ...s.automationData };
-    if (!data[param]) data[param] = new Array(64).fill(undefined);
+    if (!data[param]) data[param] = new Array(BASS_MAX_CLIP_STEPS).fill(undefined);
     data[param] = [...data[param]!];
     data[param]![step] = value;
     return { automationData: data };

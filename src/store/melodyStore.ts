@@ -13,12 +13,22 @@ import { soundFontEngine } from "../audio/SoundFontEngine";
 import { generateEuclidean } from "./drumStore";
 import { syncScaleToOtherStores, registerScaleStore } from "./bassStore";
 
+export const MELODY_MAX_CLIP_STEPS = 256;
+
 // ─── Factory Sound Presets ───────────────────────────────
 
 export interface MelodyPreset {
   name: string;
   params: MelodyParams;
 }
+
+export const MELODY_SIGNATURE_PRESET_NAMES = [
+  "FM Bell",
+  "Crystal Bell",
+  "Vinyl Keys",
+  "Muted",
+  "Tape Wobble",
+] as const;
 
 const mp = (p: Partial<MelodyParams>): MelodyParams => ({ ...DEFAULT_MELODY_PARAMS, ...p });
 
@@ -31,7 +41,7 @@ export const MELODY_PRESETS: MelodyPreset[] = [
   // ── Professional Leads ──
   { name: "Classic Lead", params: mp({ synthType: "subtractive", waveform: "sawtooth", filterModel: "ladder", cutoff: 2000, resonance: 8, envMod: 0.4, decay: 150, accent: 0.4, slideTime: 40, legato: false, distortion: 0.15, volume: 0.5, subOsc: 0.1, pulseWidth: 0.5, unison: 0.3, vibratoRate: 4, vibratoDepth: 0.1, fmHarmonicity: 3, fmModIndex: 10 }) },
   { name: "PWM String", params: mp({ synthType: "subtractive", waveform: "square", filterModel: "ladder", cutoff: 1200, resonance: 6, envMod: 0.3, decay: 180, accent: 0.3, slideTime: 80, legato: true, distortion: 0.1, volume: 0.48, subOsc: 0.2, pulseWidth: 0.3, unison: 0.2, vibratoRate: 5, vibratoDepth: 0.25, fmHarmonicity: 3, fmModIndex: 10 }) },
-  { name: "FM Bell", params: mp({ synthType: "fm", waveform: "triangle", filterModel: "lpf", cutoff: 3000, resonance: 4, envMod: 0.2, decay: 120, accent: 0.5, slideTime: 0, legato: false, distortion: 0.05, volume: 0.45, subOsc: 0, pulseWidth: 0.5, unison: 0, vibratoRate: 4, vibratoDepth: 0, fmHarmonicity: 4, fmModIndex: 15 }) },
+  { name: "FM Bell", params: mp({ synthType: "fm", waveform: "triangle", filterModel: "lpf", cutoff: 2600, resonance: 3, envMod: 0.12, decay: 95, accent: 0.32, slideTime: 0, legato: false, distortion: 0.02, volume: 0.42, subOsc: 0, pulseWidth: 0.5, unison: 0, vibratoRate: 3, vibratoDepth: 0, fmHarmonicity: 3.2, fmModIndex: 9 }) },
   { name: "Pluck Guitar", params: mp({ synthType: "pluck", waveform: "triangle", filterModel: "lpf", cutoff: 2500, resonance: 5, envMod: 0.15, decay: 80, accent: 0.4, slideTime: 0, legato: false, distortion: 0, volume: 0.5, subOsc: 0, pulseWidth: 0.5, unison: 0, vibratoRate: 4, vibratoDepth: 0, fmHarmonicity: 3, fmModIndex: 10 }) },
   { name: "Acid Lead", params: mp({ synthType: "subtractive", waveform: "sawtooth", filterModel: "steiner-lp", cutoff: 800, resonance: 20, envMod: 0.8, decay: 100, accent: 0.7, slideTime: 50, legato: false, distortion: 0.4, volume: 0.5, subOsc: 0, pulseWidth: 0.5, unison: 0.2, vibratoRate: 4, vibratoDepth: 0, fmHarmonicity: 3, fmModIndex: 10 }) },
   { name: "Trance Lead", params: mp({ synthType: "subtractive", waveform: "sawtooth", filterModel: "steiner-lp", cutoff: 1600, resonance: 12, envMod: 0.5, decay: 110, accent: 0.6, slideTime: 20, legato: false, distortion: 0.2, volume: 0.52, subOsc: 0.1, pulseWidth: 0.5, unison: 0.6, vibratoRate: 4, vibratoDepth: 0.08, fmHarmonicity: 3, fmModIndex: 10 }) },
@@ -59,7 +69,7 @@ export const MELODY_PRESETS: MelodyPreset[] = [
   { name: "Space Echo", params: mp({ synthType: "subtractive", waveform: "sawtooth", filterModel: "lpf", cutoff: 1000, resonance: 5, envMod: 0.12, decay: 400, accent: 0.2, slideTime: 90, legato: true, distortion: 0.05, volume: 0.4, subOsc: 0.25, pulseWidth: 0.5, unison: 0, vibratoRate: 4, vibratoDepth: 0.1, fmHarmonicity: 3, fmModIndex: 10 }) },
   // ── Professional New Presets ──
   { name: "Vintage Lead", params: mp({ synthType: "subtractive", waveform: "sawtooth", filterModel: "ladder", cutoff: 800, resonance: 18, envMod: 0.5, decay: 120, accent: 0.5, slideTime: 30, legato: false, distortion: 0.2, volume: 0.5, subOsc: 0.1, pulseWidth: 0.5, unison: 0.15, vibratoRate: 5, vibratoDepth: 0.15, fmHarmonicity: 3, fmModIndex: 10 }) },
-  { name: "Crystal Bell", params: mp({ synthType: "fm", waveform: "triangle", filterModel: "lpf", cutoff: 4000, resonance: 3, envMod: 0.1, decay: 100, accent: 0.3, slideTime: 0, legato: false, distortion: 0, volume: 0.48, subOsc: 0, pulseWidth: 0.5, unison: 0, vibratoRate: 3, vibratoDepth: 0.05, fmHarmonicity: 5, fmModIndex: 20 }) },
+  { name: "Crystal Bell", params: mp({ synthType: "fm", waveform: "triangle", filterModel: "lpf", cutoff: 3000, resonance: 2, envMod: 0.08, decay: 82, accent: 0.22, slideTime: 0, legato: false, distortion: 0, volume: 0.44, subOsc: 0, pulseWidth: 0.5, unison: 0, vibratoRate: 3, vibratoDepth: 0.03, fmHarmonicity: 4.2, fmModIndex: 11 }) },
   // ── Comprehensive Designer Presets ──
   { name: "Analog Lead", params: mp({ synthType: "subtractive", waveform: "sawtooth", filterModel: "lpf", cutoff: 5000, resonance: 4, envMod: 0.2, decay: 150, accent: 0.3, slideTime: 0, legato: false, distortion: 0, volume: 0.55, subOsc: 0, pulseWidth: 0.5, unison: 0, vibratoRate: 4, vibratoDepth: 0, fmHarmonicity: 3, fmModIndex: 10 }) },
   { name: "Mono Lead", params: mp({ synthType: "subtractive", waveform: "sawtooth", filterModel: "lpf", cutoff: 4000, resonance: 3, envMod: 0.2, decay: 100, accent: 0.3, slideTime: 0, legato: false, distortion: 0.3, volume: 0.55, subOsc: 0.3, pulseWidth: 0.5, unison: 0, vibratoRate: 4, vibratoDepth: 0, fmHarmonicity: 3, fmModIndex: 10 }) },
@@ -68,10 +78,20 @@ export const MELODY_PRESETS: MelodyPreset[] = [
   { name: "Pluck Lead", params: mp({ synthType: "subtractive", waveform: "sawtooth", filterModel: "lpf", cutoff: 4000, resonance: 3, envMod: 0.15, decay: 80, accent: 0.3, slideTime: 0, legato: false, distortion: 0, volume: 0.55, subOsc: 0, pulseWidth: 0.5, unison: 0, vibratoRate: 4, vibratoDepth: 0, fmHarmonicity: 3, fmModIndex: 10 }) },
   { name: "FM Lead", params: mp({ synthType: "fm", waveform: "sawtooth", filterModel: "lpf", cutoff: 6000, resonance: 3, envMod: 0.15, decay: 100, accent: 0.3, slideTime: 0, legato: false, distortion: 0, volume: 0.55, subOsc: 0, pulseWidth: 0.5, unison: 0, vibratoRate: 4, vibratoDepth: 0, fmHarmonicity: 5, fmModIndex: 12 }) },
   { name: "Glide Lead", params: mp({ synthType: "subtractive", waveform: "sawtooth", filterModel: "lpf", cutoff: 5000, resonance: 3, envMod: 0.15, decay: 100, accent: 0.3, slideTime: 100, legato: true, distortion: 0, volume: 0.55, subOsc: 0, pulseWidth: 0.5, unison: 0, vibratoRate: 4, vibratoDepth: 0, fmHarmonicity: 3, fmModIndex: 10 }) },
-  { name: "Acid Lead", params: mp({ synthType: "subtractive", waveform: "sawtooth", filterModel: "steiner-lp", cutoff: 3000, resonance: 22, envMod: 0.35, decay: 120, accent: 0.4, slideTime: 0, legato: false, distortion: 0.5, volume: 0.55, subOsc: 0, pulseWidth: 0.5, unison: 0, vibratoRate: 4, vibratoDepth: 0, fmHarmonicity: 3, fmModIndex: 10 }) },
+  { name: "Acid Lead Sharp", params: mp({ synthType: "subtractive", waveform: "sawtooth", filterModel: "steiner-lp", cutoff: 3000, resonance: 22, envMod: 0.35, decay: 120, accent: 0.4, slideTime: 0, legato: false, distortion: 0.5, volume: 0.55, subOsc: 0, pulseWidth: 0.5, unison: 0, vibratoRate: 4, vibratoDepth: 0, fmHarmonicity: 3, fmModIndex: 10 }) },
   { name: "Dream Lead", params: mp({ synthType: "subtractive", waveform: "sawtooth", filterModel: "lpf", cutoff: 4000, resonance: 3, envMod: 0.2, decay: 250, accent: 0.2, slideTime: 0, legato: false, distortion: 0, volume: 0.55, subOsc: 0, pulseWidth: 0.5, unison: 0.5, vibratoRate: 4, vibratoDepth: 0.1, fmHarmonicity: 3, fmModIndex: 10 }) },
   { name: "Vintage Lead 2", params: mp({ synthType: "subtractive", waveform: "square", filterModel: "lpf", cutoff: 3000, resonance: 2, envMod: 0.12, decay: 100, accent: 0.3, slideTime: 0, legato: false, distortion: 0, volume: 0.55, subOsc: 0, pulseWidth: 0.3, unison: 0.3, vibratoRate: 4, vibratoDepth: 0, fmHarmonicity: 3, fmModIndex: 10 }) },
 ];
+
+export const MELODY_CORE_PRESETS = MELODY_PRESETS.filter((preset) =>
+  MELODY_SIGNATURE_PRESET_NAMES.includes(preset.name as typeof MELODY_SIGNATURE_PRESET_NAMES[number])
+);
+
+const getMelodyCorePresetIndex = (index: number): number => {
+  const currentName = MELODY_PRESETS[index]?.name;
+  const coreIndex = MELODY_CORE_PRESETS.findIndex((preset) => preset.name === currentName);
+  return coreIndex >= 0 ? coreIndex : 0;
+};
 
 // ─── Melody Generation Strategies ────────────────────────
 
@@ -81,15 +101,18 @@ export interface MelodyStrategy {
 }
 
 function makeStep(note: number, opts?: Partial<MelodyStep>): MelodyStep {
-  return { active: true, note, octave: 0, accent: false, slide: false, tie: false, ...opts };
+  return { active: true, note, octave: 0, accent: false, velocity: 0.82, slide: false, tie: false, gateLength: 1, ...opts };
 }
 
 function emptyStep(): MelodyStep {
-  return { active: false, note: 0, octave: 0, accent: false, slide: false, tie: false };
+  return { active: false, note: 0, octave: 0, accent: false, velocity: 0.82, slide: false, tie: false, gateLength: 1 };
 }
 
 function prob(p: number): boolean { return Math.random() < p; }
 function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]!; }
+function pickMelodyGate(style: "short" | "phrase" = "phrase"): number {
+  return style === "short" ? pick([1, 1, 1, 2, 2]) : pick([1, 2, 2, 3, 4]);
+}
 
 export const MELODY_STRATEGIES: MelodyStrategy[] = [
   {
@@ -353,7 +376,7 @@ export const MELODY_STRATEGIES: MelodyStrategy[] = [
         let note = transpose; // start from transposed root
 
         for (let m = 0; m < motifLen && cursor < len; m++) {
-          if (cursor >= 64) break;
+          if (cursor >= MELODY_MAX_CLIP_STEPS) break;
 
           let interval = motifIntervals[m]!;
           // Final repetition: invert intervals (go back down)
@@ -375,13 +398,13 @@ export const MELODY_STRATEGIES: MelodyStrategy[] = [
       }
 
       // Fill remaining steps within length
-      while (cursor < len && cursor < 64) {
+      while (cursor < len && cursor < MELODY_MAX_CLIP_STEPS) {
         steps.push(emptyStep());
         cursor++;
       }
 
       // Fill beyond length
-      while (steps.length < 64) {
+      while (steps.length < MELODY_MAX_CLIP_STEPS) {
         steps.push(emptyStep());
       }
 
@@ -398,20 +421,20 @@ export const MELODY_STRATEGIES: MelodyStrategy[] = [
   {
     name: "Random",
     generate: (len, scaleLen) => {
-      // Constrained random: step/skip/leap motion, direction changes, phrase breathing
+      // House-friendly random with phrase anchors and occasional held notes
       const steps: MelodyStep[] = [];
       const maxDeg = Math.min(scaleLen - 1, 7);
       const ceiling = maxDeg + 2; // allow slight overflow for range
-      let note = Math.floor(Math.random() * (maxDeg + 1));
+      let note = pick([0, 0, 1, 2, Math.min(4, maxDeg)]);
       let lastDir = 0; // -1 down, 0 neutral, +1 up
       let consecSameDir = 0;
       let lastActiveIdx = -1;
 
-      for (let i = 0; i < 64; i++) {
+      for (let i = 0; i < MELODY_MAX_CLIP_STEPS; i++) {
         if (i >= len) { steps.push(emptyStep()); continue; }
 
-        // Phrase breathing: 35% chance of rest on steps divisible by 4
-        if (i % 4 === 0 && i > 0 && prob(0.35)) {
+        const phraseEdge = i % 4 === 0;
+        if (phraseEdge && i > 0 && prob(0.28)) {
           steps.push(emptyStep());
           continue;
         }
@@ -419,10 +442,10 @@ export const MELODY_STRATEGIES: MelodyStrategy[] = [
         // Determine interval type
         const r = Math.random();
         let interval: number;
-        if (r < 0.7) {
+        if (r < 0.76) {
           // Step motion: +/-1
           interval = pick([1, -1]);
-        } else if (r < 0.9) {
+        } else if (r < 0.94) {
           // Skip: +/-2 or +/-3
           interval = pick([2, -2, 3, -3]);
         } else {
@@ -452,10 +475,12 @@ export const MELODY_STRATEGIES: MelodyStrategy[] = [
         // Clamp display to maxDeg for safety
         const displayNote = Math.min(note, maxDeg);
 
+        const gateLength = phraseEdge ? pickMelodyGate("phrase") : pickMelodyGate("short");
         steps.push(makeStep(displayNote, {
-          accent: (i % 4 === 0) && prob(0.6), // accent on beats 1,5,9,13
-          slide: prob(0.25),
-          tie: prob(0.12),
+          accent: phraseEdge && prob(0.55),
+          slide: !phraseEdge && prob(0.18),
+          tie: gateLength >= 3 && prob(0.18),
+          gateLength,
           octave: note > maxDeg ? 1 : (prob(0.08) ? pick([1, -1]) : 0),
         }));
         lastActiveIdx = i;
@@ -483,25 +508,29 @@ interface MelodyStore {
   rootNote: number;
   rootName: string;
   scaleName: string;
+  globalOctave: number;
   params: MelodyParams;
   presetIndex: number;
   strategyIndex: number;
-  automationData: Record<string, number[]>;
+  automationData: Record<string, Array<number | undefined>>;
   automationParam: string;
   isPlaying: boolean;
   instrument: string;
 
-  setAutomationValue: (param: string, step: number, value: number) => void;
+  setAutomationValue: (param: string, step: number, value: number | undefined) => void;
   setAutomationParam: (param: string) => void;
   clearAutomation: (param: string) => void;
   toggleStep: (step: number) => void;
   setStepNote: (step: number, note: number) => void;
   setStepOctave: (step: number, octave: number) => void;
+  setStepVelocity: (step: number, velocity: number) => void;
   toggleAccent: (step: number) => void;
   toggleSlide: (step: number) => void;
   toggleTie: (step: number) => void;
+  setGateLength: (fromStep: number, toStep: number) => void;
   cycleOctave: (step: number) => void;
   setRootNote: (midi: number, name: string) => void;
+  setGlobalOctave: (oct: number) => void;
   setScale: (name: string) => void;
   setParam: (key: keyof MelodyParams, value: number | string | boolean) => void;
   setLength: (len: number) => void;
@@ -521,8 +550,8 @@ interface MelodyStore {
 }
 
 function createEmptySteps(): MelodyStep[] {
-  return Array.from({ length: 64 }, () => ({
-    active: false, note: 0, octave: 0, accent: false, slide: false, tie: false,
+  return Array.from({ length: MELODY_MAX_CLIP_STEPS }, () => ({
+    active: false, note: 0, octave: 0, accent: false, velocity: 0.82, slide: false, tie: false, gateLength: 1,
   }));
 }
 
@@ -542,9 +571,23 @@ export function startMelodyScheduler() {
     const bpm = drumState.bpm;
     const secondsPerStep = 60.0 / bpm / 4;
 
+    const getLegacyTieLength = (sequence: MelodyStep[], startIndex: number, sequenceLength: number) => {
+      let span = 1;
+      for (let i = 1; i < sequenceLength; i++) {
+        const nextIdx = (startIndex + i) % sequenceLength;
+        const next = sequence[nextIdx];
+        if (!next?.active || !next.tie) break;
+        span += 1;
+        if (nextIdx === startIndex) break;
+      }
+      return span;
+    };
+
     while (nextMelodyStepTime < audioEngine.currentTime + 0.1) {
-      const { steps, currentStep, length, rootNote, scaleName, automationData } = useMelodyStore.getState();
-      const step = steps[currentStep % length];
+      const { steps, currentStep, length, rootNote, scaleName, automationData, globalOctave } = useMelodyStore.getState();
+      const stepIndex = currentStep % length;
+      const step = steps[stepIndex];
+      const prevStep = stepIndex > 0 ? steps[stepIndex - 1] : steps[length - 1];
 
       // Apply per-step automation
       for (const [param, vals] of Object.entries(automationData)) {
@@ -552,28 +595,44 @@ export function startMelodyScheduler() {
         if (val !== undefined) melodyEngine.setParams({ [param]: val });
       }
 
-      if (step?.active) {
-        const midiNote = scaleNote(rootNote, scaleName, step.note, step.octave);
+      const isContinuationTie = Boolean(step?.active && step.tie && prevStep?.active);
+      let isHeldByPreviousGate = false;
+
+      if (!step?.active) {
+        for (let back = 1; back < length; back++) {
+          const candidateIndex = (stepIndex - back + length) % length;
+          const candidate = steps[candidateIndex];
+          if (!candidate?.active) continue;
+
+          const candidatePrev = candidateIndex > 0 ? steps[candidateIndex - 1] : steps[length - 1];
+          const candidateIsContinuation = Boolean(candidate.tie && candidatePrev?.active);
+          if (candidateIsContinuation) continue;
+
+          const explicitGateLength = Math.max(1, candidate.gateLength ?? 1);
+          const span = explicitGateLength > 1 ? explicitGateLength : getLegacyTieLength(steps, candidateIndex, length);
+          isHeldByPreviousGate = back < span;
+          break;
+        }
+      }
+
+      if (step?.active && !isContinuationTie) {
+        const midiNote = scaleNote(rootNote, scaleName, step.note, step.octave + globalOctave);
+        const explicitGateLength = Math.max(1, step.gateLength ?? 1);
+        const sustainSteps = explicitGateLength > 1 ? explicitGateLength : getLegacyTieLength(steps, stepIndex, length);
+        const sustainDuration = secondsPerStep * sustainSteps;
         const { instrument } = useMelodyStore.getState();
 
         // Use soundfont if a non-synth instrument is selected
         if (instrument !== "_synth_") {
-          const velocity = step.accent ? 1.0 : 0.7;
-          const duration = secondsPerStep * 1.2;
+          const velocity = Math.max(0.2, Math.min(1, step.velocity ?? (step.accent ? 1.0 : 0.7)));
+          const duration = Math.max(secondsPerStep * 1.2, sustainDuration * 0.98);
           soundFontEngine.playNote("melody", midiNote, nextMelodyStepTime, velocity, duration);
         } else {
           // Use built-in synth
-          melodyEngine.triggerNote(midiNote, nextMelodyStepTime, step.accent, step.slide, step.tie);
-
-          const nextStepIdx = (currentStep + 1) % length;
-          const nextStep = steps[nextStepIdx];
-          if (nextStep?.active && nextStep.tie) {
-            // Don't release — tie holds note
-          } else {
-            melodyEngine.releaseNote(nextMelodyStepTime + secondsPerStep * 0.9);
-          }
+          melodyEngine.triggerNote(midiNote, nextMelodyStepTime, step.accent, step.slide, false, step.velocity ?? (step.accent ? 1.0 : 0.7));
+          melodyEngine.releaseNote(nextMelodyStepTime + Math.max(secondsPerStep * 0.92, sustainDuration * 0.98));
         }
-      } else {
+      } else if (!step?.active && !isHeldByPreviousGate) {
         if (steps.some(s => s.active)) {
           melodyEngine.rest(nextMelodyStepTime);
         }
@@ -602,6 +661,7 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
   rootNote: 48,
   rootName: "C",
   scaleName: "Minor",
+  globalOctave: 0,
   params: { ...DEFAULT_MELODY_PARAMS },
   presetIndex: 0,
   strategyIndex: 0,
@@ -613,7 +673,7 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
   toggleStep: (step) => set((s) => {
     const newSteps = [...s.steps];
     newSteps[step] = { ...newSteps[step]!, active: !newSteps[step]!.active };
-    const newLen = step >= s.length ? Math.min(64, step + 1) : s.length;
+    const newLen = step >= s.length ? Math.min(MELODY_MAX_CLIP_STEPS, step + 1) : s.length;
     return { steps: newSteps, length: newLen };
   }),
 
@@ -623,6 +683,12 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
 
   setStepOctave: (step, octave) => set((s) => {
     const newSteps = [...s.steps]; newSteps[step] = { ...newSteps[step]!, octave }; return { steps: newSteps };
+  }),
+
+  setStepVelocity: (step, velocity) => set((s) => {
+    const newSteps = [...s.steps];
+    newSteps[step] = { ...newSteps[step]!, velocity: Math.max(0.2, Math.min(1, velocity)) };
+    return { steps: newSteps };
   }),
 
   toggleAccent: (step) => set((s) => {
@@ -637,6 +703,23 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
     const newSteps = [...s.steps]; newSteps[step] = { ...newSteps[step]!, tie: !newSteps[step]!.tie }; return { steps: newSteps };
   }),
 
+  setGateLength: (fromStep, toStep) => set((s) => {
+    const newSteps = [...s.steps];
+    const sourceStep = newSteps[fromStep]!;
+    if (!sourceStep.active) return { steps: newSteps };
+
+    const gateLength = Math.max(1, Math.min(MELODY_MAX_CLIP_STEPS - fromStep, toStep - fromStep + 1));
+    newSteps[fromStep] = { ...sourceStep, gateLength };
+
+    for (let i = fromStep + 1; i < MELODY_MAX_CLIP_STEPS; i++) {
+      if (newSteps[i]?.tie && newSteps[i]?.active) {
+        newSteps[i] = { active: false, note: 0, octave: 0, accent: false, velocity: 0.82, slide: false, tie: false, gateLength: 1 };
+      } else break;
+    }
+
+    return { steps: newSteps };
+  }),
+
   cycleOctave: (step) => set((s) => {
     const newSteps = [...s.steps];
     const cur = newSteps[step]!.octave;
@@ -648,6 +731,7 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
     set({ rootNote: midi, rootName: name });
     syncScaleToOtherStores("melody", { rootNote: midi, rootName: name });
   },
+  setGlobalOctave: (oct) => set({ globalOctave: Math.max(-2, Math.min(2, oct)) }),
   setScale: (name) => {
     set({ scaleName: name });
     syncScaleToOtherStores("melody", { scaleName: name });
@@ -662,7 +746,7 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
     const { isPlaying, currentStep, length, automationData } = get();
     if (isPlaying && typeof value === "number") {
       const data = { ...automationData };
-      if (!data[key]) data[key] = new Array(length).fill(undefined);
+      if (!data[key]) data[key] = new Array(MELODY_MAX_CLIP_STEPS).fill(undefined);
       const arr = [...data[key]!];
       arr[currentStep % length] = value;
       data[key] = arr;
@@ -670,7 +754,7 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
     }
   },
 
-  setLength: (len) => set({ length: Math.max(4, Math.min(64, len)) }),
+  setLength: (len) => set({ length: Math.max(4, Math.min(MELODY_MAX_CLIP_STEPS, len)) }),
   setSelectedPage: (page) => set({ selectedPage: page }),
   clearSteps: () => set({ steps: createEmptySteps() }),
 
@@ -709,7 +793,7 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
         if (noteMode === "ascending") note = i % Math.min(scale.length, 7);
         else if (noteMode === "random") note = Math.floor(Math.random() * Math.min(scale.length, 7));
         // "root" → note stays 0
-        newSteps[i] = { active: true, note, octave: 0, accent: i % 4 === 0, slide: false, tie: false };
+        newSteps[i] = { active: true, note, octave: 0, accent: i % 4 === 0, velocity: i % 4 === 0 ? 0.95 : 0.72, slide: false, tie: false, gateLength: 1 };
       }
     }
     set({ steps: newSteps });
@@ -723,10 +807,26 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
     melodyEngine.setParams(params);
   },
 
-  nextPreset: () => { const n = (get().presetIndex + 1) % MELODY_PRESETS.length; get().loadPreset(n); },
-  prevPreset: () => { const p = (get().presetIndex - 1 + MELODY_PRESETS.length) % MELODY_PRESETS.length; get().loadPreset(p); },
+  nextPreset: () => {
+    const nextCore = (getMelodyCorePresetIndex(get().presetIndex) + 1) % MELODY_CORE_PRESETS.length;
+    const nextName = MELODY_CORE_PRESETS[nextCore]?.name;
+    const nextIndex = MELODY_PRESETS.findIndex((preset) => preset.name === nextName);
+    if (nextIndex >= 0) get().loadPreset(nextIndex);
+  },
+  prevPreset: () => {
+    const prevCore = (getMelodyCorePresetIndex(get().presetIndex) - 1 + MELODY_CORE_PRESETS.length) % MELODY_CORE_PRESETS.length;
+    const prevName = MELODY_CORE_PRESETS[prevCore]?.name;
+    const prevIndex = MELODY_PRESETS.findIndex((preset) => preset.name === prevName);
+    if (prevIndex >= 0) get().loadPreset(prevIndex);
+  },
 
   setInstrument: async (id: string) => {
+    if (id === "_synth_") {
+      soundFontEngine.stopAll("melody");
+      set({ instrument: id });
+      return;
+    }
+
     set({ instrument: id });
     const ctx = audioEngine.getAudioContext();
     if (ctx) {
@@ -742,7 +842,7 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
 
   setAutomationValue: (param, step, value) => set((s) => {
     const data = { ...s.automationData };
-    if (!data[param]) data[param] = new Array(64).fill(0);
+    if (!data[param]) data[param] = new Array(MELODY_MAX_CLIP_STEPS).fill(undefined);
     data[param] = [...data[param]!];
     data[param]![step] = value;
     return { automationData: data };

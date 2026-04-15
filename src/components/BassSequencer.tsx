@@ -14,7 +14,7 @@ import { saveBassPattern, listBassPatterns, deleteBassPattern, type StoredBassPa
 
 const SCALE_NAMES = Object.keys(SCALES);
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-const VALID_LENGTHS = [4, 8, 12, 16, 24, 32, 48, 64];
+const VALID_LENGTHS = [4, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256];
 const BASS_COLOR = "var(--ed-accent-bass)";
 const BASS_INSTRUMENT_GROUPS = BASS_INSTRUMENTS.reduce<Record<string, typeof BASS_INSTRUMENTS>>((groups, instrument) => {
   const key = instrument.reliability === "core" ? "Reliable" : "Optional GM";
@@ -44,7 +44,7 @@ export function BassSequencer() {
     steps, length, currentStep, selectedPage, rootNote, rootName, scaleName, params, presetIndex, strategyIndex, instrument,
     automationData, automationParam,
     globalOctave,
-    toggleStep, setStepNote, setStepVelocity, toggleAccent, toggleSlide, toggleTie, setGateLength, cycleOctave,
+    toggleStep, setStepNote, setStepVelocity, toggleAccent, toggleSlide, toggleTie, setGateLength, setStepOctave, cycleOctave,
     setRootNote, setGlobalOctave, setScale, setParam, setLength, setSelectedPage,
     clearSteps, generateBassline, nextStrategy, prevStrategy,
     loadPreset, loadBassPattern, setInstrument,
@@ -53,6 +53,7 @@ export function BassSequencer() {
 
   const isPlaying = useDrumStore((s) => s.isPlaying);
   const dragRef = useRef<{ step: number; startY: number; startNote: number } | null>(null);
+  const [selectedStep, setSelectedStep] = useState<number | null>(null);
   const [durationDrag, setDurationDrag] = useState<{ sourceStep: number; endStep: number } | null>(null);
   const stepElRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [saveOpen, setSaveOpen] = useState(false);
@@ -63,6 +64,8 @@ export function BassSequencer() {
   const [velocityLaneExpanded, setVelocityLaneExpanded] = useState(true);
 
   const pageOffset = selectedPage * 16;
+  const totalPages = Math.max(1, Math.ceil(length / 16));
+  const pageNumbers = Array.from({ length: totalPages }, (_, page) => page);
   const strategyName = BASSLINE_STRATEGIES[strategyIndex]?.name ?? "Random";
   const activeSteps = steps.slice(0, length).filter((step) => step.active).length;
   const pageActiveSteps = steps.slice(pageOffset, pageOffset + 16).filter((step) => step.active).length;
@@ -79,6 +82,28 @@ export function BassSequencer() {
   }, []);
 
   useEffect(() => { if (loadOpen) refreshSaved(); }, [loadOpen, refreshSaved]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!e.shiftKey || selectedStep === null) return;
+      const target = e.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      const selected = steps[selectedStep];
+      if (!selected?.active) return;
+
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        e.preventDefault();
+        const delta = e.key === "ArrowUp" ? 1 : -1;
+        const nextOctave = Math.max(-2, Math.min(2, selected.octave + delta));
+        if (nextOctave !== selected.octave) {
+          setStepOctave(selectedStep, nextOctave);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedStep, setStepOctave, steps]);
 
   const handleSave = useCallback(async () => {
     const name = saveName.trim() || `Bass ${new Date().toLocaleTimeString()}`;
@@ -105,7 +130,8 @@ export function BassSequencer() {
       if (e.altKey) { e.preventDefault(); toggleTie(absStep); return; }
       if (e.ctrlKey || e.metaKey || e.button === 1) { e.preventDefault(); cycleOctave(absStep); return; }
     }
-    if (!s?.active) { toggleStep(absStep); return; }
+    if (!s?.active) { toggleStep(absStep); setSelectedStep(absStep); return; }
+    setSelectedStep(absStep);
     if (e.button === 0) {
       dragRef.current = { step: absStep, startY: e.clientY, startNote: s.note };
       let didDrag = false;
@@ -226,13 +252,13 @@ export function BassSequencer() {
         {clipEditorExpanded ? (
           <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1.5fr)_minmax(260px,1fr)]">
             <div className="grid grid-cols-4 gap-1.5">
-              {[0, 1, 2, 3].map((page) => {
+              {pageNumbers.map((page) => {
                 const start = page * 16;
                 const count = steps.slice(start, start + 16).filter((step) => step.active).length;
                 const density = Math.min(1, count / 12);
                 return (
                   <button
-                    key={page}
+                    key={`clip-page-${page}`}
                     onClick={() => setSelectedPage(page)}
                     className={`relative overflow-hidden rounded-lg border px-2 py-2 text-left transition-all ${
                       selectedPage === page
@@ -329,7 +355,7 @@ export function BassSequencer() {
           {Object.entries(BASS_PRESET_GROUPS).map(([label, items]) => (
             <optgroup key={label} label={label}>
               {items.map(({ preset, index }) => (
-                <option key={index} value={index}>{preset.name}</option>
+                <option key={`bass-preset-${label}-${index}`} value={index}>{preset.name}</option>
               ))}
             </optgroup>
           ))}
@@ -455,8 +481,8 @@ export function BassSequencer() {
       {/* Row 2: Pages + length */}
       <div className="flex items-center gap-2 px-3 py-1 border-b border-white/5">
         <div className="flex gap-1">
-          {[0, 1, 2, 3].map((page) => (
-            <button key={page} onClick={() => setSelectedPage(page)}
+            {pageNumbers.map((page) => (
+            <button key={`page-tab-${page}`} onClick={() => setSelectedPage(page)}
               className={`px-2 py-0.5 text-[9px] font-medium rounded-md transition-all ${
                 selectedPage === page
                   ? "bg-[var(--ed-accent-bass)] text-black font-bold shadow-[0_0_8px_rgba(16,185,129,0.2)]"
@@ -493,7 +519,7 @@ export function BassSequencer() {
           <span className="text-[7px] text-[var(--ed-text-muted)] font-bold">OCT</span>
         </div>
         <div className="flex-1" />
-        <span className="hidden lg:inline text-[7px] text-white/12">drag = pitch &middot; drag bright edge = note length &middot; rclick = accent &middot; shift = slide &middot; alt = legato tie</span>
+        <span className="hidden lg:inline text-[7px] text-white/12">click = select &middot; Shift + ↑/↓ = octave &middot; drag = pitch &middot; drag bright edge = note length &middot; rclick = accent &middot; shift = slide &middot; alt = legato tie</span>
       </div>
 
       {/* Piano Roll + Automation */}
@@ -511,6 +537,7 @@ export function BassSequencer() {
           const isBeat = i % 4 === 0;
           const beyondLength = absStep >= length;
           const isInDragRange = durationDrag && absStep > durationDrag.sourceStep && absStep <= durationDrag.endStep;
+          const isSelected = selectedStep === absStep;
           // Note length: use explicit gateLength if set (> 1), otherwise check legacy ties
           let noteLength = Math.max(1, step.gateLength ?? 1);
           if (isActive && !isTiedFromPrev && noteLength <= 1) {
@@ -528,7 +555,7 @@ export function BassSequencer() {
           return (
             <div key={i}
               ref={(el) => { if (el) stepElRefs.current.set(absStep, el); else stepElRefs.current.delete(absStep); }}
-              className={`flex-1 flex flex-col justify-end min-w-0 relative ${beyondLength ? "opacity-25" : ""}`}
+              className={`flex-1 flex flex-col justify-end min-w-0 relative ${beyondLength ? "opacity-25" : ""} ${isSelected && isActive ? "ring-1 ring-[var(--ed-accent-bass)]/55 rounded-sm" : ""}`}
               onMouseDown={(e) => { e.preventDefault(); handleMouseDown(e, absStep); }}
               onPointerDown={(e) => handleDurationDragStart(e, absStep)}
               onContextMenu={(e) => { e.preventDefault(); if (isActive) toggleAccent(absStep); }}
@@ -706,7 +733,7 @@ function Sel({ value, options, onChange }: { value: string; options: string[]; o
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)}
       className="h-6 px-1.5 text-[9px] bg-black/30 border border-white/8 rounded-md text-white/60 focus:outline-none appearance-none cursor-pointer hover:border-[var(--ed-accent-bass)]/30 transition-colors">
-      {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      {options.map((o) => <option key={`bass-sel-${o}`} value={o}>{o}</option>)}
     </select>
   );
 }
