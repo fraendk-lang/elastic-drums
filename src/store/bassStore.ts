@@ -82,6 +82,12 @@ export const BASS_PRESETS: BassPreset[] = [
   { name: "Reese Bass", params: bp({ waveform: "sawtooth", cutoff: 250, resonance: 4, envMod: 0.15, decay: 300, accent: 0.15, slideTime: 60, distortion: 0, volume: 0.7, subOsc: 0.5, harmonics: 0.3, punch: 0.15 }) },
   { name: "Pluck Bass", params: bp({ waveform: "sawtooth", cutoff: 300, resonance: 3, envMod: 0.2, decay: 80, accent: 0.4, slideTime: 0, distortion: 0, volume: 0.7, punch: 0.4 }) },
   { name: "Sub Growl", params: bp({ waveform: "sawtooth", cutoff: 200, resonance: 5, envMod: 0.2, decay: 150, accent: 0.35, slideTime: 0, distortion: 0.45, volume: 0.7, subOsc: 0.7, punch: 0.35, harmonics: 0.3 }) },
+  // ── Deep House Collection ──
+  { name: "DH Filtered Sine", params: bp({ waveform: "sawtooth", cutoff: 180, resonance: 2, envMod: 0.05, decay: 500, accent: 0.1, slideTime: 40, distortion: 0, volume: 0.8, subOsc: 0.85, filterModel: "ladder", punch: 0.08, harmonics: 0, subFilter: 42 }) },
+  { name: "DH Warm Sub", params: bp({ waveform: "square", cutoff: 220, resonance: 3, envMod: 0.08, decay: 450, accent: 0.12, slideTime: 50, distortion: 0.05, volume: 0.78, subOsc: 0.8, filterModel: "ladder", punch: 0.12, harmonics: 0.05, subFilter: 50 }) },
+  { name: "DH Moog Bass", params: bp({ waveform: "sawtooth", cutoff: 320, resonance: 6, envMod: 0.2, decay: 250, accent: 0.25, slideTime: 30, distortion: 0.08, volume: 0.72, subOsc: 0.6, filterModel: "ladder", punch: 0.2, harmonics: 0.1, subFilter: 65 }) },
+  { name: "DH Rubber Dub", params: bp({ waveform: "square", cutoff: 280, resonance: 5, envMod: 0.15, decay: 380, accent: 0.2, slideTime: 70, distortion: 0.06, volume: 0.75, subOsc: 0.7, filterModel: "ladder", punch: 0.15, harmonics: 0.08, subFilter: 55 }) },
+  { name: "DH Staccato", params: bp({ waveform: "sawtooth", cutoff: 400, resonance: 4, envMod: 0.35, decay: 60, accent: 0.4, slideTime: 0, distortion: 0.1, volume: 0.7, subOsc: 0.5, punch: 0.35, harmonics: 0.1 }) },
 ];
 
 export const BASS_CORE_PRESETS = BASS_PRESETS.filter((preset) =>

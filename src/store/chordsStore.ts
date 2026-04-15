@@ -99,6 +99,13 @@ export const CHORDS_PRESETS: ChordsPreset[] = [
   { name: "PWM Pad", params: cp({ waveform: "square", cutoff: 3000, resonance: 2, envMod: 0.15, attack: 300, release: 1000, detune: 8, distortion: 0, volume: 0.55, subOsc: 0.2, chorus: 0.6, spread: 0.5, brightness: 0.2 }) },
   { name: "Ambient Wash Wide", params: cp({ waveform: "sawtooth", cutoff: 6000, resonance: 1, envMod: 0.1, attack: 500, release: 2000, detune: 12, distortion: 0, volume: 0.45, subOsc: 0.3, chorus: 0.3, spread: 1.0, brightness: 0.3 }) },
   { name: "Soft Keys", params: cp({ waveform: "triangle", cutoff: 2000, resonance: 1, envMod: 0.08, attack: 80, release: 400, detune: 2, distortion: 0, volume: 0.55, subOsc: 0, chorus: 0, spread: 0.2, brightness: 0.1 }) },
+  // ── Deep House Collection ──
+  { name: "DH Rhodes Warm", params: cp({ waveform: "triangle", cutoff: 2200, resonance: 2, envMod: 0.12, attack: 8, release: 350, detune: 3, distortion: 0.04, volume: 0.6, subOsc: 0, chorus: 0.15, spread: 0.3, brightness: 0.2 }) },
+  { name: "DH Rhodes Bright", params: cp({ waveform: "triangle", cutoff: 3500, resonance: 2, envMod: 0.18, attack: 5, release: 280, detune: 2, distortion: 0.06, volume: 0.58, subOsc: 0, chorus: 0.1, spread: 0.25, brightness: 0.4 }) },
+  { name: "DH Juno Stab", params: cp({ waveform: "sawtooth", cutoff: 1800, resonance: 4, envMod: 0.4, attack: 3, release: 120, detune: 8, distortion: 0.08, volume: 0.6, subOsc: 0.1, chorus: 0.5, spread: 0.6, brightness: 0.15 }) },
+  { name: "DH Juno Pad", params: cp({ waveform: "sawtooth", cutoff: 2400, resonance: 2, envMod: 0.1, attack: 300, release: 1000, detune: 12, distortion: 0, volume: 0.55, subOsc: 0.15, chorus: 0.65, spread: 0.7, brightness: 0.25 }) },
+  { name: "DH Organ Stab", params: cp({ waveform: "triangle", cutoff: 1500, resonance: 3, envMod: 0.25, attack: 2, release: 100, detune: 4, distortion: 0.1, volume: 0.6, subOsc: 0.08, chorus: 0.05, spread: 0.15, brightness: 0.3 }) },
+  { name: "DH Soulful Pad", params: cp({ waveform: "sawtooth", cutoff: 1600, resonance: 2, envMod: 0.08, attack: 250, release: 900, detune: 10, distortion: 0, volume: 0.5, subOsc: 0.2, chorus: 0.4, spread: 0.8, brightness: 0.15 }) },
 ];
 
 export const CHORDS_CORE_PRESETS = CHORDS_PRESETS.filter((preset) =>
