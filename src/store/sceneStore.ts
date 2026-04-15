@@ -221,13 +221,30 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     }
     useMelodyStore.setState(melodyUpdate);
 
-    // Restore global key/scale — sync across all synths via bassStore
+    // Restore global key/scale — set DIRECTLY on each store to avoid sync ping-pong.
+    // The sync mechanism (syncScaleToOtherStores) can cause octave drift when
+    // it recalculates rootNote offsets between stores during scene load.
     if (scene.rootName && scene.scaleName) {
-      const normalizedRootMidi = normalizeBassRootMidi(scene.rootName, scene.rootNote);
-      if (normalizedRootMidi === undefined) return;
-      // Use bass store's setRootNote/setScale which auto-syncs to chords + melody
-      useBassStore.getState().setRootNote(normalizedRootMidi, scene.rootName);
-      useBassStore.getState().setScale(scene.scaleName);
+      const bassRootMidi = normalizeBassRootMidi(scene.rootName, scene.rootNote) ?? 36;
+      const rootIndex = ROOT_NOTES.indexOf(scene.rootName);
+      const chordsRootMidi = rootIndex >= 0 ? 48 + rootIndex : 48;
+      const melodyRootMidi = chordsRootMidi; // Same octave as chords
+
+      useBassStore.setState({
+        rootNote: bassRootMidi,
+        rootName: scene.rootName,
+        scaleName: scene.scaleName,
+      });
+      useChordsStore.setState({
+        rootNote: chordsRootMidi,
+        rootName: scene.rootName,
+        scaleName: scene.scaleName,
+      });
+      useMelodyStore.setState({
+        rootNote: melodyRootMidi,
+        rootName: scene.rootName,
+        scaleName: scene.scaleName,
+      });
     }
 
     set({ activeScene: slot, nextScene: null });
