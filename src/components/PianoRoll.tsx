@@ -279,6 +279,8 @@ let _pianoRollEnabled = true; // Can be toggled to mute piano roll playback
 let _lastPlaybackStep = -1;
 let _pianoRollStepCounter = 0; // Own counter, independent of drum pattern length
 const _activePlaybackNotes = new Set<string>();
+// Safety-net timers: ensure every note gets released even if step logic misses it
+const _noteReleaseTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function pianoRollTick(currentStep: number, bpm: number): void {
   if (!_pianoRollEnabled || _pianoRollNotes.length === 0) return;
@@ -309,7 +311,11 @@ function pianoRollTick(currentStep: number, bpm: number): void {
     // ─── Note ON ───
     if (noteStartStep === wrappedStep && !_activePlaybackNotes.has(note.id)) {
       _activePlaybackNotes.add(note.id);
-      const durSec = note.duration * secPerBeat; // Convert beats to seconds
+      const durSec = note.duration * secPerBeat;
+
+      // Clear any previous safety timer for this note (in case of loop restart)
+      const prevTimer = _noteReleaseTimers.get(note.id);
+      if (prevTimer) clearTimeout(prevTimer);
 
       switch (target) {
         case "drums":
@@ -337,26 +343,40 @@ function pianoRollTick(currentStep: number, bpm: number): void {
           }
           break;
       }
+
+      // SAFETY NET: setTimeout-based release that CANNOT be cancelled by triggerNote's
+      // cancelScheduledValues. This guarantees every note stops, period.
+      if (target !== "drums") {
+        const safetyMs = durSec * 1000 + 50; // duration + 50ms margin
+        const timer = setTimeout(() => {
+          _noteReleaseTimers.delete(note.id);
+          if (!_activePlaybackNotes.has(note.id)) return; // Already released by step logic
+          _activePlaybackNotes.delete(note.id);
+          const now = audioEngine.currentTime;
+          if (target === "bass") bassEngine.releaseNote(now);
+          else if (target === "chords") chordsEngine.releaseChord(now);
+          else if (target === "melody") melodyEngine.releaseNote(now);
+        }, safetyMs);
+        _noteReleaseTimers.set(note.id, timer);
+      }
     }
 
-    // ─── Note OFF (use >= to catch long notes that span multiple steps) ───
-    // Also handle wrap-around: if note started late in pattern and we're past the end
-    const noteWrapsAround = noteEndStep > patternLen;
-    const effectiveEnd = noteWrapsAround ? noteEndStep % patternLen : noteEndStep;
-    const shouldRelease = _activePlaybackNotes.has(note.id) && (
-      // Normal case: note ends at or before current step
-      (noteEndStep <= wrappedStep && noteStartStep < wrappedStep) ||
-      // Wrap-around case: note crossed loop boundary and we're past its effective end
-      (noteWrapsAround && wrappedStep >= effectiveEnd && wrappedStep < noteStartStep)
-    );
+    // ─── Note OFF (step-based — provides earlier/tighter release when step logic works) ───
+    if (_activePlaybackNotes.has(note.id) && noteStartStep !== wrappedStep) {
+      const pastEnd = (noteEndStep <= wrappedStep && noteStartStep < wrappedStep);
+      const noteWrapsAround = noteEndStep > patternLen;
+      const effectiveEnd = noteWrapsAround ? noteEndStep % patternLen : noteEndStep;
+      const pastWrap = noteWrapsAround && wrappedStep >= effectiveEnd && wrappedStep < noteStartStep;
 
-    if (shouldRelease) {
-      _activePlaybackNotes.delete(note.id);
-      // Always release synth engines, regardless of SoundFont state —
-      // SoundFont handles its own duration, but synth engines need explicit note-off
-      if (target === "bass") bassEngine.releaseNote(t);
-      else if (target === "chords") chordsEngine.releaseChord(t);
-      else if (target === "melody") melodyEngine.releaseNote(t);
+      if (pastEnd || pastWrap) {
+        _activePlaybackNotes.delete(note.id);
+        // Cancel the safety timer since step logic handled it
+        const timer = _noteReleaseTimers.get(note.id);
+        if (timer) { clearTimeout(timer); _noteReleaseTimers.delete(note.id); }
+        if (target === "bass") bassEngine.releaseNote(t);
+        else if (target === "chords") chordsEngine.releaseChord(t);
+        else if (target === "melody") melodyEngine.releaseNote(t);
+      }
     }
   }
 
@@ -368,6 +388,9 @@ function pianoRollTick(currentStep: number, bpm: number): void {
       melodyEngine.releaseNote(t);
     }
     _activePlaybackNotes.clear();
+    // Clear all safety timers
+    for (const timer of _noteReleaseTimers.values()) clearTimeout(timer);
+    _noteReleaseTimers.clear();
   }
 }
 
@@ -386,6 +409,9 @@ useTransportStore.subscribe((state, prev) => {
         melodyEngine.releaseNote(now);
       }
       _lastPlaybackStep = -1; _pianoRollStepCounter = 0; _activePlaybackNotes.clear();
+      // Clear all safety timers
+      for (const timer of _noteReleaseTimers.values()) clearTimeout(timer);
+      _noteReleaseTimers.clear();
     }
   }
 });
