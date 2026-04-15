@@ -188,7 +188,7 @@ export function App() {
   useEffect(() => {
     const clampBottomHeight = () => {
       const viewportHeight = window.innerHeight;
-      const maxHeight = Math.max(minBottomPanelHeight, Math.floor(viewportHeight * 0.62));
+      const maxHeight = Math.max(minBottomPanelHeight, Math.floor(viewportHeight * 0.85));
       setBottomPanelHeight((prev) => Math.min(maxHeight, Math.max(minBottomPanelHeight, prev)));
     };
 
@@ -213,7 +213,7 @@ export function App() {
       const drag = moveEvent.clientY - (resizeStateRef.current?.startY ?? moveEvent.clientY);
       const viewportHeight = window.innerHeight;
       const minHeight = minBottomPanelHeight;
-      const maxHeight = Math.max(minHeight, Math.floor(viewportHeight * 0.62));
+      const maxHeight = Math.max(minHeight, Math.floor(viewportHeight * 0.85));
       const nextHeight = Math.max(minHeight, Math.min(maxHeight, (resizeStateRef.current?.startHeight ?? bottomPanelHeight) - drag));
       setBottomPanelHeight(nextHeight);
       document.body.style.cursor = "row-resize";
