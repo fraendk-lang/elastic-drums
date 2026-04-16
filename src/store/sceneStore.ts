@@ -158,11 +158,12 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     const scene = get().scenes[slot];
     if (!scene) return;
 
-    // Gentle release instead of hard panic — avoids click/gap on scene switch
+    // Hard panic to ensure zero residual gain — releaseNote uses asymptotic
+    // setTargetAtTime which never reaches true zero, causing cumulative bleed
     const now = audioEngine.getAudioContext()?.currentTime ?? 0;
-    bassEngine.releaseNote(now);
-    chordsEngine.releaseChord(now);
-    melodyEngine.releaseNote(now);
+    bassEngine.panic(now);
+    chordsEngine.panic(now);
+    melodyEngine.panic(now);
 
     // Apply drum pattern
     useDrumStore.setState({ pattern: deepClone(scene.drumPattern) });
