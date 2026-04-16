@@ -202,11 +202,12 @@ export function Transport({
 
         <Sep />
 
-        <ToolBtn onClick={onOpenBrowser} label="SAVE" />
-        <ToolBtn onClick={() => downloadMidi(pattern, bpm)} label="MIDI" />
-        <ToolBtn onClick={() => exportPatternAsWav(pattern, bpm, 4)} label="WAV" />
-        <RecordButton />
-        <ToolBtn onClick={() => { sharePattern(pattern, bpm); }} label="SHARE" />
+        <ExportMenu
+          onSave={onOpenBrowser}
+          onMidiExport={() => downloadMidi(pattern, bpm)}
+          onWavExport={() => exportPatternAsWav(pattern, bpm, 4)}
+          onShare={() => sharePattern(pattern, bpm)}
+        />
 
         <Sep />
 
@@ -320,6 +321,72 @@ function ToolBtn({ onClick, label, accent }: { onClick: () => void; label: strin
     >
       {label}
     </button>
+  );
+}
+
+function ExportMenu({ onSave, onMidiExport, onWavExport, onShare }: {
+  onSave: () => void;
+  onMidiExport: () => void;
+  onWavExport: () => void;
+  onShare: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className={`h-6 px-2.5 rounded-md text-[8px] font-bold tracking-wider transition-all flex items-center gap-1 ${
+          open
+            ? "bg-[var(--ed-accent-orange)]/15 text-[var(--ed-accent-orange)]"
+            : "text-white/30 hover:text-white/70 hover:bg-white/5"
+        }`}
+      >
+        EXPORT ▾
+      </button>
+
+      {open && (
+        <div className="absolute top-full right-0 mt-1 z-50 min-w-[140px] bg-[#1a1a22] border border-[var(--ed-border)] rounded-lg shadow-2xl py-1 overflow-hidden">
+          <button
+            onClick={() => { onSave(); setOpen(false); }}
+            className="w-full text-left px-3 py-1.5 text-[9px] text-white/70 hover:text-white hover:bg-white/8 transition-colors flex items-center gap-2"
+          >
+            <span className="text-[7px] text-white/30">💾</span> Save / Load
+          </button>
+          <button
+            onClick={() => { onMidiExport(); setOpen(false); }}
+            className="w-full text-left px-3 py-1.5 text-[9px] text-white/70 hover:text-white hover:bg-white/8 transition-colors flex items-center gap-2"
+          >
+            <span className="text-[7px] text-white/30">🎹</span> Export MIDI
+          </button>
+          <button
+            onClick={() => { onWavExport(); setOpen(false); }}
+            className="w-full text-left px-3 py-1.5 text-[9px] text-white/70 hover:text-white hover:bg-white/8 transition-colors flex items-center gap-2"
+          >
+            <span className="text-[7px] text-white/30">🔊</span> Export WAV
+          </button>
+          <div className="border-t border-white/8 my-1" />
+          <RecordButton />
+          <div className="border-t border-white/8 my-1" />
+          <button
+            onClick={() => { onShare(); setOpen(false); }}
+            className="w-full text-left px-3 py-1.5 text-[9px] text-white/70 hover:text-white hover:bg-white/8 transition-colors flex items-center gap-2"
+          >
+            <span className="text-[7px] text-white/30">🔗</span> Share URL
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
