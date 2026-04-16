@@ -290,16 +290,17 @@ function RecordButton() {
       onClick={handleClick}
       disabled={processing}
       aria-label={recording ? `Recording ${formatTime(elapsed)}` : processing ? "Processing" : "Record"}
-      className={`h-6 px-2.5 rounded-md text-[8px] font-bold tracking-wider transition-all flex items-center gap-1 ${
+      className={`w-full text-left px-3 py-1.5 text-[9px] font-bold tracking-wider transition-colors flex items-center gap-2 ${
         recording
-          ? "bg-red-500/20 text-red-400 shadow-[0_0_12px_rgba(239,68,68,0.2)] border border-red-500/30"
+          ? "bg-red-500/15 text-red-400"
           : processing
-            ? "bg-yellow-500/15 text-yellow-400 border border-yellow-500/20"
-            : "text-white/30 hover:text-white/70 hover:bg-white/5"
+            ? "bg-yellow-500/10 text-yellow-400"
+            : "text-white/70 hover:text-white hover:bg-white/8"
       }`}
     >
-      {recording && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
-      {recording ? formatTime(elapsed) : processing ? "..." : "REC"}
+      {recording && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />}
+      {!recording && <span className="text-[7px] text-white/30">⏺</span>}
+      {recording ? `REC ${formatTime(elapsed)}` : processing ? "Processing..." : "Record Audio"}
     </button>
   );
 }

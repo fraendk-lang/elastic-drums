@@ -25,7 +25,14 @@ export function setPianoRollNotes(notes: PianoRollNote[]): void {
 }
 
 export function setPianoRollLoop(loop: LoopRange): void {
+  const changed = _loopRange.start !== loop.start || _loopRange.end !== loop.end || _loopRange.enabled !== loop.enabled;
   _loopRange = loop;
+  // Reset step counter on loop range change to avoid stale offset
+  if (changed) {
+    releaseAllActiveNotes();
+    _pianoRollStepCounter = 0;
+    _lastPlaybackStep = -1;
+  }
 }
 
 export function setPianoRollEnabled(enabled: boolean): void {

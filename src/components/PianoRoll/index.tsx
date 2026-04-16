@@ -421,7 +421,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     const maxMidi = Math.max(...targetNotes.map((n) => n.midi));
     const minBeat = Math.min(...targetNotes.map((n) => n.start));
     const centerMidi = (minMidi + maxMidi) / 2;
-    const centerRow = BASE_NOTE + TOTAL_ROWS - centerMidi;
+    const centerRow = rowForMidi(Math.round(centerMidi));
     const targetScrollY = centerRow * rowHeight - gridRef.current.clientHeight / 2;
     const targetScrollX = minBeat * cellW - 40;
     gridRef.current.scrollTo({
@@ -429,7 +429,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
       top: Math.max(0, targetScrollY),
       behavior: "smooth",
     });
-  }, [isOpen, target]);
+  }, [isOpen, target, rowForMidi]);
 
   // ─── ZOOM ─────────────────────────────────────────────────────
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -502,7 +502,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         setSelectedNoteIds(new Set());
       }
     },
-    [notes, rowHeight, cellW, snap, gridRes, totalBeats, target, selectedNoteIds, tool, gridH],
+    [notes, rowHeight, cellW, snap, gridRes, totalBeats, target, selectedNoteIds, tool, gridH, midiForRow],
   );
 
   // ─── Hover info (lightweight mousemove, no state deps on notes) ──
@@ -552,7 +552,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
       }
       setSelectedNoteIds(selected);
     },
-    [rubberBand, notes, cellW, rowHeight],
+    [rubberBand, notes, cellW, rowHeight, rowForMidi],
   );
 
   const handleGridPointerUp = useCallback(
@@ -585,7 +585,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         /* no-op */
       }
     },
-    [rubberBand, tool, rowHeight, cellW, addNote, gridH],
+    [rubberBand, tool, rowHeight, cellW, addNote, gridH, midiForRow],
   );
 
   // ─── Safety net: global pointerup clears any leftover drag/rubber-band state
@@ -1028,7 +1028,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
           const minMidi = Math.min(...targetNotes.map((n) => n.midi));
           const maxMidi = Math.max(...targetNotes.map((n) => n.midi));
           const minBeat = Math.min(...targetNotes.map((n) => n.start));
-          const centerRow = BASE_NOTE + TOTAL_ROWS - (minMidi + maxMidi) / 2;
+          const centerRow = rowForMidi(Math.round((minMidi + maxMidi) / 2));
           gridRef.current.scrollTo({
             left: Math.max(0, minBeat * cellW - 40),
             top: Math.max(0, centerRow * rowHeight - gridRef.current.clientHeight / 2),
