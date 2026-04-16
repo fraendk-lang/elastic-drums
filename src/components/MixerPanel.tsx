@@ -636,6 +636,9 @@ function ChannelStrip({ label, color, meter, faderValue, sendA, sendB, isMuted, 
       {/* 3-Band EQ */}
       <ChannelEQ channelIndex={channelIndex} color={color} />
 
+      {/* Compressor */}
+      <ChannelComp channelIndex={channelIndex} color={color} />
+
       {/* Meter + Fader area */}
       <div className="flex min-h-0 flex-1 gap-[4px] px-1.5 py-1.5">
         {/* Meter */}
@@ -955,6 +958,60 @@ function ChannelEQ({ channelIndex, color }: { channelIndex: number; color: strin
           </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function ChannelComp({ channelIndex, color }: { channelIndex: number; color: string }) {
+  const [threshold, setThreshold] = useState(0); // 0 = bypassed
+  const [ratio, setRatio] = useState(4);
+
+  const active = threshold < -1;
+
+  return (
+    <div className="space-y-0.5 border-b border-white/8 px-1.5 py-1">
+      <div className="flex items-center justify-between">
+        <span className="text-[5px] font-bold tracking-[0.18em] text-white/20">CMP</span>
+        {active && (
+          <span className="text-[5px] font-bold text-[var(--ed-accent-orange)]/60">
+            {threshold}dB
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-[2px]">
+        <span className="text-[5px] font-bold text-white/25 w-2">T</span>
+        <input
+          type="range"
+          min={-40} max={0} step={1}
+          value={threshold}
+          onChange={(e) => {
+            const v = parseInt(e.target.value);
+            setThreshold(v);
+            audioEngine.setChannelCompressor(channelIndex, v, ratio, 0.01, 0.15);
+          }}
+          onDoubleClick={() => { setThreshold(0); audioEngine.bypassChannelCompressor(channelIndex); }}
+          className="flex-1 h-[6px]"
+          style={{ accentColor: color }}
+        />
+      </div>
+      {active && (
+        <div className="flex items-center gap-[2px]">
+          <span className="text-[5px] font-bold text-white/25 w-2">R</span>
+          <input
+            type="range"
+            min={1} max={20} step={0.5}
+            value={ratio}
+            onChange={(e) => {
+              const v = parseFloat(e.target.value);
+              setRatio(v);
+              audioEngine.setChannelCompressor(channelIndex, threshold, v, 0.01, 0.15);
+            }}
+            className="flex-1 h-[6px]"
+            style={{ accentColor: color }}
+          />
+          <span className="text-[5px] font-mono text-white/30 w-4 text-right">{ratio}:1</span>
+        </div>
+      )}
     </div>
   );
 }

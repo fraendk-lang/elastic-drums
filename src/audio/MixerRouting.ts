@@ -12,11 +12,12 @@ export class MixerRouter {
   private channelShapers: WaveShaperNode[] = [];
   private channelPanners: PannerNode[] = [];
   private channelEQs: { lo: BiquadFilterNode; mid: BiquadFilterNode; hi: BiquadFilterNode }[] = [];
+  private channelCompressors: DynamicsCompressorNode[] = [];
   private binauralMode = false;
   private groupBuses: Map<string, { gain: GainNode; analyser: AnalyserNode }> = new Map();
   private channelGroupAssignment: string[] = [];
 
-  /** Create a channel strip: filter → shaper → EQ(lo→mid→hi) → gain → panner → analyser → destination */
+  /** Create a channel strip: filter → shaper → EQ(lo→mid→hi) → compressor → gain → panner → analyser → destination */
   createChannel(ctx: AudioContext, destination: GainNode): { filter: BiquadFilterNode; gain: GainNode; analyser: AnalyserNode; panner: PannerNode } {
     // Insert filter (bypass by default: allpass)
     const filter = ctx.createBiquadFilter();
@@ -43,6 +44,14 @@ export class MixerRouter {
     eqHi.frequency.value = 4000;
     eqHi.gain.value = 0; // flat
 
+    // Per-channel compressor (transparent by default: high threshold = no compression)
+    const compressor = ctx.createDynamicsCompressor();
+    compressor.threshold.value = 0;  // 0 dB = effectively bypassed
+    compressor.knee.value = 6;
+    compressor.ratio.value = 4;
+    compressor.attack.value = 0.01;
+    compressor.release.value = 0.15;
+
     // Channel gain (volume fader)
     const gain = ctx.createGain();
     gain.gain.value = 1.0;
@@ -62,12 +71,13 @@ export class MixerRouter {
     analyser.fftSize = 4096;
     analyser.smoothingTimeConstant = 0.15;
 
-    // Routing: filter → shaper → eqLo → eqMid → eqHi → gain → panner → analyser → destination
+    // Routing: filter → shaper → eqLo → eqMid → eqHi → compressor → gain → panner → analyser → destination
     filter.connect(shaper);
     shaper.connect(eqLo);
     eqLo.connect(eqMid);
     eqMid.connect(eqHi);
-    eqHi.connect(gain);
+    eqHi.connect(compressor);
+    compressor.connect(gain);
     gain.connect(panner);
     panner.connect(analyser);
     analyser.connect(destination);
@@ -75,6 +85,7 @@ export class MixerRouter {
     this.channelFilters.push(filter);
     this.channelShapers.push(shaper);
     this.channelEQs.push({ lo: eqLo, mid: eqMid, hi: eqHi });
+    this.channelCompressors.push(compressor);
     this.channelGains.push(gain);
     this.channelPanners.push(panner);
     this.channelAnalysers.push(analyser);
@@ -144,6 +155,28 @@ export class MixerRouter {
     eq.lo.gain.value = 0;
     eq.mid.gain.value = 0;
     eq.hi.gain.value = 0;
+  }
+
+  /** Get channel compressor node */
+  getChannelCompressor(i: number): DynamicsCompressorNode | null {
+    return this.channelCompressors[i] ?? null;
+  }
+
+  /** Set channel compressor params */
+  setChannelCompressor(channel: number, threshold: number, ratio: number, attack: number, release: number, knee?: number): void {
+    const comp = this.channelCompressors[channel];
+    if (!comp) return;
+    comp.threshold.value = threshold;
+    comp.ratio.value = ratio;
+    comp.attack.value = attack;
+    comp.release.value = release;
+    if (knee !== undefined) comp.knee.value = knee;
+  }
+
+  /** Bypass channel compressor (set threshold to 0 dB) */
+  bypassChannelCompressor(channel: number): void {
+    const comp = this.channelCompressors[channel];
+    if (comp) comp.threshold.value = 0;
   }
 
   /** Set channel drive (insert distortion) */

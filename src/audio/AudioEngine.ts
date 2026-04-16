@@ -307,6 +307,9 @@ export class AudioEngine {
   bypassChannelFilter(channel: number): void { mixerRouter.bypassChannelFilter(channel); }
   setChannelDrive(channel: number, drive: number): void { mixerRouter.setChannelDrive(channel, drive); }
   setChannelEQ(channel: number, band: "lo" | "mid" | "hi", gain: number, freq?: number): void { mixerRouter.setChannelEQ(channel, band, gain, freq); }
+  setChannelCompressor(channel: number, threshold: number, ratio: number, attack: number, release: number, knee?: number): void { mixerRouter.setChannelCompressor(channel, threshold, ratio, attack, release, knee); }
+  bypassChannelCompressor(channel: number): void { mixerRouter.bypassChannelCompressor(channel); }
+  getChannelCompressor(channel: number): DynamicsCompressorNode | null { return mixerRouter.getChannelCompressor(channel); }
   resetChannelEQ(channel: number): void { mixerRouter.resetChannelEQ(channel); }
   getChannelEQ(channel: number): { lo: BiquadFilterNode; mid: BiquadFilterNode; hi: BiquadFilterNode } | null { return mixerRouter.getChannelEQ(channel); }
   setChannelPan(channel: number, pan: number): void { mixerRouter.setChannelPan(channel, pan); }
