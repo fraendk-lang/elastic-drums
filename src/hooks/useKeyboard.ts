@@ -57,6 +57,7 @@ export function useKeyboard() {
       pressed.add(key);
 
       // Shift + number → queue scene (1-10, quantized to next bar)
+      // Always consume Shift+Digit to prevent preset loading fallthrough
       if (e.shiftKey) {
         const sceneSlot = CODE_TO_SCENE[e.code];
         if (sceneSlot !== undefined) {
@@ -68,9 +69,11 @@ export function useKeyboard() {
               queueScene(sceneSlot);
             } else {
               loadScene(sceneSlot);
+              // Auto-start playback after loading scene when stopped
+              useDrumStore.getState().togglePlay();
             }
           }
-          return;
+          return; // Always return — don't fall through to preset loading
         }
       }
 
