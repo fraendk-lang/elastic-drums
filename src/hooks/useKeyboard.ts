@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useDrumStore } from "../store/drumStore";
+import { useSceneStore } from "../store/sceneStore";
 
 /**
  * QWERTY → Pad mapping (2 rows × 4 + 4)
@@ -28,6 +29,12 @@ const KEY_TO_PRESET: Record<string, number> = {
   "6": 5, "7": 6, "8": 7, "9": 8, "0": 9,
 };
 
+// Map Digit codes to scene slots: Shift+1→0, Shift+2→1, ... Shift+0→9
+const CODE_TO_SCENE: Record<string, number> = {
+  Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4,
+  Digit6: 5, Digit7: 6, Digit8: 7, Digit9: 8, Digit0: 9,
+};
+
 export function useKeyboard() {
   const triggerVoice = useDrumStore((s) => s.triggerVoice);
   const setSelectedVoice = useDrumStore((s) => s.setSelectedVoice);
@@ -48,6 +55,24 @@ export function useKeyboard() {
       // Prevent repeat triggers from held keys
       if (pressed.has(key)) return;
       pressed.add(key);
+
+      // Shift + number → queue scene (1-10, quantized to next bar)
+      if (e.shiftKey) {
+        const sceneSlot = CODE_TO_SCENE[e.code];
+        if (sceneSlot !== undefined) {
+          e.preventDefault();
+          const { scenes, queueScene, loadScene } = useSceneStore.getState();
+          if (scenes[sceneSlot]) {
+            const isPlaying = useDrumStore.getState().isPlaying;
+            if (isPlaying) {
+              queueScene(sceneSlot);
+            } else {
+              loadScene(sceneSlot);
+            }
+          }
+          return;
+        }
+      }
 
       // Voice triggers
       const voice = KEY_TO_VOICE[key];
