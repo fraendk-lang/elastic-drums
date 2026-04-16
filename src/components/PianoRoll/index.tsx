@@ -754,6 +754,84 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     );
   }, [notes, selectedNoteIds, pushUndo, setNotes]);
 
+  // ─── INVERT (mirror pitches around center) ────────────────────
+  const handleInvert = useCallback(() => {
+    if (selectedNoteIds.size < 2) return;
+    pushUndo();
+    const selected = notes.filter((n) => selectedNoteIds.has(n.id));
+    const minMidi = Math.min(...selected.map((n) => n.midi));
+    const maxMidi = Math.max(...selected.map((n) => n.midi));
+    const center = (minMidi + maxMidi) / 2;
+    setNotes((prev) =>
+      prev.map((n) => {
+        if (!selectedNoteIds.has(n.id)) return n;
+        const newMidi = Math.round(center * 2 - n.midi);
+        return { ...n, midi: Math.max(BASE_NOTE, Math.min(BASE_NOTE + TOTAL_ROWS - 1, newMidi)) };
+      }),
+    );
+  }, [notes, selectedNoteIds, pushUndo, setNotes]);
+
+  // ─── LEGATO (extend each note to meet the next) ──────────────
+  const handleLegato = useCallback(() => {
+    if (selectedNoteIds.size < 2) return;
+    pushUndo();
+    const selected = notes
+      .filter((n) => selectedNoteIds.has(n.id))
+      .sort((a, b) => a.start - b.start || a.midi - b.midi);
+    const legatoMap = new Map<string, number>();
+    for (let i = 0; i < selected.length - 1; i++) {
+      const gap = selected[i + 1]!.start - selected[i]!.start;
+      if (gap > 0) legatoMap.set(selected[i]!.id, gap);
+    }
+    setNotes((prev) =>
+      prev.map((n) => {
+        const newDur = legatoMap.get(n.id);
+        return newDur != null ? { ...n, duration: newDur } : n;
+      }),
+    );
+  }, [notes, selectedNoteIds, pushUndo, setNotes]);
+
+  // ─── HUMANIZE (randomize velocity + timing slightly) ─────────
+  const handleHumanize = useCallback(() => {
+    if (selectedNoteIds.size === 0) return;
+    pushUndo();
+    setNotes((prev) =>
+      prev.map((n) => {
+        if (!selectedNoteIds.has(n.id)) return n;
+        const velJitter = (Math.random() - 0.5) * 0.15; // ±7.5%
+        const timeJitter = (Math.random() - 0.5) * 0.06; // ±0.03 beats (~30ms at 120bpm)
+        return {
+          ...n,
+          velocity: Math.max(0.05, Math.min(1, n.velocity + velJitter)),
+          start: Math.max(0, n.start + timeJitter),
+        };
+      }),
+    );
+  }, [selectedNoteIds, pushUndo, setNotes]);
+
+  // ─── STRETCH (scale timing by factor) ────────────────────────
+  const handleStretch = useCallback(
+    (factor: number) => {
+      if (selectedNoteIds.size === 0) return;
+      pushUndo();
+      const selected = notes.filter((n) => selectedNoteIds.has(n.id));
+      const anchor = Math.min(...selected.map((n) => n.start));
+      setNotes((prev) =>
+        prev.map((n) => {
+          if (!selectedNoteIds.has(n.id)) return n;
+          const newStart = anchor + (n.start - anchor) * factor;
+          const newDur = n.duration * factor;
+          return {
+            ...n,
+            start: Math.max(0, Math.min(totalBeats - newDur, newStart)),
+            duration: Math.max(gridRes, newDur),
+          };
+        }),
+      );
+    },
+    [notes, selectedNoteIds, pushUndo, setNotes, totalBeats, gridRes],
+  );
+
   // ─── HARMONY HANDLER ──────────────────────────────────────────
   const handleHarmony = useCallback(
     (type: HarmonyType) => {
@@ -824,6 +902,10 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         onQuantize={() => selectedNoteIds.size > 0 && quantizeNotes(selectedNoteIds)}
         onTranspose={handleTranspose}
         onReverse={handleReverse}
+        onInvert={handleInvert}
+        onLegato={handleLegato}
+        onHumanize={handleHumanize}
+        onStretch={handleStretch}
         onHarmony={handleHarmony}
         onSelectAll={() => setSelectedNoteIds(new Set(notes.map((n) => n.id)))}
         onDelete={() => removeNotes(selectedNoteIds)}

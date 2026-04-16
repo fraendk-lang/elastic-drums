@@ -32,6 +32,10 @@ interface PianoRollToolbarProps {
   onHarmony: (type: HarmonyType) => void;
   onTranspose: (semitones: number) => void;
   onReverse: () => void;
+  onInvert: () => void;
+  onLegato: () => void;
+  onHumanize: () => void;
+  onStretch: (factor: number) => void;
   onSelectAll: () => void;
   onDelete: () => void;
   onCopy: () => void;
@@ -69,6 +73,10 @@ export function PianoRollToolbar(props: PianoRollToolbarProps) {
     onQuantize,
     onTranspose,
     onReverse,
+    onInvert,
+    onLegato,
+    onHumanize,
+    onStretch,
     onHarmony,
     onSelectAll,
     onDelete,
@@ -275,6 +283,70 @@ export function PianoRollToolbar(props: PianoRollToolbarProps) {
         >
           REV
         </button>
+
+        <button
+          onClick={onInvert}
+          disabled={selectedCount < 2}
+          title="Invert pitches around center"
+          className="px-2 py-0.5 text-[7px] font-bold tracking-wider rounded transition-all shrink-0 disabled:opacity-20 hover:brightness-110"
+          style={{
+            backgroundColor: "rgba(200,150,255,0.15)",
+            color: selectedCount >= 2 ? "white" : "white/50",
+            border: "1px solid rgba(200,150,255,0.35)",
+          }}
+        >
+          INV
+        </button>
+
+        <button
+          onClick={onLegato}
+          disabled={selectedCount < 2}
+          title="Legato: extend notes to fill gaps"
+          className="px-2 py-0.5 text-[7px] font-bold tracking-wider rounded transition-all shrink-0 disabled:opacity-20 hover:brightness-110"
+          style={{
+            backgroundColor: "rgba(200,150,255,0.15)",
+            color: selectedCount >= 2 ? "white" : "white/50",
+            border: "1px solid rgba(200,150,255,0.35)",
+          }}
+        >
+          LEG
+        </button>
+
+        <button
+          onClick={onHumanize}
+          disabled={selectedCount === 0}
+          title="Humanize: randomize velocity + timing"
+          className="px-2 py-0.5 text-[7px] font-bold tracking-wider rounded transition-all shrink-0 disabled:opacity-20 hover:brightness-110"
+          style={{
+            backgroundColor: "rgba(200,150,255,0.15)",
+            color: selectedCount > 0 ? "white" : "white/50",
+            border: "1px solid rgba(200,150,255,0.35)",
+          }}
+        >
+          HUM
+        </button>
+
+        {/* Stretch */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <button
+            onClick={() => onStretch(0.5)}
+            disabled={selectedCount === 0}
+            title="Compress time ÷2"
+            className="px-1.5 py-0.5 text-[7px] font-bold rounded transition-all disabled:opacity-20 hover:brightness-110"
+            style={{ backgroundColor: "rgba(200,150,255,0.15)", color: "white", border: "1px solid rgba(200,150,255,0.35)" }}
+          >
+            ÷2
+          </button>
+          <button
+            onClick={() => onStretch(2)}
+            disabled={selectedCount === 0}
+            title="Stretch time ×2"
+            className="px-1.5 py-0.5 text-[7px] font-bold rounded transition-all disabled:opacity-20 hover:brightness-110"
+            style={{ backgroundColor: "rgba(200,150,255,0.15)", color: "white", border: "1px solid rgba(200,150,255,0.35)" }}
+          >
+            ×2
+          </button>
+        </div>
 
         <div className="w-px h-4 bg-white/15 shrink-0" />
 
