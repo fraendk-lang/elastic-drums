@@ -633,6 +633,9 @@ function ChannelStrip({ label, color, meter, faderValue, sendA, sendB, isMuted, 
         }} />
       </div>
 
+      {/* 3-Band EQ */}
+      <ChannelEQ channelIndex={channelIndex} color={color} />
+
       {/* Meter + Fader area */}
       <div className="flex min-h-0 flex-1 gap-[4px] px-1.5 py-1.5">
         {/* Meter */}
@@ -919,3 +922,39 @@ function SidechainControls() {
   );
 }
 
+function ChannelEQ({ channelIndex, color }: { channelIndex: number; color: string }) {
+  const [lo, setLo] = useState(0);
+  const [mid, setMid] = useState(0);
+  const [hi, setHi] = useState(0);
+
+  return (
+    <div className="space-y-0.5 border-b border-white/8 px-1.5 py-1">
+      <div className="text-[5px] font-bold tracking-[0.18em] text-white/20 text-center">EQ</div>
+      {([
+        { label: "H", band: "hi" as const, value: hi, set: setHi },
+        { label: "M", band: "mid" as const, value: mid, set: setMid },
+        { label: "L", band: "lo" as const, value: lo, set: setLo },
+      ]).map(({ label, band, value, set }) => (
+        <div key={band} className="flex items-center gap-[2px]">
+          <span className="text-[5px] font-bold text-white/25 w-2">{label}</span>
+          <input
+            type="range"
+            min={-12} max={12} step={0.5}
+            value={value}
+            onChange={(e) => {
+              const v = parseFloat(e.target.value);
+              set(v);
+              audioEngine.setChannelEQ(channelIndex, band, v);
+            }}
+            onDoubleClick={() => { set(0); audioEngine.setChannelEQ(channelIndex, band, 0); }}
+            className="flex-1 h-[6px]"
+            style={{ accentColor: color }}
+          />
+          <span className={`text-[5px] font-mono w-4 text-right ${Math.abs(value) > 0 ? "text-white/50" : "text-white/20"}`}>
+            {value > 0 ? `+${value.toFixed(0)}` : value.toFixed(0)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}

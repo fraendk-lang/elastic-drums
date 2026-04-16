@@ -306,6 +306,9 @@ export class AudioEngine {
   setChannelFilter(channel: number, type: BiquadFilterType, frequency: number, q: number): void { mixerRouter.setChannelFilter(channel, type, frequency, q); }
   bypassChannelFilter(channel: number): void { mixerRouter.bypassChannelFilter(channel); }
   setChannelDrive(channel: number, drive: number): void { mixerRouter.setChannelDrive(channel, drive); }
+  setChannelEQ(channel: number, band: "lo" | "mid" | "hi", gain: number, freq?: number): void { mixerRouter.setChannelEQ(channel, band, gain, freq); }
+  resetChannelEQ(channel: number): void { mixerRouter.resetChannelEQ(channel); }
+  getChannelEQ(channel: number): { lo: BiquadFilterNode; mid: BiquadFilterNode; hi: BiquadFilterNode } | null { return mixerRouter.getChannelEQ(channel); }
   setChannelPan(channel: number, pan: number): void { mixerRouter.setChannelPan(channel, pan); }
   setChannelElevation(channel: number, elevation: number): void { mixerRouter.setChannelElevation(channel, elevation); }
   setBinauralMode(enabled: boolean): void { mixerRouter.setBinauralMode(enabled); }

@@ -11,11 +11,12 @@ export class MixerRouter {
   private channelFilters: BiquadFilterNode[] = [];
   private channelShapers: WaveShaperNode[] = [];
   private channelPanners: PannerNode[] = [];
+  private channelEQs: { lo: BiquadFilterNode; mid: BiquadFilterNode; hi: BiquadFilterNode }[] = [];
   private binauralMode = false;
   private groupBuses: Map<string, { gain: GainNode; analyser: AnalyserNode }> = new Map();
   private channelGroupAssignment: string[] = [];
 
-  /** Create a channel strip: filter → shaper → gain → panner → analyser → destination */
+  /** Create a channel strip: filter → shaper → EQ(lo→mid→hi) → gain → panner → analyser → destination */
   createChannel(ctx: AudioContext, destination: GainNode): { filter: BiquadFilterNode; gain: GainNode; analyser: AnalyserNode; panner: PannerNode } {
     // Insert filter (bypass by default: allpass)
     const filter = ctx.createBiquadFilter();
@@ -25,34 +26,55 @@ export class MixerRouter {
     // Insert distortion (bypass by default: null curve)
     const shaper = ctx.createWaveShaper();
 
+    // 3-Band EQ: lowshelf → peaking mid → highshelf (all flat by default)
+    const eqLo = ctx.createBiquadFilter();
+    eqLo.type = "lowshelf";
+    eqLo.frequency.value = 200;
+    eqLo.gain.value = 0; // flat
+
+    const eqMid = ctx.createBiquadFilter();
+    eqMid.type = "peaking";
+    eqMid.frequency.value = 1000;
+    eqMid.Q.value = 1.0;
+    eqMid.gain.value = 0; // flat
+
+    const eqHi = ctx.createBiquadFilter();
+    eqHi.type = "highshelf";
+    eqHi.frequency.value = 4000;
+    eqHi.gain.value = 0; // flat
+
     // Channel gain (volume fader)
     const gain = ctx.createGain();
     gain.gain.value = 1.0;
 
     // Channel panner (3D / HRTF capable)
     const panner = ctx.createPanner();
-    panner.panningModel = "equalpower"; // default; switch to "HRTF" for binaural
+    panner.panningModel = "equalpower";
     panner.distanceModel = "inverse";
     panner.refDistance = 1;
     panner.maxDistance = 10;
-    panner.positionX.value = 0; // center
+    panner.positionX.value = 0;
     panner.positionY.value = 0;
-    panner.positionZ.value = -1; // in front of listener
+    panner.positionZ.value = -1;
 
     // Analyser (meter)
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 4096;
     analyser.smoothingTimeConstant = 0.15;
 
-    // Routing: filter → shaper → gain → panner → analyser → destination
+    // Routing: filter → shaper → eqLo → eqMid → eqHi → gain → panner → analyser → destination
     filter.connect(shaper);
-    shaper.connect(gain);
+    shaper.connect(eqLo);
+    eqLo.connect(eqMid);
+    eqMid.connect(eqHi);
+    eqHi.connect(gain);
     gain.connect(panner);
     panner.connect(analyser);
     analyser.connect(destination);
 
     this.channelFilters.push(filter);
     this.channelShapers.push(shaper);
+    this.channelEQs.push({ lo: eqLo, mid: eqMid, hi: eqHi });
     this.channelGains.push(gain);
     this.channelPanners.push(panner);
     this.channelAnalysers.push(analyser);
@@ -100,6 +122,28 @@ export class MixerRouter {
   bypassChannelFilter(channel: number): void {
     const filter = this.channelFilters[channel];
     if (filter) filter.type = "allpass";
+  }
+
+  /** Get channel EQ nodes */
+  getChannelEQ(i: number): { lo: BiquadFilterNode; mid: BiquadFilterNode; hi: BiquadFilterNode } | null {
+    return this.channelEQs[i] ?? null;
+  }
+
+  /** Set channel EQ band gain (dB) */
+  setChannelEQ(channel: number, band: "lo" | "mid" | "hi", gain: number, freq?: number): void {
+    const eq = this.channelEQs[channel];
+    if (!eq) return;
+    eq[band].gain.value = gain;
+    if (freq !== undefined) eq[band].frequency.value = freq;
+  }
+
+  /** Reset channel EQ to flat */
+  resetChannelEQ(channel: number): void {
+    const eq = this.channelEQs[channel];
+    if (!eq) return;
+    eq.lo.gain.value = 0;
+    eq.mid.gain.value = 0;
+    eq.hi.gain.value = 0;
   }
 
   /** Set channel drive (insert distortion) */
