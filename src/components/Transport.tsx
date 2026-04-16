@@ -343,10 +343,22 @@ function ExportMenu({ onSave, onMidiExport, onWavExport, onShare }: {
     return () => window.removeEventListener("mousedown", close);
   }, [open]);
 
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number }>({ top: 40, right: 4 });
+
+  const handleToggle = useCallback(() => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+    }
+    setOpen(!open);
+  }, [open]);
+
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => setOpen(!open)}
+        ref={btnRef}
+        onClick={handleToggle}
         className={`h-6 px-2.5 rounded-md text-[8px] font-bold tracking-wider transition-all flex items-center gap-1 ${
           open
             ? "bg-[var(--ed-accent-orange)]/15 text-[var(--ed-accent-orange)]"
@@ -357,7 +369,10 @@ function ExportMenu({ onSave, onMidiExport, onWavExport, onShare }: {
       </button>
 
       {open && (
-        <div className="absolute bottom-full right-0 mb-1 z-[100] min-w-[140px] bg-[#1a1a22] border border-[var(--ed-border)] rounded-lg shadow-2xl py-1 overflow-hidden">
+        <div
+          className="fixed z-[9999] min-w-[140px] bg-[#1a1a22] border border-[var(--ed-border)] rounded-lg shadow-2xl py-1 overflow-hidden"
+          style={{ top: menuPos.top, right: menuPos.right }}
+        >
           <button
             onClick={() => { onSave(); setOpen(false); }}
             className="w-full text-left px-3 py-1.5 text-[9px] text-white/70 hover:text-white hover:bg-white/8 transition-colors flex items-center gap-2"
