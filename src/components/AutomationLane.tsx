@@ -2,10 +2,11 @@
  * AutomationLane — curve-style automation editor
  *
  * Renders a compact automation lane with breakpoints, connecting curve,
- * value fill, and direct draw editing across the current 16-step page.
+ * value fill, and direct draw editing. Adapts to current step count
+ * and supports resize via drag handle.
  */
 
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 export interface AutomationParam {
   id: string;
@@ -15,17 +16,21 @@ export interface AutomationParam {
 }
 
 interface AutomationLaneProps {
-  params: AutomationParam[];       // Available parameters
-  selectedParam: string;           // Currently selected param id
-  values: Array<number | undefined>; // 64 values (full pattern)
-  length: number;                  // Active pattern length
-  pageOffset: number;              // Current page offset
-  currentStep: number;             // Playhead position
+  params: AutomationParam[];
+  selectedParam: string;
+  values: Array<number | undefined>;
+  length: number;          // Active pattern length (total steps)
+  pageOffset: number;
+  currentStep: number;
   isPlaying: boolean;
-  color: string;                   // Accent color (CSS variable)
+  color: string;
   onSelectParam: (paramId: string) => void;
   onChange: (step: number, value: number | undefined) => void;
 }
+
+const MIN_HEIGHT = 48;
+const MAX_HEIGHT = 200;
+const DEFAULT_HEIGHT = 76;
 
 export function AutomationLane({
   params, selectedParam, values, length, pageOffset, currentStep, isPlaying,
@@ -35,19 +40,30 @@ export function AutomationLane({
     active: false, min: 0, max: 1, lastStep: null, lastValue: null,
   });
   const containerRef = useRef<HTMLDivElement>(null);
+  const [laneHeight, setLaneHeight] = useState(DEFAULT_HEIGHT);
+
+  // ─── Dynamic step count: adapt to pattern length ─────────────
+  const stepsOnPage = Math.min(16, Math.max(1, length - pageOffset));
 
   const paramDef = params.find((p) => p.id === selectedParam);
   const min = paramDef?.min ?? 0;
   const max = paramDef?.max ?? 100;
   const pageValues = useMemo(
-    () => Array.from({ length: 16 }, (_, i) => values[pageOffset + i]),
-    [pageOffset, values],
+    () => Array.from({ length: stepsOnPage }, (_, i) => values[pageOffset + i]),
+    [pageOffset, values, stepsOnPage],
   );
   const activePointCount = pageValues.filter((value) => value !== undefined).length;
   const averageValue = activePointCount > 0
     ? Math.round(pageValues.reduce<number>((sum, value) => sum + (value ?? 0), 0) / activePointCount)
     : null;
   const currentValue = values[currentStep];
+
+  // ─── SVG geometry (adapt to stepsOnPage) ─────────────────────
+  const svgW = 124;
+  const svgH = 56;
+  const padL = 4;
+  const stepW = stepsOnPage > 0 ? (svgW - padL * 2) / stepsOnPage : 7.2;
+
   const normalizedPoints = pageValues.map((raw, i) => {
     const absStep = pageOffset + i;
     const normalized = raw === undefined ? null : Math.max(0, Math.min(1, (raw - min) / (max - min)));
@@ -56,15 +72,15 @@ export function AutomationLane({
   const curvePoints = normalizedPoints
     .filter((point) => point.normalized !== null && point.absStep < length)
     .map((point) => {
-      const x = 8 + point.step * 7.2;
-      const y = 52 - (point.normalized! * 44);
+      const x = padL + (point.step + 0.5) * stepW;
+      const y = svgH - 4 - (point.normalized! * (svgH - 12));
       return { ...point, x, y };
     });
   const linePath = curvePoints
     .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
     .join(" ");
   const areaPath = curvePoints.length > 0
-    ? `${linePath} L ${curvePoints[curvePoints.length - 1]!.x} 52 L ${curvePoints[0]!.x} 52 Z`
+    ? `${linePath} L ${curvePoints[curvePoints.length - 1]!.x} ${svgH - 4} L ${curvePoints[0]!.x} ${svgH - 4} Z`
     : "";
 
   const clampValue = useCallback((raw: number) => Math.round(Math.max(min, Math.min(max, raw))), [max, min]);
@@ -73,7 +89,6 @@ export function AutomationLane({
     const start = Math.min(fromStep, toStep);
     const end = Math.max(fromStep, toStep);
     const span = Math.max(1, end - start);
-
     for (let step = start; step <= end; step++) {
       const t = (step - start) / span;
       const value = fromStep <= toStep
@@ -98,15 +113,13 @@ export function AutomationLane({
 
     const handleMove = (me: MouseEvent) => {
       if (!dragRef.current.active || !containerRef.current) return;
-      // Find which step column the mouse is over
       const containerRect = containerRef.current.getBoundingClientRect();
       const relX = me.clientX - containerRect.left;
-      const stepWidth = containerRect.width / 16;
-      const stepIdx = Math.floor(relX / stepWidth);
-      if (stepIdx < 0 || stepIdx >= 16) return;
+      const colW = containerRect.width / stepsOnPage;
+      const stepIdx = Math.floor(relX / colW);
+      if (stepIdx < 0 || stepIdx >= stepsOnPage) return;
       const absIdx = pageOffset + stepIdx;
       if (absIdx >= length) return;
-
       const val = valueFromPointer(me.clientY, containerRect);
       if (dragRef.current.lastStep !== null && dragRef.current.lastValue !== null) {
         interpolateSegment(dragRef.current.lastStep, dragRef.current.lastValue, absIdx, val);
@@ -127,7 +140,29 @@ export function AutomationLane({
 
     window.addEventListener("mousemove", handleMove);
     window.addEventListener("mouseup", handleUp);
-  }, [interpolateSegment, length, max, min, onChange, pageOffset, valueFromPointer]);
+  }, [interpolateSegment, length, max, min, onChange, pageOffset, stepsOnPage, valueFromPointer]);
+
+  // ─── RESIZE handle ──────────────────────────────────────────
+  const handleResizeDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startY = e.clientY;
+    const startH = laneHeight;
+    const el = e.currentTarget as HTMLElement;
+    el.setPointerCapture(e.pointerId);
+
+    const onMove = (me: PointerEvent) => {
+      const delta = me.clientY - startY;
+      setLaneHeight(Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, startH + delta)));
+    };
+    const onUp = (ue: PointerEvent) => {
+      try { el.releasePointerCapture(ue.pointerId); } catch { /* */ }
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [laneHeight]);
 
   return (
     <div className="w-32 shrink-0 hidden sm:flex flex-col rounded-xl border border-white/6 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))] overflow-hidden">
@@ -135,7 +170,7 @@ export function AutomationLane({
         <div className="flex items-center justify-between gap-2">
           <span className="text-[7px] font-black tracking-[0.18em] text-white/35">AUTOMATION</span>
           <span className="text-[7px] font-bold tracking-[0.12em]" style={{ color }}>
-            {activePointCount} PT
+            {activePointCount} PT · {stepsOnPage} steps
           </span>
         </div>
         <div className="mt-1 flex items-center gap-1.5">
@@ -160,18 +195,21 @@ export function AutomationLane({
         </div>
       </div>
 
-      <div ref={containerRef} className="relative h-[76px] border-b border-white/6 bg-black/15">
-        <svg className="absolute inset-0 h-full w-full pointer-events-none" viewBox="0 0 124 56" preserveAspectRatio="none">
-          {[8, 19, 30, 41, 52].map((y) => (
-            <line key={y} x1="0" y1={y} x2="124" y2={y} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
-          ))}
-          {Array.from({ length: 16 }, (_, i) => (
+      <div ref={containerRef} className="relative border-b border-white/6 bg-black/15" style={{ height: laneHeight }}>
+        <svg className="absolute inset-0 h-full w-full pointer-events-none" viewBox={`0 0 ${svgW} ${svgH}`} preserveAspectRatio="none">
+          {/* Horizontal grid lines */}
+          {[0.25, 0.5, 0.75, 1].map((pct) => {
+            const y = svgH - 4 - pct * (svgH - 12);
+            return <line key={pct} x1="0" y1={y} x2={svgW} y2={y} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />;
+          })}
+          {/* Vertical step lines */}
+          {Array.from({ length: stepsOnPage + 1 }, (_, i) => (
             <line
               key={i}
-              x1={8 + i * 7.2}
+              x1={padL + i * stepW}
               y1="0"
-              x2={8 + i * 7.2}
-              y2="56"
+              x2={padL + i * stepW}
+              y2={svgH}
               stroke={i % 4 === 0 ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)"}
               strokeWidth="1"
             />
@@ -188,12 +226,12 @@ export function AutomationLane({
               opacity={isPlaying && currentStep === point.absStep ? 1 : 0.85}
             />
           ))}
-          {isPlaying && currentStep >= pageOffset && currentStep < pageOffset + 16 && (
+          {isPlaying && currentStep >= pageOffset && currentStep < pageOffset + stepsOnPage && (
             <line
-              x1={8 + (currentStep - pageOffset) * 7.2}
+              x1={padL + (currentStep - pageOffset + 0.5) * stepW}
               y1="0"
-              x2={8 + (currentStep - pageOffset) * 7.2}
-              y2="56"
+              x2={padL + (currentStep - pageOffset + 0.5) * stepW}
+              y2={svgH}
               stroke={color}
               strokeOpacity="0.4"
               strokeWidth="1.5"
@@ -202,18 +240,17 @@ export function AutomationLane({
         </svg>
 
         <div className="absolute inset-0 flex">
-          {Array.from({ length: 16 }, (_, i) => {
+          {Array.from({ length: stepsOnPage }, (_, i) => {
             const absStep = pageOffset + i;
             const raw = values[absStep] ?? min;
             const pct = Math.max(0, Math.min(100, ((raw - min) / (max - min)) * 100));
             const isCurrent = isPlaying && currentStep === absStep;
-            const beyondLength = absStep >= length;
             const hasValue = values[absStep] !== undefined;
 
             return (
               <div
                 key={i}
-                className={`flex-1 relative cursor-crosshair ${beyondLength ? "opacity-20" : ""}`}
+                className="flex-1 relative cursor-crosshair"
                 onMouseDown={(e) => handleMouseDown(e, absStep)}
                 onContextMenu={(e) => {
                   e.preventDefault();
@@ -236,7 +273,15 @@ export function AutomationLane({
         </div>
       </div>
 
-      <div className="flex items-center justify-between px-2 py-1.5 text-[7px] font-bold tracking-[0.12em] text-white/22">
+      {/* Resize handle */}
+      <div
+        className="h-2 cursor-ns-resize flex items-center justify-center hover:bg-white/5 transition-colors"
+        onPointerDown={handleResizeDown}
+      >
+        <div className="w-8 h-[2px] rounded-full bg-white/15" />
+      </div>
+
+      <div className="flex items-center justify-between px-2 py-1 text-[7px] font-bold tracking-[0.12em] text-white/22">
         <span>breakpoint draw</span>
         <span>page {Math.floor(pageOffset / 16) + 1}</span>
       </div>
