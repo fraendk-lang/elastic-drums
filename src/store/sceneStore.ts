@@ -42,10 +42,13 @@ export interface Scene {
   melodyGlobalOctave?: number;
 }
 
+export type LaunchQuantize = "immediate" | "1bar" | "2bar" | "4bar";
+
 interface SceneStore {
   scenes: (Scene | null)[]; // 16 slots
   activeScene: number; // -1 = no scene active
   nextScene: number | null; // Queued scene (switches on next bar)
+  launchQuantize: LaunchQuantize; // When to switch scenes
 
   // Actions
   captureScene: (slot: number) => void;
@@ -56,6 +59,7 @@ interface SceneStore {
   renameScene: (slot: number, name: string) => void;
   duplicateScene: (fromSlot: number, toSlot?: number) => void;
   swapScenes: (a: number, b: number) => void;
+  setLaunchQuantize: (q: LaunchQuantize) => void;
 }
 
 // ─── Helpers ────────────────────────────────────────────
@@ -81,6 +85,7 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
   scenes: new Array<Scene | null>(16).fill(null),
   activeScene: -1,
   nextScene: null,
+  launchQuantize: "1bar" as LaunchQuantize,
 
   captureScene: (slot: number) => {
     if (slot < 0 || slot > 15) return;
@@ -266,8 +271,16 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
       return;
     }
 
+    // Immediate mode: load right now, no queueing
+    if (get().launchQuantize === "immediate") {
+      get().loadScene(slot);
+      return;
+    }
+
     set({ nextScene: slot });
   },
+
+  setLaunchQuantize: (q: LaunchQuantize) => set({ launchQuantize: q }),
 
   clearScene: (slot: number) => {
     const newScenes = [...get().scenes];

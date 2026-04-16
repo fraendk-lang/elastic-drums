@@ -238,7 +238,7 @@ function SceneSlot({ index, scene, isActive, isQueued, onLoad, onQueue, onContex
 // ─── Scene Launcher Modal ───────────────────────────────
 
 export function SceneLauncher({ isOpen, onClose }: SceneLauncherProps) {
-  const { scenes, activeScene, nextScene, captureScene, updateScene, loadScene, queueScene, clearScene, renameScene, duplicateScene } = useSceneStore();
+  const { scenes, activeScene, nextScene, captureScene, updateScene, loadScene, queueScene, clearScene, renameScene, duplicateScene, launchQuantize, setLaunchQuantize } = useSceneStore();
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renamingSlot, setRenamingSlot] = useState<number | null>(null);
 
@@ -319,12 +319,29 @@ export function SceneLauncher({ isOpen, onClose }: SceneLauncherProps) {
           <button onClick={onClose} className="text-[var(--ed-text-muted)] hover:text-[var(--ed-text-primary)] text-lg px-1" aria-label="Close">&times;</button>
         </div>
 
-        {/* Instructions */}
-        <div className="text-[9px] text-[var(--ed-text-muted)] mb-3 flex gap-4">
+        {/* Instructions + Launch Quantize */}
+        <div className="text-[9px] text-[var(--ed-text-muted)] mb-3 flex items-center gap-4">
           <span>Click = Load</span>
           <span>Shift+Click = Queue</span>
           <span>Right-click = Menu</span>
           <span>Double-click = Rename</span>
+          <span className="ml-auto" />
+          <div className="flex items-center gap-1">
+            <span className="text-[8px] font-bold text-white/30">Q:</span>
+            {(["immediate", "1bar", "2bar", "4bar"] as const).map((q) => (
+              <button
+                key={q}
+                onClick={() => setLaunchQuantize(q)}
+                className={`px-1.5 py-0.5 text-[7px] font-bold rounded transition-colors ${
+                  launchQuantize === q
+                    ? "bg-[var(--ed-accent-orange)]/30 text-[var(--ed-accent-orange)]"
+                    : "text-white/30 hover:text-white/60"
+                }`}
+              >
+                {q === "immediate" ? "NOW" : q === "1bar" ? "1 BAR" : q === "2bar" ? "2 BAR" : "4 BAR"}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* 4x4 Grid */}

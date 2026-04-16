@@ -3,7 +3,7 @@ import { audioEngine, VOICE_PARAM_DEFS } from "../audio/AudioEngine";
 import { sampleManager } from "../audio/SampleManager";
 
 // Scene store reference — set lazily to avoid circular imports
-let _sceneStoreRef: { getState: () => { scenes: (unknown | null)[]; loadScene: (slot: number) => void } } | null = null;
+let _sceneStoreRef: { getState: () => { scenes: (unknown | null)[]; loadScene: (slot: number) => void; nextScene: number | null; launchQuantize: string } } | null = null;
 export function setSceneStoreRef(ref: typeof _sceneStoreRef) { _sceneStoreRef = ref; }
 function getSceneStore() { return _sceneStoreRef; }
 
@@ -491,6 +491,17 @@ function startScheduler() {
         }
       } else if (nextStep === 0) {
         cycleCount++;
+        // Scene queue: load queued scene at quantized bar boundary
+        const sceneStoreRef = getSceneStore();
+        if (sceneStoreRef) {
+          const { nextScene, loadScene, launchQuantize } = sceneStoreRef.getState();
+          if (nextScene !== null) {
+            const barInterval = launchQuantize === "4bar" ? 4 : launchQuantize === "2bar" ? 2 : 1;
+            if (cycleCount % barInterval === 0) {
+              loadScene(nextScene);
+            }
+          }
+        }
       }
 
       useDrumStore.setState({ currentStep: nextStep });
