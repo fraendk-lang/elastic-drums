@@ -1169,7 +1169,34 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
               </>
             )}
 
-            {/* ─── NOTES ────────────────────────────────────────── */}
+            {/* ─── GHOST NOTES (other tracks, semi-transparent) ──── */}
+            {notes
+              .filter((note) => note.track !== target)
+              .map((note) => {
+                const row = rowForMidi(note.midi);
+                if (row < 0 || row >= visibleRows) return null;
+                const x = note.start * cellW;
+                const y = row * rowHeight;
+                const w = Math.max(8, note.duration * cellW);
+                const ghostColor = TARGET_COLORS[note.track];
+                return (
+                  <div
+                    key={`ghost-${note.id}`}
+                    className="absolute rounded-[2px] pointer-events-none"
+                    style={{
+                      left: x,
+                      top: y + 2,
+                      width: w,
+                      height: rowHeight - 4,
+                      backgroundColor: ghostColor,
+                      opacity: 0.15,
+                      border: `1px solid ${ghostColor}30`,
+                    }}
+                  />
+                );
+              })}
+
+            {/* ─── NOTES (active track) ─────────────────────────── */}
             {notes.map((note) => {
               const row = rowForMidi(note.midi);
               if (row < 0 || row >= visibleRows) return null;
