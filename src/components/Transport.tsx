@@ -410,10 +410,8 @@ function FillButton() {
   const [active, setActive] = useState(false);
   return (
     <button
-      onMouseDown={() => { setActive(true); setFillMode(true); }}
-      onMouseUp={() => { setActive(false); setFillMode(false); }}
-      onMouseLeave={() => { setActive(false); setFillMode(false); }}
-      aria-label="Fill mode (hold)"
+      onClick={() => { const next = !active; setActive(next); setFillMode(next); }}
+      aria-label={active ? "Fill mode ON (click to disable)" : "Fill mode OFF (click to enable)"}
       className={`h-6 px-2 rounded-md text-[7px] font-bold tracking-wider transition-all ${
         active
           ? "bg-yellow-400/20 text-yellow-300 shadow-[0_0_10px_rgba(250,204,21,0.15)]"
