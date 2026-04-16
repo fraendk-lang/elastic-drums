@@ -15,17 +15,28 @@ C++ DrumCore (core/)
 └── wasm/            Emscripten bindings → AudioWorklet
 
 React UI (src/)
-├── components/      PadGrid (waveform preview), StepSequencer, Transport, VoiceEditor (knobs),
-│                    MixerPanel (FFT meters), MixerStrip, Knob, EuclideanGenerator,
-│                    SongEditor, PatternBrowser, KitBrowser, WaveformPreview,
-│                    Bass303 (piano-roll sequencer, drag-to-pitch)
+├── components/      PadGrid (waveform preview), StepSequencer, Transport (EXPORT dropdown),
+│                    VoiceEditor (knobs), MixerPanel (FFT meters), MixerStrip, Knob,
+│                    EuclideanGenerator, SongEditor, PatternBrowser, KitBrowser,
+│                    WaveformPreview, Bass303 (piano-roll sequencer, drag-to-pitch),
+│                    AutomationLane (resizable, step-adaptive)
+│   PianoRoll/       Ableton-style multi-lane piano roll (refactored into 9 modules):
+│     ├── index.tsx          State, handlers, grid/velocity-lane render
+│     ├── types.ts           Types, constants, helpers (72-row range C2–C8)
+│     ├── harmony.ts         Chord/scale/arpeggio generators
+│     ├── HarmonyMenu.tsx    Dropdown for harmony presets
+│     ├── preview.ts         Note audition with release safety-net
+│     ├── scheduler.ts       Background playback with loop-brace support
+│     ├── PianoRollKeys.tsx  Piano column (forwardRef scroll-sync, fold-aware)
+│     ├── PianoRollRuler.tsx Sticky time ruler + draggable loop brace
+│     └── PianoRollToolbar.tsx  Toolbar + chip row (tools, transforms, presets)
 ├── audio/           AudioEngine (12 TS voices + WASM bridge + FFT metering), BassEngine (TB-303),
 │                    SampleManager, MuLaw, BassScheduler
 ├── store/           Zustand store — pattern, sequencer, 16 conditional trigs, song mode, bass303
 ├── hooks/           useKeyboard, useMidi, useMotionRecording, useUndoRedo
 ├── storage/         patternStorage (IndexedDB)
 ├── kits/            KitManager + 24 factory kits (11 categories)
-├── utils/           midiExport (.mid), patternShare (URL encoding)
+├── utils/           midiExport (.mid), patternShare (URL encoding), audioExport, songExport
 └── types/           TypeScript declarations
 
 Plugin (plugin/)
@@ -108,6 +119,21 @@ Plugin (plugin/)
 ## Current Sprint Status (updated April 2026)
 
 ### Recently Completed
+- **Piano Roll — Ableton-level overhaul** (refactored 1709-line monolith → 9 modules):
+  - Sticky time ruler with bar.beat labels + playhead triangle
+  - Functional loop brace (drag on ruler, L key, scheduler loops independently of drums)
+  - Draw/Select tool toggle (B/S keys)
+  - Note-length inheritance (last resized duration remembered)
+  - Shift-constraint on drag (axis lock)
+  - 72-row pitch range (6 octaves C2–C8) with scroll-sync
+  - Velocity as brightness gradient
+  - Transforms: Transpose ±1/±Oct, Reverse, Invert, Legato, Humanize, Stretch ×2/÷2
+  - Note-length presets (1/32–1/1)
+  - Fold view (only rows with notes)
+  - Right-click context menu (Delete, Duplicate, Copy, Velocity, Transforms)
+  - Double-click to create note (both modes)
+- **Export dropdown** — consolidated SAVE/MIDI/WAV/REC/SHARE into single EXPORT ▾ menu
+- **AutomationLane** — dynamic step count + drag-to-resize height (48–200px)
 - Bass 303 acid synth with piano-roll sequencer
 - Multi-mode percussion synthesizer (8 types)
 - Pattern page copy/paste, auto-extend, length resize
@@ -160,6 +186,27 @@ cmake --build plugin/build
 | Shift+right-click | Cycle ratchet |
 | Alt+right-click | Cycle condition |
 | Hold step + turn knob | Set P-Lock |
+
+### Piano Roll Shortcuts
+
+| Key | Action |
+|-----|--------|
+| B | Draw mode |
+| S | Select mode |
+| L | Toggle loop |
+| D | Duplicate selected notes |
+| 0-9 | Set velocity (0=100%, 1=10%…9=90%) |
+| ← → | Move notes (Shift = 1 beat) |
+| ↑ ↓ | Transpose ±1 semitone (Shift = ±octave) |
+| Delete / Backspace | Delete selected |
+| Ctrl+A / C / V / Z | Select all / Copy / Paste / Undo |
+| Ctrl+Shift+Z | Redo |
+| Shift+Drag | Lock to horizontal or vertical axis |
+| Alt+Drag | Duplicate + drag |
+| Double-click | Create note (both modes) |
+| Right-click note | Context menu |
+| Ctrl+Scroll | Horizontal zoom |
+| Shift+Scroll | Vertical zoom |
 
 ## Conventions
 
