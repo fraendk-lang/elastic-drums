@@ -79,6 +79,8 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const [autoFollow, setAutoFollow] = useState(true);
   const [fold, setFold] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; noteId: string } | null>(null);
+  const [hoverInfo, setHoverInfo] = useState<{ midi: number; beat: number } | null>(null);
+  const [dragInfo, setDragInfo] = useState<{ midi: number; beat: number } | null>(null);
 
   // ─── Sync initial persisted state into scheduler on mount ───
   useEffect(() => {
@@ -503,6 +505,24 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     [notes, rowHeight, cellW, snap, gridRes, totalBeats, target, selectedNoteIds, tool, gridH],
   );
 
+  // ─── Hover info (lightweight mousemove, no state deps on notes) ──
+  const handleGridMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      const rect = gridRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = e.clientX - rect.left + gridRef.current!.scrollLeft;
+      const y = Math.round(e.clientY - rect.top + gridRef.current!.scrollTop - RULER_HEIGHT);
+      if (y < 0 || y > gridH) { setHoverInfo(null); return; }
+      const row = Math.floor(y / rowHeight);
+      const midi = midiForRow(row);
+      const beat = x / cellW;
+      setHoverInfo({ midi, beat });
+    },
+    [gridH, rowHeight, cellW, midiForRow],
+  );
+
+  const handleGridMouseLeave = useCallback(() => setHoverInfo(null), []);
+
   const handleGridPointerMove = useCallback(
     (e: React.PointerEvent) => {
       if (!rubberBand) return;
@@ -692,6 +712,16 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
               };
             }),
           );
+          // Live drag coordinates for footer
+          {
+            const firstOrig = originals.values().next().value;
+            if (firstOrig) {
+              setDragInfo({
+                midi: Math.max(BASE_NOTE, Math.min(BASE_NOTE + TOTAL_ROWS - 1, firstOrig.midi + pitchDelta)),
+                beat: Math.max(0, firstOrig.start + beatDelta),
+              });
+            }
+          }
           break;
         }
         case "resize": {
@@ -730,6 +760,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         }
       } finally {
         setDragMode("none");
+        setDragInfo(null);
         dragStartRef.current = null;
         try {
           (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
@@ -1027,6 +1058,8 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
           onPointerMove={handleGridPointerMove}
           onPointerUp={handleGridPointerUp}
           onDoubleClick={handleGridDoubleClick}
+          onMouseMove={handleGridMouseMove}
+          onMouseLeave={handleGridMouseLeave}
           onScroll={handleGridScroll}
           onWheel={handleWheel}
         >
@@ -1298,6 +1331,19 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                 }}
               />
             )}
+
+            {/* Hover tooltip */}
+            {hoverInfo && dragMode === "none" && (
+              <div
+                className="fixed z-50 pointer-events-none px-1.5 py-0.5 rounded bg-black/80 border border-white/15 text-[8px] font-bold text-white/80 whitespace-nowrap"
+                style={{
+                  left: (hoverInfo.beat * cellW) + 78,
+                  top: (rowForMidi(hoverInfo.midi) * rowHeight) - gridRef.current!.scrollTop + RULER_HEIGHT + gridRef.current!.getBoundingClientRect().top - 20,
+                }}
+              >
+                {midiNoteName(hoverInfo.midi)} · Bar {Math.floor(hoverInfo.beat / 4) + 1}.{((hoverInfo.beat % 4) + 1).toFixed(2)}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1386,6 +1432,28 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
               )}
         </div>
         <div className="flex items-center gap-2 text-white/25">
+          {/* Live drag coordinates */}
+          {dragInfo && (
+            <>
+              <span className="text-[var(--ed-accent-melody)] font-bold">
+                {midiNoteName(dragInfo.midi)}
+              </span>
+              <span className="text-white/15">·</span>
+              <span className="font-mono text-white/50">
+                Bar {Math.floor(dragInfo.beat / 4) + 1}.{((dragInfo.beat % 4) + 1).toFixed(2)}
+              </span>
+              <span className="text-white/15">|</span>
+            </>
+          )}
+          {/* Hover coordinates */}
+          {!dragInfo && hoverInfo && (
+            <>
+              <span className="text-white/40 font-mono">
+                {midiNoteName(hoverInfo.midi)} · {Math.floor(hoverInfo.beat / 4) + 1}.{((hoverInfo.beat % 4) + 1).toFixed(1)}
+              </span>
+              <span className="text-white/15">|</span>
+            </>
+          )}
           <span>Ctrl+Scroll</span>
           <span className="text-white/15">=</span>
           <span>H.Zoom</span>
