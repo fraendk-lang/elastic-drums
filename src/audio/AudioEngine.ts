@@ -31,10 +31,11 @@ export class AudioEngine {
   private channelGains: GainNode[] = [];
   private channelAnalysers: AnalyserNode[] = [];
 
-  // Sidechain: Kick (voice 0) ducks Bass (channel 12)
+  // Sidechain: Kick (voice 0) ducks target channels
   private sidechainEnabled = false;
   private sidechainAmount = 0.7;  // How much to duck (0=full duck, 1=no duck)
   private sidechainRelease = 0.15; // Release time in seconds
+  private sidechainTargets: Set<number> = new Set([12, 13]); // Bass + Chords by default
 
   private wasmMode = false;
   private workletNode: AudioWorkletNode | null = null;
@@ -257,26 +258,31 @@ export class AudioEngine {
 
   /** Apply sidechain duck to bass channel (12) */
   private applySidechainDuck(time: number): void {
-    const bassGain = this.channelGains[12];
-    if (!bassGain) return;
     const now = time;
     const duck = this.sidechainAmount;
     const rel = this.sidechainRelease;
-    // Cancel only future events, then smoothly ramp from current value
-    // Using setTargetAtTime instead of cancelScheduledValues + setValueAtTime
-    // to avoid the abrupt value jump that causes clicks
-    bassGain.gain.cancelScheduledValues(now);
-    bassGain.gain.setTargetAtTime(1 - duck, now, 0.002); // ~2ms exponential duck
-    bassGain.gain.setTargetAtTime(1.0, now + 0.008, rel * 0.5); // smooth exponential release
+    for (const ch of this.sidechainTargets) {
+      const gain = this.channelGains[ch];
+      if (!gain) continue;
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setTargetAtTime(1 - duck, now, 0.002); // ~2ms exponential duck
+      gain.gain.setTargetAtTime(1.0, now + 0.008, rel * 0.5); // smooth exponential release
+    }
   }
 
-  /** Enable/disable bass sidechain (kick → bass duck) */
+  /** Enable/disable sidechain (kick ducks target channels) */
   setSidechain(enabled: boolean, amount = 0.7, release = 0.15): void {
     this.sidechainEnabled = enabled;
     this.sidechainAmount = Math.max(0, Math.min(1, amount));
     this.sidechainRelease = Math.max(0.01, Math.min(1, release));
   }
 
+  /** Set which channels get ducked by the kick. Default: [12, 13] (Bass + Chords) */
+  setSidechainTargets(channels: number[]): void {
+    this.sidechainTargets = new Set(channels);
+  }
+
+  getSidechainTargets(): number[] { return Array.from(this.sidechainTargets); }
   getSidechainEnabled(): boolean { return this.sidechainEnabled; }
   getSidechainAmount(): number { return this.sidechainAmount; }
   getSidechainRelease(): number { return this.sidechainRelease; }

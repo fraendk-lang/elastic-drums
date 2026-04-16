@@ -543,20 +543,8 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
             BINAURAL {audioEngine.getBinauralMode() ? "ON" : "OFF"}
           </button>
 
-          {/* Sidechain: Kick → Bass Duck */}
-          <button
-            onClick={() => {
-              const next = !audioEngine.getSidechainEnabled();
-              audioEngine.setSidechain(next, 0.7, 0.15);
-            }}
-            className={`px-2 py-0.5 text-[9px] font-bold rounded transition-colors ${
-              audioEngine.getSidechainEnabled()
-                ? "bg-[var(--ed-accent-orange)]/30 text-[var(--ed-accent-orange)]"
-                : "bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)]"
-            }`}
-          >
-            SIDECHAIN {audioEngine.getSidechainEnabled() ? "ON" : "OFF"}
-          </button>
+          {/* Sidechain: Kick → Bass/Chords/Melody Duck */}
+          <SidechainControls />
         </div>
       </div>
     </div>
@@ -835,3 +823,99 @@ function HeaderStat({ label, value, tone }: { label: string; value: string; tone
     </div>
   );
 }
+
+function SidechainControls() {
+  const [enabled, setEnabled] = useState(audioEngine.getSidechainEnabled());
+  const [amount, setAmount] = useState(audioEngine.getSidechainAmount());
+  const [release, setRelease] = useState(audioEngine.getSidechainRelease());
+  const [targets, setTargets] = useState<number[]>(audioEngine.getSidechainTargets());
+
+  const toggle = useCallback(() => {
+    const next = !enabled;
+    setEnabled(next);
+    audioEngine.setSidechain(next, amount, release);
+  }, [enabled, amount, release]);
+
+  const updateAmount = useCallback((v: number) => {
+    setAmount(v);
+    audioEngine.setSidechain(enabled, v, release);
+  }, [enabled, release]);
+
+  const updateRelease = useCallback((v: number) => {
+    setRelease(v);
+    audioEngine.setSidechain(enabled, amount, v);
+  }, [enabled, amount]);
+
+  const toggleTarget = useCallback((ch: number) => {
+    const next = targets.includes(ch) ? targets.filter((c) => c !== ch) : [...targets, ch];
+    setTargets(next);
+    audioEngine.setSidechainTargets(next);
+  }, [targets]);
+
+  const targetLabels: { ch: number; label: string }[] = [
+    { ch: 12, label: "BASS" },
+    { ch: 13, label: "CHRD" },
+    { ch: 14, label: "LEAD" },
+  ];
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        onClick={toggle}
+        className={`px-2 py-0.5 text-[9px] font-bold rounded transition-colors ${
+          enabled
+            ? "bg-[var(--ed-accent-orange)]/30 text-[var(--ed-accent-orange)]"
+            : "bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)]"
+        }`}
+      >
+        SC {enabled ? "ON" : "OFF"}
+      </button>
+
+      {enabled && (
+        <>
+          {/* Target toggles */}
+          {targetLabels.map(({ ch, label }) => (
+            <button
+              key={ch}
+              onClick={() => toggleTarget(ch)}
+              className={`px-1.5 py-0.5 text-[7px] font-bold rounded transition-colors ${
+                targets.includes(ch)
+                  ? "bg-[var(--ed-accent-orange)]/20 text-[var(--ed-accent-orange)]/90"
+                  : "bg-white/5 text-white/25"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+
+          {/* Amount */}
+          <div className="flex items-center gap-0.5">
+            <span className="text-[6px] text-white/25 font-bold">AMT</span>
+            <input
+              type="range"
+              min={0} max={1} step={0.05}
+              value={amount}
+              onChange={(e) => updateAmount(parseFloat(e.target.value))}
+              className="w-12 h-1 accent-[var(--ed-accent-orange)]"
+            />
+            <span className="text-[7px] text-white/40 font-mono w-6 text-right">{Math.round(amount * 100)}</span>
+          </div>
+
+          {/* Release */}
+          <div className="flex items-center gap-0.5">
+            <span className="text-[6px] text-white/25 font-bold">REL</span>
+            <input
+              type="range"
+              min={0.01} max={0.5} step={0.01}
+              value={release}
+              onChange={(e) => updateRelease(parseFloat(e.target.value))}
+              className="w-12 h-1 accent-[var(--ed-accent-orange)]"
+            />
+            <span className="text-[7px] text-white/40 font-mono w-8 text-right">{Math.round(release * 1000)}ms</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
