@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-type OverlayId = "mixer" | "browser" | "euclidean" | "song" | "scene" | "fxPanel" | "kitBrowser" | "help" | "mobileVoice" | "sampleBrowser" | "midiPlayer" | "pianoRoll";
+type OverlayId = "mixer" | "browser" | "euclidean" | "song" | "scene" | "fxPanel" | "kitBrowser" | "help" | "mobileVoice" | "sampleBrowser" | "midiPlayer" | "pianoRoll" | "clipLauncher" | "arrangement";
 
 interface OverlayState {
   open: Set<OverlayId>;

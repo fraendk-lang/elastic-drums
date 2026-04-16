@@ -15,6 +15,7 @@ import { FxRack } from "./components/FxRack";
 import { SynthSection } from "./components/SynthSection";
 import { MidiPlayerPanel } from "./components/MidiPlayerPanel";
 import { PianoRoll } from "./components/PianoRoll";
+import { ClipLauncher } from "./components/ClipLauncher";
 import { SceneMini } from "./components/SceneMini";
 import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
@@ -23,7 +24,8 @@ import { startBassScheduler, stopBassScheduler } from "./store/bassStore";
 import { startChordsScheduler, stopChordsScheduler } from "./store/chordsStore";
 import { startMelodyScheduler, stopMelodyScheduler } from "./store/melodyStore";
 import { useSceneStore } from "./store/sceneStore";
-import { setSceneStoreRef } from "./store/drumStore";
+import { useClipStore } from "./store/clipStore";
+import { setSceneStoreRef, setClipStoreRef } from "./store/drumStore";
 import { audioEngine } from "./audio/AudioEngine";
 import { useDrumStore } from "./store/drumStore";
 import { useOverlayStore } from "./store/overlayStore";
@@ -182,6 +184,7 @@ export function App() {
     (window as unknown as Record<string, unknown>).__drumStore = useDrumStore;
     // Register scene store for song mode integration
     setSceneStoreRef(useSceneStore as unknown as Parameters<typeof setSceneStoreRef>[0]);
+    setClipStoreRef(useClipStore as unknown as Parameters<typeof setClipStoreRef>[0]);
     return unsub;
   }, []);
 
@@ -281,6 +284,7 @@ export function App() {
         onOpenEuclidean={() => overlay.openOverlay("euclidean")}
         onOpenSong={() => overlay.openOverlay("song")}
         onOpenScenes={() => overlay.openOverlay("scene")}
+        onOpenClips={() => overlay.openOverlay("clipLauncher")}
         onOpenFx={() => overlay.openOverlay("fxPanel")}
         onOpenMixer={() => overlay.openOverlay("mixer")}
         onOpenKits={() => overlay.openOverlay("kitBrowser")}
@@ -395,6 +399,7 @@ export function App() {
         onOpenEditor={() => overlay.openOverlay("pianoRoll")}
       />
       <PianoRoll isOpen={overlay.isOpen("pianoRoll")} onClose={() => overlay.closeOverlay("pianoRoll")} />
+      <ClipLauncher isOpen={overlay.isOpen("clipLauncher")} onClose={() => overlay.closeOverlay("clipLauncher")} />
       {sceneMiniOpen && <SceneMini onClose={() => setSceneMiniOpen(false)} />}
     </div>
   );

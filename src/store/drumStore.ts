@@ -7,6 +7,9 @@ let _sceneStoreRef: { getState: () => { scenes: (unknown | null)[]; loadScene: (
 export function setSceneStoreRef(ref: typeof _sceneStoreRef) { _sceneStoreRef = ref; }
 function getSceneStore() { return _sceneStoreRef; }
 
+let _clipStoreRef: { getState: () => { resolveQueuedClips: () => void } } | null = null;
+export function setClipStoreRef(ref: typeof _clipStoreRef) { _clipStoreRef = ref; }
+
 // Conditional Trig types (Elektron-style)
 export type ConditionType =
   | "always"       // Always trigger
@@ -491,15 +494,16 @@ function startScheduler() {
         }
       } else if (nextStep === 0) {
         cycleCount++;
-        // Scene queue: load queued scene at quantized bar boundary
+        // Scene/Clip queue: resolve at quantized bar boundary
         const sceneStoreRef = getSceneStore();
         if (sceneStoreRef) {
           const { nextScene, loadScene, launchQuantize } = sceneStoreRef.getState();
-          if (nextScene !== null) {
-            const barInterval = launchQuantize === "4bar" ? 4 : launchQuantize === "2bar" ? 2 : 1;
-            if (cycleCount % barInterval === 0) {
-              loadScene(nextScene);
-            }
+          const barInterval = launchQuantize === "4bar" ? 4 : launchQuantize === "2bar" ? 2 : 1;
+          if (cycleCount % barInterval === 0) {
+            if (nextScene !== null) loadScene(nextScene);
+            // Resolve clip queue too (shared quantize)
+            const clipRef = _clipStoreRef;
+            if (clipRef) clipRef.getState().resolveQueuedClips();
           }
         }
       }
