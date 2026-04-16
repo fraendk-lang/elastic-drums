@@ -139,7 +139,34 @@ export const CHORDS_CORE_PRESETS = CHORDS_PRESETS.filter((preset) =>
 
 export interface ChordlineStrategy {
   name: string;
-  generate: (length: number, scaleLen: number) => ChordsStep[];
+  generate: (length: number, scaleLen: number, chordForDegree: (degree: number) => string) => ChordsStep[];
+}
+
+/**
+ * Derive diatonic chord type from scale degree.
+ * Analyses the intervals in the scale to determine if the triad built
+ * on a given degree is Major, Minor, Diminished, or Augmented.
+ */
+function buildDiatonicChordLookup(scaleName: string): (degree: number) => string {
+  const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
+  const len = scale.length;
+
+  return (degree: number): string => {
+    if (len <= 1) return "Maj";
+    const d = ((degree % len) + len) % len;
+    const root = scale[d] ?? 0;
+    const third = (scale[(d + 2) % len] ?? 0) + (d + 2 >= len ? 12 : 0);
+    const fifth = (scale[(d + 4) % len] ?? 0) + (d + 4 >= len ? 12 : 0);
+    const thirdInterval = ((third - root) + 12) % 12;
+    const fifthInterval = ((fifth - root) + 12) % 12;
+
+    if (thirdInterval === 4 && fifthInterval === 7) return "Maj";
+    if (thirdInterval === 3 && fifthInterval === 7) return "Min";
+    if (thirdInterval === 3 && fifthInterval === 6) return "Dim";
+    if (thirdInterval === 4 && fifthInterval === 8) return "Aug";
+    // Fallback: if third is minor-ish → Min, else Maj
+    return thirdInterval <= 3 ? "Min" : "Maj";
+  };
 }
 
 function makeStep(note: number, chordType: string, opts?: Partial<ChordsStep>): ChordsStep {
@@ -161,22 +188,21 @@ function pickChordGate(style: "stab" | "groove" | "hold" = "groove"): number {
 export const CHORDLINE_STRATEGIES: ChordlineStrategy[] = [
   {
     name: "Pop",
-    generate: (len, scaleLen) => {
-      // Simple I-IV-V-I progressions, Maj/Min chords, density ~30%
+    generate: (len, scaleLen, chordForDegree) => {
       const steps: ChordsStep[] = [];
       const progDegrees = [0, Math.min(3, scaleLen - 1), Math.min(4, scaleLen - 1), 0];
-      const progChords = ["Maj", "Maj", "Maj", "Maj"];
       for (let i = 0; i < 64; i++) {
         if (i >= len) { steps.push(emptyStep()); continue; }
         if (i % 4 === 0 && prob(0.7)) {
           const progIdx = Math.floor((i % 16) / 4) % progDegrees.length;
-          const chordType = prob(0.3) ? "Min" : progChords[progIdx]!;
-          steps.push(makeStep(progDegrees[progIdx]!, chordType, {
+          const deg = progDegrees[progIdx]!;
+          steps.push(makeStep(deg, chordForDegree(deg), {
             accent: i % 16 === 0,
             tie: prob(0.3),
           }));
         } else if (prob(0.1)) {
-          steps.push(makeStep(Math.floor(Math.random() * Math.min(scaleLen, 5)), pick(["Maj", "Min"]), {
+          const deg = Math.floor(Math.random() * Math.min(scaleLen, 5));
+          steps.push(makeStep(deg, chordForDegree(deg), {
             tie: prob(0.4),
           }));
         } else {
@@ -188,126 +214,109 @@ export const CHORDLINE_STRATEGIES: ChordlineStrategy[] = [
   },
   {
     name: "House",
-    generate: (len, scaleLen) => {
-      // House stabs with occasional held suspensions
+    generate: (len, scaleLen, chordForDegree) => {
       const steps: ChordsStep[] = [];
-      const chordTypes = ["Maj7", "Min7", "7th", "9th"];
+      const ext7 = (base: string) => base === "Min" ? "Min7" : "Maj7";
       for (let i = 0; i < 64; i++) {
         if (i >= len) { steps.push(emptyStep()); continue; }
         if (i % 4 === 0 && prob(0.82)) {
-          const note = pick([0, 0, Math.min(3, scaleLen - 1), Math.min(4, scaleLen - 1)]);
+          const deg = pick([0, 0, Math.min(3, scaleLen - 1), Math.min(4, scaleLen - 1)]);
+          const base = chordForDegree(deg);
+          const chordType = pick([ext7(base), ext7(base), "7th", "9th"]);
           const gateLength = i % 8 === 0 ? pickChordGate("groove") : pickChordGate("stab");
-          steps.push(makeStep(note, pick(chordTypes), {
-            accent: i % 8 === 0,
-            gateLength,
-          }));
+          steps.push(makeStep(deg, chordType, { accent: i % 8 === 0, gateLength }));
         } else if (i % 8 === 6 && prob(0.35)) {
-          steps.push(makeStep(0, pick(["Min7", "Maj7", "Sus2"]), {
-            accent: false,
-            gateLength: pickChordGate("hold"),
+          const base = chordForDegree(0);
+          steps.push(makeStep(0, pick([ext7(base), "Sus2"]), {
+            accent: false, gateLength: pickChordGate("hold"),
           }));
-        } else {
-          steps.push(emptyStep());
-        }
+        } else { steps.push(emptyStep()); }
       }
       return steps;
     },
   },
   {
     name: "Ambient",
-    generate: (len, scaleLen) => {
-      // Very sparse, Maj7/Sus4/Add9, lots of ties
+    generate: (len, scaleLen, chordForDegree) => {
       const steps: ChordsStep[] = [];
-      const chordTypes = ["Maj7", "Sus4", "Add9", "Sus2", "Min9"];
+      const ext = (base: string) => base === "Min" ? pick(["Min7", "Min9"]) : pick(["Maj7", "Add9"]);
       for (let i = 0; i < 64; i++) {
         if (i >= len) { steps.push(emptyStep()); continue; }
         if (i % 8 === 0 && prob(0.6)) {
-          const note = Math.floor(Math.random() * Math.min(scaleLen, 4));
-          steps.push(makeStep(note, pick(chordTypes), {
-            tie: prob(0.7),
-            octave: prob(0.2) ? -1 : 0,
+          const deg = Math.floor(Math.random() * Math.min(scaleLen, 4));
+          const base = chordForDegree(deg);
+          steps.push(makeStep(deg, pick([ext(base), "Sus4", "Sus2"]), {
+            tie: prob(0.7), octave: prob(0.2) ? -1 : 0,
           }));
         } else if (prob(0.05)) {
-          steps.push(makeStep(0, pick(chordTypes), { tie: true }));
-        } else {
-          steps.push(emptyStep());
-        }
+          const base = chordForDegree(0);
+          steps.push(makeStep(0, ext(base), { tie: true }));
+        } else { steps.push(emptyStep()); }
       }
       return steps;
     },
   },
   {
     name: "Funk",
-    generate: (len, scaleLen) => {
-      // Syncopated, Min7/7th, offbeat placement
+    generate: (len, scaleLen, chordForDegree) => {
       const steps: ChordsStep[] = [];
-      const chordTypes = ["Min7", "7th", "9th", "Min9"];
+      const ext7 = (base: string) => base === "Min" ? "Min7" : "7th";
       for (let i = 0; i < 64; i++) {
         if (i >= len) { steps.push(emptyStep()); continue; }
         const offbeat = i % 2 === 1;
         if (offbeat && prob(0.45)) {
-          const note = Math.floor(Math.random() * Math.min(scaleLen, 5));
-          steps.push(makeStep(note, pick(chordTypes), {
-            accent: prob(0.15),
-            tie: prob(0.2),
+          const deg = Math.floor(Math.random() * Math.min(scaleLen, 5));
+          const base = chordForDegree(deg);
+          steps.push(makeStep(deg, pick([ext7(base), "9th", base === "Min" ? "Min9" : "9th"]), {
+            accent: prob(0.15), tie: prob(0.2),
           }));
         } else if (i % 4 === 0 && prob(0.3)) {
-          steps.push(makeStep(0, pick(["Min7", "7th"]), {
-            accent: prob(0.3),
-          }));
-        } else {
-          steps.push(emptyStep());
-        }
+          const base = chordForDegree(0);
+          steps.push(makeStep(0, ext7(base), { accent: prob(0.3) }));
+        } else { steps.push(emptyStep()); }
       }
       return steps;
     },
   },
   {
     name: "Minimal",
-    generate: (len, scaleLen) => {
-      // Root + 5th-based, sparse, mostly Maj/Min
+    generate: (len, scaleLen, chordForDegree) => {
       const steps: ChordsStep[] = [];
-      const notes = [0, Math.min(4, scaleLen - 1)]; // Root + 5th
+      const notes = [0, Math.min(4, scaleLen - 1)];
       for (let i = 0; i < 64; i++) {
         if (i >= len) { steps.push(emptyStep()); continue; }
         if (i % 8 === 0 && prob(0.7)) {
-          steps.push(makeStep(pick(notes), pick(["Maj", "Min"]), {
-            tie: prob(0.5),
-            accent: prob(0.2),
+          const deg = pick(notes);
+          steps.push(makeStep(deg, chordForDegree(deg), {
+            tie: prob(0.5), accent: prob(0.2),
           }));
         } else if (prob(0.08)) {
-          steps.push(makeStep(0, "Min", { tie: prob(0.6) }));
-        } else {
-          steps.push(emptyStep());
-        }
+          steps.push(makeStep(0, chordForDegree(0), { tie: prob(0.6) }));
+        } else { steps.push(emptyStep()); }
       }
       return steps;
     },
   },
   {
     name: "Random",
-    generate: (len, scaleLen) => {
-      // Constrained random with house/deep-house friendly harmony
+    generate: (len, scaleLen, chordForDegree) => {
       const steps: ChordsStep[] = [];
-      const chordPalette = ["Min7", "Maj7", "7th", "9th", "Sus2", "Add9"];
+      const ext = (base: string) => base === "Min" ? pick(["Min7", "Min9"]) : pick(["Maj7", "Add9", "9th"]);
       for (let i = 0; i < 64; i++) {
         if (i >= len) { steps.push(emptyStep()); continue; }
         const phraseEdge = i % 4 === 0;
         if ((phraseEdge && prob(0.7)) || prob(0.16)) {
+          const deg = pick([0, 0, 1, Math.min(3, scaleLen - 1), Math.min(4, scaleLen - 1)]);
+          const base = chordForDegree(deg);
+          const chordType = pick([base, ext(base), "Sus2"]);
           const gateLength = phraseEdge ? pickChordGate("groove") : pickChordGate("stab");
-          steps.push(makeStep(
-            pick([0, 0, 1, Math.min(3, scaleLen - 1), Math.min(4, scaleLen - 1)]),
-            pick(chordPalette),
-            {
-              octave: prob(0.2) ? pick([1, -1]) : 0,
-              accent: phraseEdge ? prob(0.45) : prob(0.12),
-              tie: gateLength >= 4 && prob(0.2),
-              gateLength,
-            },
-          ));
-        } else {
-          steps.push(emptyStep());
-        }
+          steps.push(makeStep(deg, chordType, {
+            octave: prob(0.2) ? pick([1, -1]) : 0,
+            accent: phraseEdge ? prob(0.45) : prob(0.12),
+            tie: gateLength >= 4 && prob(0.2),
+            gateLength,
+          }));
+        } else { steps.push(emptyStep()); }
       }
       return steps;
     },
@@ -598,7 +607,8 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
     const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
     const strategy = CHORDLINE_STRATEGIES[strategyIdx];
     if (!strategy) return;
-    const steps = strategy.generate(length, scale.length);
+    const chordForDegree = buildDiatonicChordLookup(scaleName);
+    const steps = strategy.generate(length, scale.length, chordForDegree);
     set({ steps, strategyIndex: strategyIdx });
   },
 
