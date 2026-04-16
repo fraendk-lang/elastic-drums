@@ -462,6 +462,10 @@ export class MelodyEngine {
     const t = time ?? this.ctx.currentTime;
     this.vca.gain.cancelScheduledValues(t);
     this.vca.gain.setValueAtTime(0, t);
+    if (this.output) {
+      this.output.gain.cancelScheduledValues(t);
+      this.output.gain.setValueAtTime(0, t);
+    }
     this.noteIsOn = false;
   }
 

@@ -386,6 +386,11 @@ export class BassEngine {
     const t = time ?? this.ctx.currentTime;
     this.vca.gain.cancelScheduledValues(t);
     this.vca.gain.setValueAtTime(0, t);
+    // Also mute output to kill any filter self-oscillation bleed
+    if (this.output) {
+      this.output.gain.cancelScheduledValues(t);
+      this.output.gain.setValueAtTime(0, t);
+    }
     this.noteIsOn = false;
     if (this._filterEnvTimer) {
       clearInterval(this._filterEnvTimer);
