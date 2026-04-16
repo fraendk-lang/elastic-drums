@@ -19,11 +19,15 @@ interface PianoRollKeysProps {
   rootMidi: number;
   scaleName: string;
   scaleSnap: boolean;
+  foldedRows: number[] | null; // null = show all, otherwise sorted high→low midi values
   onKeyClick: (midi: number) => void;
 }
 
 export const PianoRollKeys = forwardRef<HTMLDivElement, PianoRollKeysProps>(
-  function PianoRollKeys({ rowHeight, rootMidi, scaleName, scaleSnap, onKeyClick }, ref) {
+  function PianoRollKeys({ rowHeight, rootMidi, scaleName, scaleSnap, foldedRows, onKeyClick }, ref) {
+    const rows = foldedRows
+      ? foldedRows.map((midi, i) => ({ midi, i }))
+      : Array.from({ length: TOTAL_ROWS }, (_, i) => ({ midi: BASE_NOTE + (TOTAL_ROWS - i - 1), i }));
     return (
       <div
         ref={ref}
@@ -38,8 +42,7 @@ export const PianoRollKeys = forwardRef<HTMLDivElement, PianoRollKeysProps>(
             borderBottom: "1px solid rgba(255,255,255,0.2)",
           }}
         />
-        {Array.from({ length: TOTAL_ROWS }, (_, i) => {
-          const midi = BASE_NOTE + (TOTAL_ROWS - i - 1);
+        {rows.map(({ midi }) => {
           const noteIdx = midi % 12;
           const noteName = NOTE_NAMES[noteIdx] ?? "?";
           const isBlack = OCTAVE_PATTERN[noteIdx]?.black ?? false;
@@ -48,7 +51,7 @@ export const PianoRollKeys = forwardRef<HTMLDivElement, PianoRollKeysProps>(
 
           return (
             <div
-              key={i}
+              key={midi}
               onClick={() => onKeyClick(midi)}
               className={`flex items-center justify-center text-[6px] font-bold tracking-wider cursor-pointer select-none border-b transition-all ${
                 isBlack ? "hover:brightness-110" : "hover:brightness-105"

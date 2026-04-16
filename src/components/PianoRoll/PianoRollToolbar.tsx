@@ -36,6 +36,9 @@ interface PianoRollToolbarProps {
   onLegato: () => void;
   onHumanize: () => void;
   onStretch: (factor: number) => void;
+  onSetNoteLength: (beats: number) => void;
+  fold: boolean;
+  setFold: (b: boolean) => void;
   onSelectAll: () => void;
   onDelete: () => void;
   onCopy: () => void;
@@ -77,6 +80,9 @@ export function PianoRollToolbar(props: PianoRollToolbarProps) {
     onLegato,
     onHumanize,
     onStretch,
+    onSetNoteLength,
+    fold,
+    setFold,
     onHarmony,
     onSelectAll,
     onDelete,
@@ -347,6 +353,47 @@ export function PianoRollToolbar(props: PianoRollToolbarProps) {
             ×2
           </button>
         </div>
+
+        {/* Note-length presets */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <span className="text-[7px] text-white/35 font-bold uppercase tracking-wider mr-1">Len</span>
+          {([
+            { label: "1/32", beats: 0.125 },
+            { label: "1/16", beats: 0.25 },
+            { label: "1/8", beats: 0.5 },
+            { label: "1/4", beats: 1 },
+            { label: "1/2", beats: 2 },
+            { label: "1/1", beats: 4 },
+          ] as const).map(({ label, beats }) => (
+            <button
+              key={label}
+              onClick={() => onSetNoteLength(beats)}
+              disabled={selectedCount === 0}
+              title={`Set duration to ${label}`}
+              className="px-1 py-0.5 text-[6px] font-bold rounded transition-all disabled:opacity-20 hover:brightness-110"
+              style={{ backgroundColor: "rgba(100,200,180,0.12)", color: "white", border: "1px solid rgba(100,200,180,0.25)" }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="w-px h-4 bg-white/15 shrink-0" />
+
+        {/* Fold view */}
+        <button
+          onClick={() => setFold(!fold)}
+          title="Fold: show only rows with notes"
+          className="px-2 py-0.5 text-[7px] font-bold tracking-wider rounded transition-all shrink-0 hover:brightness-110"
+          style={{
+            backgroundColor: fold ? "rgba(100,200,255,0.25)" : "rgba(255,255,255,0.05)",
+            color: fold ? "#fff" : "white",
+            opacity: fold ? 1 : 0.4,
+            border: `1px solid ${fold ? "rgba(100,200,255,0.5)" : "rgba(255,255,255,0.15)"}`,
+          }}
+        >
+          FOLD
+        </button>
 
         <div className="w-px h-4 bg-white/15 shrink-0" />
 

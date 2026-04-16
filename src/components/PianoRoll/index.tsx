@@ -77,6 +77,8 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const [clipboard, setClipboard] = useState<PianoRollNote[]>([]);
   const [rubberBand, setRubberBand] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [autoFollow, setAutoFollow] = useState(true);
+  const [fold, setFold] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; noteId: string } | null>(null);
 
   // ─── Sync initial persisted state into scheduler on mount ───
   useEffect(() => {
@@ -88,9 +90,45 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const patternLength = useDrumStore((s) => s.pattern.length);
   const totalBeats = Math.max(16, patternLength / 4);
   const rootMidi = 60 + rootNote;
-  const gridW = totalBeats * cellW;
-  const gridH = TOTAL_ROWS * rowHeight;
   const accentColor = TARGET_COLORS[target];
+
+  // ─── Fold view: only show rows that have notes ──────────────
+  const foldedRows = useMemo(() => {
+    if (!fold || notes.length === 0) return null;
+    const usedMidi = new Set(notes.map((n) => n.midi));
+    // Add 2 padding rows above/below for context
+    const expanded = new Set<number>();
+    for (const m of usedMidi) {
+      for (let offset = -2; offset <= 2; offset++) {
+        const v = m + offset;
+        if (v >= BASE_NOTE && v < BASE_NOTE + TOTAL_ROWS) expanded.add(v);
+      }
+    }
+    return Array.from(expanded).sort((a, b) => b - a); // high→low (top→bottom)
+  }, [fold, notes]);
+
+  const visibleRows = foldedRows ? foldedRows.length : TOTAL_ROWS;
+  const gridW = totalBeats * cellW;
+  const gridH = visibleRows * rowHeight;
+
+  // Row↔Midi mapping that respects fold
+  const midiForRow = useCallback(
+    (row: number): number => {
+      if (foldedRows) return foldedRows[row] ?? BASE_NOTE;
+      return BASE_NOTE + (TOTAL_ROWS - row - 1);
+    },
+    [foldedRows],
+  );
+  const rowForMidi = useCallback(
+    (midi: number): number => {
+      if (foldedRows) {
+        const idx = foldedRows.indexOf(midi);
+        return idx >= 0 ? idx : -1;
+      }
+      return TOTAL_ROWS - (midi - BASE_NOTE) - 1;
+    },
+    [foldedRows],
+  );
 
   // ─── Undo / Redo ─────────────────────────────────────────────
   const undoStackRef = useRef<PianoRollNote[][]>([]);
@@ -421,7 +459,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
       if (y < 0 || y > gridH) return;
 
       const row = Math.floor(y / rowHeight);
-      const midi = BASE_NOTE + (TOTAL_ROWS - row - 1);
+      const midi = midiForRow(row);
       const rawBeat = x / cellW;
       const beat = snap ? Math.round(rawBeat / gridRes) * gridRes : rawBeat;
       if (beat < 0 || beat >= totalBeats || midi < BASE_NOTE || midi >= BASE_NOTE + TOTAL_ROWS) return;
@@ -485,7 +523,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
       for (const note of notes) {
         const noteX = note.start * cellW;
         const noteX2 = noteX + Math.max(12, note.duration * cellW);
-        const row = TOTAL_ROWS - (note.midi - BASE_NOTE) - 1;
+        const row = rowForMidi(note.midi);
         const noteY = row * rowHeight;
         const noteY2 = noteY + rowHeight;
         if (noteX < x1 && noteX2 > x0 && noteY < y1 && noteY2 > y0) {
@@ -510,7 +548,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
             const y = Math.round(e.clientY - rect.top + gridRef.current!.scrollTop - RULER_HEIGHT);
             if (y >= 0 && y <= gridH) {
               const row = Math.floor(y / rowHeight);
-              const midi = BASE_NOTE + (TOTAL_ROWS - row - 1);
+              const midi = midiForRow(row);
               const beat = x / cellW;
               addNote(midi, beat);
             }
@@ -703,13 +741,34 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     [dragMode, notes, selectedNoteIds],
   );
 
+  // ─── Right-click context menu on note ──────────────────────
   const handleNoteContext = useCallback(
     (e: React.MouseEvent, id: string) => {
       e.preventDefault();
       e.stopPropagation();
-      removeNotes(new Set([id]));
+      setContextMenu({ x: e.clientX, y: e.clientY, noteId: id });
+      if (!selectedNoteIds.has(id)) setSelectedNoteIds(new Set([id]));
     },
-    [removeNotes],
+    [selectedNoteIds],
+  );
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
+  // ─── Double-click on grid = create note (works in both modes)
+  const handleGridDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      const rect = gridRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = e.clientX - rect.left + gridRef.current!.scrollLeft;
+      const y = Math.round(e.clientY - rect.top + gridRef.current!.scrollTop - RULER_HEIGHT);
+      if (y < 0 || y > gridH) return;
+      const row = Math.floor(y / rowHeight);
+      const midi = midiForRow(row);
+      const beat = x / cellW;
+      pushUndo();
+      addNote(midi, beat);
+    },
+    [gridH, rowHeight, cellW, addNote, pushUndo, midiForRow],
   );
 
   const handleKeyClick = useCallback(
@@ -832,6 +891,19 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     [notes, selectedNoteIds, pushUndo, setNotes, totalBeats, gridRes],
   );
 
+  // ─── SET NOTE LENGTH (presets) ─────────────────────────────────
+  const handleSetNoteLength = useCallback(
+    (beats: number) => {
+      if (selectedNoteIds.size === 0) return;
+      pushUndo();
+      setNotes((prev) =>
+        prev.map((n) => (!selectedNoteIds.has(n.id) ? n : { ...n, duration: beats })),
+      );
+      lastDrawnDurationRef.current = beats;
+    },
+    [selectedNoteIds, pushUndo, setNotes],
+  );
+
   // ─── HARMONY HANDLER ──────────────────────────────────────────
   const handleHarmony = useCallback(
     (type: HarmonyType) => {
@@ -906,6 +978,9 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         onLegato={handleLegato}
         onHumanize={handleHumanize}
         onStretch={handleStretch}
+        onSetNoteLength={handleSetNoteLength}
+        fold={fold}
+        setFold={setFold}
         onHarmony={handleHarmony}
         onSelectAll={() => setSelectedNoteIds(new Set(notes.map((n) => n.id)))}
         onDelete={() => removeNotes(selectedNoteIds)}
@@ -940,6 +1015,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
           rootMidi={rootMidi}
           scaleName={scaleName}
           scaleSnap={scaleSnap}
+          foldedRows={foldedRows}
           onKeyClick={handleKeyClick}
         />
 
@@ -947,9 +1023,10 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         <div
           ref={gridRef}
           className="flex-1 overflow-auto relative"
-          onPointerDown={handleGridPointerDown}
+          onPointerDown={(e) => { closeContextMenu(); handleGridPointerDown(e); }}
           onPointerMove={handleGridPointerMove}
           onPointerUp={handleGridPointerUp}
+          onDoubleClick={handleGridDoubleClick}
           onScroll={handleGridScroll}
           onWheel={handleWheel}
         >
@@ -987,13 +1064,13 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
             style={{ width: Math.max(gridW, 800), height: gridH + VELOCITY_LANE_HEIGHT }}
           >
             {/* Row stripes */}
-            {Array.from({ length: TOTAL_ROWS }, (_, i) => {
-              const midi = BASE_NOTE + (TOTAL_ROWS - i - 1);
+            {Array.from({ length: visibleRows }, (_, i) => {
+              const midi = midiForRow(i);
               const isBlack = OCTAVE_PATTERN[midi % 12]?.black ?? false;
               const inScale = isNoteInScale(midi, rootMidi, scaleName);
               return (
                 <div
-                  key={`row-${i}`}
+                  key={`row-${midi}`}
                   className="absolute w-full border-b"
                   style={{
                     top: i * rowHeight,
@@ -1061,8 +1138,8 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
 
             {/* ─── NOTES ────────────────────────────────────────── */}
             {notes.map((note) => {
-              const row = TOTAL_ROWS - (note.midi - BASE_NOTE) - 1;
-              if (row < 0 || row >= TOTAL_ROWS) return null;
+              const row = rowForMidi(note.midi);
+              if (row < 0 || row >= visibleRows) return null;
               const x = note.start * cellW;
               const y = row * rowHeight;
               const w = Math.max(12, note.duration * cellW);
@@ -1224,6 +1301,42 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
           </div>
         </div>
       </div>
+
+      {/* ─── CONTEXT MENU (right-click on note) ─────────────────── */}
+      {contextMenu && (
+        <div
+          className="fixed z-[60] min-w-[140px] bg-[#1a1a22] border border-[var(--ed-border)] rounded-lg shadow-2xl py-1 overflow-hidden"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {([
+            { label: "Delete", action: () => { pushUndo(); removeNotes(selectedNoteIds.size > 0 ? selectedNoteIds : new Set([contextMenu.noteId])); } },
+            { label: "Duplicate", action: () => { pushUndo(); const sel = notes.filter(n => selectedNoteIds.has(n.id)); const dupes = sel.map(n => ({ ...n, id: uid(), start: n.start + 1 })); setNotes(prev => [...prev, ...dupes]); setSelectedNoteIds(new Set(dupes.map(d => d.id))); } },
+            { label: "Copy", action: copyNotes },
+            null,
+            { label: "Vel 100%", action: () => { pushUndo(); patchNotes(selectedNoteIds, { velocity: 1 }); } },
+            { label: "Vel 80%", action: () => { pushUndo(); patchNotes(selectedNoteIds, { velocity: 0.8 }); } },
+            { label: "Vel 50%", action: () => { pushUndo(); patchNotes(selectedNoteIds, { velocity: 0.5 }); } },
+            null,
+            { label: "Reverse", action: handleReverse },
+            { label: "Invert", action: handleInvert },
+            { label: "Legato", action: handleLegato },
+            { label: "Humanize", action: handleHumanize },
+          ] as (({ label: string; action: () => void }) | null)[]).map((item, i) =>
+            item === null ? (
+              <div key={`sep-${i}`} className="border-t border-white/8 my-0.5" />
+            ) : (
+              <button
+                key={item.label}
+                onClick={() => { item.action(); closeContextMenu(); }}
+                className="w-full text-left px-3 py-1.5 text-[9px] text-white/70 hover:text-white hover:bg-white/8 transition-colors"
+              >
+                {item.label}
+              </button>
+            ),
+          )}
+        </div>
+      )}
 
       {/* ─── FOOTER ──────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-3 py-1.5 border-t border-[var(--ed-border)] bg-[var(--ed-bg-secondary)]/60 text-[8px] text-white/35">
