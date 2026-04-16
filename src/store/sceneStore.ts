@@ -14,7 +14,7 @@ import { bassEngine, type BassStep, type BassParams } from "../audio/BassEngine"
 import { chordsEngine, type ChordsStep, type ChordsParams } from "../audio/ChordsEngine";
 import { melodyEngine, type MelodyStep, type MelodyParams } from "../audio/MelodyEngine";
 import { audioEngine } from "../audio/AudioEngine";
-// soundFontEngine import removed — no longer needed for scene switching
+import { soundFontEngine } from "../audio/SoundFontEngine";
 import { ROOT_NOTES } from "../audio/BassEngine";
 
 // ─── Types ──────────────────────────────────────────────
@@ -164,6 +164,10 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     bassEngine.panic(now);
     chordsEngine.panic(now);
     melodyEngine.panic(now);
+    // Also stop any SoundFont notes that may be sustaining
+    soundFontEngine.stopAll("bass");
+    soundFontEngine.stopAll("chords");
+    soundFontEngine.stopAll("melody");
 
     // Apply drum pattern
     useDrumStore.setState({ pattern: deepClone(scene.drumPattern) });
