@@ -717,6 +717,43 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     [target],
   );
 
+  // ─── TRANSPOSE ────────────────────────────────────────────────
+  const handleTranspose = useCallback(
+    (semitones: number) => {
+      if (selectedNoteIds.size === 0) return;
+      pushUndo();
+      setNotes((prev) =>
+        prev.map((n) => {
+          if (!selectedNoteIds.has(n.id)) return n;
+          const newMidi = Math.max(BASE_NOTE, Math.min(BASE_NOTE + TOTAL_ROWS - 1, n.midi + semitones));
+          return { ...n, midi: newMidi };
+        }),
+      );
+    },
+    [selectedNoteIds, pushUndo, setNotes],
+  );
+
+  // ─── REVERSE ─────────────────────────────────────────────────
+  const handleReverse = useCallback(() => {
+    if (selectedNoteIds.size < 2) return;
+    pushUndo();
+    const selected = notes.filter((n) => selectedNoteIds.has(n.id));
+    const starts = selected.map((n) => n.start).sort((a, b) => a - b);
+    const ends = selected
+      .map((n) => n.start + n.duration)
+      .sort((a, b) => a - b);
+    const rangeStart = starts[0]!;
+    const rangeEnd = ends[ends.length - 1]!;
+    setNotes((prev) =>
+      prev.map((n) => {
+        if (!selectedNoteIds.has(n.id)) return n;
+        // Mirror note start around center of selection range
+        const newStart = rangeEnd - (n.start - rangeStart) - n.duration;
+        return { ...n, start: Math.max(0, newStart) };
+      }),
+    );
+  }, [notes, selectedNoteIds, pushUndo, setNotes]);
+
   // ─── HARMONY HANDLER ──────────────────────────────────────────
   const handleHarmony = useCallback(
     (type: HarmonyType) => {
@@ -785,6 +822,8 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         autoFollow={autoFollow}
         setAutoFollow={setAutoFollow}
         onQuantize={() => selectedNoteIds.size > 0 && quantizeNotes(selectedNoteIds)}
+        onTranspose={handleTranspose}
+        onReverse={handleReverse}
         onHarmony={handleHarmony}
         onSelectAll={() => setSelectedNoteIds(new Set(notes.map((n) => n.id)))}
         onDelete={() => removeNotes(selectedNoteIds)}

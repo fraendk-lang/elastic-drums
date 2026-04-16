@@ -30,6 +30,8 @@ interface PianoRollToolbarProps {
 
   onQuantize: () => void;
   onHarmony: (type: HarmonyType) => void;
+  onTranspose: (semitones: number) => void;
+  onReverse: () => void;
   onSelectAll: () => void;
   onDelete: () => void;
   onCopy: () => void;
@@ -65,6 +67,8 @@ export function PianoRollToolbar(props: PianoRollToolbarProps) {
     autoFollow,
     setAutoFollow,
     onQuantize,
+    onTranspose,
+    onReverse,
     onHarmony,
     onSelectAll,
     onDelete,
@@ -213,6 +217,64 @@ export function PianoRollToolbar(props: PianoRollToolbarProps) {
         </button>
 
         <HarmonyMenu accentColor={accentColor} onGenerate={onHarmony} />
+
+        <div className="w-px h-4 bg-white/15 shrink-0" />
+
+        {/* Transpose */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <span className="text-[7px] text-white/35 font-bold uppercase tracking-wider mr-1">Trsp</span>
+          <button
+            onClick={() => onTranspose(-12)}
+            disabled={selectedCount === 0}
+            title="Transpose -1 octave"
+            className="px-1.5 py-0.5 text-[7px] font-bold rounded transition-all disabled:opacity-20 hover:brightness-110"
+            style={{ backgroundColor: "rgba(100,150,255,0.15)", color: "white", border: "1px solid rgba(100,150,255,0.3)" }}
+          >
+            -Oct
+          </button>
+          <button
+            onClick={() => onTranspose(-1)}
+            disabled={selectedCount === 0}
+            title="Transpose -1 semitone"
+            className="px-1.5 py-0.5 text-[7px] font-bold rounded transition-all disabled:opacity-20 hover:brightness-110"
+            style={{ backgroundColor: "rgba(100,150,255,0.15)", color: "white", border: "1px solid rgba(100,150,255,0.3)" }}
+          >
+            -1
+          </button>
+          <button
+            onClick={() => onTranspose(1)}
+            disabled={selectedCount === 0}
+            title="Transpose +1 semitone"
+            className="px-1.5 py-0.5 text-[7px] font-bold rounded transition-all disabled:opacity-20 hover:brightness-110"
+            style={{ backgroundColor: "rgba(100,150,255,0.15)", color: "white", border: "1px solid rgba(100,150,255,0.3)" }}
+          >
+            +1
+          </button>
+          <button
+            onClick={() => onTranspose(12)}
+            disabled={selectedCount === 0}
+            title="Transpose +1 octave"
+            className="px-1.5 py-0.5 text-[7px] font-bold rounded transition-all disabled:opacity-20 hover:brightness-110"
+            style={{ backgroundColor: "rgba(100,150,255,0.15)", color: "white", border: "1px solid rgba(100,150,255,0.3)" }}
+          >
+            +Oct
+          </button>
+        </div>
+
+        {/* Reverse */}
+        <button
+          onClick={onReverse}
+          disabled={selectedCount === 0}
+          title="Reverse selected notes in time"
+          className="px-2 py-0.5 text-[7px] font-bold tracking-wider rounded transition-all shrink-0 disabled:opacity-20 hover:brightness-110"
+          style={{
+            backgroundColor: "rgba(200,150,255,0.15)",
+            color: selectedCount > 0 ? "white" : "white/50",
+            border: "1px solid rgba(200,150,255,0.35)",
+          }}
+        >
+          REV
+        </button>
 
         <div className="w-px h-4 bg-white/15 shrink-0" />
 
