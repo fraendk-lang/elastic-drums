@@ -357,7 +357,7 @@ function ExportMenu({ onSave, onMidiExport, onWavExport, onShare }: {
       </button>
 
       {open && (
-        <div className="absolute top-full right-0 mt-1 z-50 min-w-[140px] bg-[#1a1a22] border border-[var(--ed-border)] rounded-lg shadow-2xl py-1 overflow-hidden">
+        <div className="absolute bottom-full right-0 mb-1 z-[100] min-w-[140px] bg-[#1a1a22] border border-[var(--ed-border)] rounded-lg shadow-2xl py-1 overflow-hidden">
           <button
             onClick={() => { onSave(); setOpen(false); }}
             className="w-full text-left px-3 py-1.5 text-[9px] text-white/70 hover:text-white hover:bg-white/8 transition-colors flex items-center gap-2"
