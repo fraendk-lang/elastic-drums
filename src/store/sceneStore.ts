@@ -220,6 +220,13 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     }
     useMelodyStore.setState(melodyUpdate);
 
+    // Re-panic AFTER setParams — setParams restores output.gain.value from volume,
+    // which undoes the panic silence. Must re-silence after all params are applied.
+    const now2 = audioEngine.getAudioContext()?.currentTime ?? 0;
+    bassEngine.panic(now2);
+    chordsEngine.panic(now2);
+    melodyEngine.panic(now2);
+
     // Restore global key/scale — set DIRECTLY on each store to avoid sync ping-pong.
     // The sync mechanism (syncScaleToOtherStores) can cause octave drift when
     // it recalculates rootNote offsets between stores during scene load.
