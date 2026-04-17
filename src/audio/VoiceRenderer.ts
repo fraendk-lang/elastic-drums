@@ -31,6 +31,8 @@ export const VOICE_PARAM_DEFS: Record<number, VoiceParamDef[]> = {
     { id: "drive", label: "DRIVE", min: 0, max: 100, default: 40 },
     { id: "sub", label: "SUB", min: 0, max: 100, default: 60 },
     { id: "pitch", label: "PITCH", min: 20, max: 80, default: 45, step: 1 },
+    { id: "fm", label: "FM", min: 0, max: 100, default: 0 },
+    { id: "fmRatio", label: "RATIO", min: 0.25, max: 8, default: 2 },
   ],
   1: [ // Snare
     { id: "tune", label: "TUNE", min: 100, max: 350, default: 180 },
@@ -39,6 +41,8 @@ export const VOICE_PARAM_DEFS: Record<number, VoiceParamDef[]> = {
     { id: "tone", label: "TONE", min: 0, max: 100, default: 55 },
     { id: "snap", label: "SNAP", min: 0, max: 100, default: 70 },
     { id: "body", label: "BODY", min: 0, max: 100, default: 60 },
+    { id: "fm", label: "FM", min: 0, max: 100, default: 0 },
+    { id: "fmRatio", label: "RATIO", min: 0.25, max: 8, default: 3 },
   ],
   2: [ // Clap
     { id: "sampleTune", label: "TRNS", min: -24, max: 24, default: 0, step: 1 },
@@ -52,18 +56,24 @@ export const VOICE_PARAM_DEFS: Record<number, VoiceParamDef[]> = {
     { id: "sampleTune", label: "TRNS", min: -24, max: 24, default: 0, step: 1 },
     { id: "decay", label: "DECAY", min: 80, max: 800, default: 350 },
     { id: "click", label: "CLICK", min: 0, max: 100, default: 40 },
+    { id: "fm", label: "FM", min: 0, max: 100, default: 0 },
+    { id: "fmRatio", label: "RATIO", min: 0.25, max: 8, default: 1.5 },
   ],
   4: [ // Tom Mid — 808 style, ~220 Hz
     { id: "tune", label: "TUNE", min: 120, max: 400, default: 220 },
     { id: "sampleTune", label: "TRNS", min: -24, max: 24, default: 0, step: 1 },
     { id: "decay", label: "DECAY", min: 60, max: 600, default: 280 },
     { id: "click", label: "CLICK", min: 0, max: 100, default: 45 },
+    { id: "fm", label: "FM", min: 0, max: 100, default: 0 },
+    { id: "fmRatio", label: "RATIO", min: 0.25, max: 8, default: 1.5 },
   ],
   5: [ // Tom Hi — 808 style, ~310 Hz
     { id: "tune", label: "TUNE", min: 180, max: 600, default: 310 },
     { id: "sampleTune", label: "TRNS", min: -24, max: 24, default: 0, step: 1 },
     { id: "decay", label: "DECAY", min: 40, max: 500, default: 220 },
     { id: "click", label: "CLICK", min: 0, max: 100, default: 50 },
+    { id: "fm", label: "FM", min: 0, max: 100, default: 0 },
+    { id: "fmRatio", label: "RATIO", min: 0.25, max: 8, default: 1.5 },
   ],
   6: [ // HH Closed
     { id: "tune", label: "TUNE", min: 200, max: 600, default: 330 },
@@ -309,6 +319,23 @@ export class VoiceRenderer {
     bodyGain.gain.setValueAtTime(0.85, t);
     bodyGain.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
 
+    // FM operator: modulates main osc frequency (metallic/digital Kick textures)
+    const fmAmount = (p.fm ?? 0) / 100;
+    if (fmAmount > 0.01) {
+      const fmRatio = p.fmRatio ?? 2;
+      const modOsc = ctx.createOscillator();
+      modOsc.type = "sine";
+      modOsc.frequency.value = baseFreq * fmRatio;
+      const modGain = ctx.createGain();
+      // Mod index: fmAmount * carrier freq * 3 → higher freq = more FM for same perceived brightness
+      modGain.gain.setValueAtTime(fmAmount * baseFreq * 3, t);
+      modGain.gain.exponentialRampToValueAtTime(0.01, t + decaySec * 0.5);
+      modOsc.connect(modGain);
+      modGain.connect(osc.frequency);
+      modOsc.start(t);
+      modOsc.stop(t + decaySec + 0.05);
+    }
+
     osc.connect(bodyGain);
     bodyGain.connect(shaper);
     osc.start(t);
@@ -400,6 +427,23 @@ export class VoiceRenderer {
     osc3.type = "sine";
     osc3.frequency.setValueAtTime(tune * 2.67 * 1.4, t);
     osc3.frequency.exponentialRampToValueAtTime(tune * 2.67, t + 0.008);
+
+    // FM operator: adds metallic/rimshot-like character
+    const fmAmount = (p.fm ?? 0) / 100;
+    if (fmAmount > 0.01) {
+      const fmRatio = p.fmRatio ?? 3;
+      const modOsc = ctx.createOscillator();
+      modOsc.type = "sine";
+      modOsc.frequency.value = tune * fmRatio;
+      const modGain = ctx.createGain();
+      modGain.gain.setValueAtTime(fmAmount * tune * 4, t);
+      modGain.gain.exponentialRampToValueAtTime(0.01, t + decaySec * 0.4);
+      modOsc.connect(modGain);
+      modGain.connect(osc1.frequency);
+      modGain.connect(osc2.frequency);
+      modOsc.start(t);
+      modOsc.stop(t + decaySec + 0.05);
+    }
 
     const bodyGain = ctx.createGain();
     bodyGain.gain.setValueAtTime(toneMix * bodyAmt * 0.85, t);
@@ -580,6 +624,22 @@ export class VoiceRenderer {
     const bodyGain = ctx.createGain();
     bodyGain.gain.setValueAtTime(0.9, t);
     bodyGain.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
+
+    // FM operator: adds cowbell/metallic character when pushed
+    const fmAmount = (p.fm ?? 0) / 100;
+    if (fmAmount > 0.01) {
+      const fmRatio = p.fmRatio ?? 1.5;
+      const modOsc = ctx.createOscillator();
+      modOsc.type = "sine";
+      modOsc.frequency.value = tune * fmRatio;
+      const modGain = ctx.createGain();
+      modGain.gain.setValueAtTime(fmAmount * tune * 2.5, t);
+      modGain.gain.exponentialRampToValueAtTime(0.01, t + decaySec * 0.5);
+      modOsc.connect(modGain);
+      modGain.connect(osc.frequency);
+      modOsc.start(t);
+      modOsc.stop(t + decaySec + 0.05);
+    }
 
     osc.connect(bodyGain);
     bodyGain.connect(warmth);
