@@ -24,6 +24,7 @@ const ModMatrixEditor = lazy(() => import("./components/ModMatrixEditor").then((
 const MacroPanel = lazy(() => import("./components/MacroPanel").then((m) => ({ default: m.MacroPanel })));
 const MidiLearnPanel = lazy(() => import("./components/MidiLearnPanel").then((m) => ({ default: m.MidiLearnPanel })));
 const MidiClockPanel = lazy(() => import("./components/MidiClockPanel").then((m) => ({ default: m.MidiClockPanel })));
+const UserGuide = lazy(() => import("./components/UserGuide").then((m) => ({ default: m.UserGuide })));
 import { getMidiClockMode, subscribeMidiClockMode } from "./store/midiClockMode";
 import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
@@ -319,7 +320,7 @@ export function App() {
         onOpenMixer={() => overlay.openOverlay("mixer")}
         onOpenKits={() => overlay.openOverlay("kitBrowser")}
         onOpenMidi={() => overlay.openOverlay("midiPlayer")}
-        onToggleHelp={() => overlay.toggle("help")}
+        onToggleHelp={() => overlay.openOverlay("userGuide")}
         onOpenPerformance={() => setSceneMiniOpen((o) => !o)}
       />
 
@@ -445,6 +446,7 @@ export function App() {
             selectOutput={midiClock.selectOutput}
           />
         )}
+        {overlay.isOpen("userGuide") && <UserGuide isOpen onClose={() => overlay.closeOverlay("userGuide")} />}
       </Suspense>
       {sceneMiniOpen && <SceneMini onClose={() => setSceneMiniOpen(false)} />}
     </div>
