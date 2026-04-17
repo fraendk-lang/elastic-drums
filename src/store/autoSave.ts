@@ -18,18 +18,29 @@ interface AutoSaveData {
   timestamp: number;
 }
 
+// Use requestIdleCallback when available so saves happen during idle
+// periods and never block playback. Falls back to setTimeout on Safari.
+const ric: (cb: () => void, opts?: { timeout: number }) => number =
+  typeof window !== "undefined" && "requestIdleCallback" in window
+    ? (cb, opts) => (window as typeof window & { requestIdleCallback: (cb: IdleRequestCallback, opts?: IdleRequestOptions) => number })
+        .requestIdleCallback(() => cb(), opts)
+    : (cb) => window.setTimeout(cb, 0);
+
 export function scheduleAutoSave(getData: () => AutoSaveData): void {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    try {
-      const data = getData();
-      openAutoSaveDB().then((db) => {
-        const txn = db.transaction("autosave", "readwrite");
-        txn.objectStore("autosave").put({ id: AUTO_SAVE_KEY, ...data });
-      }).catch((err) => console.warn("Auto-save failed:", err));
-    } catch (err) {
-      console.warn("Auto-save error:", err);
-    }
+    // Debounce fired → defer the actual I/O to an idle moment (max 5s deadline)
+    ric(() => {
+      try {
+        const data = getData();
+        openAutoSaveDB().then((db) => {
+          const txn = db.transaction("autosave", "readwrite");
+          txn.objectStore("autosave").put({ id: AUTO_SAVE_KEY, ...data });
+        }).catch((err) => console.warn("Auto-save failed:", err));
+      } catch (err) {
+        console.warn("Auto-save error:", err);
+      }
+    }, { timeout: 5000 });
   }, DEBOUNCE_MS);
 }
 
