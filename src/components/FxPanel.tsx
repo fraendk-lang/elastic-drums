@@ -50,6 +50,50 @@ const MODE_CONFIG: Record<FxMode, ModeConfig> = {
   CRUSH: { color: "#ef4444", xLabel: "Filter Mode", yLabel: "Drive" },
 };
 
+// Compact SVG icons — each tells you at a glance what the FX does
+function ModeIcon({ mode, color }: { mode: FxMode; color: string }) {
+  const stroke = color;
+  const strokeWidth = 1.6;
+  const common = { fill: "none", stroke, strokeWidth, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  switch (mode) {
+    case "FILTER": // Lowpass curve rolling off on the right
+      return (
+        <svg viewBox="0 0 28 14" className="w-5 h-[12px]" aria-hidden>
+          <path d="M 1 7 L 13 7 Q 17 7 19 4 T 27 13" {...common} />
+        </svg>
+      );
+    case "DELAY": // Repeating echoes — decreasing amplitude
+      return (
+        <svg viewBox="0 0 28 14" className="w-5 h-[12px]" aria-hidden>
+          <line x1="3" y1="3" x2="3" y2="11" {...common} />
+          <line x1="10" y1="4" x2="10" y2="10" {...common} />
+          <line x1="16" y1="5" x2="16" y2="9" {...common} />
+          <line x1="21" y1="6" x2="21" y2="8" {...common} />
+          <line x1="25" y1="6.5" x2="25" y2="7.5" {...common} />
+        </svg>
+      );
+    case "REVERB": // Exponential decay curve
+      return (
+        <svg viewBox="0 0 28 14" className="w-5 h-[12px]" aria-hidden>
+          <path d="M 2 11 Q 2 2 4 2 L 26 11" {...common} />
+          <path d="M 6 11 Q 6 6 8 6" {...common} opacity="0.5" />
+        </svg>
+      );
+    case "FLANGER": // Zig-zag comb-sweep
+      return (
+        <svg viewBox="0 0 28 14" className="w-5 h-[12px]" aria-hidden>
+          <path d="M 2 7 Q 5 2 8 7 T 14 7 T 20 7 T 26 7" {...common} />
+        </svg>
+      );
+    case "CRUSH": // Stepped staircase (bit reduction)
+      return (
+        <svg viewBox="0 0 28 14" className="w-5 h-[12px]" aria-hidden>
+          <path d="M 1 11 L 5 11 L 5 8 L 11 8 L 11 5 L 17 5 L 17 8 L 23 8 L 23 11 L 27 11" {...common} />
+        </svg>
+      );
+  }
+}
+
 const FX_MODES: FxMode[] = ["FILTER", "DELAY", "REVERB", "FLANGER", "CRUSH"];
 
 const FX_MODE_PRESETS: Record<FxMode, { label: string; x: number; y: number }[]> = {
@@ -516,8 +560,8 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
           FX PAD
         </span>
 
-        {/* Center: Mode buttons */}
-        <div className="flex-1 flex items-center justify-center gap-1">
+        {/* Center: Mode tiles with icons */}
+        <div className="flex-1 flex items-center justify-center gap-1.5">
           {FX_MODES.map((mode) => {
             const cfg = MODE_CONFIG[mode];
             const isActive = activeMode === mode;
@@ -528,14 +572,29 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
                   if (holdLocked) releaseHold();
                   setActiveMode(mode);
                 }}
-                className="px-3 py-1 rounded text-xs font-bold tracking-wider transition-all"
+                className="group relative flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-[10px] font-black tracking-[0.14em] transition-all overflow-hidden"
                 style={{
-                  backgroundColor: isActive ? cfg.color : "transparent",
+                  backgroundColor: isActive
+                    ? `${cfg.color}`
+                    : "rgba(255,255,255,0.025)",
                   color: isActive ? "#000" : cfg.color,
-                  border: `1px solid ${isActive ? cfg.color : cfg.color + "40"}`,
+                  border: `1px solid ${isActive ? cfg.color : cfg.color + "30"}`,
+                  boxShadow: isActive
+                    ? `0 0 16px ${cfg.color}55, inset 0 0 12px rgba(255,255,255,0.15)`
+                    : "inset 0 1px 0 rgba(255,255,255,0.04)",
                 }}
               >
-                {mode}
+                {/* Subtle shimmer on active */}
+                {isActive && (
+                  <span
+                    className="absolute inset-0 opacity-30 pointer-events-none"
+                    style={{
+                      background: "linear-gradient(115deg, transparent 30%, rgba(255,255,255,0.45) 50%, transparent 70%)",
+                    }}
+                  />
+                )}
+                <ModeIcon mode={mode} color={isActive ? "#000" : cfg.color} />
+                <span>{mode}</span>
               </button>
             );
           })}
