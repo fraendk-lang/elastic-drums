@@ -34,8 +34,19 @@
 ### Phase 5 — Performance & Live (April 2026) ✅ (Macro-Knobs)
 - Macro-Knobs: 8 meta-controls, je 4 Bindings mit Range-Override + Invert
 
+### Phase 5 — Performance & Live (April 2026) ✅ (Crossfader, Tempo-Automation, MIDI Learn)
+- Crossfader (A/B Channel-Gruppen, Equal-Power-Kurve)
+- Tempo-Automation (per-entry BPM-Änderung + optionale Rampen)
+- MIDI-Controller Mapping (CC-Learn auf Macros, Crossfader, Sends)
+
 ### Phase 6 — Export (April 2026) ✅ (Stem-Export)
 - Stem-Export: 4 separate WAVs (Drums / Hats / Cym+Perc / Full)
+
+### Phase 8 — Performance (April 2026) ✅ (teilweise)
+- Per-Field Zustand-Selektoren in Transport/StepSequencer/PadGrid (entfernen Transport aus Playback-Re-Render)
+- useMemo für teure Aggregate im StepSequencer (768 iterationen/frame → cached)
+- React.memo auf MixerStrip MeterColumn (nur geänderte Channels re-rendern)
+- requestIdleCallback für Auto-Save (I/O in Idle-Zeit statt während Playback)
 
 ### Piano Roll Overhaul (April 2026) ✅
 - Refactor: 1709-Zeilen-Monolith → 9 Module
