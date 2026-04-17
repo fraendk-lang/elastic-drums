@@ -9,22 +9,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useDrumStore } from "../store/drumStore";
-
-export type MidiClockMode = "off" | "send" | "receive";
-
-// Persistent mode state (shared with App.tsx useMidiClock hook)
-let _mode: MidiClockMode = "off";
-const _listeners = new Set<() => void>();
-
-export function getMidiClockMode(): MidiClockMode { return _mode; }
-export function setMidiClockMode(mode: MidiClockMode): void {
-  _mode = mode;
-  _listeners.forEach((fn) => fn());
-}
-export function subscribeMidiClockMode(fn: () => void): () => void {
-  _listeners.add(fn);
-  return () => _listeners.delete(fn);
-}
+import { getMidiClockMode, setMidiClockMode, subscribeMidiClockMode, type MidiClockMode } from "../store/midiClockMode";
 
 interface MidiClockPanelProps {
   isOpen: boolean;

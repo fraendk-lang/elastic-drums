@@ -1,27 +1,30 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, lazy, Suspense } from "react";
 import { PadGrid } from "./components/PadGrid";
 import { StepSequencer } from "./components/StepSequencer";
 import { Transport } from "./components/Transport";
 import { MixerStrip } from "./components/MixerStrip";
-import { MixerPanel } from "./components/MixerPanel";
-import { PatternBrowser } from "./components/PatternBrowser";
-import { EuclideanGenerator } from "./components/EuclideanGenerator";
-import { SongEditor } from "./components/SongEditor";
-import { SceneLauncher } from "./components/SceneLauncher";
-import { FxPanel } from "./components/FxPanel";
-import { KitBrowser } from "./components/KitBrowser";
 import { VoiceEditor } from "./components/VoiceEditor";
 import { FxRack } from "./components/FxRack";
 import { SynthSection } from "./components/SynthSection";
-import { MidiPlayerPanel } from "./components/MidiPlayerPanel";
-import { PianoRoll } from "./components/PianoRoll";
-import { ClipLauncher } from "./components/ClipLauncher";
-import { ArrangementView } from "./components/ArrangementView";
-import { ModMatrixEditor } from "./components/ModMatrixEditor";
-import { MacroPanel } from "./components/MacroPanel";
-import { MidiLearnPanel } from "./components/MidiLearnPanel";
-import { MidiClockPanel, getMidiClockMode, subscribeMidiClockMode } from "./components/MidiClockPanel";
 import { SceneMini } from "./components/SceneMini";
+
+// Lazy-loaded overlays — pulled in only when opened for the first time
+const MixerPanel = lazy(() => import("./components/MixerPanel").then((m) => ({ default: m.MixerPanel })));
+const PatternBrowser = lazy(() => import("./components/PatternBrowser").then((m) => ({ default: m.PatternBrowser })));
+const EuclideanGenerator = lazy(() => import("./components/EuclideanGenerator").then((m) => ({ default: m.EuclideanGenerator })));
+const SongEditor = lazy(() => import("./components/SongEditor").then((m) => ({ default: m.SongEditor })));
+const SceneLauncher = lazy(() => import("./components/SceneLauncher").then((m) => ({ default: m.SceneLauncher })));
+const FxPanel = lazy(() => import("./components/FxPanel").then((m) => ({ default: m.FxPanel })));
+const KitBrowser = lazy(() => import("./components/KitBrowser").then((m) => ({ default: m.KitBrowser })));
+const MidiPlayerPanel = lazy(() => import("./components/MidiPlayerPanel").then((m) => ({ default: m.MidiPlayerPanel })));
+const PianoRoll = lazy(() => import("./components/PianoRoll").then((m) => ({ default: m.PianoRoll })));
+const ClipLauncher = lazy(() => import("./components/ClipLauncher").then((m) => ({ default: m.ClipLauncher })));
+const ArrangementView = lazy(() => import("./components/ArrangementView").then((m) => ({ default: m.ArrangementView })));
+const ModMatrixEditor = lazy(() => import("./components/ModMatrixEditor").then((m) => ({ default: m.ModMatrixEditor })));
+const MacroPanel = lazy(() => import("./components/MacroPanel").then((m) => ({ default: m.MacroPanel })));
+const MidiLearnPanel = lazy(() => import("./components/MidiLearnPanel").then((m) => ({ default: m.MidiLearnPanel })));
+const MidiClockPanel = lazy(() => import("./components/MidiClockPanel").then((m) => ({ default: m.MidiClockPanel })));
+import { getMidiClockMode, subscribeMidiClockMode } from "./store/midiClockMode";
 import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
 import { melodyEngine } from "./audio/MelodyEngine";
@@ -412,31 +415,37 @@ export function App() {
         </div>
       )}
 
-      {/* Overlays */}
-      <MixerPanel isOpen={overlay.isOpen("mixer")} onClose={() => overlay.closeOverlay("mixer")} />
-      <PatternBrowser isOpen={overlay.isOpen("browser")} onClose={() => overlay.closeOverlay("browser")} />
-      <EuclideanGenerator isOpen={overlay.isOpen("euclidean")} onClose={() => overlay.closeOverlay("euclidean")} />
-      <SongEditor isOpen={overlay.isOpen("song")} onClose={() => overlay.closeOverlay("song")} />
-      <SceneLauncher isOpen={overlay.isOpen("scene")} onClose={() => overlay.closeOverlay("scene")} />
-      <FxPanel isOpen={overlay.isOpen("fxPanel")} onClose={() => overlay.closeOverlay("fxPanel")} />
-      <KitBrowser isOpen={overlay.isOpen("kitBrowser")} onClose={() => overlay.closeOverlay("kitBrowser")} />
-      <MidiPlayerPanel
-        isOpen={overlay.isOpen("midiPlayer")}
-        onClose={() => overlay.closeOverlay("midiPlayer")}
-        onOpenEditor={() => overlay.openOverlay("pianoRoll")}
-      />
-      <PianoRoll isOpen={overlay.isOpen("pianoRoll")} onClose={() => overlay.closeOverlay("pianoRoll")} />
-      <ClipLauncher isOpen={overlay.isOpen("clipLauncher")} onClose={() => overlay.closeOverlay("clipLauncher")} />
-      <ArrangementView isOpen={overlay.isOpen("arrangement")} onClose={() => overlay.closeOverlay("arrangement")} />
-      <ModMatrixEditor isOpen={overlay.isOpen("modMatrix")} onClose={() => overlay.closeOverlay("modMatrix")} />
-      <MacroPanel isOpen={overlay.isOpen("macros")} onClose={() => overlay.closeOverlay("macros")} />
-      <MidiLearnPanel isOpen={overlay.isOpen("midiLearn")} onClose={() => overlay.closeOverlay("midiLearn")} />
-      <MidiClockPanel
-        isOpen={overlay.isOpen("midiClock")}
-        onClose={() => overlay.closeOverlay("midiClock")}
-        getOutputs={midiClock.getOutputs}
-        selectOutput={midiClock.selectOutput}
-      />
+      {/* Overlays — lazy-loaded, only mounted when open */}
+      <Suspense fallback={null}>
+        {overlay.isOpen("mixer") && <MixerPanel isOpen onClose={() => overlay.closeOverlay("mixer")} />}
+        {overlay.isOpen("browser") && <PatternBrowser isOpen onClose={() => overlay.closeOverlay("browser")} />}
+        {overlay.isOpen("euclidean") && <EuclideanGenerator isOpen onClose={() => overlay.closeOverlay("euclidean")} />}
+        {overlay.isOpen("song") && <SongEditor isOpen onClose={() => overlay.closeOverlay("song")} />}
+        {overlay.isOpen("scene") && <SceneLauncher isOpen onClose={() => overlay.closeOverlay("scene")} />}
+        {overlay.isOpen("fxPanel") && <FxPanel isOpen onClose={() => overlay.closeOverlay("fxPanel")} />}
+        {overlay.isOpen("kitBrowser") && <KitBrowser isOpen onClose={() => overlay.closeOverlay("kitBrowser")} />}
+        {overlay.isOpen("midiPlayer") && (
+          <MidiPlayerPanel
+            isOpen
+            onClose={() => overlay.closeOverlay("midiPlayer")}
+            onOpenEditor={() => overlay.openOverlay("pianoRoll")}
+          />
+        )}
+        {overlay.isOpen("pianoRoll") && <PianoRoll isOpen onClose={() => overlay.closeOverlay("pianoRoll")} />}
+        {overlay.isOpen("clipLauncher") && <ClipLauncher isOpen onClose={() => overlay.closeOverlay("clipLauncher")} />}
+        {overlay.isOpen("arrangement") && <ArrangementView isOpen onClose={() => overlay.closeOverlay("arrangement")} />}
+        {overlay.isOpen("modMatrix") && <ModMatrixEditor isOpen onClose={() => overlay.closeOverlay("modMatrix")} />}
+        {overlay.isOpen("macros") && <MacroPanel isOpen onClose={() => overlay.closeOverlay("macros")} />}
+        {overlay.isOpen("midiLearn") && <MidiLearnPanel isOpen onClose={() => overlay.closeOverlay("midiLearn")} />}
+        {overlay.isOpen("midiClock") && (
+          <MidiClockPanel
+            isOpen
+            onClose={() => overlay.closeOverlay("midiClock")}
+            getOutputs={midiClock.getOutputs}
+            selectOutput={midiClock.selectOutput}
+          />
+        )}
+      </Suspense>
       {sceneMiniOpen && <SceneMini onClose={() => setSceneMiniOpen(false)} />}
     </div>
   );
