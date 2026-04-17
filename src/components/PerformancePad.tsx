@@ -583,11 +583,8 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[var(--ed-bg-primary)]/98 backdrop-blur-xl">
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-[var(--ed-border)] bg-[var(--ed-bg-secondary)]/80 px-5 py-2.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--ed-border)] bg-[var(--ed-bg-secondary)]/80 px-5 py-2.5">
         <h2 className="text-[11px] font-bold tracking-[0.18em] text-[var(--ed-accent-melody)]">XY PERFORMANCE</h2>
-        <span className="text-[9px] text-[var(--ed-text-muted)]">Multi-Touch Expression</span>
-
-        <div className="flex-1" />
 
         {/* Mode: Notes / Chords */}
         <div className="flex items-center gap-1">
@@ -765,7 +762,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
         )}
 
         <button onClick={onClose}
-          className="ml-2 w-7 h-7 text-[12px] text-white/40 hover:text-white/80 hover:bg-white/10 rounded transition-all"
+          className="ml-auto w-7 h-7 text-[12px] text-white/40 hover:text-white/80 hover:bg-white/10 rounded transition-all"
         >✕</button>
       </div>
 
