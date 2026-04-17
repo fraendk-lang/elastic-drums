@@ -28,11 +28,13 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
   const moveSongEntry = useDrumStore((s) => s.moveSongEntry);
   const setSongPosition = useDrumStore((s) => s.setSongPosition);
   const clearSongChain = useDrumStore((s) => s.clearSongChain);
+  const updateSongEntry = useDrumStore((s) => s.updateSongEntry);
 
   const scenes = useSceneStore((s) => s.scenes);
 
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<number | null>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -157,7 +159,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                       }
                       setHoverIndex(null);
                     }}
-                    onClick={() => setSongPosition(index)}
+                    onClick={() => { setSongPosition(index); setSelectedEntry(index); }}
                     className="relative border-r border-black/30 cursor-pointer hover:brightness-125 transition-all"
                     style={{
                       width,
@@ -209,6 +211,64 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
               )}
             </div>
           </div>
+
+          {/* Tempo automation editor for selected entry */}
+          {selectedEntry !== null && songChain[selectedEntry] && (() => {
+            const entry = songChain[selectedEntry]!;
+            const sceneName = scenes[entry.sceneIndex]?.name ?? `Scene ${entry.sceneIndex + 1}`;
+            return (
+              <div className="mt-2 p-3 rounded-md border border-white/10 bg-white/[0.03]">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[9px] font-bold text-white/70">
+                    Entry {selectedEntry + 1} — <span className="text-[var(--ed-accent-orange)]">{sceneName}</span> ×{entry.repeats}
+                  </span>
+                  <button
+                    onClick={() => setSelectedEntry(null)}
+                    className="text-[9px] text-white/30 hover:text-white/70"
+                  >
+                    close
+                  </button>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  {/* Tempo toggle */}
+                  <label className="flex items-center gap-1.5 text-[9px] text-white/60 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={entry.tempoBpm !== undefined}
+                      onChange={(e) => updateSongEntry(selectedEntry, {
+                        tempoBpm: e.target.checked ? 120 : undefined,
+                        tempoRamp: e.target.checked ? (entry.tempoRamp ?? false) : undefined,
+                      })}
+                    />
+                    Tempo change
+                  </label>
+
+                  {entry.tempoBpm !== undefined && (
+                    <>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[8px] font-bold text-white/40">BPM</span>
+                        <input
+                          type="number"
+                          min={60} max={200}
+                          value={entry.tempoBpm}
+                          onChange={(e) => updateSongEntry(selectedEntry, { tempoBpm: parseInt(e.target.value) || 120 })}
+                          className="w-14 h-6 px-1 text-[10px] bg-black/30 border border-white/15 rounded text-white font-mono"
+                        />
+                      </div>
+                      <label className="flex items-center gap-1.5 text-[9px] text-white/60 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={entry.tempoRamp ?? false}
+                          onChange={(e) => updateSongEntry(selectedEntry, { tempoRamp: e.target.checked })}
+                        />
+                        Ramp (gradually over entry)
+                      </label>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Scene palette */}

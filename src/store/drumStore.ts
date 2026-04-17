@@ -41,6 +41,8 @@ export interface StepData {
 export interface SongChainEntry {
   sceneIndex: number;     // Index into sceneStore.scenes[]
   repeats: number;        // How many times to play (1-16)
+  tempoBpm?: number;      // Optional: set tempo at this entry (60-200)
+  tempoRamp?: boolean;    // When true, ramp to tempoBpm over entry duration instead of instant jump
 }
 
 export type SongMode = "pattern" | "song";
@@ -478,6 +480,17 @@ function startScheduler() {
         const chainEntry = songChain[songPosition];
         const newRepeat = songRepeatCount + 1;
 
+        // Tempo ramp: interpolate bpm toward target across this entry's bars
+        const { tempoRampTarget, tempoRampStartBpm } = useDrumStore.getState();
+        if (tempoRampTarget !== null && chainEntry && chainEntry.repeats > 0) {
+          const progress = Math.min(1, newRepeat / chainEntry.repeats);
+          const rampedBpm = tempoRampStartBpm + (tempoRampTarget - tempoRampStartBpm) * progress;
+          useDrumStore.setState({ bpm: Math.round(rampedBpm * 10) / 10 });
+          if (progress >= 1) {
+            useDrumStore.setState({ tempoRampTarget: null });
+          }
+        }
+
         if (chainEntry && newRepeat >= chainEntry.repeats) {
           // Move to next scene in chain
           const newPos = songPosition + 1;
@@ -488,6 +501,17 @@ function startScheduler() {
           if (nextEntry) {
             const sceneStoreRef = getSceneStore();
             if (sceneStoreRef) sceneStoreRef.getState().loadScene(nextEntry.sceneIndex);
+            // Tempo automation
+            if (nextEntry.tempoBpm !== undefined) {
+              const targetBpm = Math.max(60, Math.min(200, nextEntry.tempoBpm));
+              if (nextEntry.tempoRamp) {
+                // Ramp target stored — animation handled by tempo-ramp effect (see below)
+                useDrumStore.setState({ tempoRampTarget: targetBpm, tempoRampStartBpm: useDrumStore.getState().bpm });
+              } else {
+                // Instant jump
+                useDrumStore.setState({ bpm: targetBpm, tempoRampTarget: null });
+              }
+            }
           }
         } else {
           useDrumStore.setState({ songRepeatCount: newRepeat });
@@ -551,6 +575,8 @@ interface DrumStore {
   songChain: SongChainEntry[];
   songPosition: number;       // Current index in song chain
   songRepeatCount: number;    // Current repeat within chain entry
+  tempoRampTarget: number | null; // Tempo automation: target BPM (null = no ramp)
+  tempoRampStartBpm: number;  // BPM at ramp start (for interpolation)
   patternBank: PatternData[]; // All available patterns (presets + user)
 
   // Actions
@@ -584,6 +610,7 @@ interface DrumStore {
   moveSongEntry: (from: number, to: number) => void;
   updateSongEntryRepeats: (index: number, repeats: number) => void;
   updateSongEntryScene: (index: number, sceneIndex: number) => void;
+  updateSongEntry: (index: number, patch: Partial<SongChainEntry>) => void;
   setSongPosition: (index: number) => void;
   clearSongChain: () => void;
 
@@ -621,6 +648,8 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   songChain: [],
   songPosition: 0,
   songRepeatCount: 0,
+  tempoRampTarget: null,
+  tempoRampStartBpm: 120,
   patternBank: [...PRESET_PATTERNS],
   selectedVoice: 0,
   selectedPage: 0,
@@ -905,6 +934,13 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     set((state) => ({
       songChain: state.songChain.map((entry, i) => (
         i === index ? { ...entry, sceneIndex } : entry
+      )),
+    })),
+
+  updateSongEntry: (index, patch) =>
+    set((state) => ({
+      songChain: state.songChain.map((entry, i) => (
+        i === index ? { ...entry, ...patch } : entry
       )),
     })),
 
