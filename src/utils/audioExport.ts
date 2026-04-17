@@ -11,6 +11,8 @@ export async function exportPatternAsWav(
   pattern: PatternData,
   bpm: number,
   loops = 1,
+  trackFilter?: (voice: number) => boolean,
+  filenameSuffix?: string,
 ): Promise<void> {
   const sampleRate = 44100;
   const secondsPerStep = 60 / bpm / 4; // 16th notes
@@ -27,6 +29,7 @@ export async function exportPatternAsWav(
       const time = (loop * pattern.length + step) * secondsPerStep;
 
       for (let track = 0; track < 12; track++) {
+        if (trackFilter && !trackFilter(track)) continue;
         const trackData = pattern.tracks[track];
         if (!trackData || trackData.mute) continue;
 
@@ -52,9 +55,30 @@ export async function exportPatternAsWav(
   // Download
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${pattern.name.replace(/[^a-zA-Z0-9]/g, "_")}_${bpm}bpm.wav`;
+  const suffix = filenameSuffix ? `_${filenameSuffix}` : "";
+  a.download = `${pattern.name.replace(/[^a-zA-Z0-9]/g, "_")}_${bpm}bpm${suffix}.wav`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Export stems — 4 separate WAVs grouped by instrument category:
+ *   Kicks/Snares/Claps/Toms, Hats, Cymbals/Perc, Full mix
+ */
+export async function exportStems(pattern: PatternData, bpm: number, loops = 1): Promise<void> {
+  const stems: { name: string; voices: number[] }[] = [
+    { name: "drums", voices: [0, 1, 2, 3, 4, 5] },   // Kick, Snare, Clap, Tom L/M/H
+    { name: "hats", voices: [6, 7] },                 // HH Closed + Open
+    { name: "cymperc", voices: [8, 9, 10, 11] },      // Cym, Ride, Perc 1/2
+    { name: "full", voices: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
+  ];
+
+  for (const stem of stems) {
+    const voicesSet = new Set(stem.voices);
+    await exportPatternAsWav(pattern, bpm, loops, (v) => voicesSet.has(v), stem.name);
+    // Small delay so browser handles multiple downloads cleanly
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
 }
 
 // Simple voice scheduling for offline render

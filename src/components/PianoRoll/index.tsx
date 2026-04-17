@@ -1101,6 +1101,13 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
               const midi = midiForRow(i);
               const isBlack = OCTAVE_PATTERN[midi % 12]?.black ?? false;
               const inScale = isNoteInScale(midi, rootMidi, scaleName);
+              const isRoot = midi % 12 === rootMidi % 12;
+              // Always highlight scale notes — stronger in snap mode, subtle by default
+              const scaleHighlight = isRoot
+                ? "rgba(16, 185, 129, 0.14)"
+                : inScale
+                  ? scaleSnap ? "rgba(16, 185, 129, 0.10)" : "rgba(16, 185, 129, 0.05)"
+                  : scaleSnap ? "rgba(0, 0, 0, 0.35)" : "transparent"; // Dim out-of-scale when snap active
               return (
                 <div
                   key={`row-${midi}`}
@@ -1110,10 +1117,8 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                     height: rowHeight,
                     backgroundColor: isBlack
                       ? "rgba(26, 24, 22, 0.5)"
-                      : scaleSnap && inScale
-                        ? "rgba(16, 185, 129, 0.08)"
-                        : "transparent",
-                    borderColor: "rgba(255,255,255,0.02)",
+                      : scaleHighlight,
+                    borderColor: isRoot ? "rgba(16, 185, 129, 0.25)" : "rgba(255,255,255,0.02)",
                   }}
                 />
               );

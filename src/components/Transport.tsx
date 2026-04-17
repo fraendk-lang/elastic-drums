@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useDrumStore, setFillMode } from "../store/drumStore";
 import { downloadMidi } from "../utils/midiExport";
 import { sharePattern } from "../utils/patternShare";
-import { exportPatternAsWav } from "../utils/audioExport";
+import { exportPatternAsWav, exportStems } from "../utils/audioExport";
 import { startSongRecording, stopSongRecording, isRecording, type ExportState } from "../utils/songExport";
 
 interface TransportProps {
@@ -212,6 +212,7 @@ export function Transport({
           onSave={onOpenBrowser}
           onMidiExport={() => downloadMidi(pattern, bpm)}
           onWavExport={() => exportPatternAsWav(pattern, bpm, 4)}
+          onStemExport={() => exportStems(pattern, bpm, 4)}
           onShare={() => sharePattern(pattern, bpm)}
         />
 
@@ -331,10 +332,11 @@ function ToolBtn({ onClick, label, accent }: { onClick: () => void; label: strin
   );
 }
 
-function ExportMenu({ onSave, onMidiExport, onWavExport, onShare }: {
+function ExportMenu({ onSave, onMidiExport, onWavExport, onStemExport, onShare }: {
   onSave: () => void;
   onMidiExport: () => void;
   onWavExport: () => void;
+  onStemExport: () => void;
   onShare: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -396,6 +398,12 @@ function ExportMenu({ onSave, onMidiExport, onWavExport, onShare }: {
             className="w-full text-left px-3 py-1.5 text-[9px] text-white/70 hover:text-white hover:bg-white/8 transition-colors flex items-center gap-2"
           >
             <span className="text-[7px] text-white/30">🔊</span> Export WAV
+          </button>
+          <button
+            onClick={() => { onStemExport(); setOpen(false); }}
+            className="w-full text-left px-3 py-1.5 text-[9px] text-white/70 hover:text-white hover:bg-white/8 transition-colors flex items-center gap-2"
+          >
+            <span className="text-[7px] text-white/30">🎛</span> Export Stems (4×)
           </button>
           <div className="border-t border-white/8 my-1" />
           <RecordButton />
