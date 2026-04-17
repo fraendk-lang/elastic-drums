@@ -25,6 +25,7 @@ const MacroPanel = lazy(() => import("./components/MacroPanel").then((m) => ({ d
 const MidiLearnPanel = lazy(() => import("./components/MidiLearnPanel").then((m) => ({ default: m.MidiLearnPanel })));
 const MidiClockPanel = lazy(() => import("./components/MidiClockPanel").then((m) => ({ default: m.MidiClockPanel })));
 const UserGuide = lazy(() => import("./components/UserGuide").then((m) => ({ default: m.UserGuide })));
+const PerformancePad = lazy(() => import("./components/PerformancePad").then((m) => ({ default: m.PerformancePad })));
 import { getMidiClockMode, subscribeMidiClockMode } from "./store/midiClockMode";
 import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
@@ -321,6 +322,7 @@ export function App() {
         onOpenKits={() => overlay.openOverlay("kitBrowser")}
         onOpenMidi={() => overlay.openOverlay("midiPlayer")}
         onToggleHelp={() => overlay.openOverlay("userGuide")}
+        onOpenPad={() => overlay.openOverlay("performancePad")}
         onOpenPerformance={() => setSceneMiniOpen((o) => !o)}
       />
 
@@ -447,6 +449,7 @@ export function App() {
           />
         )}
         {overlay.isOpen("userGuide") && <UserGuide isOpen onClose={() => overlay.closeOverlay("userGuide")} />}
+        {overlay.isOpen("performancePad") && <PerformancePad isOpen onClose={() => overlay.closeOverlay("performancePad")} />}
       </Suspense>
       {sceneMiniOpen && <SceneMini onClose={() => setSceneMiniOpen(false)} />}
     </div>

@@ -22,10 +22,11 @@ interface TransportProps {
   onToggleHelp: () => void;
   onOpenMidi: () => void;
   onOpenPerformance?: () => void;
+  onOpenPad?: () => void;
 }
 
 export function Transport({
-  onOpenBrowser, onOpenEuclidean, onOpenSong, onOpenScenes, onOpenClips, onOpenArrangement, onOpenModMatrix, onOpenMacros, onOpenMidiLearn, onOpenMidiClock, onOpenFx, onOpenMixer, onOpenKits, onOpenMidi, onToggleHelp, onOpenPerformance,
+  onOpenBrowser, onOpenEuclidean, onOpenSong, onOpenScenes, onOpenClips, onOpenArrangement, onOpenModMatrix, onOpenMacros, onOpenMidiLearn, onOpenMidiClock, onOpenFx, onOpenMixer, onOpenKits, onOpenMidi, onToggleHelp, onOpenPerformance, onOpenPad,
 }: TransportProps) {
   // Per-field selectors so Transport does NOT re-render on every currentStep tick
   const bpm = useDrumStore((s) => s.bpm);
@@ -216,6 +217,7 @@ export function Transport({
         <ToolBtn onClick={onOpenMidiLearn} label="MIDI MAP" />
         <ToolBtn onClick={onOpenMidiClock} label="SYNC" />
         {onOpenPerformance && <ToolBtn onClick={onOpenPerformance} label="LIVE" accent />}
+        {onOpenPad && <ToolBtn onClick={onOpenPad} label="XY PAD" accent />}
         <ToolBtn onClick={onOpenFx} label="FX" accent />
         <ToolBtn onClick={onOpenMixer} label="MIXER" accent />
 
