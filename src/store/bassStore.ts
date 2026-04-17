@@ -410,7 +410,7 @@ interface BassStore {
   generateBassline: (strategyIndex: number) => void;
   nextStrategy: () => void;
   prevStrategy: () => void;
-  applyEuclidean: (pulses: number, eucSteps: number, rotation: number, noteMode: string) => void;
+  applyEuclidean: (pulses: number, eucSteps: number, rotation: number, noteMode: string, accentPulses?: number, accentRotation?: number) => void;
   loadPreset: (index: number) => void;
   nextPreset: () => void;
   prevPreset: () => void;
@@ -662,20 +662,45 @@ export const useBassStore = create<BassStore>((set, get) => ({
     set({ strategyIndex: prev });
   },
 
-  applyEuclidean: (pulses, eucSteps, rotation, noteMode) => {
+  applyEuclidean: (pulses, eucSteps, rotation, noteMode, accentPulses = 0, accentRotation = 0) => {
     const { length, scaleName } = get();
     const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
     const rhythm = generateEuclidean(pulses, eucSteps, rotation);
+    // Optional accent overlay: second Euclidean pattern that marks steps as accented
+    const accent = accentPulses > 0
+      ? generateEuclidean(accentPulses, eucSteps, accentRotation)
+      : null;
     const newSteps = createEmptySteps();
+    const scaleLen = Math.min(scale.length, 7);
+    let walkCursor = 0;
 
     for (let i = 0; i < length; i++) {
       const hit = rhythm[i % rhythm.length];
       if (hit) {
         let note = 0;
-        if (noteMode === "ascending") note = i % Math.min(scale.length, 7);
-        else if (noteMode === "random") note = Math.floor(Math.random() * Math.min(scale.length, 7));
+        if (noteMode === "ascending") note = i % scaleLen;
+        else if (noteMode === "random") note = Math.floor(Math.random() * scaleLen);
+        else if (noteMode === "walk") {
+          // Random-walk ±1 step — smooth melodic motion
+          const dir = Math.random() < 0.5 ? -1 : 1;
+          walkCursor = Math.max(0, Math.min(scaleLen - 1, walkCursor + dir));
+          note = walkCursor;
+        } else if (noteMode === "alternate") {
+          // Root / 5th toggle
+          note = (i % 2 === 0) ? 0 : Math.min(4, scaleLen - 1);
+        } else if (noteMode === "pentatonic") {
+          // Cycle through pentatonic degrees (0, 2, 4 out of a 7-note scale)
+          const pent = [0, 2, 4, 2].filter((d) => d < scaleLen);
+          note = pent[i % pent.length] ?? 0;
+        }
         // "root" → note stays 0
-        newSteps[i] = { active: true, note, octave: 0, accent: i % 4 === 0, velocity: i % 4 === 0 ? 0.96 : 0.74, slide: false, tie: false, gateLength: 1 };
+        const isAccent = accent ? (accent[i % accent.length] ?? false) : (i % 4 === 0);
+        newSteps[i] = {
+          active: true, note, octave: 0,
+          accent: isAccent,
+          velocity: isAccent ? 0.96 : 0.74,
+          slide: false, tie: false, gateLength: 1,
+        };
       }
     }
     set({ steps: newSteps });
