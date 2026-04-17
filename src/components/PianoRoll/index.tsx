@@ -81,6 +81,9 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; noteId: string } | null>(null);
   const [hoverInfo, setHoverInfo] = useState<{ midi: number; beat: number } | null>(null);
   const [dragInfo, setDragInfo] = useState<{ midi: number; beat: number } | null>(null);
+  const [midiRecord, setMidiRecord] = useState(false);
+  // Track held MIDI notes: midi → { startBeat, velocity, id }
+  const heldMidiNotes = useRef<Map<number, { startBeat: number; velocity: number; id: string }>>(new Map());
 
   // ─── Sync initial persisted state into scheduler on mount ───
   useEffect(() => {
@@ -178,6 +181,63 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     (beat: number) => (snap ? Math.round(beat / gridRes) * gridRes : beat),
     [snap, gridRes],
   );
+
+  // ─── MIDI Record: listen for external Note On/Off events ──────
+  useEffect(() => {
+    if (!isOpen || !midiRecord || !navigator.requestMIDIAccess) return;
+    let access: MIDIAccess | null = null;
+    const inputs: MIDIInput[] = [];
+
+    const onMessage = (e: MIDIMessageEvent) => {
+      const data = e.data;
+      if (!data || data.length < 2) return;
+      const cmd = data[0]! & 0xf0;
+      const note = data[1]!;
+      const vel = data[2] ?? 0;
+
+      const beat = useTransportStore.getState().currentStep * 0.25;
+      const quantized = snap ? Math.round(beat / gridRes) * gridRes : beat;
+
+      if (cmd === 0x90 && vel > 0) {
+        // Note On: create placeholder note, remember id + start
+        const id = uid();
+        heldMidiNotes.current.set(note, { startBeat: quantized, velocity: vel / 127, id });
+        const placeholder: PianoRollNote = {
+          id,
+          midi: note,
+          start: quantized,
+          duration: gridRes,
+          velocity: vel / 127,
+          track: target,
+        };
+        setNotes((prev) => [...prev, placeholder]);
+      } else if (cmd === 0x80 || (cmd === 0x90 && vel === 0)) {
+        // Note Off: finalize duration
+        const held = heldMidiNotes.current.get(note);
+        if (!held) return;
+        heldMidiNotes.current.delete(note);
+        const endBeat = quantized;
+        const dur = Math.max(gridRes, endBeat - held.startBeat);
+        setNotes((prev) => prev.map((n) => (n.id === held.id ? { ...n, duration: dur } : n)));
+      }
+    };
+
+    navigator.requestMIDIAccess({ sysex: false }).then((acc) => {
+      access = acc;
+      for (const input of acc.inputs.values()) {
+        input.addEventListener("midimessage", onMessage as EventListener);
+        inputs.push(input);
+      }
+    }).catch(() => { /* no MIDI */ });
+
+    return () => {
+      for (const input of inputs) {
+        input.removeEventListener("midimessage", onMessage as EventListener);
+      }
+      heldMidiNotes.current.clear();
+      void access; // reference kept
+    };
+  }, [isOpen, midiRecord, target, gridRes, snap, setNotes]);
 
   // ─── NOTE ACTIONS ─────────────────────────────────────────────
   const addNote = useCallback(
@@ -1012,6 +1072,8 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         onSetNoteLength={handleSetNoteLength}
         fold={fold}
         setFold={setFold}
+        midiRecord={midiRecord}
+        setMidiRecord={setMidiRecord}
         onHarmony={handleHarmony}
         onSelectAll={() => setSelectedNoteIds(new Set(notes.map((n) => n.id)))}
         onDelete={() => removeNotes(selectedNoteIds)}

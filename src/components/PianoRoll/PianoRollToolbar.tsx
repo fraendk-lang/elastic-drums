@@ -39,6 +39,8 @@ interface PianoRollToolbarProps {
   onSetNoteLength: (beats: number) => void;
   fold: boolean;
   setFold: (b: boolean) => void;
+  midiRecord: boolean;
+  setMidiRecord: (b: boolean) => void;
   onSelectAll: () => void;
   onDelete: () => void;
   onCopy: () => void;
@@ -83,6 +85,8 @@ export function PianoRollToolbar(props: PianoRollToolbarProps) {
     onSetNoteLength,
     fold,
     setFold,
+    midiRecord,
+    setMidiRecord,
     onHarmony,
     onSelectAll,
     onDelete,
@@ -393,6 +397,22 @@ export function PianoRollToolbar(props: PianoRollToolbarProps) {
           }}
         >
           FOLD
+        </button>
+
+        {/* MIDI Record — external controller → live piano roll notes */}
+        <button
+          onClick={() => setMidiRecord(!midiRecord)}
+          title="Record external MIDI input into piano roll"
+          className="px-2 py-0.5 text-[7px] font-bold tracking-wider rounded transition-all shrink-0 hover:brightness-110 flex items-center gap-1"
+          style={{
+            backgroundColor: midiRecord ? "rgba(239,68,68,0.3)" : "rgba(255,255,255,0.05)",
+            color: midiRecord ? "#fca5a5" : "white",
+            opacity: midiRecord ? 1 : 0.4,
+            border: `1px solid ${midiRecord ? "rgba(239,68,68,0.6)" : "rgba(255,255,255,0.15)"}`,
+          }}
+        >
+          {midiRecord && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
+          MIDI REC
         </button>
 
         <div className="w-px h-4 bg-white/15 shrink-0" />
