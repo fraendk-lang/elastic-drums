@@ -564,6 +564,9 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
 
           {/* Sidechain: Kick → Bass/Chords/Melody Duck */}
           <SidechainControls />
+
+          {/* Crossfader */}
+          <CrossfaderControl />
         </div>
       </div>
 
@@ -679,6 +682,9 @@ function ChannelStrip({ label, color, meter, faderValue, sendA, sendB, sendC, se
       >
         FX ▸
       </button>
+
+      {/* Crossfader A/B */}
+      <ChannelCrossfaderButtons channelIndex={channelIndex} />
 
       {/* Meter + Fader area */}
       <div className="flex min-h-0 flex-1 gap-[4px] px-1.5 py-1.5">
@@ -1053,6 +1059,70 @@ function ChannelComp({ channelIndex, color }: { channelIndex: number; color: str
           <span className="text-[5px] font-mono text-white/30 w-4 text-right">{ratio}:1</span>
         </div>
       )}
+    </div>
+  );
+}
+
+function CrossfaderControl() {
+  const [value, setValue] = useState(audioEngine.getCrossfader());
+
+  const onChange = useCallback((v: number) => {
+    setValue(v);
+    audioEngine.setCrossfader(v);
+  }, []);
+
+  const center = Math.abs(value) < 0.02;
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className={`text-[9px] font-bold transition-colors ${value < -0.02 ? "text-[var(--ed-accent-blue)]" : "text-white/30"}`}>A</span>
+      <input
+        type="range"
+        min={-1} max={1} step={0.01}
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        onDoubleClick={() => onChange(0)}
+        className="w-28 h-[6px] accent-[var(--ed-accent-orange)]"
+        title="Crossfader (double-click to center)"
+      />
+      <span className={`text-[9px] font-bold transition-colors ${value > 0.02 ? "text-[var(--ed-accent-orange)]" : "text-white/30"}`}>B</span>
+      <span className="text-[7px] font-mono text-white/30 w-6">{center ? "—" : value > 0 ? `+${value.toFixed(2)}` : value.toFixed(2)}</span>
+    </div>
+  );
+}
+
+function ChannelCrossfaderButtons({ channelIndex }: { channelIndex: number }) {
+  const [group, setGroup] = useState<"A" | "B" | "none">(audioEngine.getChannelCrossfaderGroup(channelIndex));
+
+  const setGroupAndApply = useCallback((next: "A" | "B" | "none") => {
+    setGroup(next);
+    audioEngine.setChannelCrossfaderGroup(channelIndex, next);
+  }, [channelIndex]);
+
+  return (
+    <div className="flex gap-[2px] border-b border-white/8 px-1.5 py-[3px]">
+      <button
+        onClick={() => setGroupAndApply(group === "A" ? "none" : "A")}
+        title="Crossfader group A"
+        className={`flex-1 text-[7px] font-bold py-0.5 rounded-sm transition-colors ${
+          group === "A"
+            ? "bg-[var(--ed-accent-blue)]/30 text-[var(--ed-accent-blue)]"
+            : "text-white/25 hover:text-white/60 bg-white/[0.03]"
+        }`}
+      >
+        A
+      </button>
+      <button
+        onClick={() => setGroupAndApply(group === "B" ? "none" : "B")}
+        title="Crossfader group B"
+        className={`flex-1 text-[7px] font-bold py-0.5 rounded-sm transition-colors ${
+          group === "B"
+            ? "bg-[var(--ed-accent-orange)]/30 text-[var(--ed-accent-orange)]"
+            : "text-white/25 hover:text-white/60 bg-white/[0.03]"
+        }`}
+      >
+        B
+      </button>
     </div>
   );
 }

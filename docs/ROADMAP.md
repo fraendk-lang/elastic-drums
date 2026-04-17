@@ -247,6 +247,38 @@
 
 ---
 
+## Phase 8 — Performance Optimization
+
+**Ziel:** 60 fps bei 12 Tracks + Piano Roll + Mixer + alle FX aktiv.
+Ableton-Level Flüssigkeit auch auf Mittelklasse-Laptops.
+
+### 8.1 Canvas-basiertes Piano Roll Rendering
+**Referenz:** Ableton MIDI Clip Editor (Canvas statt DOM)
+**Beschreibung:** Bei >200 Notes pro Clip wird das DOM-Rendering spürbar. Umstieg auf `<canvas>` mit manuellem Redraw in `requestAnimationFrame`.
+**Aufwand:** ~1 Session
+
+### 8.2 Mixer-Meter via OffscreenCanvas
+**Beschreibung:** 15 FFT-Meter gleichzeitig → Main Thread. Umzug auf OffscreenCanvas in Worker.
+**Aufwand:** ~45 min
+
+### 8.3 React Re-Render Optimization
+**Beschreibung:** Expensive components (ChannelStrip, Piano Roll Grid) mit React.memo + primitive props. Derived state aus Hooks raus.
+**Aufwand:** ~30 min
+
+### 8.4 Bundle-Size-Diet
+**Beschreibung:** Barrel-Imports vermeiden, dynamische Imports für selten geöffnete Overlays (Mod-Matrix, FX-Rack).
+**Aufwand:** ~30 min
+
+### 8.5 AudioNode Pool
+**Beschreibung:** Drum-Voices erzeugen pro Trigger 6-10 Nodes. Pool wiederverwendbarer Nodes reduziert GC-Pressure.
+**Aufwand:** ~1 Session
+
+### 8.6 `requestIdleCallback` für Non-Critical Work
+**Beschreibung:** Pattern-Persistence, Undo-Snapshots, Stats-Updates in Idle-Zeit verschieben.
+**Aufwand:** ~20 min
+
+---
+
 ## Phase 7 — Polish & Production-Ready
 
 | Feature | Aufwand |

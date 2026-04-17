@@ -16,6 +16,9 @@ export class MixerRouter {
   private channelEQs: { lo: BiquadFilterNode; mid: BiquadFilterNode; hi: BiquadFilterNode }[] = [];
   private channelCompressors: DynamicsCompressorNode[] = [];
   private channelFxChains: (FxChain | null)[] = [];
+  private channelCrossfaderGroup: Array<"A" | "B" | "none"> = []; // per channel
+  private channelCrossfaderGain: GainNode[] = []; // extra gain node for crossfade scaling
+  private crossfaderValue = 0; // -1 = full A, 0 = center, +1 = full B
   private binauralMode = false;
   private groupBuses: Map<string, { gain: GainNode; analyser: AnalyserNode }> = new Map();
   private channelGroupAssignment: string[] = [];
@@ -59,6 +62,10 @@ export class MixerRouter {
     const gain = ctx.createGain();
     gain.gain.value = 1.0;
 
+    // Crossfader gain (scales channel output based on A/B assignment + crossfader pos)
+    const xfadeGain = ctx.createGain();
+    xfadeGain.gain.value = 1.0; // bypass by default (assigned to "none")
+
     // Channel panner (3D / HRTF capable)
     const panner = ctx.createPanner();
     panner.panningModel = "equalpower";
@@ -85,7 +92,8 @@ export class MixerRouter {
     eqMid.connect(eqHi);
     eqHi.connect(compressor);
     compressor.connect(gain);
-    gain.connect(panner);
+    gain.connect(xfadeGain);
+    xfadeGain.connect(panner);
     panner.connect(analyser);
     analyser.connect(destination);
 
@@ -95,6 +103,8 @@ export class MixerRouter {
     this.channelCompressors.push(compressor);
     this.channelFxChains.push(fxChain);
     this.channelGains.push(gain);
+    this.channelCrossfaderGain.push(xfadeGain);
+    this.channelCrossfaderGroup.push("none");
     this.channelPanners.push(panner);
     this.channelAnalysers.push(analyser);
 
@@ -184,6 +194,49 @@ export class MixerRouter {
   /** Get channel FX chain */
   getChannelFxChain(i: number): FxChain | null {
     return this.channelFxChains[i] ?? null;
+  }
+
+  /** Assign a channel to crossfader group A, B, or none */
+  setChannelCrossfaderGroup(channel: number, group: "A" | "B" | "none"): void {
+    if (channel < 0 || channel >= this.channelCrossfaderGroup.length) return;
+    this.channelCrossfaderGroup[channel] = group;
+    this.updateCrossfaderGain(channel);
+  }
+
+  getChannelCrossfaderGroup(channel: number): "A" | "B" | "none" {
+    return this.channelCrossfaderGroup[channel] ?? "none";
+  }
+
+  /** Set crossfader position: -1 = full A, 0 = center, +1 = full B */
+  setCrossfader(value: number): void {
+    this.crossfaderValue = Math.max(-1, Math.min(1, value));
+    // Update all grouped channels
+    for (let i = 0; i < this.channelCrossfaderGroup.length; i++) {
+      this.updateCrossfaderGain(i);
+    }
+  }
+
+  getCrossfader(): number {
+    return this.crossfaderValue;
+  }
+
+  private updateCrossfaderGain(channel: number): void {
+    const gain = this.channelCrossfaderGain[channel];
+    const group = this.channelCrossfaderGroup[channel];
+    if (!gain) return;
+
+    if (group === "none") {
+      gain.gain.value = 1.0;
+      return;
+    }
+
+    // Equal-power crossfade curve (sqrt-based)
+    // A: full at -1, silent at +1
+    // B: silent at -1, full at +1
+    const pos = (this.crossfaderValue + 1) / 2; // 0..1
+    const aGain = Math.cos((pos * Math.PI) / 2);
+    const bGain = Math.sin((pos * Math.PI) / 2);
+    gain.gain.value = group === "A" ? aGain : bGain;
   }
 
   /** Bypass channel compressor (set threshold to 0 dB) */

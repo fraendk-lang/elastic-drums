@@ -311,6 +311,10 @@ export class AudioEngine {
   bypassChannelCompressor(channel: number): void { mixerRouter.bypassChannelCompressor(channel); }
   getChannelCompressor(channel: number): DynamicsCompressorNode | null { return mixerRouter.getChannelCompressor(channel); }
   getChannelFxChain(channel: number) { return mixerRouter.getChannelFxChain(channel); }
+  setChannelCrossfaderGroup(channel: number, group: "A" | "B" | "none"): void { mixerRouter.setChannelCrossfaderGroup(channel, group); }
+  getChannelCrossfaderGroup(channel: number): "A" | "B" | "none" { return mixerRouter.getChannelCrossfaderGroup(channel); }
+  setCrossfader(value: number): void { mixerRouter.setCrossfader(value); }
+  getCrossfader(): number { return mixerRouter.getCrossfader(); }
   resetChannelEQ(channel: number): void { mixerRouter.resetChannelEQ(channel); }
   getChannelEQ(channel: number): { lo: BiquadFilterNode; mid: BiquadFilterNode; hi: BiquadFilterNode } | null { return mixerRouter.getChannelEQ(channel); }
   setChannelPan(channel: number, pan: number): void { mixerRouter.setChannelPan(channel, pan); }
