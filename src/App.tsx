@@ -16,6 +16,7 @@ import { SynthSection } from "./components/SynthSection";
 import { MidiPlayerPanel } from "./components/MidiPlayerPanel";
 import { PianoRoll } from "./components/PianoRoll";
 import { ClipLauncher } from "./components/ClipLauncher";
+import { ArrangementView } from "./components/ArrangementView";
 import { SceneMini } from "./components/SceneMini";
 import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
@@ -285,6 +286,7 @@ export function App() {
         onOpenSong={() => overlay.openOverlay("song")}
         onOpenScenes={() => overlay.openOverlay("scene")}
         onOpenClips={() => overlay.openOverlay("clipLauncher")}
+        onOpenArrangement={() => overlay.openOverlay("arrangement")}
         onOpenFx={() => overlay.openOverlay("fxPanel")}
         onOpenMixer={() => overlay.openOverlay("mixer")}
         onOpenKits={() => overlay.openOverlay("kitBrowser")}
@@ -400,6 +402,7 @@ export function App() {
       />
       <PianoRoll isOpen={overlay.isOpen("pianoRoll")} onClose={() => overlay.closeOverlay("pianoRoll")} />
       <ClipLauncher isOpen={overlay.isOpen("clipLauncher")} onClose={() => overlay.closeOverlay("clipLauncher")} />
+      <ArrangementView isOpen={overlay.isOpen("arrangement")} onClose={() => overlay.closeOverlay("arrangement")} />
       {sceneMiniOpen && <SceneMini onClose={() => setSceneMiniOpen(false)} />}
     </div>
   );

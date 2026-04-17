@@ -11,6 +11,7 @@ interface TransportProps {
   onOpenSong: () => void;
   onOpenScenes: () => void;
   onOpenClips: () => void;
+  onOpenArrangement: () => void;
   onOpenFx: () => void;
   onOpenMixer: () => void;
   onOpenKits: () => void;
@@ -20,7 +21,7 @@ interface TransportProps {
 }
 
 export function Transport({
-  onOpenBrowser, onOpenEuclidean, onOpenSong, onOpenScenes, onOpenClips, onOpenFx, onOpenMixer, onOpenKits, onOpenMidi, onToggleHelp, onOpenPerformance,
+  onOpenBrowser, onOpenEuclidean, onOpenSong, onOpenScenes, onOpenClips, onOpenArrangement, onOpenFx, onOpenMixer, onOpenKits, onOpenMidi, onToggleHelp, onOpenPerformance,
 }: TransportProps) {
   const {
     bpm, isPlaying, swing, pattern,
@@ -198,6 +199,7 @@ export function Transport({
         <ToolBtn onClick={onOpenSong} label="SONG" />
         <ToolBtn onClick={onOpenScenes} label="SCENE" />
         <ToolBtn onClick={onOpenClips} label="CLIPS" />
+        <ToolBtn onClick={onOpenArrangement} label="ARR" />
         {onOpenPerformance && <ToolBtn onClick={onOpenPerformance} label="LIVE" accent />}
         <ToolBtn onClick={onOpenFx} label="FX" accent />
         <ToolBtn onClick={onOpenMixer} label="MIXER" accent />
