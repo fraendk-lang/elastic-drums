@@ -136,6 +136,7 @@ interface PerformancePadState {
   gridSnap: boolean;        // Snap X to scale notes vs. smooth pitch bend
   glide: number;            // 0-1, portamento ms factor for mono-like expressiveness
   trailEnabled: boolean;    // Particle trail behind cursor
+  chordFollow: boolean;     // When true, Bass + Melody auto-transpose to match pad chord root
 
   // Recording
   events: PadEvent[];
@@ -156,6 +157,7 @@ interface PerformancePadState {
   setGridSnap: (b: boolean) => void;
   setGlide: (n: number) => void;
   setTrailEnabled: (b: boolean) => void;
+  setChordFollow: (b: boolean) => void;
 
   // Recording API
   startRecording: () => void;
@@ -178,6 +180,7 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
   gridSnap: true,
   glide: 0.15,
   trailEnabled: true,
+  chordFollow: true,
 
   events: [],
   isRecording: false,
@@ -196,6 +199,7 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
   setGridSnap: (b) => set({ gridSnap: b }),
   setGlide: (n) => set({ glide: Math.max(0, Math.min(1, n)) }),
   setTrailEnabled: (b) => set({ trailEnabled: b }),
+  setChordFollow: (b) => set({ chordFollow: b }),
 
   startRecording: () => {
     const s = get();

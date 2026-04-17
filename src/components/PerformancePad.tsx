@@ -52,12 +52,15 @@ interface ActiveVoice {
 
 export function PerformancePad({ isOpen, onClose }: Props) {
   const {
-    target, mode, chordSetIndex, yParam, scaleOctaves, scaleLowestOct, gridSnap, trailEnabled,
+    target, mode, chordSetIndex, yParam, scaleOctaves, scaleLowestOct, gridSnap, trailEnabled, chordFollow,
     events, isRecording, isLooping, loopDuration,
-    setTarget, setMode, setChordSetIndex, setYParam, setScaleOctaves, setScaleLowestOct, setGridSnap, setTrailEnabled,
+    setTarget, setMode, setChordSetIndex, setYParam, setScaleOctaves, setScaleLowestOct, setGridSnap, setTrailEnabled, setChordFollow,
     startRecording, stopRecording, clearRecording, appendEvent,
     startLoop, stopLoop,
   } = usePerformancePadStore();
+
+  const setBassLiveTranspose = useBassStore((s) => s.setLiveTransposeOffset);
+  const setMelodyLiveTranspose = useMelodyStore((s) => s.setLiveTransposeOffset);
 
   const chordSet = CHORD_SETS[chordSetIndex] ?? CHORD_SETS[0]!;
 
@@ -97,6 +100,32 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   // Particle trail — each trail point decays over ~600ms
   interface TrailPoint { x: number; y: number; t: number; pointerId: number }
   const trailRef = useRef<TrailPoint[]>([]);
+
+  // Reset transpose when overlay closes (prevents stale offset if closed mid-press)
+  useEffect(() => {
+    if (!isOpen) {
+      setBassLiveTranspose(0);
+      setMelodyLiveTranspose(0);
+    }
+  }, [isOpen, setBassLiveTranspose, setMelodyLiveTranspose]);
+
+  /** Apply chord-follow: transpose Bass + Melody engines to match the given chord root.
+   *  Pass null to clear. Uses closest-octave diff from current bass rootNote. */
+  const applyChordFollow = useCallback((chordRootMidi: number | null) => {
+    if (!chordFollow) return;
+    if (chordRootMidi === null) {
+      setBassLiveTranspose(0);
+      setMelodyLiveTranspose(0);
+      return;
+    }
+    // Use the bass root as the anchor (assumes bass+melody share the same key root,
+    // which they do via the scale-sync system in bassStore).
+    let diff = (chordRootMidi - bassRoot) % 12;
+    if (diff < 0) diff += 12;
+    if (diff > 6) diff -= 12;  // Take closest direction (within ±6 semitones)
+    setBassLiveTranspose(diff);
+    setMelodyLiveTranspose(diff);
+  }, [chordFollow, bassRoot, setBassLiveTranspose, setMelodyLiveTranspose]);
 
   // ── Pitch mapping: X [0-1] → MIDI note via scale ──
   // ── Export recording to Piano Roll ──
@@ -252,6 +281,9 @@ export function PerformancePad({ isOpen, onClose }: Props) {
       const chord = chordSet.cells[cellIdx];
       if (!chord) return;
       const rootMidi = chordSet.rootMidi + chord.rootOffset;
+      // ── Chord-follow: transpose Bass+Melody engines to match this chord's root ──
+      applyChordFollow(rootMidi);
+
       const releases: Array<(() => void) | null> = [];
       // Slight strum: fire notes with tiny delay between each for a human feel
       chord.intervals.forEach((interval, i) => {
@@ -303,6 +335,11 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     appendEvent({ type: "up", pointerId: e.pointerId, x, y, velocity: voice.velocity });
     // Trigger musical release for all voices (single note or chord stack)
     voice.releases.forEach((r) => r?.());
+    // Chord-follow: if no chord voices remain, reset transpose to 0
+    if (mode === "chords") {
+      const stillChordActive = Array.from(activeVoicesRef.current.values()).some((v) => v.cellIndex !== undefined);
+      if (!stillChordActive) applyChordFollow(null);
+    }
   };
 
   // ── Loop playback engine ──
@@ -666,6 +703,21 @@ export function PerformancePad({ isOpen, onClose }: Props) {
                 ))}
               </select>
             </div>
+            <div className="mx-1 h-4 w-px bg-white/10" />
+          </>
+        )}
+
+        {/* Chord-Follow toggle — shown only in chord mode */}
+        {mode === "chords" && (
+          <>
+            <button onClick={() => setChordFollow(!chordFollow)}
+              className={`px-2 h-6 text-[8px] font-bold rounded transition-all ${
+                chordFollow
+                  ? "bg-[var(--ed-accent-bass)]/25 text-[var(--ed-accent-bass)]"
+                  : "text-white/35 hover:text-white/60"
+              }`}
+              title="Bass + Melody transponieren live zur Akkord-Grundnote (z.B. Bass in Cm spielt Fm wenn du F-Moll-Akkord drückst)"
+            >🎯 FOLLOW</button>
             <div className="mx-1 h-4 w-px bg-white/10" />
           </>
         )}

@@ -808,6 +808,10 @@ interface MelodyStore {
   humanize: HumanizeSettings;
   layerMode: LayerMode;
   layerVelocity: number;  // 0-1, relative to main note velocity
+  /** Live semitone transpose applied on top of every scheduled note
+   *  (used by XY Pad chord-follow — set on chord down, reset on chord up). */
+  liveTransposeOffset: number;
+  setLiveTransposeOffset: (semis: number) => void;
   setArp: <K extends keyof ArpSettings>(key: K, value: ArpSettings[K]) => void;
   setHumanize: <K extends keyof HumanizeSettings>(key: K, value: HumanizeSettings[K]) => void;
   setLayerMode: (m: LayerMode) => void;
@@ -912,7 +916,8 @@ export function startMelodyScheduler() {
       }
 
       if (step?.active && !isContinuationTie) {
-        const midiNote = scaleNote(rootNote, scaleName, step.note, step.octave + globalOctave);
+        const { liveTransposeOffset: melodyTranspose } = useMelodyStore.getState();
+        const midiNote = scaleNote(rootNote, scaleName, step.note, step.octave + globalOctave) + (melodyTranspose ?? 0);
         const explicitGateLength = Math.max(1, step.gateLength ?? 1);
         const sustainSteps = explicitGateLength > 1 ? explicitGateLength : getLegacyTieLength(steps, stepIndex, length);
         const sustainDuration = secondsPerStep * sustainSteps;
@@ -1018,6 +1023,8 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
   humanize: { ...DEFAULT_HUMANIZE },
   layerMode: "off",
   layerVelocity: 0.55,
+  liveTransposeOffset: 0,
+  setLiveTransposeOffset: (semis) => set({ liveTransposeOffset: semis }),
 
   setArp: (key, value) => set((s) => ({ arp: { ...s.arp, [key]: value } })),
   setHumanize: (key, value) => set((s) => ({ humanize: { ...s.humanize, [key]: value } })),

@@ -389,6 +389,10 @@ interface BassStore {
   automationData: Record<string, Array<number | undefined>>;
   automationParam: string;
   instrument: string;
+  /** Live semitone transpose applied on top of every scheduled note
+   *  (used by XY Pad chord-follow — set on chord down, reset on chord up). */
+  liveTransposeOffset: number;
+  setLiveTransposeOffset: (semis: number) => void;
 
   toggleStep: (step: number) => void;
   setStepNote: (step: number, note: number) => void;
@@ -490,8 +494,8 @@ export function startBassScheduler() {
       }
 
       if (step?.active && !isContinuationTie) {
-        const midiNote = scaleNote(rootNote, scaleName, step.note, step.octave + globalOctave);
-        const { instrument } = useBassStore.getState();
+        const { instrument, liveTransposeOffset } = useBassStore.getState();
+        const midiNote = scaleNote(rootNote, scaleName, step.note, step.octave + globalOctave) + (liveTransposeOffset ?? 0);
         const explicitGateLength = Math.max(1, step.gateLength ?? 1);
         let sustainSteps = explicitGateLength;
 
@@ -545,6 +549,8 @@ export const useBassStore = create<BassStore>((set, get) => ({
   rootName: "C",
   scaleName: "Minor",
   globalOctave: 0,
+  liveTransposeOffset: 0,
+  setLiveTransposeOffset: (semis) => set({ liveTransposeOffset: semis }),
   params: { ...DEFAULT_BASS_PARAMS },
   presetIndex: 0,
   strategyIndex: 0,
