@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useDrumStore } from "../store/drumStore";
+import { macros } from "../audio/Macros";
+import { audioEngine } from "../audio/AudioEngine";
 
 /**
  * Web MIDI API integration
@@ -24,6 +26,50 @@ let midiLearnTarget: number | null = null;
 
 export function setMidiLearnTarget(voiceIndex: number | null) {
   midiLearnTarget = voiceIndex;
+}
+
+// ─── CC Mapping ─────────────────────────────────────────────────
+// Map CC number → destination id (e.g. "macro.0", "mixer.crossfader", "master.reverb")
+export type CcDestination =
+  | { kind: "macro"; index: number }
+  | { kind: "crossfader" }
+  | { kind: "reverb" }
+  | { kind: "delay" }
+  | { kind: "channel-volume"; channel: number };
+
+const ccMap = new Map<number, CcDestination>();
+let ccLearnTarget: CcDestination | null = null;
+
+export function setCcLearnTarget(dest: CcDestination | null) {
+  ccLearnTarget = dest;
+}
+
+export function getCcMappings(): Array<{ cc: number; dest: CcDestination }> {
+  return Array.from(ccMap.entries()).map(([cc, dest]) => ({ cc, dest }));
+}
+
+export function clearCcMapping(cc: number) {
+  ccMap.delete(cc);
+}
+
+function applyCc(dest: CcDestination, value01: number): void {
+  switch (dest.kind) {
+    case "macro":
+      macros.setValue(dest.index, value01);
+      break;
+    case "crossfader":
+      audioEngine.setCrossfader(value01 * 2 - 1); // 0..1 → -1..+1
+      break;
+    case "reverb":
+      audioEngine.setReverbLevel(value01);
+      break;
+    case "delay":
+      audioEngine.setDelayLevel(value01);
+      break;
+    case "channel-volume":
+      audioEngine.setChannelVolume(dest.channel, value01);
+      break;
+  }
 }
 
 export function useMidi() {
@@ -67,6 +113,23 @@ export function useMidi() {
               triggerVoice(voice);
               setSelectedVoice(voice);
             }
+          }
+
+          // Control Change (0xB0) — CC mapping
+          if (command === 0xB0) {
+            const cc = data[1]!;
+            const ccValue = data[2] ?? 0;
+
+            // CC Learn mode
+            if (ccLearnTarget !== null) {
+              ccMap.set(cc, ccLearnTarget);
+              console.log(`MIDI Learn: CC ${cc} → ${JSON.stringify(ccLearnTarget)}`);
+              ccLearnTarget = null;
+              return;
+            }
+
+            const dest = ccMap.get(cc);
+            if (dest) applyCc(dest, ccValue / 127);
           }
         };
 

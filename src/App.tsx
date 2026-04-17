@@ -19,6 +19,7 @@ import { ClipLauncher } from "./components/ClipLauncher";
 import { ArrangementView } from "./components/ArrangementView";
 import { ModMatrixEditor } from "./components/ModMatrixEditor";
 import { MacroPanel } from "./components/MacroPanel";
+import { MidiLearnPanel } from "./components/MidiLearnPanel";
 import { SceneMini } from "./components/SceneMini";
 import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
@@ -291,6 +292,7 @@ export function App() {
         onOpenArrangement={() => overlay.openOverlay("arrangement")}
         onOpenModMatrix={() => overlay.openOverlay("modMatrix")}
         onOpenMacros={() => overlay.openOverlay("macros")}
+        onOpenMidiLearn={() => overlay.openOverlay("midiLearn")}
         onOpenFx={() => overlay.openOverlay("fxPanel")}
         onOpenMixer={() => overlay.openOverlay("mixer")}
         onOpenKits={() => overlay.openOverlay("kitBrowser")}
@@ -409,6 +411,7 @@ export function App() {
       <ArrangementView isOpen={overlay.isOpen("arrangement")} onClose={() => overlay.closeOverlay("arrangement")} />
       <ModMatrixEditor isOpen={overlay.isOpen("modMatrix")} onClose={() => overlay.closeOverlay("modMatrix")} />
       <MacroPanel isOpen={overlay.isOpen("macros")} onClose={() => overlay.closeOverlay("macros")} />
+      <MidiLearnPanel isOpen={overlay.isOpen("midiLearn")} onClose={() => overlay.closeOverlay("midiLearn")} />
       {sceneMiniOpen && <SceneMini onClose={() => setSceneMiniOpen(false)} />}
     </div>
   );
