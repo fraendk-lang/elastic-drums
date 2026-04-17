@@ -53,9 +53,9 @@ interface ActiveVoice {
 export function PerformancePad({ isOpen, onClose }: Props) {
   const {
     target, mode, chordSetIndex, yParam, scaleOctaves, scaleLowestOct, gridSnap, trailEnabled, chordFollow,
-    events, isRecording, isLooping, loopDuration,
+    events, isArmed, isRecording, isLooping, loopDuration, loopBars, quantize,
     setTarget, setMode, setChordSetIndex, setYParam, setScaleOctaves, setScaleLowestOct, setGridSnap, setTrailEnabled, setChordFollow,
-    startRecording, stopRecording, clearRecording, appendEvent,
+    armRecording, stopRecording, clearRecording, appendEvent, setLoopBars, setQuantize,
     startLoop, stopLoop,
   } = usePerformancePadStore();
 
@@ -729,17 +729,56 @@ export function PerformancePad({ isOpen, onClose }: Props) {
 
         <div className="mx-1 h-4 w-px bg-white/10" />
 
+        {/* Loop length selector (auto / 1 / 2 / 4 / 8 bars) */}
+        {!isRecording && !isArmed && (
+          <div className="flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1">
+            <span className="text-[8px] text-[var(--ed-text-muted)] mr-1">BARS</span>
+            {([0, 1, 2, 4, 8] as const).map((n) => (
+              <button key={n} onClick={() => setLoopBars(n)}
+                className={`px-1.5 h-5 text-[9px] font-bold rounded ${
+                  loopBars === n ? "bg-white/15 text-white/90" : "text-white/30 hover:text-white/60"
+                }`}
+                title={n === 0 ? "Auto (measured duration)" : `${n} bar${n > 1 ? "s" : ""} at current BPM`}
+              >{n === 0 ? "AUTO" : n}</button>
+            ))}
+          </div>
+        )}
+
+        {/* Quantize selector */}
+        {!isRecording && !isArmed && (
+          <div className="flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1">
+            <span className="text-[8px] text-[var(--ed-text-muted)] mr-1">Q</span>
+            {(["off", "1/4", "1/8", "1/16", "1/32"] as const).map((q) => (
+              <button key={q} onClick={() => setQuantize(q)}
+                className={`px-1 h-5 text-[8px] font-bold rounded ${
+                  quantize === q
+                    ? "bg-[var(--ed-accent-blue)]/25 text-[var(--ed-accent-blue)]"
+                    : "text-white/30 hover:text-white/60"
+                }`}
+                title={q === "off" ? "No quantize" : `Snap event timings to ${q} grid`}
+              >{q === "off" ? "—" : q}</button>
+            ))}
+          </div>
+        )}
+
         {/* Recording controls */}
-        {!isRecording ? (
-          <button onClick={startRecording}
+        {!isRecording && !isArmed ? (
+          <button onClick={armRecording}
             className="px-3 h-6 text-[9px] font-bold rounded bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-all"
+            title="Arm recording — starts on first note"
           >● REC</button>
+        ) : isArmed ? (
+          <button onClick={() => stopRecording(bpm)}
+            className="px-3 h-6 text-[9px] font-bold rounded bg-yellow-500/25 text-yellow-300 animate-pulse transition-all"
+            title="Waiting for first note — click to cancel"
+          >◉ ARMED</button>
         ) : (
-          <button onClick={stopRecording}
-            className="px-3 h-6 text-[9px] font-bold rounded bg-red-500/35 text-red-200 animate-pulse transition-all"
+          <button onClick={() => stopRecording(bpm)}
+            className="px-3 h-6 text-[9px] font-bold rounded bg-red-500/40 text-red-100 animate-pulse transition-all"
           >■ STOP</button>
         )}
-        {events.length > 0 && !isRecording && (
+
+        {events.length > 0 && !isRecording && !isArmed && (
           <>
             {!isLooping ? (
               <button onClick={startLoop}
@@ -757,7 +796,11 @@ export function PerformancePad({ isOpen, onClose }: Props) {
             <button onClick={clearRecording}
               className="px-2 h-6 text-[8px] font-bold rounded bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70"
             >CLR</button>
-            <span className="text-[8px] text-[var(--ed-text-muted)] font-mono">{events.length} ev · {(loopDuration / 1000).toFixed(1)}s</span>
+            <span className="text-[8px] text-[var(--ed-text-muted)] font-mono">
+              {events.length} ev · {(loopDuration / 1000).toFixed(1)}s
+              {loopBars > 0 && <span className="text-[var(--ed-accent-blue)]/70"> · {loopBars}bar</span>}
+              {quantize !== "off" && <span className="text-[var(--ed-accent-blue)]/70"> · Q={quantize}</span>}
+            </span>
           </>
         )}
 
@@ -803,9 +846,13 @@ export function PerformancePad({ isOpen, onClose }: Props) {
 
           {/* Hint / Status bar */}
           <div className="absolute top-4 left-1/2 -translate-x-1/2 text-[10px] text-white/25 tracking-wider pointer-events-none font-light">
-            {mode === "chords"
-              ? `${chordSet.name} · ${chordSet.cells.length} CHORDS · MULTI-TOUCH`
-              : "BERÜHREN · HALTEN · BEWEGEN — MULTI-TOUCH"}
+            {isArmed
+              ? <span className="text-yellow-400 animate-pulse font-bold tracking-[0.3em]">● ARMED — PRESS ANY KEY TO START RECORDING</span>
+              : isRecording
+                ? <span className="text-red-400 font-bold tracking-[0.3em]">● RECORDING</span>
+                : mode === "chords"
+                  ? `${chordSet.name} · ${chordSet.cells.length} CHORDS · MULTI-TOUCH`
+                  : "BERÜHREN · HALTEN · BEWEGEN — MULTI-TOUCH"}
           </div>
 
           {/* Key/Scale indicator — top-right corner */}

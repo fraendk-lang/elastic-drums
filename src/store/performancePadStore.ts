@@ -140,10 +140,13 @@ interface PerformancePadState {
 
   // Recording
   events: PadEvent[];
+  isArmed: boolean;         // REC pressed, waiting for first note to actually start
   isRecording: boolean;
   isLooping: boolean;
-  recordStart: number;      // performance.now() at record start
-  loopDuration: number;     // ms, set after first recording
+  recordStart: number;      // performance.now() at record start (first-note-touch)
+  loopDuration: number;     // ms, set after first recording (quantized if loopBars set)
+  loopBars: 0 | 1 | 2 | 4 | 8; // 0 = auto (use measured duration), else snap to N bars at BPM
+  quantize: "off" | "1/4" | "1/8" | "1/16" | "1/32";  // Grid to snap event timings to
   playbackTimer: ReturnType<typeof setTimeout> | null;
   playbackStartTime: number;
 
@@ -160,10 +163,12 @@ interface PerformancePadState {
   setChordFollow: (b: boolean) => void;
 
   // Recording API
-  startRecording: () => void;
-  stopRecording: () => void;
+  armRecording: () => void;     // Arm for recording — starts on first note
+  stopRecording: (bpm: number) => void;  // bpm needed to compute bar-snapped loop length
   clearRecording: () => void;
   appendEvent: (ev: Omit<PadEvent, "t">) => void;
+  setLoopBars: (n: 0 | 1 | 2 | 4 | 8) => void;
+  setQuantize: (q: "off" | "1/4" | "1/8" | "1/16" | "1/32") => void;
 
   // Loop playback API
   startLoop: () => void;
@@ -183,10 +188,13 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
   chordFollow: true,
 
   events: [],
+  isArmed: false,
   isRecording: false,
   isLooping: false,
   recordStart: 0,
   loopDuration: 0,
+  loopBars: 0,          // 0 = auto (use measured duration)
+  quantize: "off",
   playbackTimer: null,
   playbackStartTime: 0,
 
@@ -201,40 +209,83 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
   setTrailEnabled: (b) => set({ trailEnabled: b }),
   setChordFollow: (b) => set({ chordFollow: b }),
 
-  startRecording: () => {
+  armRecording: () => {
     const s = get();
     if (s.isLooping) s.stopLoop();
     set({
-      isRecording: true,
-      recordStart: performance.now(),
+      isArmed: true,
+      isRecording: false,
       events: [],
       loopDuration: 0,
+      recordStart: 0,
     });
   },
 
-  stopRecording: () => {
+  stopRecording: (bpm: number) => {
     const s = get();
-    if (!s.isRecording) return;
+    if (!s.isRecording && !s.isArmed) return;
     const now = performance.now();
-    const duration = now - s.recordStart;
+    const measuredDuration = s.recordStart > 0 ? now - s.recordStart : 0;
+
+    // Compute loop duration: snap to N bars if loopBars set, else use measured
+    let finalDuration = measuredDuration;
+    if (s.loopBars > 0 && bpm > 0) {
+      const msPerBar = (60000 / bpm) * 4; // 4 beats per bar
+      finalDuration = s.loopBars * msPerBar;
+    }
+
+    // Apply quantization to event timings if enabled
+    let finalEvents = s.events;
+    if (s.quantize !== "off" && bpm > 0) {
+      const beatMs = 60000 / bpm;
+      const divisions: Record<Exclude<typeof s.quantize, "off">, number> = {
+        "1/4":  beatMs,
+        "1/8":  beatMs / 2,
+        "1/16": beatMs / 4,
+        "1/32": beatMs / 8,
+      };
+      const grid = divisions[s.quantize as Exclude<typeof s.quantize, "off">];
+      finalEvents = s.events.map((e) => ({
+        ...e,
+        t: e.type === "down"
+          ? Math.round(e.t / grid) * grid          // Snap note starts
+          : e.type === "up"
+            ? Math.round(e.t / grid) * grid        // Snap note ends
+            : e.t,                                  // Don't snap moves (would stutter gestures)
+      }));
+      // Ensure events stay sorted after quantization
+      finalEvents.sort((a, b) => a.t - b.t);
+    }
+
     set({
+      isArmed: false,
       isRecording: false,
-      loopDuration: Math.max(duration, 500),
+      events: finalEvents,
+      loopDuration: Math.max(finalDuration, 500),
     });
   },
 
   clearRecording: () => {
     const s = get();
     if (s.isLooping) s.stopLoop();
-    set({ events: [], loopDuration: 0, isRecording: false });
+    set({ events: [], loopDuration: 0, isRecording: false, isArmed: false });
   },
 
   appendEvent: (ev) => {
     const s = get();
+    // If armed and this is the first event, start recording NOW
+    if (s.isArmed && ev.type === "down") {
+      const startTime = performance.now();
+      set({ isArmed: false, isRecording: true, recordStart: startTime, events: [{ ...ev, t: 0 }] });
+      return;
+    }
     if (!s.isRecording) return;
     const t = performance.now() - s.recordStart;
     set((state) => ({ events: [...state.events, { ...ev, t }] }));
   },
+
+  setLoopBars: (n) => set({ loopBars: n }),
+  setQuantize: (q) => set({ quantize: q }),
 
   startLoop: () => {
     const s = get();
