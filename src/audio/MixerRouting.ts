@@ -139,18 +139,25 @@ export class MixerRouter {
     }
   }
 
-  /** Set/bypass channel filter */
+  /** Set/bypass channel filter. Uses smooth ramps to avoid zipper noise and
+   *  skips .type reassignment when unchanged (type changes reset biquad state → click). */
   setChannelFilter(channel: number, type: BiquadFilterType, frequency: number, q: number): void {
     const filter = this.channelFilters[channel];
     if (!filter) return;
-    filter.type = type;
-    filter.frequency.value = frequency;
-    filter.Q.value = q;
+    const ctx = filter.context;
+    const now = ctx.currentTime;
+    const tc = 0.012; // ~12ms smoothing — too small for audible lag, big enough to kill zipper
+    if (filter.type !== type) filter.type = type;
+    // cancelScheduledValues to avoid ramp pileup, then setTargetAtTime
+    filter.frequency.cancelScheduledValues(now);
+    filter.frequency.setTargetAtTime(Math.max(20, Math.min(20000, frequency)), now, tc);
+    filter.Q.cancelScheduledValues(now);
+    filter.Q.setTargetAtTime(Math.max(0.0001, Math.min(30, q)), now, tc);
   }
 
   bypassChannelFilter(channel: number): void {
     const filter = this.channelFilters[channel];
-    if (filter) filter.type = "allpass";
+    if (filter && filter.type !== "allpass") filter.type = "allpass";
   }
 
   /** Get channel EQ nodes */

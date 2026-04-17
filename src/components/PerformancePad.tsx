@@ -11,8 +11,9 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import { usePerformancePadStore, type YAxisParam, type PadTarget } from "../store/performancePadStore";
-import { useMelodyStore } from "../store/melodyStore";
-import { useBassStore } from "../store/bassStore";
+import { useMelodyStore, MELODY_PRESETS } from "../store/melodyStore";
+import { useBassStore, BASS_PRESETS } from "../store/bassStore";
+import { useDrumStore } from "../store/drumStore";
 import { melodyEngine } from "../audio/MelodyEngine";
 import { bassEngine, SCALES } from "../audio/BassEngine";
 import { audioEngine } from "../audio/AudioEngine";
@@ -51,17 +52,88 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   // Pull current scale/root from melody or bass store based on target
   const melodyRoot = useMelodyStore((s) => s.rootNote);
   const melodyScale = useMelodyStore((s) => s.scaleName);
+  const melodyPresetIndex = useMelodyStore((s) => s.presetIndex);
+  const loadMelodyPreset = useMelodyStore((s) => s.loadPreset);
+  const nextMelodyPreset = useMelodyStore((s) => s.nextPreset);
+  const prevMelodyPreset = useMelodyStore((s) => s.prevPreset);
+
   const bassRoot = useBassStore((s) => s.rootNote);
   const bassScale = useBassStore((s) => s.scaleName);
+  const bassPresetIndex = useBassStore((s) => s.presetIndex);
+  const loadBassPreset = useBassStore((s) => s.loadPreset);
+  const nextBassPreset = useBassStore((s) => s.nextPreset);
+  const prevBassPreset = useBassStore((s) => s.prevPreset);
+
+  const currentPresetName = target === "melody"
+    ? (MELODY_PRESETS[melodyPresetIndex]?.name ?? "Preset")
+    : (BASS_PRESETS[bassPresetIndex]?.name ?? "Preset");
+  const totalPresets = target === "melody" ? MELODY_PRESETS.length : BASS_PRESETS.length;
+  const activePresetIndex = target === "melody" ? melodyPresetIndex : bassPresetIndex;
+  const handlePrevPreset = target === "melody" ? prevMelodyPreset : prevBassPreset;
+  const handleNextPreset = target === "melody" ? nextMelodyPreset : nextBassPreset;
+  const handleLoadPreset = target === "melody" ? loadMelodyPreset : loadBassPreset;
 
   const rootNote = target === "melody" ? melodyRoot : bassRoot;
   const scaleName = target === "melody" ? melodyScale : bassScale;
+
+  const bpm = useDrumStore((s) => s.bpm);
 
   const padRef = useRef<HTMLDivElement | null>(null);
   const activeVoicesRef = useRef<Map<number, ActiveVoice>>(new Map());
   const rafIdRef = useRef<number | null>(null);
 
   // ── Pitch mapping: X [0-1] → MIDI note via scale ──
+  // ── Export recording to Piano Roll ──
+  const exportToPianoRoll = useCallback(async () => {
+    if (events.length === 0) return;
+    const msPerBeat = 60000 / bpm;
+
+    // Group down→up pairs per pointerId into notes (pitch = median X)
+    const noteStarts = new Map<number, { t: number; x: number; velocity: number; xs: number[] }>();
+    const rawNotes: { startMs: number; endMs: number; x: number; velocity: number }[] = [];
+
+    for (const ev of events) {
+      if (ev.type === "down") {
+        noteStarts.set(ev.pointerId, { t: ev.t, x: ev.x, velocity: ev.velocity, xs: [ev.x] });
+      } else if (ev.type === "move") {
+        const rec = noteStarts.get(ev.pointerId);
+        if (rec) rec.xs.push(ev.x);
+      } else if (ev.type === "up") {
+        const rec = noteStarts.get(ev.pointerId);
+        if (rec) {
+          noteStarts.delete(ev.pointerId);
+          const sortedXs = [...rec.xs].sort((a, b) => a - b);
+          const medianX = sortedXs[Math.floor(sortedXs.length / 2)] ?? rec.x;
+          rawNotes.push({
+            startMs: rec.t,
+            endMs: ev.t,
+            x: medianX,
+            velocity: rec.velocity,
+          });
+        }
+      }
+    }
+
+    if (rawNotes.length === 0) return;
+
+    const { importPianoRollNotes } = await import("./PianoRoll/persistedState");
+    const { uid } = await import("./PianoRoll/types");
+    const pianoRollNotes: import("./PianoRoll/types").PianoRollNote[] = rawNotes.map((n) => ({
+      id: uid(),
+      midi: xToMidi(n.x),
+      start: n.startMs / msPerBeat,
+      duration: Math.max(0.05, (n.endMs - n.startMs) / msPerBeat),
+      velocity: Math.max(0.1, Math.min(1, n.velocity)),
+      track: target === "bass" ? "bass" : "melody",
+    }));
+
+    importPianoRollNotes(pianoRollNotes);
+    // Feedback: show brief alert (simple confirmation)
+    alert(`${pianoRollNotes.length} Noten in Piano Roll importiert.\nÖffne Piano Roll zum Anzeigen.`);
+  }, [events, bpm, target]);
+  // NOTE: xToMidi intentionally omitted from deps — it's defined below but stable via useCallback.
+  // We rely on closure capture at call time (handler fires after all hooks are declared).
+
   const xToMidi = useCallback((x: number): number => {
     const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
     const baseMidi = rootNote + scaleLowestOct * 12;
@@ -321,6 +393,33 @@ export function PerformancePad({ isOpen, onClose }: Props) {
 
         <div className="mx-1 h-4 w-px bg-white/10" />
 
+        {/* Sound Preset picker — prev / dropdown / next */}
+        <div className="flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1">
+          <span className="text-[8px] text-[var(--ed-text-muted)] mr-1">SOUND</span>
+          <button onClick={handlePrevPreset}
+            className="w-5 h-5 text-[10px] text-white/40 hover:text-white/80 transition-colors"
+            title="Previous preset"
+          >‹</button>
+          <select
+            value={activePresetIndex}
+            onChange={(e) => handleLoadPreset(Number(e.target.value))}
+            className="h-6 px-1.5 text-[9px] font-bold bg-transparent text-[var(--ed-accent-melody)]/85 hover:text-[var(--ed-accent-melody)] cursor-pointer outline-none border-0 max-w-[130px]"
+            title={`${currentPresetName} (${activePresetIndex + 1}/${totalPresets})`}
+          >
+            {(target === "melody" ? MELODY_PRESETS : BASS_PRESETS).map((preset, idx) => (
+              <option key={idx} value={idx} className="bg-[var(--ed-bg-secondary)] text-white">
+                {preset.name}
+              </option>
+            ))}
+          </select>
+          <button onClick={handleNextPreset}
+            className="w-5 h-5 text-[10px] text-white/40 hover:text-white/80 transition-colors"
+            title="Next preset"
+          >›</button>
+        </div>
+
+        <div className="mx-1 h-4 w-px bg-white/10" />
+
         {/* Y Param */}
         <div className="flex items-center gap-1">
           <span className="text-[8px] text-[var(--ed-text-muted)] mr-1">Y →</span>
@@ -382,6 +481,10 @@ export function PerformancePad({ isOpen, onClose }: Props) {
                 className="px-3 h-6 text-[9px] font-bold rounded bg-green-500/35 text-green-200 animate-pulse"
               >■ STOP LOOP</button>
             )}
+            <button onClick={exportToPianoRoll}
+              className="px-3 h-6 text-[9px] font-bold rounded bg-[var(--ed-accent-melody)]/15 text-[var(--ed-accent-melody)] hover:bg-[var(--ed-accent-melody)]/25"
+              title="Konvertiert Aufnahme in MIDI-Noten und importiert in Piano Roll"
+            >→ PIANO ROLL</button>
             <button onClick={clearRecording}
               className="px-2 h-6 text-[8px] font-bold rounded bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70"
             >CLR</button>

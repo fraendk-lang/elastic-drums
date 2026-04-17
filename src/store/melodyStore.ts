@@ -27,6 +27,38 @@ export const DEFAULT_HUMANIZE: HumanizeSettings = {
   probability: 1,
 };
 
+// ─── Layer Mode (optional harmonic doubling per note) ────
+export type LayerMode = "off" | "octave" | "fifth" | "triad" | "triad-oct";
+export const LAYER_MODES: { id: LayerMode; label: string; desc: string }[] = [
+  { id: "off",        label: "—",        desc: "No layer" },
+  { id: "octave",     label: "OCT",      desc: "Doubled one octave up" },
+  { id: "fifth",      label: "5th",      desc: "Perfect fifth above" },
+  { id: "triad",      label: "TRIAD",    desc: "Diatonic triad (+3rd +5th)" },
+  { id: "triad-oct",  label: "TRIAD+8",  desc: "Triad + octave up" },
+];
+
+/** Compute layer intervals (semitones offset) for a given mode, respecting the scale. */
+function computeLayerIntervals(mode: LayerMode, baseMidi: number, rootMidi: number, scaleName: string): number[] {
+  if (mode === "off") return [];
+  if (mode === "octave") return [12];
+  if (mode === "fifth") return [7];
+  // Triad: use scale-diatonic 3rd and 5th relative to the note's scale position
+  const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
+  const semitoneFromRoot = ((baseMidi - rootMidi) % 12 + 12) % 12;
+  const degreeIdx = scale.findIndex((i) => i === semitoneFromRoot);
+  if (degreeIdx === -1) {
+    // Note not in scale: fall back to major triad
+    return mode === "triad-oct" ? [4, 7, 12] : [4, 7];
+  }
+  const third = scale[(degreeIdx + 2) % scale.length]! - scale[degreeIdx]!;
+  const fifth = scale[(degreeIdx + 4) % scale.length]! - scale[degreeIdx]!;
+  const thirdAdj = third < 0 ? third + 12 : third;
+  const fifthAdj = fifth < 0 ? fifth + 12 : fifth;
+  return mode === "triad-oct" ? [thirdAdj, fifthAdj, 12] : [thirdAdj, fifthAdj];
+}
+
+export { computeLayerIntervals };
+
 export const MELODY_MAX_CLIP_STEPS = 256;
 
 // ─── Factory Sound Presets ───────────────────────────────
@@ -774,8 +806,12 @@ interface MelodyStore {
   instrument: string;
   arp: ArpSettings;
   humanize: HumanizeSettings;
+  layerMode: LayerMode;
+  layerVelocity: number;  // 0-1, relative to main note velocity
   setArp: <K extends keyof ArpSettings>(key: K, value: ArpSettings[K]) => void;
   setHumanize: <K extends keyof HumanizeSettings>(key: K, value: HumanizeSettings[K]) => void;
+  setLayerMode: (m: LayerMode) => void;
+  setLayerVelocity: (v: number) => void;
 
   setAutomationValue: (param: string, step: number, value: number | undefined) => void;
   setAutomationParam: (param: string) => void;
@@ -880,7 +916,7 @@ export function startMelodyScheduler() {
         const explicitGateLength = Math.max(1, step.gateLength ?? 1);
         const sustainSteps = explicitGateLength > 1 ? explicitGateLength : getLegacyTieLength(steps, stepIndex, length);
         const sustainDuration = secondsPerStep * sustainSteps;
-        const { instrument, arp, humanize } = useMelodyStore.getState();
+        const { instrument, arp, humanize, layerMode, layerVelocity } = useMelodyStore.getState();
 
         // Humanize: probability gate (random skip)
         const humanProbPass = humanize.probability >= 1 || Math.random() < humanize.probability;
@@ -895,6 +931,10 @@ export function startMelodyScheduler() {
           const humanOffset = humanize.timing > 0 ? (Math.random() - 0.5) * humanize.timing * 0.03 : 0;
           const startT = nextMelodyStepTime + humanOffset;
 
+          // Layer intervals (octave/fifth/triad) — fires additional softer voices
+          const layerOffsets = computeLayerIntervals(layerMode, midiNote, rootNote, scaleName);
+          const layerVel = humanVel * layerVelocity;
+
           if (arp.mode !== "off") {
             // ── Arpeggiator: expand into sub-notes, fire polyphonically ──
             const arpNotes = generateArpNotes(
@@ -908,19 +948,33 @@ export function startMelodyScheduler() {
             if (instrument !== "_synth_") {
               for (const a of arpNotes) {
                 soundFontEngine.playNote("melody", a.note, startT + a.offset, a.velocity, a.duration);
+                for (const off of layerOffsets) {
+                  soundFontEngine.playNote("melody", a.note + off, startT + a.offset, a.velocity * layerVelocity, a.duration);
+                }
               }
             } else {
               for (const a of arpNotes) {
                 melodyEngine.triggerPolyNote(a.note, startT + a.offset, a.duration, a.velocity, step.accent);
+                for (const off of layerOffsets) {
+                  melodyEngine.triggerPolyNote(a.note + off, startT + a.offset, a.duration, a.velocity * layerVelocity, false);
+                }
               }
             }
           } else if (instrument !== "_synth_") {
             const duration = Math.max(secondsPerStep * 1.2, sustainDuration * 0.98);
             soundFontEngine.playNote("melody", midiNote, startT, humanVel, duration);
+            for (const off of layerOffsets) {
+              soundFontEngine.playNote("melody", midiNote + off, startT, layerVel, duration);
+            }
           } else {
             // Built-in synth (monophonic path for legato/slide/tie character)
             melodyEngine.triggerNote(midiNote, startT, step.accent, step.slide, false, humanVel);
             melodyEngine.releaseNote(startT + Math.max(secondsPerStep * 0.92, sustainDuration * 0.98));
+            // Layers go through poly path (so mono sustain stays clean)
+            const layerDur = Math.max(secondsPerStep * 1.2, sustainDuration * 0.98);
+            for (const off of layerOffsets) {
+              melodyEngine.triggerPolyNote(midiNote + off, startT, layerDur, layerVel, false);
+            }
           }
         }
       } else if (!step?.active && !isHeldByPreviousGate) {
@@ -962,9 +1016,13 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
   instrument: "_synth_",
   arp: { ...DEFAULT_ARP_SETTINGS },
   humanize: { ...DEFAULT_HUMANIZE },
+  layerMode: "off",
+  layerVelocity: 0.55,
 
   setArp: (key, value) => set((s) => ({ arp: { ...s.arp, [key]: value } })),
   setHumanize: (key, value) => set((s) => ({ humanize: { ...s.humanize, [key]: value } })),
+  setLayerMode: (m) => set({ layerMode: m }),
+  setLayerVelocity: (v) => set({ layerVelocity: Math.max(0, Math.min(1, v)) }),
 
   toggleStep: (step) => set((s) => {
     const newSteps = [...s.steps];

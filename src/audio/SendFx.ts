@@ -65,7 +65,13 @@ export class SendFxManager {
   private flangerActive = false;
 
   // ─── Performance FX: Master Chain ──────────────────────
+  /** Legacy single-filter node (kept as the public masterFilter input/output
+   *  alias — signal routes through it first but its .type stays "allpass" */
   private masterFilter: BiquadFilterNode | null = null;
+  /** Dedicated HP filter (always active, freq at 20Hz = transparent when bypassed) */
+  private masterFilterHp: BiquadFilterNode | null = null;
+  /** Output node after HP stage — AudioEngine routes from here */
+  private masterFilterOut: GainNode | null = null;
   private masterSaturation: WaveShaperNode | null = null;
   private masterSaturationDry: GainNode | null = null;
   private masterSaturationWet: GainNode | null = null;
@@ -124,6 +130,7 @@ export class SendFxManager {
     sendABus: GainNode;
     sendBBus: GainNode;
     masterFilter: BiquadFilterNode;
+    masterFilterOut: GainNode;
     masterSaturationDry: GainNode;
     masterSaturation: WaveShaperNode;
     masterSaturationWet: GainNode;
@@ -336,11 +343,25 @@ export class SendFxManager {
     this.masterSaturationWet.gain.value = 0.0;
     // Default: clean (no curve)
 
-    // Performance FX master filter (default: allpass = bypassed)
+    // Performance FX master filter — chained LP → HP, both always active.
+    // Type never changes, so no biquad-state-reset clicks when XY pad crosses
+    // LP↔HP boundary. Transparent defaults: LP freq 20kHz, HP freq 20Hz.
     this.masterFilter = ctx.createBiquadFilter();
-    this.masterFilter.type = "allpass";
-    this.masterFilter.frequency.value = 1000;
-    this.masterFilter.Q.value = 1;
+    this.masterFilter.type = "lowpass";
+    this.masterFilter.frequency.value = 20000; // transparent
+    this.masterFilter.Q.value = 0.707;
+
+    this.masterFilterHp = ctx.createBiquadFilter();
+    this.masterFilterHp.type = "highpass";
+    this.masterFilterHp.frequency.value = 20;  // transparent
+    this.masterFilterHp.Q.value = 0.707;
+
+    this.masterFilter.connect(this.masterFilterHp);
+
+    // Dedicated output node so AudioEngine can route past the HP stage
+    this.masterFilterOut = ctx.createGain();
+    this.masterFilterOut.gain.value = 1.0;
+    this.masterFilterHp.connect(this.masterFilterOut);
 
     // Pre-generate noise buffer for performance FX
     this.noiseBuffer = this.generateNoiseBuffer(ctx, 2.0);
@@ -366,6 +387,7 @@ export class SendFxManager {
       sendABus: this.sendABus,
       sendBBus: this.sendBBus,
       masterFilter: this.masterFilter,
+      masterFilterOut: this.masterFilterOut!,
       masterSaturationDry: this.masterSaturationDry,
       masterSaturation: this.masterSaturation,
       masterSaturationWet: this.masterSaturationWet,
@@ -678,18 +700,60 @@ export class SendFxManager {
 
   /** Set master filter (for XY-Pad filter mode) */
   setMasterFilter(type: BiquadFilterType, freq: number, q: number): void {
-    if (!this.masterFilter) return;
-    this.masterFilter.type = type;
-    this.masterFilter.frequency.value = Math.max(20, Math.min(20000, freq));
-    this.masterFilter.Q.value = Math.max(0.1, Math.min(30, q));
+    if (!this.masterFilter || !this.masterFilterHp) return;
+    const ctx = this.masterFilter.context;
+    const now = ctx.currentTime;
+    const tc = 0.012; // ~12ms smoothing kills zipper noise on fast drags
+    const clampedFreq = Math.max(20, Math.min(20000, freq));
+    const clampedQ = Math.max(0.0001, Math.min(30, q));
+
+    // Dual-biquad architecture: LP stage + HP stage chained. Types never change,
+    // so crossing the LP↔HP boundary produces no biquad-state-reset click.
+    // Transparent defaults: LP at 20kHz = pass-through; HP at 20Hz = pass-through.
+    if (type === "lowpass") {
+      this.masterFilter.frequency.cancelScheduledValues(now);
+      this.masterFilter.frequency.setTargetAtTime(clampedFreq, now, tc);
+      this.masterFilter.Q.cancelScheduledValues(now);
+      this.masterFilter.Q.setTargetAtTime(clampedQ, now, tc);
+      // Reset HP to transparent
+      this.masterFilterHp.frequency.cancelScheduledValues(now);
+      this.masterFilterHp.frequency.setTargetAtTime(20, now, tc);
+      this.masterFilterHp.Q.cancelScheduledValues(now);
+      this.masterFilterHp.Q.setTargetAtTime(0.707, now, tc);
+    } else if (type === "highpass") {
+      this.masterFilterHp.frequency.cancelScheduledValues(now);
+      this.masterFilterHp.frequency.setTargetAtTime(clampedFreq, now, tc);
+      this.masterFilterHp.Q.cancelScheduledValues(now);
+      this.masterFilterHp.Q.setTargetAtTime(clampedQ, now, tc);
+      // Reset LP to transparent
+      this.masterFilter.frequency.cancelScheduledValues(now);
+      this.masterFilter.frequency.setTargetAtTime(20000, now, tc);
+      this.masterFilter.Q.cancelScheduledValues(now);
+      this.masterFilter.Q.setTargetAtTime(0.707, now, tc);
+    } else {
+      // bandpass / notch / etc — fall back to LP stage, rare path
+      this.masterFilter.frequency.cancelScheduledValues(now);
+      this.masterFilter.frequency.setTargetAtTime(clampedFreq, now, tc);
+      this.masterFilter.Q.cancelScheduledValues(now);
+      this.masterFilter.Q.setTargetAtTime(clampedQ, now, tc);
+    }
   }
 
   /** Bypass master filter (reset to allpass) */
   bypassMasterFilter(): void {
-    if (!this.masterFilter) return;
-    this.masterFilter.type = "allpass";
-    this.masterFilter.frequency.value = 1000;
-    this.masterFilter.Q.value = 1;
+    if (!this.masterFilter || !this.masterFilterHp) return;
+    const ctx = this.masterFilter.context;
+    const now = ctx.currentTime;
+    const tc = 0.025; // Slightly slower ramp for smooth "release" to bypass
+    // Smoothly return both stages to transparent settings — no type changes → no clicks
+    this.masterFilter.frequency.cancelScheduledValues(now);
+    this.masterFilter.frequency.setTargetAtTime(20000, now, tc);
+    this.masterFilter.Q.cancelScheduledValues(now);
+    this.masterFilter.Q.setTargetAtTime(0.707, now, tc);
+    this.masterFilterHp.frequency.cancelScheduledValues(now);
+    this.masterFilterHp.frequency.setTargetAtTime(20, now, tc);
+    this.masterFilterHp.Q.cancelScheduledValues(now);
+    this.masterFilterHp.Q.setTargetAtTime(0.707, now, tc);
   }
 
   /** Start noise burst (hold to play).

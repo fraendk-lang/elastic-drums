@@ -3,7 +3,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useMelodyStore, MELODY_PRESETS, MELODY_STRATEGIES, MELODY_SIGNATURE_PRESET_NAMES } from "../store/melodyStore";
+import { useMelodyStore, MELODY_PRESETS, MELODY_STRATEGIES, MELODY_SIGNATURE_PRESET_NAMES, LAYER_MODES } from "../store/melodyStore";
 import { MELODY_INSTRUMENTS, findInstrumentOption } from "../audio/SoundFontEngine";
 import { SCALES, ROOT_NOTES, scaleNote } from "../audio/BassEngine";
 import { useDrumStore } from "../store/drumStore";
@@ -49,6 +49,7 @@ export function MelodySequencer() {
     loadPreset, setInstrument,
     setAutomationValue, setAutomationParam,
     arp, humanize, setArp, setHumanize,
+    layerMode, layerVelocity, setLayerMode, setLayerVelocity,
   } = useMelodyStore();
 
   const isPlaying = useDrumStore((s) => s.isPlaying);
@@ -431,6 +432,31 @@ export function MelodySequencer() {
             className="w-12 accent-[var(--ed-accent-melody)]" title="Probability (note plays)" />
           <span className="w-6 text-[6px] text-white/50 font-mono">{Math.round(humanize.probability * 100)}%</span>
         </label>
+
+        <span className="mx-1 h-3 w-px bg-white/10" />
+
+        {/* Layer Mode — doubled harmonies */}
+        <span className="text-[var(--ed-accent-melody)]/70">LAYER</span>
+        {LAYER_MODES.map((m) => (
+          <button key={m.id} onClick={() => setLayerMode(m.id)}
+            title={m.desc}
+            className={`px-1.5 h-5 rounded transition-all ${
+              layerMode === m.id
+                ? "bg-[var(--ed-accent-melody)]/25 text-[var(--ed-accent-melody)]"
+                : "text-white/25 hover:text-white/55"
+            }`}
+          >{m.label}</button>
+        ))}
+        {layerMode !== "off" && (
+          <label className="flex items-center gap-1 text-white/40">
+            MIX
+            <input type="range" min={0} max={100} value={Math.round(layerVelocity * 100)}
+              onChange={(e) => setLayerVelocity(Number(e.target.value) / 100)}
+              className="w-12 accent-[var(--ed-accent-melody)]"
+              title="Layer volume (relative to main voice)" />
+            <span className="w-5 text-[6px] text-white/50 font-mono">{Math.round(layerVelocity * 100)}</span>
+          </label>
+        )}
       </div>
 
       {/* Row 2: Pages + length */}

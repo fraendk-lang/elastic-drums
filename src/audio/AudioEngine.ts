@@ -112,8 +112,8 @@ export class AudioEngine {
       this.masterEqMid.connect(this.masterEqHigh);
       this.masterEqHigh.connect(fxNodes.masterFilter);
 
-      // masterFilter → flanger (input/output) → saturation (dry+wet parallel)
-      fxNodes.masterFilter.connect(fxNodes.flangerInput);
+      // masterFilter → masterFilterOut (post dual-biquad LP→HP) → flanger → saturation (dry+wet parallel)
+      fxNodes.masterFilterOut.connect(fxNodes.flangerInput);
       fxNodes.flangerOutput.connect(fxNodes.masterSaturationDry);
       fxNodes.flangerOutput.connect(fxNodes.masterSaturation);
       fxNodes.masterSaturation.connect(fxNodes.masterSaturationWet);
