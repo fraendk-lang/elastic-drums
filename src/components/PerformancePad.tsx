@@ -305,13 +305,14 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const voice = activeVoicesRef.current.get(e.pointerId);
-    if (!voice) return;
-    e.preventDefault();
     const { x, y } = getXY(e);
-    // Record trail position (for particle effect) regardless of mode
+    // Always drop a trail point on ANY movement (hover or press) so user sees motion feedback
     trailRef.current.push({ x, y, t: performance.now(), pointerId: e.pointerId });
-    if (trailRef.current.length > 80) trailRef.current.shift();
+    if (trailRef.current.length > 120) trailRef.current.shift();
+
+    const voice = activeVoicesRef.current.get(e.pointerId);
+    if (!voice) return;  // Hover-only mode: just show trail, no audio modulation
+    e.preventDefault();
 
     if (mode === "chords") {
       // In chord mode: Y axis still modulates params for expressiveness,
@@ -482,25 +483,25 @@ export function PerformancePad({ isOpen, onClose }: Props) {
         }
       }
 
-      // ── Particle trail ──
+      // ── Particle trail (hover + press) ──
+      const nowT = performance.now();
       if (trailEnabled && trailRef.current.length > 0) {
-        const now = performance.now();
-        const TRAIL_LIFETIME = 700;
-        // Purge expired
-        trailRef.current = trailRef.current.filter((p) => now - p.t < TRAIL_LIFETIME);
+        const TRAIL_LIFETIME = 1100; // Longer lifetime for clearer trails
+        trailRef.current = trailRef.current.filter((p) => nowT - p.t < TRAIL_LIFETIME);
 
         for (const p of trailRef.current) {
-          const age = (now - p.t) / TRAIL_LIFETIME;
-          const alpha = Math.pow(1 - age, 2);
-          const radius = 4 + (1 - age) * 12;
+          const age = (nowT - p.t) / TRAIL_LIFETIME;
+          const alpha = Math.pow(1 - age, 1.4);  // Slower fade
+          const radius = 10 + (1 - age) * 22;    // Bigger particles (20→32px)
           const px = p.x * W;
           const py = p.y * H;
 
-          // Radial gradient particle
+          // Softer additive-looking particle — bright magenta→violet→transparent
           const grad = ctx.createRadialGradient(px, py, 0, px, py, radius);
-          grad.addColorStop(0, `rgba(244, 114, 182, ${alpha * 0.9})`);
-          grad.addColorStop(0.4, `rgba(167, 139, 250, ${alpha * 0.45})`);
-          grad.addColorStop(1, "rgba(244, 114, 182, 0)");
+          grad.addColorStop(0,   `rgba(255, 200, 240, ${alpha * 0.85})`);
+          grad.addColorStop(0.3, `rgba(244, 114, 182, ${alpha * 0.6})`);
+          grad.addColorStop(0.7, `rgba(167, 139, 250, ${alpha * 0.3})`);
+          grad.addColorStop(1,   "rgba(244, 114, 182, 0)");
           ctx.fillStyle = grad;
           ctx.beginPath();
           ctx.arc(px, py, radius, 0, Math.PI * 2);
@@ -508,65 +509,67 @@ export function PerformancePad({ isOpen, onClose }: Props) {
         }
       }
 
-      // ── Active voice cursor glow + note label (at latest trail point per pointer) ──
+      // ── Active voice press-indicator: big circle with note inside ──
       for (const voice of activeVoicesRef.current.values()) {
         const latest = [...trailRef.current].reverse().find((p) => p.pointerId === voice.pointerId);
         if (!latest) continue;
         const px = latest.x * W;
         const py = latest.y * H;
-        // Bright core
-        const coreGrad = ctx.createRadialGradient(px, py, 0, px, py, 18);
-        coreGrad.addColorStop(0, "rgba(255, 255, 255, 0.85)");
-        coreGrad.addColorStop(0.5, "rgba(244, 114, 182, 0.45)");
-        coreGrad.addColorStop(1, "rgba(244, 114, 182, 0)");
-        ctx.fillStyle = coreGrad;
+
+        // Pick color: chord hue if chord mode, else accent pink
+        const chordColor = mode === "chords" && voice.cellIndex !== undefined
+          ? (chordSet.cells[voice.cellIndex]?.hue ?? "#f472b6")
+          : "#f472b6";
+
+        // Scale-in animation: grows from 0 to full size in ~120ms after press
+        const pressAge = Math.min(1, (nowT - voice.startAt) / 120);
+        const pressScale = 1 - Math.pow(1 - pressAge, 3); // Ease-out cubic
+
+        const R_FULL = 46;
+        const R = R_FULL * pressScale;
+
+        // Outer ripple (pulses outward continuously while pressed)
+        const ripplePhase = ((nowT - voice.startAt) % 1400) / 1400;
+        const rippleR = R + ripplePhase * 32;
+        const rippleAlpha = (1 - ripplePhase) * 0.55;
+        ctx.strokeStyle = chordColor + Math.floor(rippleAlpha * 255).toString(16).padStart(2, "0");
+        ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(px, py, 18, 0, Math.PI * 2);
+        ctx.arc(px, py, rippleR, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Solid inner disc (semi-transparent filled)
+        const discGrad = ctx.createRadialGradient(px, py, 0, px, py, R);
+        discGrad.addColorStop(0,   chordColor + "e6"); // 90% alpha
+        discGrad.addColorStop(0.6, chordColor + "80"); // 50% alpha
+        discGrad.addColorStop(1,   chordColor + "00"); // 0% alpha
+        ctx.fillStyle = discGrad;
+        ctx.beginPath();
+        ctx.arc(px, py, R, 0, Math.PI * 2);
         ctx.fill();
 
-        // Floating note/chord label above cursor
+        // Border ring
+        ctx.strokeStyle = chordColor;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(px, py, R, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Big note label in the center
         const label = mode === "chords" && voice.cellIndex !== undefined
           ? (chordSet.cells[voice.cellIndex]?.label ?? midiToName(voice.midi))
           : midiToName(voice.midi);
 
-        // Label position: above cursor, offset enough to not overlap the glow
-        const labelX = px;
-        const labelY = Math.max(24, py - 28);
-
-        // Pill background for readability
-        ctx.font = "bold 13px ui-sans-serif, system-ui, -apple-system";
+        const labelFontSize = Math.min(22, Math.max(12, (R_FULL * pressScale) * 0.55));
+        ctx.font = `bold ${labelFontSize}px ui-sans-serif, system-ui, -apple-system`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        const textW = ctx.measureText(label).width;
-        const padX = 8, padY = 4;
-        const bgW = textW + padX * 2;
-        const bgH = 20;
-        ctx.fillStyle = "rgba(10, 10, 14, 0.92)";
-        ctx.strokeStyle = "rgba(244, 114, 182, 0.5)";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        const rX = labelX - bgW / 2;
-        const rY = labelY - bgH / 2;
-        const r = 6;
-        ctx.moveTo(rX + r, rY);
-        ctx.arcTo(rX + bgW, rY, rX + bgW, rY + bgH, r);
-        ctx.arcTo(rX + bgW, rY + bgH, rX, rY + bgH, r);
-        ctx.arcTo(rX, rY + bgH, rX, rY, r);
-        ctx.arcTo(rX, rY, rX + bgW, rY, r);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-        void padY;
-
-        // Label text
-        ctx.fillStyle = "#f472b6";
-        ctx.fillText(label, labelX, labelY);
+        ctx.fillStyle = "#fff";
+        ctx.shadowColor = "rgba(0, 0, 0, 0.9)";
+        ctx.shadowBlur = 6;
+        ctx.fillText(label, px, py);
+        ctx.shadowBlur = 0;
       }
-
-      // ── Hover preview (when NOT pressing — optional Y-axis value too) ──
-      // Note: we draw on every RAF, so a constant hover preview is fine — but
-      // we only know mouse position via pointer events that already fired.
-      // Implementation in handlePointerHover below (optional enhancement).
 
       rafIdRef.current = requestAnimationFrame(draw);
     };
@@ -574,7 +577,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     return () => {
       if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     };
-  }, [isOpen, scaleName, scaleOctaves, mode, chordSet, trailEnabled]);
+  }, [isOpen, scaleName, scaleOctaves, mode, chordSetIndex, trailEnabled]);
 
   if (!isOpen) return null;
 
