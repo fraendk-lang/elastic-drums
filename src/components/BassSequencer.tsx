@@ -483,7 +483,7 @@ export function BassSequencer() {
       {instrument === "_synth_" ? (
         <div className="flex items-center gap-1 px-3 py-1.5 border-b border-white/5 overflow-x-auto">
           <Knob value={params.cutoff} min={200} max={8000} defaultValue={600} label="CUT" color={BASS_COLOR} size={34} onChange={(v) => setParam("cutoff", v)} />
-          <Knob value={params.resonance} min={0} max={30} defaultValue={12} label="RES" color={BASS_COLOR} size={34} onChange={(v) => setParam("resonance", v)} />
+          <Knob value={params.resonance} min={0} max={30} defaultValue={3} label="RES" color={BASS_COLOR} size={34} onChange={(v) => setParam("resonance", v)} />
           <Knob value={Math.round(params.envMod * 100)} min={0} max={100} defaultValue={60} label="ENV" color={BASS_COLOR} size={34} onChange={(v) => setParam("envMod", v / 100)} />
           <Knob value={params.decay} min={50} max={800} defaultValue={200} label="DEC" color={BASS_COLOR} size={34} onChange={(v) => setParam("decay", v)} />
           <Knob value={Math.round(params.accent * 100)} min={0} max={100} defaultValue={50} label="ACC" color={BASS_COLOR} size={34} onChange={(v) => setParam("accent", v / 100)} />

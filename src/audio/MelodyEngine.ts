@@ -571,6 +571,12 @@ export class MelodyEngine {
    * decay, distortion, filterModel, subOsc). Ignores: legato/slide/tie
    * (polyphonic voices are independent), vibrato/unison/PWM (apply to mono path).
    */
+  // ── Simple global voice counter + soft limit ──
+  // Prevents CPU meltdown when arp + layer combos fire huge voice clouds.
+  // 24 is enough for rich polyphony but won't choke most machines.
+  private static activePolyVoices = 0;
+  private static readonly MAX_POLY_VOICES = 24;
+
   triggerPolyNote(
     midiNote: number,
     startTime: number,
@@ -579,6 +585,8 @@ export class MelodyEngine {
     accent = false
   ): (() => void) | null {
     if (!this.ctx || !this.output) return null;
+    // Voice limit — drop trigger silently if we're already at cap
+    if (MelodyEngine.activePolyVoices >= MelodyEngine.MAX_POLY_VOICES) return null;
 
     // Unmute output bus on first trigger
     if (this.output.gain.value === 0) this.output.gain.value = this.params.volume;
@@ -677,9 +685,9 @@ export class MelodyEngine {
     const attack = 0.006;
     const decayT = Math.min(0.12, duration * 0.25);
     const sustain = 0.78;
-    // Musical release — long enough to feel like a real pad/lead tail, not
-    // a hard cut. Scales with note duration but capped.
-    const release = Math.max(0.25, Math.min(0.9, duration * 0.5));
+    // Release scales with duration — short arp/layer notes get short releases
+    // so voices don't pile up (CPU). Long pad notes get long tails.
+    const release = Math.min(0.9, Math.max(0.04, duration * 0.35));
     const peak = level;
     const sustainLvl = peak * sustain;
 
@@ -703,8 +711,12 @@ export class MelodyEngine {
       sub.stop(oscStopTime);
     }
 
+    // Voice accounting (for soft limiter)
+    MelodyEngine.activePolyVoices++;
+
     // Auto-cleanup after voice ends
     osc.onended = () => {
+      MelodyEngine.activePolyVoices = Math.max(0, MelodyEngine.activePolyVoices - 1);
       try { osc.disconnect(); } catch {}
       try { sub?.disconnect(); } catch {}
       try { subG?.disconnect(); } catch {}
