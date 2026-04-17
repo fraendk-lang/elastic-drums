@@ -42,11 +42,26 @@
 ### Phase 6 — Export (April 2026) ✅ (Stem-Export)
 - Stem-Export: 4 separate WAVs (Drums / Hats / Cym+Perc / Full)
 
-### Phase 8 — Performance (April 2026) ✅ (teilweise)
+### Phase 8 — Performance (April 2026) ✅ (weitgehend)
 - Per-Field Zustand-Selektoren in Transport/StepSequencer/PadGrid (entfernen Transport aus Playback-Re-Render)
 - useMemo für teure Aggregate im StepSequencer (768 iterationen/frame → cached)
-- React.memo auf MixerStrip MeterColumn (nur geänderte Channels re-rendern)
+- React.memo auf MixerStrip MeterColumn (nur geänderte Channels re-rendern) → später durch Canvas ersetzt
 - requestIdleCallback für Auto-Save (I/O in Idle-Zeit statt während Playback)
+- Canvas-basierte Mixer-Meter (15 Channel-Bridge + Master-Bar) — zero React re-renders bei 60 Hz
+- Bundle-Size-Diet: 15 Overlays lazy-loaded via React.lazy + Suspense (PianoRoll, Mixer, ModMatrix, Arrangement, etc.)
+- Vite manualChunks: vendor-react / vendor-state / vendor-audio für Browser-Cache-Effizienz
+- AudioNode-Pool: DEFERRED (Web Audio OscillatorNode können nicht wiederverwendet werden; Voices räumen bereits sauber ab)
+
+### Phase 4 — Piano Roll Advanced (April 2026) ✅ (weitgehend)
+- Multi-Track Ghost-Notes (alle Lanes gleichzeitig sichtbar)
+- Scale-Highlighting (Root + Scale-Notes immer sichtbar, Out-of-Scale dimming)
+- MIDI-Record: externe Notes live in die Piano Roll aufnehmen
+- Clip-Envelopes: DEFERRED (benötigt tiefe Scheduler-Integration für per-note Parameter-Automation)
+
+### Phase 6 — Export (April 2026) ✅ (weitgehend)
+- Stem-Export: 4 separate WAVs (Drums / Hats / Cym+Perc / Full)
+- MIDI-Clock Sync (24 PPQ Send/Receive mit Start/Stop)
+- Ableton Live Set Import (.als): NICHT geplant für MVP (komplexes proprietäres Format)
 
 ### Piano Roll Overhaul (April 2026) ✅
 - Refactor: 1709-Zeilen-Monolith → 9 Module
