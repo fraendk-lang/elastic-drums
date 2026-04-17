@@ -20,6 +20,7 @@ import { ArrangementView } from "./components/ArrangementView";
 import { ModMatrixEditor } from "./components/ModMatrixEditor";
 import { MacroPanel } from "./components/MacroPanel";
 import { MidiLearnPanel } from "./components/MidiLearnPanel";
+import { MidiClockPanel, getMidiClockMode, subscribeMidiClockMode } from "./components/MidiClockPanel";
 import { SceneMini } from "./components/SceneMini";
 import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
@@ -35,6 +36,7 @@ import { useDrumStore } from "./store/drumStore";
 import { useOverlayStore } from "./store/overlayStore";
 import { useKeyboard } from "./hooks/useKeyboard";
 import { useMidi } from "./hooks/useMidi";
+import { useMidiClock } from "./hooks/useMidiClock";
 import { useUndoRedo } from "./hooks/useUndoRedo";
 import { loadSharedPattern } from "./utils/patternShare";
 import { scheduleAutoSave, loadAutoSave } from "./store/autoSave";
@@ -57,6 +59,22 @@ export function App() {
   useKeyboard();
   useMidi();
   useUndoRedo();
+
+  // MIDI Clock sync — mode is set via MidiClockPanel UI
+  const [midiClockMode, setMidiClockModeState] = useState<"off" | "send" | "receive">(getMidiClockMode());
+  useEffect(() => subscribeMidiClockMode(() => setMidiClockModeState(getMidiClockMode())), []);
+  const bpm = useDrumStore((s) => s.bpm);
+  const isPlaying = useDrumStore((s) => s.isPlaying);
+  const setBpm = useDrumStore((s) => s.setBpm);
+  const togglePlay = useDrumStore((s) => s.togglePlay);
+  const midiClock = useMidiClock({
+    mode: midiClockMode,
+    bpm,
+    isPlaying,
+    onExternalBpm: (b) => setBpm(b),
+    onExternalStart: () => { if (!useDrumStore.getState().isPlaying) togglePlay(); },
+    onExternalStop: () => { if (useDrumStore.getState().isPlaying) togglePlay(); },
+  });
 
   // Load shared pattern or auto-save on mount
   useEffect(() => {
@@ -293,6 +311,7 @@ export function App() {
         onOpenModMatrix={() => overlay.openOverlay("modMatrix")}
         onOpenMacros={() => overlay.openOverlay("macros")}
         onOpenMidiLearn={() => overlay.openOverlay("midiLearn")}
+        onOpenMidiClock={() => overlay.openOverlay("midiClock")}
         onOpenFx={() => overlay.openOverlay("fxPanel")}
         onOpenMixer={() => overlay.openOverlay("mixer")}
         onOpenKits={() => overlay.openOverlay("kitBrowser")}
@@ -412,6 +431,12 @@ export function App() {
       <ModMatrixEditor isOpen={overlay.isOpen("modMatrix")} onClose={() => overlay.closeOverlay("modMatrix")} />
       <MacroPanel isOpen={overlay.isOpen("macros")} onClose={() => overlay.closeOverlay("macros")} />
       <MidiLearnPanel isOpen={overlay.isOpen("midiLearn")} onClose={() => overlay.closeOverlay("midiLearn")} />
+      <MidiClockPanel
+        isOpen={overlay.isOpen("midiClock")}
+        onClose={() => overlay.closeOverlay("midiClock")}
+        getOutputs={midiClock.getOutputs}
+        selectOutput={midiClock.selectOutput}
+      />
       {sceneMiniOpen && <SceneMini onClose={() => setSceneMiniOpen(false)} />}
     </div>
   );
