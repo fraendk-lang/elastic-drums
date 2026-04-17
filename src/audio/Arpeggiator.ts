@@ -15,15 +15,28 @@
 
 // ── TYPES ──
 
-export type ArpMode = "off" | "up" | "down" | "updown" | "random";
-export type ArpRate = "1/4" | "1/8" | "1/16" | "1/32";
+export type ArpMode =
+  | "off"
+  | "up"
+  | "down"
+  | "updown"
+  | "downup"
+  | "converge"
+  | "diverge"
+  | "random"
+  | "chord";
+export type ArpRate = "1/4" | "1/8" | "1/8t" | "1/16" | "1/16t" | "1/32";
 export type ArpGate = "short" | "medium" | "long";
 
 export interface ArpSettings {
   mode: ArpMode;
   rate: ArpRate;
-  octaves: number; // 1-4
+  octaves: number;      // 1-4
   gate: ArpGate;
+  swing: number;        // 0-0.5, shifts every 2nd substep later (groove)
+  skipProb: number;     // 0-1, probability a substep is rested (holes in pattern)
+  velDecay: number;     // 0-1, velocity multiplier decay per substep (0 = no decay)
+  velocityJitter: number; // 0-1, random ±velocity variation
 }
 
 export const DEFAULT_ARP_SETTINGS: ArpSettings = {
@@ -31,6 +44,10 @@ export const DEFAULT_ARP_SETTINGS: ArpSettings = {
   rate: "1/8",
   octaves: 2,
   gate: "medium",
+  swing: 0,
+  skipProb: 0,
+  velDecay: 0,
+  velocityJitter: 0,
 };
 
 // ── RATE & GATE LOOKUP TABLES ──
@@ -43,7 +60,9 @@ export const DEFAULT_ARP_SETTINGS: ArpSettings = {
 const ARP_RATES: Record<ArpRate, number> = {
   "1/4": 1,
   "1/8": 0.5,
+  "1/8t": 1 / 3,    // Triplet eighths (3 per beat)
   "1/16": 0.25,
+  "1/16t": 1 / 6,   // Triplet sixteenths (6 per beat)
   "1/32": 0.125,
 };
 
@@ -133,9 +152,10 @@ function getScaleNotes(
 // ── MAIN ARPEGGIATOR FUNCTION ──
 
 export interface ArpNote {
-  offset: number; // Time offset in seconds from start
-  note: number; // MIDI note number
-  duration: number; // Note duration in seconds
+  offset: number;    // Time offset in seconds from start
+  note: number;      // MIDI note number
+  duration: number;  // Note duration in seconds
+  velocity: number;  // 0-1 velocity
 }
 
 /**
@@ -171,13 +191,15 @@ export function generateArpNotes(
   stepDuration: number,
   settings: ArpSettings,
   scaleName: string,
-  rootMidi: number
+  rootMidi: number,
+  baseVelocity = 0.85,
+  extraChordNotes: number[] = []  // For "chord" mode or multi-note input (held chord)
 ): ArpNote[] {
-  const { mode, rate, octaves, gate } = settings;
+  const { mode, rate, octaves, gate, swing, skipProb, velDecay, velocityJitter } = settings;
 
   // Arpeggiator off: return a single note event for the entire step
   if (mode === "off") {
-    return [{ offset: 0, note: baseNote, duration: stepDuration }];
+    return [{ offset: 0, note: baseNote, duration: stepDuration, velocity: baseVelocity }];
   }
 
   // Compute sub-step timing
@@ -185,72 +207,119 @@ export function generateArpNotes(
   const gateRatio = ARP_GATES[gate];
   const subStepDuration = stepDuration * rateDiv;
   const noteDuration = subStepDuration * gateRatio;
-  const numSubSteps = Math.floor(1 / rateDiv);
+  const numSubSteps = Math.max(1, Math.floor(1 / rateDiv));
 
-  // Build scale notes
-  const baseOctave = Math.floor(baseNote / 12);
-  const scaleNotes = getScaleNotes(rootMidi, scaleName, baseOctave - 1, baseOctave - 1 + octaves);
-
-  if (scaleNotes.length === 0) {
-    return [{ offset: 0, note: baseNote, duration: noteDuration }];
+  // Pool of notes to arpeggiate. If caller provided extraChordNotes (e.g. a held
+  // chord [root, 3rd, 5th]), use those spread across octaves. Otherwise build
+  // from scale.
+  let poolBase: number[];
+  if (extraChordNotes.length > 0) {
+    poolBase = [...new Set(extraChordNotes)].sort((a, b) => a - b);
+  } else {
+    const baseOctave = Math.floor(baseNote / 12);
+    const scaleNotes = getScaleNotes(rootMidi, scaleName, baseOctave - 1, baseOctave - 1 + octaves);
+    if (scaleNotes.length === 0) {
+      return [{ offset: 0, note: baseNote, duration: noteDuration, velocity: baseVelocity }];
+    }
+    poolBase = scaleNotes.filter((n) => n >= baseNote && n < baseNote + octaves * 12);
+    if (poolBase.length === 0) {
+      return [{ offset: 0, note: baseNote, duration: noteDuration, velocity: baseVelocity }];
+    }
   }
 
-  // Find base index in scale
-  const baseIndex = scaleNotes.findIndex((n) => n >= baseNote);
-  if (baseIndex < 0) {
-    return [{ offset: 0, note: baseNote, duration: noteDuration }];
+  // Expand pool across octaves when user specified extraChordNotes (chord mode)
+  const pool: number[] = [];
+  if (extraChordNotes.length > 0) {
+    for (let o = 0; o < octaves; o++) {
+      for (const n of poolBase) pool.push(n + o * 12);
+    }
+  } else {
+    pool.push(...poolBase);
   }
-
-  // Get available notes starting from baseNote and within the octave range
-  const availableNotes = scaleNotes.filter(
-    (n) => n >= baseNote && n < baseNote + octaves * 12
-  );
-
-  if (availableNotes.length === 0) {
-    return [{ offset: 0, note: baseNote, duration: noteDuration }];
-  }
+  pool.sort((a, b) => a - b);
 
   // Generate note sequence based on mode
   let noteSequence: number[];
-
   switch (mode) {
-    case "up": {
-      noteSequence = [...availableNotes];
+    case "up":
+      noteSequence = [...pool];
       break;
-    }
-
-    case "down": {
-      noteSequence = [...availableNotes].reverse();
+    case "down":
+      noteSequence = [...pool].reverse();
       break;
-    }
-
     case "updown": {
-      const up = [...availableNotes];
-      const down = [...availableNotes].reverse().slice(1, -1);
+      const up = [...pool];
+      const down = [...pool].reverse().slice(1, -1);
       noteSequence = [...up, ...down];
       break;
     }
-
-    case "random": {
-      noteSequence = Array(numSubSteps)
-        .fill(0)
-        .map(() => availableNotes[Math.floor(Math.random() * availableNotes.length)]!);
+    case "downup": {
+      const down = [...pool].reverse();
+      const up = [...pool].slice(1, -1);
+      noteSequence = [...down, ...up];
       break;
     }
-
+    case "converge": {
+      // Outside-in: lowest, highest, 2nd-lowest, 2nd-highest ...
+      const seq: number[] = [];
+      let lo = 0, hi = pool.length - 1;
+      while (lo <= hi) {
+        seq.push(pool[lo]!);
+        if (hi !== lo) seq.push(pool[hi]!);
+        lo++;
+        hi--;
+      }
+      noteSequence = seq;
+      break;
+    }
+    case "diverge": {
+      // Inside-out from center
+      const mid = Math.floor(pool.length / 2);
+      const seq: number[] = [pool[mid]!];
+      for (let i = 1; i <= mid; i++) {
+        if (mid - i >= 0) seq.push(pool[mid - i]!);
+        if (mid + i < pool.length) seq.push(pool[mid + i]!);
+      }
+      noteSequence = seq;
+      break;
+    }
+    case "random":
+      noteSequence = Array(numSubSteps)
+        .fill(0)
+        .map(() => pool[Math.floor(Math.random() * pool.length)]!);
+      break;
+    case "chord":
+      // "Chord" mode = strum: fire all pool notes simultaneously on each substep
+      noteSequence = [-1]; // Sentinel, handled below
+      break;
     default:
       noteSequence = [baseNote];
   }
 
-  // Map note sequence to timed events
+  // Map note sequence to timed events with swing + skip + velocity decay
   const result: ArpNote[] = [];
   for (let i = 0; i < numSubSteps; i++) {
-    const note = noteSequence[i % noteSequence.length] ?? baseNote;
-    result.push({
-      offset: i * subStepDuration,
-      note,
-      duration: noteDuration,
-    });
+    // Skip probability — random holes for organic feel
+    if (skipProb > 0 && Math.random() < skipProb) continue;
+
+    // Swing: shift every other substep later (0-50% of substep length)
+    const swingOffset = (i % 2 === 1) ? subStepDuration * swing : 0;
+    const t = i * subStepDuration + swingOffset;
+
+    // Velocity: decay per-step + optional random jitter
+    const decayFactor = Math.max(0.2, 1 - (velDecay * (i / Math.max(1, numSubSteps - 1))));
+    const jitter = velocityJitter > 0 ? (Math.random() - 0.5) * velocityJitter : 0;
+    const vel = Math.max(0.05, Math.min(1, baseVelocity * decayFactor + jitter));
+
+    if (mode === "chord") {
+      // Strum all pool notes simultaneously
+      for (const n of pool) {
+        result.push({ offset: t, note: n, duration: noteDuration, velocity: vel });
+      }
+    } else {
+      const note = noteSequence[i % noteSequence.length] ?? baseNote;
+      result.push({ offset: t, note, duration: noteDuration, velocity: vel });
+    }
   }
 
   return result;

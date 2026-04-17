@@ -559,6 +559,153 @@ export class MelodyEngine {
   get isInitialized(): boolean {
     return this.isRunning;
   }
+
+  /**
+   * POLYPHONIC one-shot voice — fire-and-forget.
+   * Spawns an independent voice graph (osc+filter+env+dist) routed into the
+   * engine's output bus. Each call creates a fresh graph that auto-disconnects
+   * after release. Used by arpeggiator, chord spreads, overlapping piano-roll
+   * notes etc. — anywhere the mono path would steal itself.
+   *
+   * Respects current params (synthType, waveform, cutoff, resonance, envMod,
+   * decay, distortion, filterModel, subOsc). Ignores: legato/slide/tie
+   * (polyphonic voices are independent), vibrato/unison/PWM (apply to mono path).
+   */
+  triggerPolyNote(
+    midiNote: number,
+    startTime: number,
+    duration: number,
+    velocity = 0.85,
+    accent = false
+  ): void {
+    if (!this.ctx || !this.output) return;
+
+    // Unmute output bus on first trigger
+    if (this.output.gain.value === 0) this.output.gain.value = this.params.volume;
+
+    const p = this.params;
+    const ctx = this.ctx;
+    const velLevel = 0.35 + Math.max(0, Math.min(1, velocity)) * 0.65;
+    const accentBoost = accent ? (1 + p.accent * 0.8) : 1;
+    const level = velLevel * accentBoost;
+
+    // Non-subtractive types reuse existing one-shot helpers
+    switch (p.synthType) {
+      case "fm":
+        playFM(
+          ctx, this.output, startTime,
+          midiNote, p.volume * level, duration,
+          p.fmHarmonicity, p.fmModIndex,
+          0.008, Math.max(0.06, duration * 0.3), 0.3, Math.max(0.05, duration * 0.3)
+        );
+        return;
+      case "am":
+        playAM(
+          ctx, this.output, startTime,
+          midiNote, p.volume * level, duration,
+          2, 0.8,
+          0.008, 0.15, 0.5, Math.max(0.05, duration * 0.3)
+        );
+        return;
+      case "pluck":
+        playPluck(
+          ctx, this.output, startTime,
+          midiNote, p.volume * level, p.cutoff, 0.98
+        );
+        return;
+    }
+
+    // ── Subtractive one-shot ──
+    const freq = midiToFreq(midiNote);
+    const subFreq = freq / 2;
+
+    // Allocate graph
+    const osc = ctx.createOscillator();
+    this.applyWaveform(osc);
+    osc.frequency.setValueAtTime(freq, startTime);
+
+    const sub = p.subOsc > 0 ? ctx.createOscillator() : null;
+    const subG = p.subOsc > 0 ? ctx.createGain() : null;
+    if (sub && subG) {
+      sub.type = "square";
+      sub.frequency.setValueAtTime(subFreq, startTime);
+      subG.gain.value = p.subOsc;
+      sub.connect(subG);
+    }
+
+    // Filter: use plain biquad per-voice (avoids shared filterChain state races)
+    const filter = ctx.createBiquadFilter();
+    filter.type = (p.filterType === "highpass" || p.filterType === "bandpass" || p.filterType === "notch")
+      ? p.filterType
+      : "lowpass";
+    filter.Q.value = Math.max(0.0001, p.resonance * 0.6); // Scaled softer for per-voice (no self-osc runaway)
+
+    const vca = ctx.createGain();
+    vca.gain.value = 0;
+
+    // Optional distortion (shared curve is ok — cheap)
+    let dist: WaveShaperNode | null = null;
+    if (p.distortion > 0.01 && this.distNode?.curve) {
+      dist = ctx.createWaveShaper();
+      dist.curve = this.distNode.curve;
+      dist.oversample = "2x";
+    }
+
+    // Wire: osc(+sub) → filter → vca → [dist] → engine.output
+    osc.connect(filter);
+    if (subG) subG.connect(filter);
+    filter.connect(vca);
+    if (dist) {
+      vca.connect(dist);
+      dist.connect(this.output);
+    } else {
+      vca.connect(this.output);
+    }
+
+    // ── Filter envelope ──
+    const envAmount = p.envMod * (accent ? 1 + p.accent * 2 : 1);
+    const filterPeak = Math.min(p.cutoff + envAmount * 10000, 18000);
+    const filterBase = Math.max(p.cutoff, 40);
+    const fAttack = 0.005;
+    const fDecaySec = (p.decay / 1000) * (accent ? 0.5 : 1);
+
+    filter.frequency.setValueAtTime(filterBase, startTime);
+    filter.frequency.linearRampToValueAtTime(filterPeak, startTime + fAttack);
+    filter.frequency.setTargetAtTime(filterBase, startTime + fAttack, Math.max(0.02, fDecaySec / 3.5));
+
+    // ── Amp envelope (ADSR, polyphony-friendly) ──
+    const attack = 0.006;
+    const decayT = Math.min(0.12, duration * 0.25);
+    const sustain = 0.75;
+    const release = Math.max(0.04, Math.min(0.25, duration * 0.4));
+    const peak = level;
+    const sustainLvl = peak * sustain;
+
+    vca.gain.setValueAtTime(0.0001, startTime);
+    vca.gain.linearRampToValueAtTime(peak, startTime + attack);
+    vca.gain.linearRampToValueAtTime(sustainLvl, startTime + attack + decayT);
+    const releaseStart = startTime + Math.max(attack + decayT, duration);
+    vca.gain.setValueAtTime(sustainLvl, releaseStart);
+    vca.gain.exponentialRampToValueAtTime(0.0001, releaseStart + release);
+
+    // Start/stop
+    osc.start(startTime);
+    osc.stop(releaseStart + release + 0.02);
+    if (sub) {
+      sub.start(startTime);
+      sub.stop(releaseStart + release + 0.02);
+    }
+
+    // Auto-cleanup after voice ends
+    osc.onended = () => {
+      try { osc.disconnect(); } catch {}
+      try { sub?.disconnect(); } catch {}
+      try { subG?.disconnect(); } catch {}
+      try { filter.disconnect(); } catch {}
+      try { vca.disconnect(); } catch {}
+      try { dist?.disconnect(); } catch {}
+    };
+  }
 }
 
 export const melodyEngine = new MelodyEngine();

@@ -12,6 +12,20 @@ import { audioEngine } from "../audio/AudioEngine";
 import { soundFontEngine } from "../audio/SoundFontEngine";
 import { generateEuclidean } from "./drumStore";
 import { syncScaleToOtherStores, registerScaleStore } from "./bassStore";
+import { generateArpNotes, DEFAULT_ARP_SETTINGS, type ArpSettings } from "../audio/Arpeggiator";
+
+// ─── Humanize (micro-random variation for organic feel) ─────
+export interface HumanizeSettings {
+  timing: number;    // 0-1, max ± ms = timing * 30ms
+  velocity: number;  // 0-1, ± velocity variation
+  probability: number; // 0-1, chance of NOT skipping (1 = always play)
+}
+
+export const DEFAULT_HUMANIZE: HumanizeSettings = {
+  timing: 0,
+  velocity: 0,
+  probability: 1,
+};
 
 export const MELODY_MAX_CLIP_STEPS = 256;
 
@@ -758,6 +772,10 @@ interface MelodyStore {
   automationParam: string;
   isPlaying: boolean;
   instrument: string;
+  arp: ArpSettings;
+  humanize: HumanizeSettings;
+  setArp: <K extends keyof ArpSettings>(key: K, value: ArpSettings[K]) => void;
+  setHumanize: <K extends keyof HumanizeSettings>(key: K, value: HumanizeSettings[K]) => void;
 
   setAutomationValue: (param: string, step: number, value: number | undefined) => void;
   setAutomationParam: (param: string) => void;
@@ -862,17 +880,48 @@ export function startMelodyScheduler() {
         const explicitGateLength = Math.max(1, step.gateLength ?? 1);
         const sustainSteps = explicitGateLength > 1 ? explicitGateLength : getLegacyTieLength(steps, stepIndex, length);
         const sustainDuration = secondsPerStep * sustainSteps;
-        const { instrument } = useMelodyStore.getState();
+        const { instrument, arp, humanize } = useMelodyStore.getState();
 
-        // Use soundfont if a non-synth instrument is selected
-        if (instrument !== "_synth_") {
-          const velocity = Math.max(0.2, Math.min(1, step.velocity ?? (step.accent ? 1.0 : 0.7)));
-          const duration = Math.max(secondsPerStep * 1.2, sustainDuration * 0.98);
-          soundFontEngine.playNote("melody", midiNote, nextMelodyStepTime, velocity, duration);
-        } else {
-          // Use built-in synth
-          melodyEngine.triggerNote(midiNote, nextMelodyStepTime, step.accent, step.slide, false, step.velocity ?? (step.accent ? 1.0 : 0.7));
-          melodyEngine.releaseNote(nextMelodyStepTime + Math.max(secondsPerStep * 0.92, sustainDuration * 0.98));
+        // Humanize: probability gate (random skip)
+        const humanProbPass = humanize.probability >= 1 || Math.random() < humanize.probability;
+
+        if (humanProbPass) {
+          const baseVel = step.velocity ?? (step.accent ? 1.0 : 0.7);
+          // Humanize: velocity jitter (±)
+          const humanVel = humanize.velocity > 0
+            ? Math.max(0.05, Math.min(1, baseVel + (Math.random() - 0.5) * humanize.velocity))
+            : baseVel;
+          // Humanize: timing jitter ±30ms max
+          const humanOffset = humanize.timing > 0 ? (Math.random() - 0.5) * humanize.timing * 0.03 : 0;
+          const startT = nextMelodyStepTime + humanOffset;
+
+          if (arp.mode !== "off") {
+            // ── Arpeggiator: expand into sub-notes, fire polyphonically ──
+            const arpNotes = generateArpNotes(
+              midiNote,
+              sustainDuration,
+              arp,
+              scaleName,
+              rootNote,
+              humanVel,
+            );
+            if (instrument !== "_synth_") {
+              for (const a of arpNotes) {
+                soundFontEngine.playNote("melody", a.note, startT + a.offset, a.velocity, a.duration);
+              }
+            } else {
+              for (const a of arpNotes) {
+                melodyEngine.triggerPolyNote(a.note, startT + a.offset, a.duration, a.velocity, step.accent);
+              }
+            }
+          } else if (instrument !== "_synth_") {
+            const duration = Math.max(secondsPerStep * 1.2, sustainDuration * 0.98);
+            soundFontEngine.playNote("melody", midiNote, startT, humanVel, duration);
+          } else {
+            // Built-in synth (monophonic path for legato/slide/tie character)
+            melodyEngine.triggerNote(midiNote, startT, step.accent, step.slide, false, humanVel);
+            melodyEngine.releaseNote(startT + Math.max(secondsPerStep * 0.92, sustainDuration * 0.98));
+          }
         }
       } else if (!step?.active && !isHeldByPreviousGate) {
         if (steps.some(s => s.active)) {
@@ -911,6 +960,11 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
   automationParam: "cutoff",
   isPlaying: false,
   instrument: "_synth_",
+  arp: { ...DEFAULT_ARP_SETTINGS },
+  humanize: { ...DEFAULT_HUMANIZE },
+
+  setArp: (key, value) => set((s) => ({ arp: { ...s.arp, [key]: value } })),
+  setHumanize: (key, value) => set((s) => ({ humanize: { ...s.humanize, [key]: value } })),
 
   toggleStep: (step) => set((s) => {
     const newSteps = [...s.steps];

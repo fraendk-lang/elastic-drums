@@ -597,10 +597,6 @@ function ChannelStrip({ label, color, meter, faderValue, sendA, sendB, sendC, se
   panValue: number; onPanChange: (v: number) => void;
   onOpenFxRack: () => void;
 }) {
-  const [filterFreq, setFilterFreq] = useState(1000);
-  const [filterType, setFilterType] = useState<BiquadFilterType>("allpass");
-  const [drive, setDrive] = useState(0);
-
   const GROUP_COLORS: Record<string, string> = {
     drums: "#f59e0b", hats: "#3b82f6", perc: "#8b5cf6", bass: "#10b981", chords: "#a78bfa", melody: "#f472b6", master: "#666",
   };
@@ -636,36 +632,6 @@ function ChannelStrip({ label, color, meter, faderValue, sendA, sendB, sendC, se
         <MiniSend label="D" value={sendB} color="#f59e0b" onChange={onSendB} />
         <MiniSend label="Ch" value={sendC} color="#a78bfa" onChange={onSendC} />
         <MiniSend label="Ph" value={sendD} color="#10b981" onChange={onSendD} />
-      </div>
-
-      {/* Insert FX */}
-      <div className="space-y-1 border-b border-white/8 px-1.5 py-1.5">
-        {/* Filter type toggle */}
-        <div className="flex gap-[2px]">
-          {(["allpass", "lowpass", "highpass", "bandpass"] as const).map((t) => (
-            <button key={t} onClick={() => {
-              setFilterType(t);
-              audioEngine.setChannelFilter(channelIndex, t, filterFreq, 2);
-            }}
-              className={`flex-1 text-[5px] font-bold py-[1px] rounded-sm transition-colors ${
-                filterType === t ? "bg-[var(--ed-accent-blue)]/40 text-[var(--ed-accent-blue)]" : "text-[var(--ed-text-muted)] hover:text-[var(--ed-text-secondary)]"
-              }`}
-            >{t === "allpass" ? "OFF" : t === "lowpass" ? "LP" : t === "highpass" ? "HP" : "BP"}</button>
-          ))}
-        </div>
-        {/* Filter freq */}
-        {filterType !== "allpass" && (
-          <MiniSend label="F" value={Math.round(filterFreq / 200 * 100)} color="#3b82f6" onChange={(v) => {
-            const freq = Math.round(20 + (v / 100) * 19980);
-            setFilterFreq(freq);
-            audioEngine.setChannelFilter(channelIndex, filterType, freq, 2);
-          }} />
-        )}
-        {/* Drive */}
-        <MiniSend label="⚡" value={drive} color="#ef4444" onChange={(v) => {
-          setDrive(v);
-          audioEngine.setChannelDrive(channelIndex, v / 100);
-        }} />
       </div>
 
       {/* 3-Band EQ */}
