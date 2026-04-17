@@ -23,6 +23,12 @@ interface Props {
   onClose: () => void;
 }
 
+// MIDI number → "C4", "A#3" etc.
+const NOTE_NAMES_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+function midiToName(midi: number): string {
+  return (NOTE_NAMES_SHARP[midi % 12] ?? "?") + (Math.floor(midi / 12) - 1);
+}
+
 // Which Y-Param applies to which engine. Both engines share most names.
 const Y_PARAMS: { id: YAxisParam; label: string; range: [number, number] }[] = [
   { id: "cutoff",     label: "Cutoff",    range: [200, 9000] },
@@ -465,7 +471,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
         }
       }
 
-      // ── Active voice cursor glow (at latest trail point per pointer) ──
+      // ── Active voice cursor glow + note label (at latest trail point per pointer) ──
       for (const voice of activeVoicesRef.current.values()) {
         const latest = [...trailRef.current].reverse().find((p) => p.pointerId === voice.pointerId);
         if (!latest) continue;
@@ -480,7 +486,50 @@ export function PerformancePad({ isOpen, onClose }: Props) {
         ctx.beginPath();
         ctx.arc(px, py, 18, 0, Math.PI * 2);
         ctx.fill();
+
+        // Floating note/chord label above cursor
+        const label = mode === "chords" && voice.cellIndex !== undefined
+          ? (chordSet.cells[voice.cellIndex]?.label ?? midiToName(voice.midi))
+          : midiToName(voice.midi);
+
+        // Label position: above cursor, offset enough to not overlap the glow
+        const labelX = px;
+        const labelY = Math.max(24, py - 28);
+
+        // Pill background for readability
+        ctx.font = "bold 13px ui-sans-serif, system-ui, -apple-system";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        const textW = ctx.measureText(label).width;
+        const padX = 8, padY = 4;
+        const bgW = textW + padX * 2;
+        const bgH = 20;
+        ctx.fillStyle = "rgba(10, 10, 14, 0.92)";
+        ctx.strokeStyle = "rgba(244, 114, 182, 0.5)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        const rX = labelX - bgW / 2;
+        const rY = labelY - bgH / 2;
+        const r = 6;
+        ctx.moveTo(rX + r, rY);
+        ctx.arcTo(rX + bgW, rY, rX + bgW, rY + bgH, r);
+        ctx.arcTo(rX + bgW, rY + bgH, rX, rY + bgH, r);
+        ctx.arcTo(rX, rY + bgH, rX, rY, r);
+        ctx.arcTo(rX, rY, rX + bgW, rY, r);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        void padY;
+
+        // Label text
+        ctx.fillStyle = "#f472b6";
+        ctx.fillText(label, labelX, labelY);
       }
+
+      // ── Hover preview (when NOT pressing — optional Y-axis value too) ──
+      // Note: we draw on every RAF, so a constant hover preview is fine — but
+      // we only know mouse position via pointer events that already fired.
+      // Implementation in handlePointerHover below (optional enhancement).
 
       rafIdRef.current = requestAnimationFrame(draw);
     };
@@ -703,12 +752,21 @@ export function PerformancePad({ isOpen, onClose }: Props) {
             </div>
           )}
 
-          {/* Hint */}
+          {/* Hint / Status bar */}
           <div className="absolute top-4 left-1/2 -translate-x-1/2 text-[10px] text-white/25 tracking-wider pointer-events-none font-light">
             {mode === "chords"
               ? `${chordSet.name} · ${chordSet.cells.length} CHORDS · MULTI-TOUCH`
               : "BERÜHREN · HALTEN · BEWEGEN — MULTI-TOUCH"}
           </div>
+
+          {/* Key/Scale indicator — top-right corner */}
+          {mode === "notes" && (
+            <div className="absolute top-3 right-4 text-[10px] text-white/45 font-mono pointer-events-none tracking-wide">
+              <span className="text-[var(--ed-accent-melody)]/70 font-bold">{midiToName(rootNote).replace(/\d+$/, "")}</span>
+              <span className="mx-1 text-white/20">·</span>
+              <span>{gridSnap ? scaleName : "CHROMATIC"}</span>
+            </div>
+          )}
         </div>
 
         {/* Right strip: stats */}
