@@ -73,6 +73,7 @@ export class SendFxManager {
   // ─── Performance FX: Noise ─────────────────────────────
   private activeNoiseSource: AudioBufferSourceNode | null = null;
   private activeNoiseGain: GainNode | null = null;
+  private activeNoiseFilter: BiquadFilterNode | null = null; // sweeping LPF
   private noiseBuffer: AudioBuffer | null = null;
 
   // ─── Performance FX: Stutter ──────────────────────────
@@ -691,34 +692,94 @@ export class SendFxManager {
     this.masterFilter.Q.value = 1;
   }
 
-  /** Start noise burst (hold to play) */
-  startNoise(volume = 0.3): void {
+  /** Start noise burst (hold to play).
+   *  - Gain envelope: 18 ms attack to target volume (prevents click).
+   *  - Filter envelope: LPF sweeps 300 Hz → 7 kHz over ~280 ms on attack (whoosh)
+   *                     and back on release (240 ms) so the noise "opens up"
+   *                     and "closes" musically instead of hitting as raw hash.
+   *  - Spectral shaping: HPF @ 80 Hz removes rumble, -3 dB peak at 3.5 kHz
+   *    tames the brittle presence band.
+   */
+  startNoise(volume = 0.14): void {
     if (!this.ctx || !this.noiseBuffer || !this.pumpGain) return;
     this.stopNoise(); // Clean up any previous
+    const now = this.ctx.currentTime;
+
     this.activeNoiseSource = this.ctx.createBufferSource();
     this.activeNoiseSource.buffer = this.noiseBuffer;
     this.activeNoiseSource.loop = true;
+
+    // Clean out rumble — fixed HPF
+    const hpf = this.ctx.createBiquadFilter();
+    hpf.type = "highpass";
+    hpf.frequency.value = 80;
+    hpf.Q.value = 0.5;
+
+    // Tame piercing presence band
+    const tilt = this.ctx.createBiquadFilter();
+    tilt.type = "peaking";
+    tilt.frequency.value = 3500;
+    tilt.Q.value = 0.6;
+    tilt.gain.value = -3;
+
+    // SWEEPING LPF — this is the envelope. Starts low, ramps up during attack.
+    this.activeNoiseFilter = this.ctx.createBiquadFilter();
+    this.activeNoiseFilter.type = "lowpass";
+    this.activeNoiseFilter.Q.value = 0.9;
+    this.activeNoiseFilter.frequency.setValueAtTime(300, now);
+    this.activeNoiseFilter.frequency.exponentialRampToValueAtTime(7000, now + 0.28);
+
     this.activeNoiseGain = this.ctx.createGain();
-    this.activeNoiseGain.gain.value = volume;
-    this.activeNoiseSource.connect(this.activeNoiseGain);
+    this.activeNoiseGain.gain.setValueAtTime(0, now);
+    this.activeNoiseGain.gain.linearRampToValueAtTime(volume, now + 0.018);
+
+    this.activeNoiseSource.connect(hpf);
+    hpf.connect(tilt);
+    tilt.connect(this.activeNoiseFilter);
+    this.activeNoiseFilter.connect(this.activeNoiseGain);
     this.activeNoiseGain.connect(this.pumpGain);
     this.activeNoiseSource.start();
   }
 
-  /** Stop noise burst */
+  /** Stop noise burst — filter sweeps back DOWN (LPF closes) while gain fades.
+   *  Creates a natural "close" sound instead of a hard cut. */
   stopNoise(): void {
-    if (this.activeNoiseSource) {
-      try {
-        this.activeNoiseSource.stop();
-      } catch {
-        /* already stopped */
-      }
-      this.activeNoiseSource.disconnect();
+    if (!this.ctx) return;
+    if (this.activeNoiseGain && this.activeNoiseFilter) {
+      const now = this.ctx.currentTime;
+      const source = this.activeNoiseSource;
+      const gainNode = this.activeNoiseGain;
+      const filterNode = this.activeNoiseFilter;
       this.activeNoiseSource = null;
-    }
-    if (this.activeNoiseGain) {
-      this.activeNoiseGain.disconnect();
       this.activeNoiseGain = null;
+      this.activeNoiseFilter = null;
+
+      try {
+        // Filter release: sweep down to 200 Hz over 240 ms
+        filterNode.frequency.cancelScheduledValues(now);
+        filterNode.frequency.setValueAtTime(filterNode.frequency.value, now);
+        filterNode.frequency.exponentialRampToValueAtTime(200, now + 0.24);
+        // Gain release: fade to 0 over 250 ms (slightly longer than filter so click is hidden)
+        gainNode.gain.cancelScheduledValues(now);
+        gainNode.gain.setValueAtTime(gainNode.gain.value, now);
+        gainNode.gain.linearRampToValueAtTime(0, now + 0.25);
+      } catch { /* */ }
+
+      // Stop the buffer + disconnect after fade completes
+      window.setTimeout(() => {
+        if (source) {
+          try { source.stop(); } catch { /* already stopped */ }
+          try { source.disconnect(); } catch { /* */ }
+        }
+        try { gainNode.disconnect(); } catch { /* */ }
+        try { filterNode.disconnect(); } catch { /* */ }
+      }, 280);
+      return;
+    }
+    if (this.activeNoiseSource) {
+      try { this.activeNoiseSource.stop(); } catch { /* */ }
+      try { this.activeNoiseSource.disconnect(); } catch { /* */ }
+      this.activeNoiseSource = null;
     }
   }
 
