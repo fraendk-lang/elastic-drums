@@ -42,9 +42,12 @@ export const DEFAULT_BASS_PARAMS: BassParams = {
   waveform: "sawtooth",
   filterType: "lowpass",
   filterModel: "ladder",  // Moog-style for classic 303 warmth
-  cutoff: 600,
-  resonance: 12,
-  envMod: 0.6,
+  // Low default cutoff so Euclidean / strategy-generated patterns don't sound
+  // fully-open + harsh out of the box. Envelope + accent modulate UPWARDS
+  // which is the classic 303 behavior — starting bright has nowhere to go.
+  cutoff: 280,
+  resonance: 14,
+  envMod: 0.75,
   decay: 200,
   accent: 0.5,
   slideTime: 60,
