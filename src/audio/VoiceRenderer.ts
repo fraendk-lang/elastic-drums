@@ -120,7 +120,7 @@ export class VoiceRenderer {
   private noiseBuffer: AudioBuffer | null = null;
   private lastHHClosedGain: GainNode | null = null;
   private lastHHOpenGain: GainNode | null = null;
-  private sampleLookup: ((voice: number) => AudioBuffer | null) | null = null;
+  private sampleLookup: ((voice: number, velocity?: number) => AudioBuffer | null) | null = null;
 
   // ─── Anti-click: track active voice output gains for fade-out on re-trigger ───
   private activeVoiceGains: (GainNode | null)[] = [];
@@ -160,7 +160,7 @@ export class VoiceRenderer {
 
   // ─── Synthesis Setup ──────────────────────────────────────
 
-  setSampleLookup(fn: (voice: number) => AudioBuffer | null): void {
+  setSampleLookup(fn: (voice: number, velocity?: number) => AudioBuffer | null): void {
     this.sampleLookup = fn;
   }
 
@@ -210,7 +210,7 @@ export class VoiceRenderer {
 
     // Check if this voice has a sample loaded — play sample instead of synth
     if (this.sampleLookup) {
-      const buffer = this.sampleLookup(voice);
+      const buffer = this.sampleLookup(voice, velocity);
       if (buffer) {
         this.playSampleAtTime(ctx, buffer, voice, velocity, t, out, p.sampleTune ?? 0);
         return;

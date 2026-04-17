@@ -232,7 +232,7 @@ export class AudioEngine {
   setVoiceParam(voice: number, paramId: string, value: number): void { voiceRenderer.setVoiceParam(voice, paramId, value); }
   getVoiceParam(voice: number, paramId: string): number { return voiceRenderer.getVoiceParam(voice, paramId); }
   getVoiceParams(voice: number): Record<string, number> { return voiceRenderer.getVoiceParams(voice); }
-  setSampleLookup(fn: (voice: number) => AudioBuffer | null): void { voiceRenderer.setSampleLookup(fn); }
+  setSampleLookup(fn: (voice: number, velocity?: number) => AudioBuffer | null): void { voiceRenderer.setSampleLookup(fn); }
 
   triggerVoice(voice: number, velocity = 0.8, gateDurationSec?: number): void {
     const ctx = this.getContext();

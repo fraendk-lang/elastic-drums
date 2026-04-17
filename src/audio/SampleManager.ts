@@ -2,8 +2,12 @@
  * Sample Manager
  *
  * Handles loading, decoding, and storing audio samples.
- * Samples are decoded into AudioBuffers and stored per-voice.
- * Supports: WAV, MP3, AIFF, OGG, FLAC (whatever the browser decodes)
+ * Each voice can hold a single sample OR multiple velocity layers.
+ *
+ * Velocity Layers:
+ *   - Up to 4 layers per voice, each mapped to a velocity range [0..1]
+ *   - On playback, the layer whose range covers the velocity wins
+ *   - Existing single-sample API still works (treated as one full-range layer)
  */
 
 import { audioEngine } from "./AudioEngine";
@@ -11,69 +15,59 @@ import { applyMuLaw } from "./MuLaw";
 
 export interface LoadedSample {
   name: string;
-  buffer: AudioBuffer;        // Current buffer (possibly µ-Law processed)
-  originalBuffer: AudioBuffer; // Original unprocessed buffer
+  buffer: AudioBuffer;
+  originalBuffer: AudioBuffer;
   duration: number;
   sampleRate: number;
   muLawEnabled: boolean;
 }
 
-class SampleManagerClass {
-  // Per-voice sample slots (voice index → sample)
-  private samples = new Map<number, LoadedSample>();
+export interface VelocityLayer {
+  sample: LoadedSample;
+  velMin: number; // 0..1
+  velMax: number; // 0..1
+}
 
-  /** Load a sample from a File (drag & drop or file picker) */
-  async loadFromFile(file: File, voiceIndex: number): Promise<LoadedSample> {
+export const MAX_VELOCITY_LAYERS = 4;
+
+class SampleManagerClass {
+  // Per-voice velocity layers (voice index → array of layers)
+  private layers = new Map<number, VelocityLayer[]>();
+
+  /** Load a sample from a File. Replaces full-range single layer by default. */
+  async loadFromFile(file: File, voiceIndex: number, opts?: { velMin?: number; velMax?: number; append?: boolean }): Promise<LoadedSample> {
     const arrayBuffer = await file.arrayBuffer();
     await audioEngine.resume();
     const ctx = audioEngine.getAudioContext();
     if (!ctx) throw new Error("AudioContext not initialized");
 
     const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-
-    const sample: LoadedSample = {
-      name: file.name.replace(/\.[^.]+$/, ""),
-      buffer: audioBuffer,
-      originalBuffer: audioBuffer,
-      duration: audioBuffer.duration,
-      sampleRate: audioBuffer.sampleRate,
-      muLawEnabled: false,
-    };
-
-    this.samples.set(voiceIndex, sample);
-    console.log(`Sample loaded: "${sample.name}" → Voice ${voiceIndex} (${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.sampleRate}Hz)`);
-
-    return sample;
+    return this.addSampleBuffer(audioBuffer, file.name.replace(/\.[^.]+$/, ""), voiceIndex, opts);
   }
 
   /** Load sample from URL */
-  async loadFromUrl(url: string, name: string, voiceIndex: number): Promise<LoadedSample> {
+  async loadFromUrl(url: string, name: string, voiceIndex: number, opts?: { velMin?: number; velMax?: number; append?: boolean }): Promise<LoadedSample> {
     const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Sample request failed (${response.status}) for ${url}`);
-    }
+    if (!response.ok) throw new Error(`Sample request failed (${response.status}) for ${url}`);
     const arrayBuffer = await response.arrayBuffer();
     await audioEngine.resume();
     const ctx = audioEngine.getAudioContext();
     if (!ctx) throw new Error("AudioContext not initialized");
-
     const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-
-    const sample: LoadedSample = {
-      name,
-      buffer: audioBuffer,
-      originalBuffer: audioBuffer,
-      duration: audioBuffer.duration,
-      sampleRate: audioBuffer.sampleRate,
-      muLawEnabled: false,
-    };
-
-    this.samples.set(voiceIndex, sample);
-    return sample;
+    return this.addSampleBuffer(audioBuffer, name, voiceIndex, opts);
   }
 
-  /** Load sample from an AudioBuffer (used by kit loading) */
-  loadFromBuffer(buffer: AudioBuffer, name: string, voiceIndex: number): LoadedSample {
+  /** Decode and store a sample buffer for a voice. */
+  decodeAndSet(voiceIndex: number, buffer: AudioBuffer, name: string, opts?: { velMin?: number; velMax?: number; append?: boolean }): LoadedSample {
+    return this.addSampleBuffer(buffer, name, voiceIndex, opts);
+  }
+
+  private addSampleBuffer(
+    buffer: AudioBuffer,
+    name: string,
+    voiceIndex: number,
+    opts?: { velMin?: number; velMax?: number; append?: boolean },
+  ): LoadedSample {
     const sample: LoadedSample = {
       name,
       buffer,
@@ -83,61 +77,125 @@ class SampleManagerClass {
       muLawEnabled: false,
     };
 
-    this.samples.set(voiceIndex, sample);
+    const velMin = opts?.velMin ?? 0;
+    const velMax = opts?.velMax ?? 1;
+    const append = opts?.append ?? false;
+
+    const existing = this.layers.get(voiceIndex) ?? [];
+    let next: VelocityLayer[];
+    if (append && existing.length < MAX_VELOCITY_LAYERS) {
+      next = [...existing, { sample, velMin, velMax }];
+    } else if (append) {
+      // At max layers — replace the last one
+      next = [...existing.slice(0, -1), { sample, velMin, velMax }];
+    } else {
+      // Replace (single-layer default behaviour)
+      next = [{ sample, velMin, velMax }];
+    }
+    // Sort by velMin so lookup is predictable
+    next.sort((a, b) => a.velMin - b.velMin);
+    this.layers.set(voiceIndex, next);
+
     return sample;
   }
 
-  /** Get loaded sample for a voice */
+  /** Get all velocity layers for a voice */
+  getLayers(voiceIndex: number): VelocityLayer[] {
+    return this.layers.get(voiceIndex) ?? [];
+  }
+
+  /** Remove a specific velocity layer by index */
+  removeLayer(voiceIndex: number, layerIdx: number): void {
+    const existing = this.layers.get(voiceIndex);
+    if (!existing) return;
+    const next = existing.filter((_, i) => i !== layerIdx);
+    if (next.length === 0) this.layers.delete(voiceIndex);
+    else this.layers.set(voiceIndex, next);
+  }
+
+  /** Update the velocity range of a layer */
+  setLayerRange(voiceIndex: number, layerIdx: number, velMin: number, velMax: number): void {
+    const existing = this.layers.get(voiceIndex);
+    if (!existing || !existing[layerIdx]) return;
+    const updated = [...existing];
+    updated[layerIdx] = { ...updated[layerIdx]!, velMin, velMax };
+    updated.sort((a, b) => a.velMin - b.velMin);
+    this.layers.set(voiceIndex, updated);
+  }
+
+  /** Pick the right buffer for a given velocity */
+  getBufferForVelocity(voiceIndex: number, velocity: number): AudioBuffer | null {
+    const layers = this.layers.get(voiceIndex);
+    if (!layers || layers.length === 0) return null;
+    // Find layer whose [velMin, velMax] covers velocity
+    for (const layer of layers) {
+      if (velocity >= layer.velMin && velocity <= layer.velMax) return layer.sample.buffer;
+    }
+    // Fallback: nearest layer
+    let best = layers[0]!;
+    let bestDist = Infinity;
+    for (const layer of layers) {
+      const mid = (layer.velMin + layer.velMax) / 2;
+      const d = Math.abs(mid - velocity);
+      if (d < bestDist) { bestDist = d; best = layer; }
+    }
+    return best.sample.buffer;
+  }
+
+  /** Get first loaded sample for a voice (backward-compat) */
   getSample(voiceIndex: number): LoadedSample | undefined {
-    return this.samples.get(voiceIndex);
+    return this.layers.get(voiceIndex)?.[0]?.sample;
   }
 
-  /** Check if voice has a sample loaded */
+  /** Check if voice has any sample loaded */
   hasSample(voiceIndex: number): boolean {
-    return this.samples.has(voiceIndex);
+    return (this.layers.get(voiceIndex)?.length ?? 0) > 0;
   }
 
-  /** Toggle µ-Law vintage processing on a sample */
+  /** Toggle µ-Law on all layers of a voice */
   toggleMuLaw(voiceIndex: number): boolean {
-    const sample = this.samples.get(voiceIndex);
-    if (!sample) return false;
-
+    const layers = this.layers.get(voiceIndex);
+    if (!layers || layers.length === 0) return false;
     const ctx = audioEngine.getAudioContext();
     if (!ctx) return false;
 
-    sample.muLawEnabled = !sample.muLawEnabled;
+    const firstEnabled = layers[0]!.sample.muLawEnabled;
+    const nextEnabled = !firstEnabled;
 
-    if (sample.muLawEnabled) {
-      // Apply µ-Law (8-bit, slight sample rate reduction)
-      sample.buffer = applyMuLaw(sample.originalBuffer, ctx, 8, 2);
-    } else {
-      // Restore original
-      sample.buffer = sample.originalBuffer;
+    for (const layer of layers) {
+      layer.sample.muLawEnabled = nextEnabled;
+      if (nextEnabled) {
+        layer.sample.buffer = applyMuLaw(layer.sample.originalBuffer, ctx, 8, 2);
+      } else {
+        layer.sample.buffer = layer.sample.originalBuffer;
+      }
     }
 
-    return sample.muLawEnabled;
+    return nextEnabled;
   }
 
-  /** Check if µ-Law is enabled for a voice */
   isMuLawEnabled(voiceIndex: number): boolean {
-    return this.samples.get(voiceIndex)?.muLawEnabled ?? false;
+    return this.layers.get(voiceIndex)?.[0]?.sample.muLawEnabled ?? false;
   }
 
-  /** Remove sample from a voice (revert to synthesis) */
+  /** Remove all samples from a voice (revert to synthesis) */
   clearSample(voiceIndex: number): void {
-    this.samples.delete(voiceIndex);
+    this.layers.delete(voiceIndex);
   }
 
-  /** Get all loaded sample info */
+  /** Get a flat map of first layer samples (backward-compat) */
   getLoadedSamples(): Map<number, LoadedSample> {
-    return this.samples;
+    const out = new Map<number, LoadedSample>();
+    for (const [voice, layers] of this.layers) {
+      if (layers[0]) out.set(voice, layers[0].sample);
+    }
+    return out;
   }
 }
 
 export const sampleManager = new SampleManagerClass();
 
-// Register sample lookup with audio engine
-audioEngine.setSampleLookup((voice: number) => {
-  const sample = sampleManager.getSample(voice);
-  return sample?.buffer ?? null;
+// Register velocity-aware sample lookup with audio engine
+audioEngine.setSampleLookup((voice: number, velocity = 0.8) => {
+  return sampleManager.getBufferForVelocity(voice, velocity);
 });
