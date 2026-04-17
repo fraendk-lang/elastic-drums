@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { audioEngine } from "../audio/AudioEngine";
 
 const LABELS = ["KCK", "SNR", "CLP", "TL", "TM", "TH", "HHC", "HHO", "CYM", "RDE", "P1", "P2", "BAS", "CHD", "LED"];
@@ -13,24 +13,119 @@ interface MixerStripProps {
 }
 
 export function MixerStrip({ onOpenMixer }: MixerStripProps) {
-  const [levels, setLevels] = useState<number[]>(new Array(15).fill(0));
-  const [masterLevel, setMasterLevel] = useState(0);
-  const rafRef = useRef<number>(0);
-  const activeCount = levels.filter((level) => level > 0.02).length;
-  const hotCount = levels.filter((level) => level > 0.75).length;
-  const masterDb = masterLevel > 0.001 ? 20 * Math.log10(masterLevel) : -Infinity;
+  // Stats throttled to ~5 Hz (not 60 Hz) — React re-renders only for numbers that change slowly
+  const [stats, setStats] = useState({ active: 0, hot: 0, masterDb: -Infinity });
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const masterCanvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Meter painter runs at 60 Hz on canvas directly — NO React re-renders
   useEffect(() => {
-    const update = () => {
-      const newLevels: number[] = [];
-      for (let i = 0; i < 15; i++) newLevels.push(audioEngine.getChannelLevel(i));
-      setLevels(newLevels);
-      setMasterLevel(audioEngine.getMasterLevel());
-      rafRef.current = requestAnimationFrame(update);
+    const channelCanvas = canvasRef.current;
+    const masterCanvas = masterCanvasRef.current;
+    if (!channelCanvas || !masterCanvas) return;
+
+    const ctx = channelCanvas.getContext("2d");
+    const mctx = masterCanvas.getContext("2d");
+    if (!ctx || !mctx) return;
+
+    // Device-pixel-ratio-aware sizing (sharp on retina)
+    const dpr = window.devicePixelRatio || 1;
+    const resize = () => {
+      for (const c of [channelCanvas, masterCanvas]) {
+        const rect = c.getBoundingClientRect();
+        c.width = Math.round(rect.width * dpr);
+        c.height = Math.round(rect.height * dpr);
+      }
     };
-    rafRef.current = requestAnimationFrame(update);
-    return () => cancelAnimationFrame(rafRef.current);
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(channelCanvas);
+    ro.observe(masterCanvas);
+
+    let raf = 0;
+    let statsFrame = 0;
+
+    const levels = new Float32Array(15);
+
+    const draw = () => {
+      for (let i = 0; i < 15; i++) levels[i] = audioEngine.getChannelLevel(i);
+      const masterLvl = audioEngine.getMasterLevel();
+
+      // ─── Channel meters canvas ───
+      const cw = channelCanvas.width;
+      const ch = channelCanvas.height;
+      ctx.clearRect(0, 0, cw, ch);
+
+      const barCount = 15;
+      const gap = 3 * dpr;
+      const barW = (cw - gap * (barCount - 1)) / barCount;
+
+      for (let i = 0; i < barCount; i++) {
+        const lvl = levels[i] ?? 0;
+        const x = i * (barW + gap);
+        // Background track
+        ctx.fillStyle = "rgba(255,255,255,0.03)";
+        ctx.fillRect(x, 0, barW, ch);
+        // Level bar (bottom-anchored)
+        const h = Math.min(lvl, 1) * ch;
+        const color = COLORS[i] ?? "#ffffff";
+        if (lvl > 0.85) {
+          ctx.fillStyle = "#dc2626";
+        } else if (lvl > 0.5) {
+          ctx.fillStyle = color;
+        } else {
+          ctx.fillStyle = color + "88";
+        }
+        ctx.fillRect(x, ch - h, barW, h);
+        // Hot indicator (top red cap)
+        if (lvl > 0.75) {
+          ctx.fillStyle = "#ef4444";
+          ctx.fillRect(x, 0, barW, 2 * dpr);
+        }
+      }
+
+      // ─── Master meter canvas ───
+      const mw = masterCanvas.width;
+      const mh = masterCanvas.height;
+      mctx.clearRect(0, 0, mw, mh);
+      mctx.fillStyle = "rgba(255,255,255,0.03)";
+      mctx.fillRect(0, 0, mw, mh);
+      const mHeight = Math.min(masterLvl, 1) * mw; // horizontal
+      mctx.fillStyle = masterLvl > 0.9 ? "#dc2626" : masterLvl > 0.5 ? "#10b981" : "#10b98188";
+      mctx.fillRect(0, 0, mHeight, mh);
+
+      // Throttled stats update (every ~12 frames = 5 Hz)
+      statsFrame++;
+      if (statsFrame >= 12) {
+        statsFrame = 0;
+        let active = 0;
+        let hot = 0;
+        for (let i = 0; i < 15; i++) {
+          const v = levels[i] ?? 0;
+          if (v > 0.02) active++;
+          if (v > 0.75) hot++;
+        }
+        const db = masterLvl > 0.001 ? 20 * Math.log10(masterLvl) : -Infinity;
+        setStats((prev) =>
+          prev.active === active && prev.hot === hot && prev.masterDb === db
+            ? prev
+            : { active, hot, masterDb: db },
+        );
+      }
+
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
   }, []);
+
+  const activeCount = stats.active;
+  const hotCount = stats.hot;
+  const masterDb = stats.masterDb;
 
   return (
     <div className="flex flex-col h-full gap-2 rounded-[18px] border border-white/8 bg-[linear-gradient(180deg,rgba(18,19,24,0.98),rgba(8,9,12,0.98))] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_20px_40px_rgba(0,0,0,0.35)]">
@@ -79,14 +174,20 @@ export function MixerStrip({ onOpenMixer }: MixerStripProps) {
         MIXER &rsaquo;
       </button>
 
-      <div className="flex-1 flex gap-[3px] items-end min-h-[144px]">
+      {/* Canvas-based meters — 60 Hz painter w/o React re-render overhead */}
+      <div className="relative flex-1 min-h-[144px]">
+        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
+      </div>
+      {/* Labels row */}
+      <div className="flex gap-[3px] mt-1">
         {LABELS.map((ch, i) => (
-          <MeterColumn
+          <span
             key={i}
-            label={ch}
-            color={COLORS[i] ?? "#ffffff"}
-            level={levels[i] ?? 0}
-          />
+            className="flex-1 text-[6px] font-black tracking-[0.12em] text-center truncate"
+            style={{ color: (COLORS[i] ?? "#ffffff") + "8c" }}
+          >
+            {ch}
+          </span>
         ))}
       </div>
       </div>
@@ -100,21 +201,12 @@ export function MixerStrip({ onOpenMixer }: MixerStripProps) {
         <span className="text-[7px] font-bold text-[var(--ed-accent-green)] tracking-wider">MST</span>
         <div className="relative h-3 flex-1 overflow-hidden rounded-full border border-white/8 bg-black/30">
           {[25, 50, 75].map((pct) => (
-            <div key={pct} className="absolute top-0 bottom-0 border-l border-white/6" style={{ left: `${pct}%` }} />
+            <div key={pct} className="absolute top-0 bottom-0 border-l border-white/6 z-10 pointer-events-none" style={{ left: `${pct}%` }} />
           ))}
-          <div
-            className="absolute left-0 top-0 bottom-0 rounded-full ed-meter-bar"
-            style={{
-              width: `${Math.min(masterLevel * 100, 100)}%`,
-              background: masterLevel > 0.85
-                ? "linear-gradient(90deg, #22c55e, #ef4444)"
-                : "linear-gradient(90deg, #22c55e80, #22c55e)",
-              boxShadow: masterLevel > 0.5 ? "0 0 6px rgba(34,197,94,0.15)" : "none",
-            }}
-          />
+          <canvas ref={masterCanvasRef} className="absolute inset-0 w-full h-full rounded-full" />
         </div>
         <span className="w-8 text-right text-[7px] font-mono text-[var(--ed-text-muted)] tabular-nums">
-          {masterLevel > 0.001 ? `${masterDb.toFixed(0)}` : "-\u221E"}
+          {isFinite(masterDb) ? `${masterDb.toFixed(0)}` : "-\u221E"}
         </span>
       </div>
       </div>
@@ -122,48 +214,3 @@ export function MixerStrip({ onOpenMixer }: MixerStripProps) {
   );
 }
 
-/**
- * Memoized meter column — only re-renders when its own level changes,
- * not when OTHER channels update. Drops mixer overview re-cost to ~O(1)
- * instead of O(15) per frame.
- */
-const MeterColumn = React.memo(function MeterColumn({
-  label, color, level,
-}: {
-  label: string;
-  color: string;
-  level: number;
-}) {
-  const isHot = level > 0.75;
-  return (
-    <div className="flex flex-col items-center flex-1 min-w-0 gap-1">
-      <div className="flex h-full w-full min-h-[84px] flex-col justify-end rounded-[10px] border border-white/6 bg-[linear-gradient(180deg,rgba(6,7,10,0.96),rgba(14,15,19,0.96))] p-[3px] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-        <div className="relative h-full overflow-hidden rounded-[7px] border border-white/5 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(0,0,0,0.18))]">
-          {[20, 40, 60, 80].map((pct) => (
-            <div key={pct} className="absolute inset-x-0 border-t border-white/5" style={{ bottom: `${pct}%` }} />
-          ))}
-          <div
-            className="ed-meter-bar absolute bottom-0 left-[2px] right-[2px] rounded-[5px]"
-            style={{
-              height: `${Math.min(level * 100, 100)}%`,
-              background: level > 0.85
-                ? "linear-gradient(180deg, #ef4444, #dc2626)"
-                : level > 0.5
-                  ? `linear-gradient(180deg, #eab308, ${color})`
-                  : `linear-gradient(180deg, ${color}90, ${color}50)`,
-              boxShadow: level > 0.3 ? `0 0 10px ${color}20` : "none",
-            }}
-          />
-          {isHot && (
-            <div className="absolute inset-x-[2px] top-[2px] h-[4px] rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.65)]" />
-          )}
-        </div>
-      </div>
-      <span className="text-[6px] font-black tracking-[0.14em] transition-colors" style={{
-        color: level > 0.1 ? color + "D0" : color + "46",
-      }}>
-        {label}
-      </span>
-    </div>
-  );
-});
