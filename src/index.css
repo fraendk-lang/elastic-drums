@@ -31,35 +31,36 @@
   --ed-glow-red: rgba(239, 68, 68, 0.12);
 }
 
-/* ─── Grey / Studio Mode (Ableton Light-style) ──────────────────
-   Darker neutral grey, not pure light — matches Ableton's standard
-   light appearance for reduced eye strain and accent-color pop. */
+/* ─── Grey / Studio Mode ──────────────────────────────────────
+   Mid-dark grey — stays readable for both CSS-var text AND tailwind's
+   hard-coded `text-white` classes (which don't adapt to theme).
+   Accents keep full saturation like in dark mode. */
 :root[data-theme="grey"] {
-  --ed-bg-primary: #9a9a9e;
-  --ed-bg-secondary: #8e8e94;
-  --ed-bg-surface: #82828a;
-  --ed-bg-elevated: #76767e;
-  --ed-border: #5a5a62;
-  --ed-border-subtle: #6e6e76;
-  --ed-text-primary: #0e0e12;
-  --ed-text-secondary: #28282e;
-  --ed-text-muted: #48484f;
-  /* Accents darkened for readability on mid-grey background */
-  --ed-accent-orange: #b36600;
-  --ed-accent-amber: #8a4900;
-  --ed-accent-blue: #134bb0;
-  --ed-accent-red: #a82525;
-  --ed-accent-green: #0a6e31;
-  --ed-pad-va: #b36600;
-  --ed-pad-sample: #134bb0;
-  --ed-pad-hybrid: #5b30bd;
-  --ed-accent-bass: #056d41;
-  --ed-accent-chords: #5633c0;
-  --ed-accent-melody: #ad2c6a;
-  --ed-glow-orange: rgba(179, 102, 0, 0.18);
-  --ed-glow-blue: rgba(19, 75, 176, 0.18);
-  --ed-glow-green: rgba(10, 110, 49, 0.18);
-  --ed-glow-red: rgba(168, 37, 37, 0.14);
+  --ed-bg-primary: #3a3a42;
+  --ed-bg-secondary: #42424c;
+  --ed-bg-surface: #4c4c56;
+  --ed-bg-elevated: #565660;
+  --ed-border: #6a6a74;
+  --ed-border-subtle: #555560;
+  --ed-text-primary: #f2f2f5;
+  --ed-text-secondary: #c8c8d0;
+  --ed-text-muted: #9898a4;
+  /* Accents stay bright — readable on both mid-grey + dark-ish backgrounds */
+  --ed-accent-orange: #f59e0b;
+  --ed-accent-amber: #d97706;
+  --ed-accent-blue: #3b82f6;
+  --ed-accent-red: #ef4444;
+  --ed-accent-green: #22c55e;
+  --ed-pad-va: #f59e0b;
+  --ed-pad-sample: #3b82f6;
+  --ed-pad-hybrid: #8b5cf6;
+  --ed-accent-bass: #10b981;
+  --ed-accent-chords: #a78bfa;
+  --ed-accent-melody: #f472b6;
+  --ed-glow-orange: rgba(245, 158, 11, 0.15);
+  --ed-glow-blue: rgba(59, 130, 246, 0.15);
+  --ed-glow-green: rgba(34, 197, 94, 0.15);
+  --ed-glow-red: rgba(239, 68, 68, 0.12);
 }
 
 * {

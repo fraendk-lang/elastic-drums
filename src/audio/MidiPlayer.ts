@@ -58,6 +58,11 @@ class MidiPlayer {
   private progressTimer: ReturnType<typeof setInterval> | null = null;
   private looping = false;
 
+  /** Return the parsed Midi object for external consumers (e.g. import to PianoRoll) */
+  getMidi(): Midi | null {
+    return this.midi;
+  }
+
   /** Parse a MIDI file from ArrayBuffer */
   async loadFile(buffer: ArrayBuffer): Promise<MidiFileInfo> {
     this.stop();

@@ -159,10 +159,47 @@ export function MidiPlayerPanel({ isOpen, onClose, onOpenEditor }: MidiPlayerPan
     if (fileInfo) setBpm(fileInfo.bpm);
   }, [fileInfo, setBpm]);
 
-  const handleOpenEditor = useCallback(() => {
+  const handleOpenEditor = useCallback(async () => {
     midiPlayer.stop();
     releaseAllVoices();
     setPlaying(false);
+
+    // Convert loaded MIDI → PianoRoll notes and import before opening the editor
+    const midi = midiPlayer.getMidi();
+    if (midi) {
+      const { importPianoRollNotes } = await import("./PianoRoll/persistedState");
+      const { uid } = await import("./PianoRoll/types");
+      const notes: import("./PianoRoll/types").PianoRollNote[] = [];
+      const bpm = midi.header.tempos[0]?.bpm ?? 120;
+      const beatsPerSec = bpm / 60;
+
+      for (let trackIdx = 0; trackIdx < midi.tracks.length; trackIdx++) {
+        const track = midi.tracks[trackIdx]!;
+        const ch = track.channel;
+        const isDrum = ch === 9
+          || (track.name ?? "").toLowerCase().includes("drum");
+
+        // Route tracks: drums → drums, first non-drum = bass, second = chords, rest = melody
+        let lane: import("./PianoRoll/types").SoundTarget;
+        if (isDrum) lane = "drums";
+        else if (trackIdx === 0 || ch === 0) lane = "bass";
+        else if (trackIdx === 1 || ch === 1) lane = "chords";
+        else lane = "melody";
+
+        for (const note of track.notes) {
+          notes.push({
+            id: uid(),
+            midi: note.midi,
+            start: note.time * beatsPerSec,       // seconds → beats
+            duration: note.duration * beatsPerSec,
+            velocity: Math.max(0.05, Math.min(1, note.velocity)),
+            track: lane,
+          });
+        }
+      }
+      importPianoRollNotes(notes);
+    }
+
     onClose();
     onOpenEditor();
   }, [onClose, onOpenEditor, releaseAllVoices]);

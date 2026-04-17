@@ -22,6 +22,12 @@ import {
 import { generateHarmony, harmonizeNotes, type HarmonyType } from "./harmony";
 import { previewNote } from "./preview";
 import { setPianoRollNotes, setPianoRollLoop } from "./scheduler";
+import {
+  _persistedNotes as initialPersistedNotes,
+  _persistedLoop as initialPersistedLoop,
+  updatePersistedNotes,
+  updatePersistedLoop,
+} from "./persistedState";
 import { PianoRollKeys } from "./PianoRollKeys";
 import { PianoRollRuler } from "./PianoRollRuler";
 import { PianoRollToolbar } from "./PianoRollToolbar";
@@ -32,11 +38,8 @@ interface PianoRollProps {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   MODULE-LEVEL STATE — survives component unmount
+   MODULE-LEVEL STATE — survives component unmount (now in persistedState.ts)
    ═════════════════════════════════════════════════════════════════════════ */
-
-let _persistedNotes: PianoRollNote[] = [];
-let _persistedLoop: LoopRange = { start: 0, end: 16, enabled: false };
 
 export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const bpm = useDrumStore((s) => s.bpm);
@@ -45,24 +48,32 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const scaleName = useBassStore((s) => s.scaleName);
 
   // ─── STATE ────────────────────────────────────────────────────
-  const [notes, setNotesLocal] = useState<PianoRollNote[]>(_persistedNotes);
+  const [notes, setNotesLocal] = useState<PianoRollNote[]>(initialPersistedNotes);
   const setNotes = useCallback(
     (updater: PianoRollNote[] | ((prev: PianoRollNote[]) => PianoRollNote[])) => {
       setNotesLocal((prev) => {
         const next = typeof updater === "function" ? updater(prev) : updater;
-        _persistedNotes = next;
-        setPianoRollNotes(next);
+        updatePersistedNotes(next);
         return next;
       });
     },
     [],
   );
 
-  const [loop, setLoopLocal] = useState<LoopRange>(_persistedLoop);
+  const [loop, setLoopLocal] = useState<LoopRange>(initialPersistedLoop);
   const setLoop = useCallback((next: LoopRange) => {
-    _persistedLoop = next;
+    updatePersistedLoop(next);
     setLoopLocal(next);
-    setPianoRollLoop(next);
+  }, []);
+
+  // Listen for external imports (MIDI file → piano roll) so already-mounted
+  // panel picks up the new notes instead of showing stale state
+  useEffect(() => {
+    const onImported = () => {
+      import("./persistedState").then((m) => setNotesLocal(m._persistedNotes));
+    };
+    window.addEventListener("piano-roll-notes-imported", onImported);
+    return () => window.removeEventListener("piano-roll-notes-imported", onImported);
   }, []);
 
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
@@ -87,8 +98,8 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
 
   // ─── Sync initial persisted state into scheduler on mount ───
   useEffect(() => {
-    setPianoRollNotes(_persistedNotes);
-    setPianoRollLoop(_persistedLoop);
+    setPianoRollNotes(initialPersistedNotes);
+    setPianoRollLoop(initialPersistedLoop);
   }, []);
 
   // ─── Layout ──────────────────────────────────────────────────
@@ -361,7 +372,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
       }
       if (e.key === "l" || e.key === "L") {
         e.preventDefault();
-        setLoop({ ..._persistedLoop, enabled: !_persistedLoop.enabled });
+        setLoop({ ...loop, enabled: !loop.enabled });
         return;
       }
 
