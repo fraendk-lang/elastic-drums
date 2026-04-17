@@ -38,6 +38,7 @@ interface ActiveVoice {
   midi: number;         // Current pitch (for glide)
   startAt: number;      // performance.now() at down
   velocity: number;
+  release: (() => void) | null; // Engine-returned release handle
 }
 
 export function PerformancePad({ isOpen, onClose }: Props) {
@@ -163,25 +164,24 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     return min + y * (max - min);
   }, [yParam]);
 
-  // ── Fire a voice ──
-  const fireVoice = useCallback((midi: number, velocity: number, y: number) => {
+  // ── Fire a voice — returns release handle ──
+  const fireVoice = useCallback((midi: number, velocity: number, y: number): (() => void) | null => {
     const ctx = audioEngine.getAudioContext();
-    if (!ctx) return;
+    if (!ctx) return null;
     const startTime = ctx.currentTime + 0.001;
-    const duration = 3.0; // Long sustain — released on pointer up via polyvoice auto-decay
+    // Long pseudo-sustain — actual release is triggered by pointer-up via release handle
+    const duration = 30.0;
 
     // Apply Y modulation to engine params BEFORE trigger
     const paramValue = yToParam(y);
     if (target === "melody") {
       melodyEngine.setParams({ [yParam]: paramValue });
-      melodyEngine.triggerPolyNote(midi, startTime, duration, velocity, false);
+      return melodyEngine.triggerPolyNote(midi, startTime, duration, velocity, false);
     } else {
       bassEngine.setParams({ [yParam]: paramValue });
       bassEngine.triggerNote(midi, startTime, false, false, false, velocity);
-      // Bass is mono — release after gate
-      setTimeout(() => {
-        bassEngine.releaseNote(ctx.currentTime);
-      }, duration * 1000);
+      // Bass engine is mono — release function just calls releaseNote
+      return () => bassEngine.releaseNote(ctx.currentTime);
     }
   }, [target, yParam, yToParam]);
 
@@ -192,16 +192,18 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     else bassEngine.setParams({ [yParam]: paramValue });
   }, [target, yParam, yToParam]);
 
-  // ── Re-trigger on pitch change when bass (mono) or when X snap changes mid-gesture ──
+  // ── Re-trigger on pitch change: release old voice, spawn fresh ──
   const repitchVoice = useCallback((voice: ActiveVoice, newMidi: number, y: number) => {
     if (voice.midi === newMidi) return;
     voice.midi = newMidi;
-    // For melody: spawn a fresh poly voice (stack). For bass: slide-retrigger.
     if (target === "melody") {
-      fireVoice(newMidi, voice.velocity * 0.85, y);
+      // Release old voice (smooth fade) then spawn new — cleanly transitions pitches without buildup
+      voice.release?.();
+      voice.release = fireVoice(newMidi, voice.velocity * 0.9, y);
     } else {
       const ctx = audioEngine.getAudioContext();
       if (!ctx) return;
+      // Bass mono: slide-retrigger (engine handles portamento internally)
       bassEngine.triggerNote(newMidi, ctx.currentTime + 0.001, false, true, false, voice.velocity);
     }
   }, [target, fireVoice]);
@@ -225,9 +227,9 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     // Simple: use pressure if available, else 0.85 default.
     const velocity = e.pressure > 0 ? 0.4 + e.pressure * 0.6 : 0.85;
     const midi = xToMidi(x);
-    const voice: ActiveVoice = { pointerId: e.pointerId, midi, startAt: performance.now(), velocity };
+    const release = fireVoice(midi, velocity, y);
+    const voice: ActiveVoice = { pointerId: e.pointerId, midi, startAt: performance.now(), velocity, release };
     activeVoicesRef.current.set(e.pointerId, voice);
-    fireVoice(midi, velocity, y);
     appendEvent({ type: "down", pointerId: e.pointerId, x, y, velocity });
   };
 
@@ -250,11 +252,8 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     activeVoicesRef.current.delete(e.pointerId);
     const { x, y } = getXY(e);
     appendEvent({ type: "up", pointerId: e.pointerId, x, y, velocity: voice.velocity });
-    if (target === "bass") {
-      const ctx = audioEngine.getAudioContext();
-      if (ctx) bassEngine.releaseNote(ctx.currentTime);
-    }
-    // Melody poly voices auto-release after their internal duration.
+    // Trigger musical release (long exponential tail) — no more abrupt cutoff
+    voice.release?.();
   };
 
   // ── Loop playback engine ──
@@ -272,9 +271,9 @@ export function PerformancePad({ isOpen, onClose }: Props) {
           if (!usePerformancePadStore.getState().isLooping) return;
           if (ev.type === "down") {
             const midi = xToMidi(ev.x);
-            const voice: ActiveVoice = { pointerId: ev.pointerId, midi, startAt: performance.now(), velocity: ev.velocity };
+            const release = fireVoice(midi, ev.velocity, ev.y);
+            const voice: ActiveVoice = { pointerId: ev.pointerId, midi, startAt: performance.now(), velocity: ev.velocity, release };
             playbackVoices.set(ev.pointerId, voice);
-            fireVoice(midi, ev.velocity, ev.y);
           } else if (ev.type === "move") {
             const v = playbackVoices.get(ev.pointerId);
             if (!v) return;
@@ -284,11 +283,9 @@ export function PerformancePad({ isOpen, onClose }: Props) {
               if (newMidi !== v.midi) repitchVoice(v, newMidi, ev.y);
             }
           } else if (ev.type === "up") {
+            const v = playbackVoices.get(ev.pointerId);
+            v?.release?.();
             playbackVoices.delete(ev.pointerId);
-            if (target === "bass") {
-              const ctx = audioEngine.getAudioContext();
-              if (ctx) bassEngine.releaseNote(ctx.currentTime);
-            }
           }
         }, Math.max(0, delay));
         timers.push(timer);

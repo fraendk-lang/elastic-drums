@@ -577,8 +577,8 @@ export class MelodyEngine {
     duration: number,
     velocity = 0.85,
     accent = false
-  ): void {
-    if (!this.ctx || !this.output) return;
+  ): (() => void) | null {
+    if (!this.ctx || !this.output) return null;
 
     // Unmute output bus on first trigger
     if (this.output.gain.value === 0) this.output.gain.value = this.params.volume;
@@ -598,7 +598,7 @@ export class MelodyEngine {
           p.fmHarmonicity, p.fmModIndex,
           0.008, Math.max(0.06, duration * 0.3), 0.3, Math.max(0.05, duration * 0.3)
         );
-        return;
+        return null;
       case "am":
         playAM(
           ctx, this.output, startTime,
@@ -606,13 +606,13 @@ export class MelodyEngine {
           2, 0.8,
           0.008, 0.15, 0.5, Math.max(0.05, duration * 0.3)
         );
-        return;
+        return null;
       case "pluck":
         playPluck(
           ctx, this.output, startTime,
           midiNote, p.volume * level, p.cutoff, 0.98
         );
-        return;
+        return null;
     }
 
     // ── Subtractive one-shot ──
@@ -676,24 +676,31 @@ export class MelodyEngine {
     // ── Amp envelope (ADSR, polyphony-friendly) ──
     const attack = 0.006;
     const decayT = Math.min(0.12, duration * 0.25);
-    const sustain = 0.75;
-    const release = Math.max(0.04, Math.min(0.25, duration * 0.4));
+    const sustain = 0.78;
+    // Musical release — long enough to feel like a real pad/lead tail, not
+    // a hard cut. Scales with note duration but capped.
+    const release = Math.max(0.25, Math.min(0.9, duration * 0.5));
     const peak = level;
     const sustainLvl = peak * sustain;
 
     vca.gain.setValueAtTime(0.0001, startTime);
     vca.gain.linearRampToValueAtTime(peak, startTime + attack);
     vca.gain.linearRampToValueAtTime(sustainLvl, startTime + attack + decayT);
-    const releaseStart = startTime + Math.max(attack + decayT, duration);
-    vca.gain.setValueAtTime(sustainLvl, releaseStart);
-    vca.gain.exponentialRampToValueAtTime(0.0001, releaseStart + release);
+    // Default scheduled release (runs if user never calls early-release)
+    const scheduledReleaseStart = startTime + Math.max(attack + decayT, duration);
+    vca.gain.setValueAtTime(sustainLvl, scheduledReleaseStart);
+    vca.gain.exponentialRampToValueAtTime(0.0001, scheduledReleaseStart + release);
+
+    // Oscillator stop: schedule far enough out that early-release can extend
+    const longestPossibleEnd = scheduledReleaseStart + release + 0.05;
+    let oscStopTime = longestPossibleEnd;
 
     // Start/stop
     osc.start(startTime);
-    osc.stop(releaseStart + release + 0.02);
+    osc.stop(oscStopTime);
     if (sub) {
       sub.start(startTime);
-      sub.stop(releaseStart + release + 0.02);
+      sub.stop(oscStopTime);
     }
 
     // Auto-cleanup after voice ends
@@ -704,6 +711,29 @@ export class MelodyEngine {
       try { filter.disconnect(); } catch {}
       try { vca.disconnect(); } catch {}
       try { dist?.disconnect(); } catch {}
+    };
+
+    // ── Release handle: caller can trigger an early release (e.g. note-off on pad pointer-up)
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const t = Math.max(ctx.currentTime, startTime + attack); // Don't release before attack is done
+      // Long, musical release — exponential so it feels natural
+      const earlyRelease = release;
+      vca.gain.cancelScheduledValues(t);
+      // Anchor current gain value at t so exponentialRamp starts from it, not from pre-scheduled future
+      const currentLevel = Math.max(0.0001, vca.gain.value);
+      vca.gain.setValueAtTime(currentLevel, t);
+      vca.gain.exponentialRampToValueAtTime(0.0001, t + earlyRelease);
+
+      // Reschedule osc stop to match early release (+ tiny buffer)
+      const newStop = t + earlyRelease + 0.05;
+      if (newStop < oscStopTime) {
+        try { osc.stop(newStop); } catch {}
+        if (sub) { try { sub.stop(newStop); } catch {} }
+        oscStopTime = newStop;
+      }
     };
   }
 }
