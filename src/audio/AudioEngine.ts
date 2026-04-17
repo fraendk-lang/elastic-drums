@@ -325,6 +325,18 @@ export class AudioEngine {
   getChannelGroup(channel: number): string { return mixerRouter.getChannelGroup(channel); }
   getChannelReverbSend(channel: number): number { return sendFxManager.getChannelReverbSend(channel); }
   getChannelDelaySend(channel: number): number { return sendFxManager.getChannelDelaySend(channel); }
+  setChannelChorusSend(channel: number, amount: number): void { sendFxManager.setChannelChorusSend(channel, amount); }
+  getChannelChorusSend(channel: number): number { return sendFxManager.getChannelChorusSend(channel); }
+  setChannelPhaserSend(channel: number, amount: number): void { sendFxManager.setChannelPhaserSend(channel, amount); }
+  getChannelPhaserSend(channel: number): number { return sendFxManager.getChannelPhaserSend(channel); }
+  setChorusLevel(level: number): void { sendFxManager.setChorusLevel(level); }
+  getChorusLevel(): number { return sendFxManager.getChorusLevel(); }
+  setChorusRate(rate: number): void { sendFxManager.setChorusRate(rate); }
+  setChorusDepth(depth: number): void { sendFxManager.setChorusDepth(depth); }
+  setPhaserLevel(level: number): void { sendFxManager.setPhaserLevel(level); }
+  getPhaserLevel(): number { return sendFxManager.getPhaserLevel(); }
+  setPhaserRate(rate: number): void { sendFxManager.setPhaserRate(rate); }
+  setPhaserFeedback(amount: number): void { sendFxManager.setPhaserFeedback(amount); }
 
   setReverbLevel(level: number): void { sendFxManager.setReverbLevel(level); }
   getReverbLevel(): number { return sendFxManager.getReverbLevel(); }

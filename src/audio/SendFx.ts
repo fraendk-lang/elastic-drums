@@ -84,9 +84,29 @@ export class SendFxManager {
   private pumpLfo: OscillatorNode | null = null;
   private pumpDepth: GainNode | null = null;
 
-  // Send channel gains (per-channel send A and B)
+  // ─── Send FX: Chorus (Send C) ──────────────────────────
+  private sendCBus: GainNode | null = null;
+  private chorusDelayL: DelayNode | null = null;
+  private chorusDelayR: DelayNode | null = null;
+  private chorusLfoL: OscillatorNode | null = null;
+  private chorusLfoR: OscillatorNode | null = null;
+  private chorusLfoGainL: GainNode | null = null;
+  private chorusLfoGainR: GainNode | null = null;
+  private chorusWet: GainNode | null = null;
+
+  // ─── Send FX: Phaser (Send D) ──────────────────────────
+  private sendDBus: GainNode | null = null;
+  private phaserAllpass: BiquadFilterNode[] = [];
+  private phaserLfo: OscillatorNode | null = null;
+  private phaserLfoGain: GainNode | null = null;
+  private phaserFeedback: GainNode | null = null;
+  private phaserWet: GainNode | null = null;
+
+  // Send channel gains (per-channel send A, B, C, D)
   private sendAGains: GainNode[] = [];
   private sendBGains: GainNode[] = [];
+  private sendCGains: GainNode[] = [];
+  private sendDGains: GainNode[] = [];
 
   /**
    * Initialize all send FX nodes and routing
@@ -184,6 +204,88 @@ export class SendFxManager {
     this.delayGain.connect(this.delayAnalyser);
     this.delayAnalyser.connect(masterGain);
 
+    // ─── Send C: Stereo Chorus ──────────────────────────
+    this.sendCBus = ctx.createGain();
+    this.sendCBus.gain.value = 1.0;
+
+    // Two delay lines (L/R) modulated by slow LFOs 90° out of phase
+    this.chorusDelayL = ctx.createDelay(0.05);
+    this.chorusDelayL.delayTime.value = 0.015; // 15ms center
+    this.chorusDelayR = ctx.createDelay(0.05);
+    this.chorusDelayR.delayTime.value = 0.025; // 25ms center
+
+    this.chorusLfoL = ctx.createOscillator();
+    this.chorusLfoL.type = "sine";
+    this.chorusLfoL.frequency.value = 0.6;
+    this.chorusLfoGainL = ctx.createGain();
+    this.chorusLfoGainL.gain.value = 0.008; // ±8ms depth
+    this.chorusLfoL.connect(this.chorusLfoGainL);
+    this.chorusLfoGainL.connect(this.chorusDelayL.delayTime);
+    this.chorusLfoL.start();
+
+    this.chorusLfoR = ctx.createOscillator();
+    this.chorusLfoR.type = "sine";
+    this.chorusLfoR.frequency.value = 0.75; // Slightly different rate
+    this.chorusLfoGainR = ctx.createGain();
+    this.chorusLfoGainR.gain.value = 0.008;
+    this.chorusLfoR.connect(this.chorusLfoGainR);
+    this.chorusLfoGainR.connect(this.chorusDelayR.delayTime);
+    this.chorusLfoR.start();
+
+    const chorusMerger = ctx.createChannelMerger(2);
+    this.chorusWet = ctx.createGain();
+    this.chorusWet.gain.value = 0.6;
+
+    this.sendCBus.connect(this.chorusDelayL);
+    this.sendCBus.connect(this.chorusDelayR);
+    this.chorusDelayL.connect(chorusMerger, 0, 0);
+    this.chorusDelayR.connect(chorusMerger, 0, 1);
+    chorusMerger.connect(this.chorusWet);
+    this.chorusWet.connect(masterGain);
+
+    // ─── Send D: Phaser (4-stage allpass) ───────────────
+    this.sendDBus = ctx.createGain();
+    this.sendDBus.gain.value = 1.0;
+
+    this.phaserAllpass = [];
+    for (let i = 0; i < 4; i++) {
+      const ap = ctx.createBiquadFilter();
+      ap.type = "allpass";
+      ap.frequency.value = 400 * Math.pow(2, i * 0.5); // 400, 566, 800, 1131
+      ap.Q.value = 4;
+      this.phaserAllpass.push(ap);
+    }
+
+    this.phaserLfo = ctx.createOscillator();
+    this.phaserLfo.type = "sine";
+    this.phaserLfo.frequency.value = 0.4;
+    this.phaserLfoGain = ctx.createGain();
+    this.phaserLfoGain.gain.value = 300; // ±300 Hz sweep
+
+    // LFO modulates all 4 allpass frequencies
+    this.phaserLfo.connect(this.phaserLfoGain);
+    for (const ap of this.phaserAllpass) {
+      this.phaserLfoGain.connect(ap.frequency);
+    }
+    this.phaserLfo.start();
+
+    this.phaserFeedback = ctx.createGain();
+    this.phaserFeedback.gain.value = 0.5;
+
+    this.phaserWet = ctx.createGain();
+    this.phaserWet.gain.value = 0.6;
+
+    // Chain: bus → ap1 → ap2 → ap3 → ap4 → wet → master
+    this.sendDBus.connect(this.phaserAllpass[0]!);
+    for (let i = 0; i < 3; i++) {
+      this.phaserAllpass[i]!.connect(this.phaserAllpass[i + 1]!);
+    }
+    // Feedback: last allpass → first (creates resonant sweeps)
+    this.phaserAllpass[3]!.connect(this.phaserFeedback);
+    this.phaserFeedback.connect(this.phaserAllpass[0]!);
+    this.phaserAllpass[3]!.connect(this.phaserWet);
+    this.phaserWet.connect(masterGain);
+
     // === Dedicated Flanger FX ===
     // Flanger uses its OWN short delay (1–10ms) + LFO sweep, NOT the global delay
     this.flangerInput = ctx.createGain();
@@ -275,19 +377,31 @@ export class SendFxManager {
    * Called once per channel during channel initialization
    */
   createChannelSends(channelGain: GainNode): void {
-    if (!this.ctx || !this.sendABus || !this.sendBBus) return;
+    if (!this.ctx || !this.sendABus || !this.sendBBus || !this.sendCBus || !this.sendDBus) return;
 
     const sendA = this.ctx.createGain();
-    sendA.gain.value = 0; // Default: no reverb send
+    sendA.gain.value = 0;
     channelGain.connect(sendA);
     sendA.connect(this.sendABus);
     this.sendAGains.push(sendA);
 
     const sendB = this.ctx.createGain();
-    sendB.gain.value = 0; // Default: no delay send
+    sendB.gain.value = 0;
     channelGain.connect(sendB);
     sendB.connect(this.sendBBus);
     this.sendBGains.push(sendB);
+
+    const sendC = this.ctx.createGain();
+    sendC.gain.value = 0;
+    channelGain.connect(sendC);
+    sendC.connect(this.sendCBus);
+    this.sendCGains.push(sendC);
+
+    const sendD = this.ctx.createGain();
+    sendD.gain.value = 0;
+    channelGain.connect(sendD);
+    sendD.connect(this.sendDBus);
+    this.sendDGains.push(sendD);
   }
 
   /**
@@ -391,6 +505,63 @@ export class SendFxManager {
 
   getChannelDelaySend(channel: number): number {
     return this.sendBGains[channel]?.gain.value ?? 0;
+  }
+
+  /** Set per-channel chorus send amount (0..1) */
+  setChannelChorusSend(channel: number, amount: number): void {
+    const send = this.sendCGains[channel];
+    if (send) send.gain.value = amount;
+  }
+  getChannelChorusSend(channel: number): number {
+    return this.sendCGains[channel]?.gain.value ?? 0;
+  }
+
+  /** Set per-channel phaser send amount (0..1) */
+  setChannelPhaserSend(channel: number, amount: number): void {
+    const send = this.sendDGains[channel];
+    if (send) send.gain.value = amount;
+  }
+  getChannelPhaserSend(channel: number): number {
+    return this.sendDGains[channel]?.gain.value ?? 0;
+  }
+
+  /** Chorus master level (wet gain) */
+  setChorusLevel(level: number): void {
+    if (this.chorusWet) this.chorusWet.gain.value = level;
+  }
+  getChorusLevel(): number {
+    return this.chorusWet?.gain.value ?? 0;
+  }
+
+  /** Chorus rate (0.1..4 Hz) */
+  setChorusRate(rate: number): void {
+    if (this.chorusLfoL) this.chorusLfoL.frequency.value = rate;
+    if (this.chorusLfoR) this.chorusLfoR.frequency.value = rate * 1.25;
+  }
+
+  /** Chorus depth (0..1, scales LFO mod depth) */
+  setChorusDepth(depth: number): void {
+    const d = Math.max(0, Math.min(1, depth)) * 0.012;
+    if (this.chorusLfoGainL) this.chorusLfoGainL.gain.value = d;
+    if (this.chorusLfoGainR) this.chorusLfoGainR.gain.value = d;
+  }
+
+  /** Phaser master level */
+  setPhaserLevel(level: number): void {
+    if (this.phaserWet) this.phaserWet.gain.value = level;
+  }
+  getPhaserLevel(): number {
+    return this.phaserWet?.gain.value ?? 0;
+  }
+
+  /** Phaser rate (0.05..4 Hz) */
+  setPhaserRate(rate: number): void {
+    if (this.phaserLfo) this.phaserLfo.frequency.value = rate;
+  }
+
+  /** Phaser feedback (0..0.9) */
+  setPhaserFeedback(amount: number): void {
+    if (this.phaserFeedback) this.phaserFeedback.gain.value = Math.max(0, Math.min(0.9, amount));
   }
 
   /** Set reverb wet level */

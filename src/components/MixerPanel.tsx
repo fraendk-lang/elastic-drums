@@ -104,9 +104,11 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
   );
   const [faders, setFaders] = useState<number[]>(new Array(NUM_CHANNELS).fill(750));
   const [masterFader, setMasterFaderVal] = useState(700);
-  const [sends, setSends] = useState<{ a: number[]; b: number[] }>({
+  const [sends, setSends] = useState<{ a: number[]; b: number[]; c: number[]; d: number[] }>({
     a: Array.from({ length: NUM_CHANNELS }, (_, i) => Math.round(audioEngine.getChannelReverbSend(i) * 100)),
     b: Array.from({ length: NUM_CHANNELS }, (_, i) => Math.round(audioEngine.getChannelDelaySend(i) * 100)),
+    c: Array.from({ length: NUM_CHANNELS }, (_, i) => Math.round(audioEngine.getChannelChorusSend(i) * 100)),
+    d: Array.from({ length: NUM_CHANNELS }, (_, i) => Math.round(audioEngine.getChannelPhaserSend(i) * 100)),
   });
   const [reverbLevel, setReverbLvl] = useState(() => Math.round(audioEngine.getReverbLevel() * 100));
   const [reverbType, setReverbType] = useState<string>("hall");
@@ -191,6 +193,16 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
   const handleSendB = useCallback((ch: number, v: number) => {
     setSends((p) => { const n = { ...p, b: [...p.b] }; n.b[ch] = v; return n; });
     audioEngine.setChannelDelaySend(ch, v / 100);
+  }, []);
+
+  const handleSendC = useCallback((ch: number, v: number) => {
+    setSends((p) => { const n = { ...p, c: [...p.c] }; n.c[ch] = v; return n; });
+    audioEngine.setChannelChorusSend(ch, v / 100);
+  }, []);
+
+  const handleSendD = useCallback((ch: number, v: number) => {
+    setSends((p) => { const n = { ...p, d: [...p.d] }; n.d[ch] = v; return n; });
+    audioEngine.setChannelPhaserSend(ch, v / 100);
   }, []);
 
   const toggleMute = useCallback((ch: number) => {
@@ -321,11 +333,15 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
             }}
             sendA={sends.a[i] ?? 0}
             sendB={sends.b[i] ?? 0}
+            sendC={sends.c[i] ?? 0}
+            sendD={sends.d[i] ?? 0}
             isMuted={muted.has(i)}
             isSoloed={soloed.has(i)}
             onFader={(v) => handleFader(ch.id, v)}
             onSendA={(v) => handleSendA(ch.id, v)}
             onSendB={(v) => handleSendB(ch.id, v)}
+            onSendC={(v) => handleSendC(ch.id, v)}
+            onSendD={(v) => handleSendD(ch.id, v)}
             onMute={() => toggleMute(i)}
             onSolo={() => toggleSolo(i)}
             channelIndex={ch.id}
@@ -553,13 +569,15 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
 
 // ─── Channel Strip ───────────────────────────────────────
 
-function ChannelStrip({ label, color, meter, faderValue, sendA, sendB, isMuted, isSoloed,
-  onFader, onSendA, onSendB, onMute, onSolo, channelIndex, isSelected, group, onSelect,
+function ChannelStrip({ label, color, meter, faderValue, sendA, sendB, sendC, sendD, isMuted, isSoloed,
+  onFader, onSendA, onSendB, onSendC, onSendD, onMute, onSolo, channelIndex, isSelected, group, onSelect,
   panValue, onPanChange,
 }: {
   label: string; color: string; meter: MeterData; faderValue: number;
-  sendA: number; sendB: number; isMuted: boolean; isSoloed: boolean;
-  onFader: (v: number) => void; onSendA: (v: number) => void; onSendB: (v: number) => void;
+  sendA: number; sendB: number; sendC: number; sendD: number; isMuted: boolean; isSoloed: boolean;
+  onFader: (v: number) => void;
+  onSendA: (v: number) => void; onSendB: (v: number) => void;
+  onSendC: (v: number) => void; onSendD: (v: number) => void;
   onMute: () => void; onSolo: () => void; channelIndex: number;
   isSelected?: boolean; group?: string; onSelect?: () => void;
   panValue: number; onPanChange: (v: number) => void;
@@ -601,6 +619,8 @@ function ChannelStrip({ label, color, meter, faderValue, sendA, sendB, isMuted, 
           onChange={(v) => { const pan = (v / 50) - 1; onPanChange(pan); }} />
         <MiniSend label="R" value={sendA} color="#3b82f6" onChange={onSendA} />
         <MiniSend label="D" value={sendB} color="#f59e0b" onChange={onSendB} />
+        <MiniSend label="Ch" value={sendC} color="#a78bfa" onChange={onSendC} />
+        <MiniSend label="Ph" value={sendD} color="#10b981" onChange={onSendD} />
       </div>
 
       {/* Insert FX */}
