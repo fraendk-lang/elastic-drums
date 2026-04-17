@@ -520,6 +520,224 @@ export const MELODY_STRATEGIES: MelodyStrategy[] = [
       return steps;
     },
   },
+  // ─── Genre-specific melody generators ────────────────────
+  {
+    name: "Pop Hook",
+    generate: (len, scaleLen) => {
+      // Short repeating hook motif (3-4 notes), repeats with variation
+      const steps: MelodyStep[] = [];
+      const maxDeg = Math.min(scaleLen - 1, 7);
+      // Classic pop hook: start on 3rd, jump to 5th, fall to root
+      const hookBase = [2, 4, 0, -1, 2, 4, 2, 0]; // -1 = rest
+      for (let i = 0; i < 64; i++) {
+        if (i >= len) { steps.push(emptyStep()); continue; }
+        const phraseIdx = i % 8;
+        const noteDeg = hookBase[phraseIdx]!;
+        if (noteDeg < 0 || !prob(0.88)) { steps.push(emptyStep()); continue; }
+        // Every 4th phrase: slight variation (up one)
+        const variation = Math.floor(i / 16) % 2 === 1 && phraseIdx === 5 ? 1 : 0;
+        steps.push(makeStep(Math.min(maxDeg, noteDeg + variation), {
+          accent: phraseIdx === 0 || phraseIdx === 4,
+          slide: phraseIdx === 2 && prob(0.3),
+          gateLength: phraseIdx === 3 || phraseIdx === 7 ? 2 : 1,
+        }));
+      }
+      return steps;
+    },
+  },
+  {
+    name: "House Lead",
+    generate: (len, scaleLen) => {
+      // Offbeat driven, syncopated, with held notes on downbeats
+      const steps: MelodyStep[] = [];
+      const maxDeg = Math.min(scaleLen - 1, 6);
+      const palette = [0, 2, 4, 0, 2, Math.min(5, maxDeg)];
+      let notePtr = 0;
+      for (let i = 0; i < 64; i++) {
+        if (i >= len) { steps.push(emptyStep()); continue; }
+        const beatPos = i % 4;
+        const barPos = i % 16;
+        const isOffbeat = beatPos === 1 || beatPos === 3;
+        const isDownbeat = barPos === 0;
+        if (isDownbeat && prob(0.75)) {
+          steps.push(makeStep(palette[notePtr % palette.length]!, {
+            accent: true, gateLength: 2, slide: prob(0.2),
+          }));
+          notePtr++;
+        } else if (isOffbeat && prob(0.62)) {
+          steps.push(makeStep(palette[notePtr % palette.length]!, {
+            accent: false, gateLength: 1, slide: prob(0.18),
+          }));
+          notePtr++;
+        } else if (prob(0.18)) {
+          steps.push(makeStep(palette[notePtr % palette.length]!, { gateLength: 1 }));
+          notePtr++;
+        } else {
+          steps.push(emptyStep());
+        }
+      }
+      return steps;
+    },
+  },
+  {
+    name: "Techno Stab",
+    generate: (len, scaleLen) => {
+      // Short repeated stab on 1 & 3, occasional 2-degree shift, sparse
+      const steps: MelodyStep[] = [];
+      const maxDeg = Math.min(scaleLen - 1, 5);
+      for (let i = 0; i < 64; i++) {
+        if (i >= len) { steps.push(emptyStep()); continue; }
+        const bar = i % 16;
+        if ((bar === 0 || bar === 8) && prob(0.95)) {
+          steps.push(makeStep(0, { accent: true, gateLength: 1 }));
+        } else if (bar === 4 && prob(0.55)) {
+          steps.push(makeStep(Math.min(2, maxDeg), { accent: false, gateLength: 1 }));
+        } else if (bar === 12 && prob(0.45)) {
+          steps.push(makeStep(Math.min(4, maxDeg), { accent: false, gateLength: 1 }));
+        } else if (prob(0.05)) {
+          steps.push(makeStep(pick([0, 1, 2]), { gateLength: 1 }));
+        } else {
+          steps.push(emptyStep());
+        }
+      }
+      return steps;
+    },
+  },
+  {
+    name: "Trance Gate",
+    generate: (len, scaleLen) => {
+      // Continuous 16th-note note with subtle degree drift — built for sidechain
+      const steps: MelodyStep[] = [];
+      const maxDeg = Math.min(scaleLen - 1, 6);
+      let note = 0;
+      for (let i = 0; i < 64; i++) {
+        if (i >= len) { steps.push(emptyStep()); continue; }
+        // Every 4 steps possibly drift
+        if (i % 4 === 0 && prob(0.3)) {
+          note = Math.max(0, Math.min(maxDeg, note + pick([-1, 1, 2])));
+        }
+        if (!prob(0.88)) { steps.push(emptyStep()); continue; }
+        const isBar = i % 16 === 0;
+        steps.push(makeStep(note, {
+          accent: isBar,
+          slide: false,
+          gateLength: 1,
+        }));
+      }
+      return steps;
+    },
+  },
+  {
+    name: "Dub Echo",
+    generate: (len, scaleLen) => {
+      // Sparse 2-note phrases designed to decay through delay effects
+      const steps: MelodyStep[] = [];
+      const maxDeg = Math.min(scaleLen - 1, 5);
+      for (let i = 0; i < 64; i++) {
+        if (i >= len) { steps.push(emptyStep()); continue; }
+        const bar = i % 16;
+        if ((bar === 2 || bar === 10) && prob(0.75)) {
+          steps.push(makeStep(pick([0, 2, 4].filter((d) => d <= maxDeg)), {
+            accent: false, gateLength: 2, slide: prob(0.35),
+          }));
+        } else if ((bar === 6 || bar === 14) && prob(0.55)) {
+          steps.push(makeStep(pick([0, 3].filter((d) => d <= maxDeg)), {
+            accent: false, gateLength: 1, tie: prob(0.3),
+          }));
+        } else {
+          steps.push(emptyStep());
+        }
+      }
+      return steps;
+    },
+  },
+  {
+    name: "Ambient Drift",
+    generate: (len, scaleLen) => {
+      // Very sparse, slow-moving, long gates — meditative
+      const steps: MelodyStep[] = [];
+      const maxDeg = Math.min(scaleLen - 1, 7);
+      let note = 0;
+      for (let i = 0; i < 64; i++) {
+        if (i >= len) { steps.push(emptyStep()); continue; }
+        if (i % 8 === 0 && prob(0.55)) {
+          note = Math.max(0, Math.min(maxDeg, note + pick([-1, 0, 1, 2, -2])));
+          steps.push(makeStep(note, {
+            accent: false,
+            slide: true,
+            tie: prob(0.5),
+            gateLength: pick([3, 4, 6, 8]),
+          }));
+        } else {
+          steps.push(emptyStep());
+        }
+      }
+      return steps;
+    },
+  },
+  {
+    name: "Ostinato",
+    generate: (len, scaleLen) => {
+      // 4-note ostinato that repeats throughout — builds hypnotic tension
+      const maxDeg = Math.min(scaleLen - 1, 6);
+      // Pick 4 distinct notes randomly once per generation
+      const notes: number[] = [];
+      const pool = [0, 2, 3, 4, 5].filter((n) => n <= maxDeg);
+      for (let j = 0; j < 4; j++) notes.push(pool[Math.floor(Math.random() * pool.length)]!);
+      const steps: MelodyStep[] = [];
+      for (let i = 0; i < 64; i++) {
+        if (i >= len) { steps.push(emptyStep()); continue; }
+        const posInFour = i % 4;
+        const active = prob(0.85);
+        if (active) {
+          steps.push(makeStep(notes[posInFour]!, {
+            accent: posInFour === 0 && i % 8 === 0,
+            slide: false,
+            gateLength: 1,
+          }));
+        } else {
+          steps.push(emptyStep());
+        }
+      }
+      return steps;
+    },
+  },
+  {
+    name: "Call & Response",
+    generate: (len, scaleLen) => {
+      // 2-bar phrase: ascending question (bars 1), descending answer (bar 2)
+      const steps: MelodyStep[] = [];
+      const maxDeg = Math.min(scaleLen - 1, 7);
+      for (let i = 0; i < 64; i++) {
+        if (i >= len) { steps.push(emptyStep()); continue; }
+        const barPos = i % 32;
+        const bar = Math.floor(barPos / 16);
+        const stepInBar = barPos % 16;
+        const isPhraseStart = stepInBar === 0 || stepInBar === 4 || stepInBar === 8 || stepInBar === 12;
+        if (!isPhraseStart || !prob(0.78)) {
+          // Occasional fill note
+          if (stepInBar % 2 === 1 && prob(0.12)) {
+            steps.push(makeStep(pick([0, 2].filter((d) => d <= maxDeg)), { gateLength: 1 }));
+          } else {
+            steps.push(emptyStep());
+          }
+          continue;
+        }
+        // Question (bar 0): ascending degrees
+        // Answer (bar 1): descending toward root
+        const phraseProgress = stepInBar / 16; // 0..1
+        const note = bar === 0
+          ? Math.round(phraseProgress * maxDeg)
+          : Math.round((1 - phraseProgress) * maxDeg);
+        steps.push(makeStep(note, {
+          accent: stepInBar === 0,
+          slide: prob(0.3),
+          gateLength: 2,
+        }));
+      }
+      return steps;
+    },
+  },
 ];
 
 // ─── Store Interface ─────────────────────────────────────
