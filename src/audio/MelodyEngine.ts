@@ -713,25 +713,27 @@ export class MelodyEngine {
       try { dist?.disconnect(); } catch {}
     };
 
-    // ── Release handle: caller can trigger an early release (e.g. note-off on pad pointer-up)
+    // ── Release handle: caller can trigger an early release (e.g. note-off on pad pointer-up).
+    //   Uses setTargetAtTime — starts smoothly from the CURRENT automation-driven value
+    //   (no need to read .value which only returns intrinsic value, not the interpolated one).
+    //   Reading .value mid-ramp gives stale data → setValueAtTime(stale) = click. This avoids that.
     let released = false;
     return () => {
       if (released) return;
       released = true;
-      const t = Math.max(ctx.currentTime, startTime + attack); // Don't release before attack is done
-      // Long, musical release — exponential so it feels natural
+      const t = Math.max(ctx.currentTime, startTime + attack);
       const earlyRelease = release;
+      // Cancel the far-future scheduled release, then smoothly pull gain to silence
+      // from whatever its current automation value is. setTargetAtTime is
+      // continuous — no click.
       vca.gain.cancelScheduledValues(t);
-      // Anchor current gain value at t so exponentialRamp starts from it, not from pre-scheduled future
-      const currentLevel = Math.max(0.0001, vca.gain.value);
-      vca.gain.setValueAtTime(currentLevel, t);
-      vca.gain.exponentialRampToValueAtTime(0.0001, t + earlyRelease);
+      vca.gain.setTargetAtTime(0.0001, t, earlyRelease / 4);
 
-      // Reschedule osc stop to match early release (+ tiny buffer)
-      const newStop = t + earlyRelease + 0.05;
+      // Reschedule osc stop to match early release end (~5× time constant for ~99% decay)
+      const newStop = t + earlyRelease + 0.08;
       if (newStop < oscStopTime) {
-        try { osc.stop(newStop); } catch {}
-        if (sub) { try { sub.stop(newStop); } catch {} }
+        try { osc.stop(newStop); } catch { /* already stopped */ }
+        if (sub) { try { sub.stop(newStop); } catch { /* already stopped */ } }
         oscStopTime = newStop;
       }
     };
