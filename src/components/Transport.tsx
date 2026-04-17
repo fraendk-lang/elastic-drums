@@ -232,6 +232,7 @@ export function Transport({
         <Sep />
 
         <ZoomControl />
+        <ThemeToggle />
 
         <button
           onClick={onToggleHelp}
@@ -273,6 +274,39 @@ function ZoomControl() {
       <button onClick={() => applyZoom(zoom + 0.05)}
         className="w-5 h-5 rounded text-[10px] font-bold bg-white/5 text-white/30 hover:text-white/60 hover:bg-white/10 transition-all">+</button>
     </div>
+  );
+}
+
+function ThemeToggle() {
+  type Theme = "dark" | "grey";
+  const [theme, setTheme] = useState<Theme>(() => {
+    const saved = localStorage.getItem("ed-theme");
+    return saved === "grey" ? "grey" : "dark";
+  });
+
+  // Apply on mount + whenever theme changes
+  useEffect(() => {
+    if (theme === "grey") {
+      document.documentElement.setAttribute("data-theme", "grey");
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
+    localStorage.setItem("ed-theme", theme);
+  }, [theme]);
+
+  const toggle = useCallback(() => {
+    setTheme((t) => (t === "dark" ? "grey" : "dark"));
+  }, []);
+
+  return (
+    <button
+      onClick={toggle}
+      aria-label={`Switch to ${theme === "dark" ? "grey" : "dark"} mode`}
+      title={theme === "dark" ? "Dark mode (click for grey)" : "Grey mode (click for dark)"}
+      className="w-6 h-6 rounded-md text-[11px] text-white/25 hover:text-white/60 hover:bg-white/5 transition-all flex items-center justify-center"
+    >
+      {theme === "dark" ? "☾" : "☀"}
+    </button>
   );
 }
 

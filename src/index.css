@@ -31,6 +31,37 @@
   --ed-glow-red: rgba(239, 68, 68, 0.12);
 }
 
+/* ─── Grey / Studio Mode ───────────────────────────────────────
+   Light, neutral, high-contrast for daylight / studio lighting.
+   NOT pure white — studio-grey so accent colors still pop. */
+:root[data-theme="grey"] {
+  --ed-bg-primary: #dcdce1;
+  --ed-bg-secondary: #cfcfd5;
+  --ed-bg-surface: #c0c0c8;
+  --ed-bg-elevated: #b0b0b8;
+  --ed-border: #8a8a94;
+  --ed-border-subtle: #a5a5ad;
+  --ed-text-primary: #1e1e24;
+  --ed-text-secondary: #45454d;
+  --ed-text-muted: #6c6c76;
+  /* Keep accents but darken slightly so they read on light background */
+  --ed-accent-orange: #c67600;
+  --ed-accent-amber: #9b5300;
+  --ed-accent-blue: #1d5cc8;
+  --ed-accent-red: #c42e2e;
+  --ed-accent-green: #0f8a3d;
+  --ed-pad-va: #c67600;
+  --ed-pad-sample: #1d5cc8;
+  --ed-pad-hybrid: #6d3ecf;
+  --ed-accent-bass: #067f4d;
+  --ed-accent-chords: #6d45d3;
+  --ed-accent-melody: #c4387a;
+  --ed-glow-orange: rgba(198, 118, 0, 0.15);
+  --ed-glow-blue: rgba(29, 92, 200, 0.15);
+  --ed-glow-green: rgba(15, 138, 61, 0.15);
+  --ed-glow-red: rgba(196, 46, 46, 0.12);
+}
+
 * {
   box-sizing: border-box;
 }
