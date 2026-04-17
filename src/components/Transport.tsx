@@ -26,11 +26,18 @@ interface TransportProps {
 export function Transport({
   onOpenBrowser, onOpenEuclidean, onOpenSong, onOpenScenes, onOpenClips, onOpenArrangement, onOpenModMatrix, onOpenMacros, onOpenMidiLearn, onOpenFx, onOpenMixer, onOpenKits, onOpenMidi, onToggleHelp, onOpenPerformance,
 }: TransportProps) {
-  const {
-    bpm, isPlaying, swing, pattern,
-    setBpm, setSwing, togglePlay,
-    nextPreset, prevPreset, clearPattern, newSession,
-  } = useDrumStore();
+  // Per-field selectors so Transport does NOT re-render on every currentStep tick
+  const bpm = useDrumStore((s) => s.bpm);
+  const isPlaying = useDrumStore((s) => s.isPlaying);
+  const swing = useDrumStore((s) => s.swing);
+  const pattern = useDrumStore((s) => s.pattern);
+  const setBpm = useDrumStore((s) => s.setBpm);
+  const setSwing = useDrumStore((s) => s.setSwing);
+  const togglePlay = useDrumStore((s) => s.togglePlay);
+  const nextPreset = useDrumStore((s) => s.nextPreset);
+  const prevPreset = useDrumStore((s) => s.prevPreset);
+  const clearPattern = useDrumStore((s) => s.clearPattern);
+  const newSession = useDrumStore((s) => s.newSession);
 
   // Tap Tempo with visual feedback
   const [tapFlash, setTapFlash] = useState(false);

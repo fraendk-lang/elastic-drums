@@ -20,7 +20,10 @@ const VOICE_COLORS = [
 ];
 
 export function PadGrid() {
-  const { selectedVoice, setSelectedVoice, triggerVoice } = useDrumStore();
+  // Per-field selectors — avoid re-rendering on every currentStep tick
+  const selectedVoice = useDrumStore((s) => s.selectedVoice);
+  const setSelectedVoice = useDrumStore((s) => s.setSelectedVoice);
+  const triggerVoice = useDrumStore((s) => s.triggerVoice);
   const overlay = useOverlayStore();
   const { voiceSamples, setVoiceSample } = useCustomKitStore();
   const [triggered, setTriggered] = useState<Set<number>>(new Set());

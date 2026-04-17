@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { useDrumStore } from "../store/drumStore";
 
 const VOICE_LABELS = [
@@ -278,23 +278,48 @@ const TrackRow = React.memo(function TrackRow({
 });
 
 export function StepSequencer() {
-  const {
-    pattern, currentStep, isPlaying, selectedPage, heldStep, selectedVoice,
-    setSelectedPage, toggleStep, setStepVelocity, setStepRatchet, setStepCondition,
-    setStepGateLength, holdStep, releaseStep, setSelectedVoice,
-    copyPage, pastePage, pageClipboard,
-  } = useDrumStore();
+  // Per-field selectors — prevents re-render cascade from currentStep tick
+  const pattern = useDrumStore((s) => s.pattern);
+  const currentStep = useDrumStore((s) => s.currentStep);
+  const isPlaying = useDrumStore((s) => s.isPlaying);
+  const selectedPage = useDrumStore((s) => s.selectedPage);
+  const heldStep = useDrumStore((s) => s.heldStep);
+  const selectedVoice = useDrumStore((s) => s.selectedVoice);
+  const pageClipboard = useDrumStore((s) => s.pageClipboard);
+  const setSelectedPage = useDrumStore((s) => s.setSelectedPage);
+  const toggleStep = useDrumStore((s) => s.toggleStep);
+  const setStepVelocity = useDrumStore((s) => s.setStepVelocity);
+  const setStepRatchet = useDrumStore((s) => s.setStepRatchet);
+  const setStepCondition = useDrumStore((s) => s.setStepCondition);
+  const setStepGateLength = useDrumStore((s) => s.setStepGateLength);
+  const holdStep = useDrumStore((s) => s.holdStep);
+  const releaseStep = useDrumStore((s) => s.releaseStep);
+  const setSelectedVoice = useDrumStore((s) => s.setSelectedVoice);
+  const copyPage = useDrumStore((s) => s.copyPage);
+  const pastePage = useDrumStore((s) => s.pastePage);
 
   const pageOffset = selectedPage * 16;
-  const totalActiveSteps = pattern.tracks.reduce((sum, track) => (
-    sum + track.steps.slice(0, pattern.length).filter((step) => step.active).length
-  ), 0);
-  const activeTracks = pattern.tracks.filter((track) => (
-    track.steps.slice(0, pattern.length).some((step) => step.active)
-  )).length;
-  const currentPageActive = pattern.tracks.reduce((sum, track) => (
-    sum + track.steps.slice(pageOffset, pageOffset + 16).filter((step) => step.active).length
-  ), 0);
+
+  // Memoize expensive aggregate counters — only recompute when pattern/page changes,
+  // NOT on every currentStep tick (which was triggering 768 iterations per frame)
+  const { totalActiveSteps, activeTracks, currentPageActive } = useMemo(() => {
+    let totalActive = 0;
+    let activeTr = 0;
+    let pageActive = 0;
+    for (const track of pattern.tracks) {
+      let trackHasActive = false;
+      for (let i = 0; i < pattern.length; i++) {
+        const step = track.steps[i];
+        if (step?.active) {
+          totalActive++;
+          trackHasActive = true;
+          if (i >= pageOffset && i < pageOffset + 16) pageActive++;
+        }
+      }
+      if (trackHasActive) activeTr++;
+    }
+    return { totalActiveSteps: totalActive, activeTracks: activeTr, currentPageActive: pageActive };
+  }, [pattern, pageOffset]);
   const selectedTrack = pattern.tracks[selectedVoice];
 
   // ─── Gate-Length Drag State ─────────────────────────────

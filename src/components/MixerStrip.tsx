@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { audioEngine } from "../audio/AudioEngine";
 
 const LABELS = ["KCK", "SNR", "CLP", "TL", "TM", "TH", "HHC", "HHO", "CYM", "RDE", "P1", "P2", "BAS", "CHD", "LED"];
@@ -80,41 +80,14 @@ export function MixerStrip({ onOpenMixer }: MixerStripProps) {
       </button>
 
       <div className="flex-1 flex gap-[3px] items-end min-h-[144px]">
-        {LABELS.map((ch, i) => {
-          const level = levels[i] ?? 0;
-          const isHot = level > 0.75;
-          return (
-            <div key={i} className="flex flex-col items-center flex-1 min-w-0 gap-1">
-              <div className="flex h-full w-full min-h-[84px] flex-col justify-end rounded-[10px] border border-white/6 bg-[linear-gradient(180deg,rgba(6,7,10,0.96),rgba(14,15,19,0.96))] p-[3px] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                <div className="relative h-full overflow-hidden rounded-[7px] border border-white/5 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(0,0,0,0.18))]">
-                  {[20, 40, 60, 80].map((pct) => (
-                    <div key={pct} className="absolute inset-x-0 border-t border-white/5" style={{ bottom: `${pct}%` }} />
-                  ))}
-                <div
-                  className="ed-meter-bar absolute bottom-0 left-[2px] right-[2px] rounded-[5px]"
-                  style={{
-                    height: `${Math.min(level * 100, 100)}%`,
-                    background: level > 0.85
-                      ? "linear-gradient(180deg, #ef4444, #dc2626)"
-                      : level > 0.5
-                        ? `linear-gradient(180deg, #eab308, ${COLORS[i]})`
-                        : `linear-gradient(180deg, ${COLORS[i]}90, ${COLORS[i]}50)`,
-                    boxShadow: level > 0.3 ? `0 0 10px ${COLORS[i]}20` : "none",
-                  }}
-                />
-                  {isHot && (
-                    <div className="absolute inset-x-[2px] top-[2px] h-[4px] rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.65)]" />
-                  )}
-                </div>
-              </div>
-              <span className="text-[6px] font-black tracking-[0.14em] transition-colors" style={{
-                color: level > 0.1 ? COLORS[i] + "D0" : COLORS[i] + "46",
-              }}>
-                {ch}
-              </span>
-            </div>
-          );
-        })}
+        {LABELS.map((ch, i) => (
+          <MeterColumn
+            key={i}
+            label={ch}
+            color={COLORS[i] ?? "#ffffff"}
+            level={levels[i] ?? 0}
+          />
+        ))}
       </div>
       </div>
 
@@ -148,3 +121,49 @@ export function MixerStrip({ onOpenMixer }: MixerStripProps) {
     </div>
   );
 }
+
+/**
+ * Memoized meter column — only re-renders when its own level changes,
+ * not when OTHER channels update. Drops mixer overview re-cost to ~O(1)
+ * instead of O(15) per frame.
+ */
+const MeterColumn = React.memo(function MeterColumn({
+  label, color, level,
+}: {
+  label: string;
+  color: string;
+  level: number;
+}) {
+  const isHot = level > 0.75;
+  return (
+    <div className="flex flex-col items-center flex-1 min-w-0 gap-1">
+      <div className="flex h-full w-full min-h-[84px] flex-col justify-end rounded-[10px] border border-white/6 bg-[linear-gradient(180deg,rgba(6,7,10,0.96),rgba(14,15,19,0.96))] p-[3px] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <div className="relative h-full overflow-hidden rounded-[7px] border border-white/5 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(0,0,0,0.18))]">
+          {[20, 40, 60, 80].map((pct) => (
+            <div key={pct} className="absolute inset-x-0 border-t border-white/5" style={{ bottom: `${pct}%` }} />
+          ))}
+          <div
+            className="ed-meter-bar absolute bottom-0 left-[2px] right-[2px] rounded-[5px]"
+            style={{
+              height: `${Math.min(level * 100, 100)}%`,
+              background: level > 0.85
+                ? "linear-gradient(180deg, #ef4444, #dc2626)"
+                : level > 0.5
+                  ? `linear-gradient(180deg, #eab308, ${color})`
+                  : `linear-gradient(180deg, ${color}90, ${color}50)`,
+              boxShadow: level > 0.3 ? `0 0 10px ${color}20` : "none",
+            }}
+          />
+          {isHot && (
+            <div className="absolute inset-x-[2px] top-[2px] h-[4px] rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.65)]" />
+          )}
+        </div>
+      </div>
+      <span className="text-[6px] font-black tracking-[0.14em] transition-colors" style={{
+        color: level > 0.1 ? color + "D0" : color + "46",
+      }}>
+        {label}
+      </span>
+    </div>
+  );
+});
