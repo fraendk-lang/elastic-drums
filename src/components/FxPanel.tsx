@@ -325,23 +325,41 @@ function createBeatFxList(): BeatFx[] {
       color: "#ef4444",
       _savedGain: 0.85,
       activate: function (bpm: number) {
+        // Classic tape-stop brake: lowpass closes + gain dips, over 2 bars.
+        // Not a full mute — leaves enough signal that the "crash-into-silence"
+        // moment is audible as a dramatic slowdown rather than a dead cut.
         const masterGain = audioEngine.getMasterGainNode();
         if (masterGain) {
           this._savedGain = masterGain.gain.value;
           const now = audioEngine.currentTime;
-          const rampTime = (60 / bpm) * 8;
+          const rampTime = (60 / bpm) * 2; // 2 beats = classic brake length
           masterGain.gain.cancelScheduledValues(now);
           masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-          masterGain.gain.exponentialRampToValueAtTime(0.01, now + rampTime);
+          masterGain.gain.linearRampToValueAtTime(0.12, now + rampTime);
         }
+        // Close the master lowpass to simulate the "tape slowing down" tonal loss
+        audioEngine.setMasterFilter("lowpass", 8000, 0.7);
+        const sweepBeats = (60 / bpm) * 2;
+        let freq = 8000;
+        const stepMs = 60;
+        const decayFactor = Math.pow(180 / 8000, stepMs / (sweepBeats * 1000));
+        this._sweepTimer = setInterval(() => {
+          freq = Math.max(180, freq * decayFactor);
+          audioEngine.setMasterFilter("lowpass", freq, 0.7);
+        }, stepMs);
       },
       deactivate: function () {
+        if (this._sweepTimer) {
+          clearInterval(this._sweepTimer);
+          this._sweepTimer = null;
+        }
+        audioEngine.bypassMasterFilter();
         const masterGain = audioEngine.getMasterGainNode();
         if (masterGain) {
           const now = audioEngine.currentTime;
           masterGain.gain.cancelScheduledValues(now);
           masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-          masterGain.gain.linearRampToValueAtTime(this._savedGain ?? 0.85, now + 0.3);
+          masterGain.gain.linearRampToValueAtTime(this._savedGain ?? 0.85, now + 0.15);
         }
       },
     },
@@ -350,16 +368,22 @@ function createBeatFxList(): BeatFx[] {
       color: "#06b6d4",
       _sweepTimer: null,
       activate: function (bpm: number) {
-        audioEngine.startNoise(0.3);
-        audioEngine.setMasterFilter("highpass", 200, 2);
+        // Softer noise bed that benefits from the envelope in startNoise.
+        // Filter now uses a smooth linear ramp via interval polling, but the
+        // noise itself has its own attack sweep so the first beat isn't jarring.
+        audioEngine.startNoise(0.10);
+        audioEngine.setMasterFilter("highpass", 180, 1.2);
         const sweepDuration = (60 / bpm) * 16;
-        let filterFreq = 200;
-        const step = (8000 - 200) / (sweepDuration * 10);
+        let filterFreq = 180;
+        const stepMs = 80;
+        const step = (7500 - 180) / (sweepDuration * 1000 / stepMs);
         this._sweepTimer = setInterval(() => {
-          filterFreq = Math.min(8000, filterFreq + step);
-          const q = 2 + (filterFreq / 8000) * 8;
+          filterFreq = Math.min(7500, filterFreq + step);
+          // Resonance only near the top so build has tension but doesn't peak early
+          const prog = (filterFreq - 180) / (7500 - 180);
+          const q = 1 + prog * prog * 6;
           audioEngine.setMasterFilter("highpass", filterFreq, q);
-        }, 100);
+        }, stepMs);
       },
       deactivate: function () {
         if (this._sweepTimer) {
@@ -374,7 +398,8 @@ function createBeatFxList(): BeatFx[] {
       label: "NOISE",
       color: "#ffffff",
       activate: () => {
-        audioEngine.startNoise(0.3);
+        // Use the engine's default (0.14) which includes filter envelope whoosh
+        audioEngine.startNoise();
       },
       deactivate: () => {
         audioEngine.stopNoise();
@@ -385,17 +410,33 @@ function createBeatFxList(): BeatFx[] {
       color: "#a855f7",
       _savedGain: 0.85,
       activate: function (bpm: number) {
+        // Faster than BRAKE — half-beat tape-stop feel. Gain dips to 0.18,
+        // lowpass sweeps 8k → 400 Hz. Signal stays audible = dramatic "zip".
         const masterGain = audioEngine.getMasterGainNode();
         if (masterGain) {
           this._savedGain = masterGain.gain.value;
           const now = audioEngine.currentTime;
-          const stopTime = (60 / bpm) * 2;
+          const stopTime = (60 / bpm) * 0.75;
           masterGain.gain.cancelScheduledValues(now);
-          masterGain.gain.setValueAtTime(this._savedGain, now);
-          masterGain.gain.setTargetAtTime(0.02, now, stopTime * 0.3);
+          masterGain.gain.setValueAtTime(masterGain.gain.value, now);
+          masterGain.gain.linearRampToValueAtTime(0.18, now + stopTime);
         }
+        audioEngine.setMasterFilter("lowpass", 8000, 0.8);
+        const sweepMs = (60 / bpm) * 0.75 * 1000;
+        let freq = 8000;
+        const stepMs = 40;
+        const decayFactor = Math.pow(400 / 8000, stepMs / sweepMs);
+        this._sweepTimer = setInterval(() => {
+          freq = Math.max(400, freq * decayFactor);
+          audioEngine.setMasterFilter("lowpass", freq, 0.8);
+        }, stepMs);
       },
       deactivate: function () {
+        if (this._sweepTimer) {
+          clearInterval(this._sweepTimer);
+          this._sweepTimer = null;
+        }
+        audioEngine.bypassMasterFilter();
         const masterGain = audioEngine.getMasterGainNode();
         if (masterGain) {
           const now = audioEngine.currentTime;
@@ -409,9 +450,12 @@ function createBeatFxList(): BeatFx[] {
       label: "ECHO",
       color: "#3b82f6",
       activate: (bpm: number) => {
+        // Dotted 8th delay with musical feedback amount + rolled-off filter
+        // Previous 0.9/0.8 was borderline runaway — now 0.6/0.65 with
+        // damped highs so repeats decay naturally instead of harsh.
         const beatSec = 60 / bpm;
-        audioEngine.setDelayLevel(0.9);
-        audioEngine.setDelayParams(beatSec * 0.75, 0.8, 5000);
+        audioEngine.setDelayLevel(0.6);
+        audioEngine.setDelayParams(beatSec * 0.75, 0.65, 3500);
       },
       deactivate: () => {
         audioEngine.setDelayLevel(0.3);

@@ -783,62 +783,69 @@ export class SendFxManager {
     }
   }
 
-  /** Start stutter/gate effect — inserts a gain gate between pump and compressor */
+  /** Start stutter/gate effect — inserts a gain gate between pump and compressor.
+   *  Smooth entry: ramps base gain + LFO depth over 30 ms so entering the gate
+   *  doesn't click. Square LFO for the classic hard-gate stutter pulse. */
   startStutter(rate: number, masterCompressor: DynamicsCompressorNode): void {
     if (!this.ctx || !this.pumpGain || !masterCompressor) return;
     this.stopStutter(masterCompressor);
+    const now = this.ctx.currentTime;
 
-    // Create a gate gain node and insert it into the signal chain
     this.stutterGain = this.ctx.createGain();
-    this.stutterGain.gain.value = 1.0;
+    // Start at 1.0 (bypass), ramp to 0.5 center over 30 ms
+    this.stutterGain.gain.setValueAtTime(1.0, now);
+    this.stutterGain.gain.linearRampToValueAtTime(0.5, now + 0.03);
 
     // Disconnect pumpGain → compressor and re-route through gate
     this.pumpGain.disconnect(masterCompressor);
     this.pumpGain.connect(this.stutterGain);
     this.stutterGain.connect(masterCompressor);
 
-    // LFO modulates the gate gain: 0→1 at the specified rate
+    // LFO modulates the gate gain
     this.stutterLfo = this.ctx.createOscillator();
     this.stutterLfo.type = "square";
     this.stutterLfo.frequency.value = rate;
 
-    // Scale LFO output (±1) to gain range (0→1) via gain node
+    // LFO depth ramps from 0 → 0.5 over 30 ms so first pulse isn't a jump
     const lfoScale = this.ctx.createGain();
-    lfoScale.gain.value = 0.5; // Scale ±1 to ±0.5
+    lfoScale.gain.setValueAtTime(0, now);
+    lfoScale.gain.linearRampToValueAtTime(0.5, now + 0.03);
     this.stutterLfo.connect(lfoScale);
-    lfoScale.connect(this.stutterGain.gain); // Adds ±0.5 to base 0.5 → range 0..1
-
-    // Set base gain to 0.5 so the LFO swings between 0 and 1
-    this.stutterGain.gain.value = 0.5;
+    lfoScale.connect(this.stutterGain.gain);
 
     this.stutterLfo.start();
   }
 
   /** Stop stutter effect — restore direct connection */
+  /** Stop stutter — fades the gate back to 1.0 over 30 ms before disconnecting. */
   stopStutter(masterCompressor: DynamicsCompressorNode): void {
-    if (this.stutterLfo) {
+    if (!this.ctx) return;
+    const lfo = this.stutterLfo;
+    const gate = this.stutterGain;
+    this.stutterLfo = null;
+    this.stutterGain = null;
+
+    if (gate) {
+      const now = this.ctx.currentTime;
       try {
-        this.stutterLfo.stop();
-      } catch {
-        /* */
+        gate.gain.cancelScheduledValues(now);
+        gate.gain.setValueAtTime(gate.gain.value, now);
+        gate.gain.linearRampToValueAtTime(1.0, now + 0.03);
+      } catch { /* */ }
+    }
+
+    // Disconnect after fade completes — restore direct pumpGain → compressor
+    window.setTimeout(() => {
+      if (lfo) {
+        try { lfo.stop(); } catch { /* */ }
+        try { lfo.disconnect(); } catch { /* */ }
       }
-      this.stutterLfo.disconnect();
-      this.stutterLfo = null;
-    }
-    if (this.stutterGain && this.pumpGain && masterCompressor) {
-      // Restore direct connection
-      this.stutterGain.disconnect();
-      try {
-        this.pumpGain.disconnect(this.stutterGain);
-      } catch {
-        /* */
+      if (gate && this.pumpGain && masterCompressor) {
+        try { this.pumpGain.disconnect(gate); } catch { /* */ }
+        try { gate.disconnect(); } catch { /* */ }
+        try { this.pumpGain.connect(masterCompressor); } catch { /* */ }
       }
-      this.pumpGain.connect(masterCompressor);
-    }
-    if (this.stutterGain) {
-      this.stutterGain.disconnect();
-      this.stutterGain = null;
-    }
+    }, 40);
   }
 
   // ─── Flanger FX Controls ────────────────────────────────
