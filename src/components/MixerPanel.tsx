@@ -6,6 +6,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { audioEngine, AudioEngine, DELAY_DIVISION_NAMES, REVERB_TYPES } from "../audio/AudioEngine";
+import { ChannelFxRack } from "./ChannelFxRack";
 
 const CHANNELS = [
   { id: 0, label: "KICK", color: "#f59e0b" },
@@ -126,6 +127,7 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
   const [limiterThreshold, setLimiterThreshold] = useState(99); // maps to -1dB default
   const [pumpRate, setPumpRate] = useState(50);
   const [pans, setPans] = useState<number[]>(new Array(NUM_CHANNELS).fill(0));
+  const [fxRackChannel, setFxRackChannel] = useState<{ index: number; label: string; color: string } | null>(null);
   const [selectedChannels, setSelectedChannels] = useState<Set<number>>(new Set());
   const [muted, setMuted] = useState<Set<number>>(new Set());
   const [soloed, setSoloed] = useState<Set<number>>(new Set());
@@ -350,6 +352,7 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
               setPans((p) => { const n = [...p]; n[i] = v; return n; });
               audioEngine.setChannelPan(ch.id, v);
             }}
+            onOpenFxRack={() => setFxRackChannel({ index: ch.id, label: ch.label, color: ch.color })}
           />
         </React.Fragment>))}
 
@@ -563,6 +566,14 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
           <SidechainControls />
         </div>
       </div>
+
+      {/* Per-Channel FX Rack (modal) */}
+      <ChannelFxRack
+        channelIndex={fxRackChannel?.index ?? null}
+        channelLabel={fxRackChannel?.label ?? ""}
+        channelColor={fxRackChannel?.color ?? "#fff"}
+        onClose={() => setFxRackChannel(null)}
+      />
     </div>
   );
 }
@@ -571,7 +582,7 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
 
 function ChannelStrip({ label, color, meter, faderValue, sendA, sendB, sendC, sendD, isMuted, isSoloed,
   onFader, onSendA, onSendB, onSendC, onSendD, onMute, onSolo, channelIndex, isSelected, group, onSelect,
-  panValue, onPanChange,
+  panValue, onPanChange, onOpenFxRack,
 }: {
   label: string; color: string; meter: MeterData; faderValue: number;
   sendA: number; sendB: number; sendC: number; sendD: number; isMuted: boolean; isSoloed: boolean;
@@ -581,6 +592,7 @@ function ChannelStrip({ label, color, meter, faderValue, sendA, sendB, sendC, se
   onMute: () => void; onSolo: () => void; channelIndex: number;
   isSelected?: boolean; group?: string; onSelect?: () => void;
   panValue: number; onPanChange: (v: number) => void;
+  onOpenFxRack: () => void;
 }) {
   const [filterFreq, setFilterFreq] = useState(1000);
   const [filterType, setFilterType] = useState<BiquadFilterType>("allpass");
@@ -658,6 +670,15 @@ function ChannelStrip({ label, color, meter, faderValue, sendA, sendB, sendC, se
 
       {/* Compressor */}
       <ChannelComp channelIndex={channelIndex} color={color} />
+
+      {/* FX Rack button */}
+      <button
+        onClick={onOpenFxRack}
+        className="border-b border-white/8 px-1.5 py-1 text-[8px] font-bold tracking-[0.16em] text-white/35 hover:text-white/80 hover:bg-white/5 transition-colors"
+        title="Open FX rack for this channel"
+      >
+        FX ▸
+      </button>
 
       {/* Meter + Fader area */}
       <div className="flex min-h-0 flex-1 gap-[4px] px-1.5 py-1.5">

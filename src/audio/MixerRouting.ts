@@ -5,6 +5,8 @@
  * bus group routing, and binaural audio mode.
  */
 
+import { FxChain } from "./FxChain";
+
 export class MixerRouter {
   private channelGains: GainNode[] = [];
   private channelAnalysers: AnalyserNode[] = [];
@@ -13,6 +15,7 @@ export class MixerRouter {
   private channelPanners: PannerNode[] = [];
   private channelEQs: { lo: BiquadFilterNode; mid: BiquadFilterNode; hi: BiquadFilterNode }[] = [];
   private channelCompressors: DynamicsCompressorNode[] = [];
+  private channelFxChains: (FxChain | null)[] = [];
   private binauralMode = false;
   private groupBuses: Map<string, { gain: GainNode; analyser: AnalyserNode }> = new Map();
   private channelGroupAssignment: string[] = [];
@@ -71,9 +74,13 @@ export class MixerRouter {
     analyser.fftSize = 4096;
     analyser.smoothingTimeConstant = 0.15;
 
-    // Routing: filter → shaper → eqLo → eqMid → eqHi → compressor → gain → panner → analyser → destination
+    // FX Rack insert (empty by default, passes audio through)
+    const fxChain = new FxChain(ctx);
+
+    // Routing: filter → shaper → fxChain → eqLo → eqMid → eqHi → compressor → gain → panner → analyser → destination
     filter.connect(shaper);
-    shaper.connect(eqLo);
+    shaper.connect(fxChain.input);
+    fxChain.output.connect(eqLo);
     eqLo.connect(eqMid);
     eqMid.connect(eqHi);
     eqHi.connect(compressor);
@@ -86,6 +93,7 @@ export class MixerRouter {
     this.channelShapers.push(shaper);
     this.channelEQs.push({ lo: eqLo, mid: eqMid, hi: eqHi });
     this.channelCompressors.push(compressor);
+    this.channelFxChains.push(fxChain);
     this.channelGains.push(gain);
     this.channelPanners.push(panner);
     this.channelAnalysers.push(analyser);
@@ -171,6 +179,11 @@ export class MixerRouter {
     comp.attack.value = attack;
     comp.release.value = release;
     if (knee !== undefined) comp.knee.value = knee;
+  }
+
+  /** Get channel FX chain */
+  getChannelFxChain(i: number): FxChain | null {
+    return this.channelFxChains[i] ?? null;
   }
 
   /** Bypass channel compressor (set threshold to 0 dB) */
