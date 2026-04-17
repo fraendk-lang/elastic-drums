@@ -15,11 +15,13 @@
  */
 
 import { createFilterChain, type FilterModel, type FilterChain } from "./filters";
+import { getWavetable, type WavetableName } from "./Wavetables";
 
 export type FilterMode = "lowpass" | "highpass" | "bandpass" | "notch";
 
 export interface BassParams {
-  waveform: "sawtooth" | "square";
+  waveform: "sawtooth" | "square" | "wavetable";
+  wavetable?: WavetableName;
   filterType: FilterMode;
   filterModel: FilterModel;  // "lpf" | "ladder" | "steiner-lp" | "steiner-bp" | "steiner-hp"
   cutoff: number;      // Filter cutoff Hz (200-8000)
@@ -134,7 +136,11 @@ export class BassEngine {
 
     // --- VCO (main) ---
     this.osc = audioCtx.createOscillator();
-    this.osc.type = this.params.waveform;
+    if (this.params.waveform === "wavetable") {
+      this.osc.setPeriodicWave(getWavetable(audioCtx, this.params.wavetable ?? "harmonic"));
+    } else {
+      this.osc.type = this.params.waveform;
+    }
     this.osc.frequency.value = 130.81; // C3
 
     // --- Sub-oscillator (one octave below) ---
@@ -402,7 +408,13 @@ export class BassEngine {
   setParams(p: Partial<BassParams>): void {
     Object.assign(this.params, p);
 
-    if (this.osc && p.waveform) this.osc.type = p.waveform;
+    if (this.osc && this.ctx && (p.waveform || p.wavetable)) {
+      if (this.params.waveform === "wavetable") {
+        this.osc.setPeriodicWave(getWavetable(this.ctx, this.params.wavetable ?? "harmonic"));
+      } else if (p.waveform && p.waveform !== "wavetable") {
+        this.osc.type = p.waveform;
+      }
+    }
     if (this.filterChain) {
       if (p.cutoff !== undefined || p.resonance !== undefined) {
         const cutoff = p.cutoff ?? this.params.cutoff;

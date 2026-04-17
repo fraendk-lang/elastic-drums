@@ -23,12 +23,14 @@
 import { scaleNote } from "./BassEngine";
 import { createFilterChain, type FilterModel, type FilterChain } from "./filters";
 import { playFM, playAM, playPluck } from "./SynthVoices";
+import { getWavetable, type WavetableName } from "./Wavetables";
 
 export { scaleNote };
 
 export interface MelodyParams {
   synthType: "subtractive" | "fm" | "am" | "pluck";  // Synthesis type
-  waveform: "sawtooth" | "square" | "triangle";
+  waveform: "sawtooth" | "square" | "triangle" | "wavetable";
+  wavetable?: WavetableName; // Used when waveform === "wavetable"
   filterModel: FilterModel;  // "lpf" | "ladder" | "steiner-lp" | "steiner-bp" | "steiner-hp"
   cutoff: number;      // Filter cutoff Hz (200-12000)
   resonance: number;   // Filter Q (0-30)
@@ -125,12 +127,21 @@ export class MelodyEngine {
 
   params: MelodyParams = { ...DEFAULT_MELODY_PARAMS };
 
+  private applyWaveform(osc: OscillatorNode): void {
+    if (!this.ctx) return;
+    if (this.params.waveform === "wavetable") {
+      osc.setPeriodicWave(getWavetable(this.ctx, this.params.wavetable ?? "harmonic"));
+    } else {
+      osc.type = this.params.waveform;
+    }
+  }
+
   init(audioCtx: AudioContext): void {
     this.ctx = audioCtx;
 
     // --- VCO (main) ---
     this.osc = audioCtx.createOscillator();
-    this.osc.type = this.params.waveform;
+    this.applyWaveform(this.osc);
     this.osc.frequency.value = 261.63; // C3 (MIDI 48)
 
     // --- Sub-oscillator (one octave below) ---
@@ -152,11 +163,11 @@ export class MelodyEngine {
 
     // --- Unison oscillators ---
     this.unisonOsc1 = audioCtx.createOscillator();
-    this.unisonOsc1.type = this.params.waveform;
+    this.applyWaveform(this.unisonOsc1);
     this.unisonOsc1.frequency.value = 261.63;
 
     this.unisonOsc2 = audioCtx.createOscillator();
-    this.unisonOsc2.type = this.params.waveform;
+    this.applyWaveform(this.unisonOsc2);
     this.unisonOsc2.frequency.value = 261.63;
 
     this.unisonGain1 = audioCtx.createGain();
@@ -473,11 +484,10 @@ export class MelodyEngine {
   setParams(p: Partial<MelodyParams>): void {
     Object.assign(this.params, p);
 
-    if (this.osc && p.waveform) {
-      this.osc.type = p.waveform;
-      // Update unison oscs too
-      if (this.unisonOsc1) this.unisonOsc1.type = p.waveform;
-      if (this.unisonOsc2) this.unisonOsc2.type = p.waveform;
+    if (this.osc && (p.waveform || p.wavetable)) {
+      this.applyWaveform(this.osc);
+      if (this.unisonOsc1) this.applyWaveform(this.unisonOsc1);
+      if (this.unisonOsc2) this.applyWaveform(this.unisonOsc2);
     }
     if (p.vibratoRate !== undefined && this.vibratoLfo) {
       this.vibratoLfo.frequency.value = p.vibratoRate;

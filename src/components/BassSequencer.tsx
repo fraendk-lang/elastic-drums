@@ -381,6 +381,23 @@ export function BassSequencer() {
         {/* Waveform */}
         <WaveBtn active={params.waveform === "sawtooth"} onClick={() => setParam("waveform", "sawtooth")} label="SAW" />
         <WaveBtn active={params.waveform === "square"} onClick={() => setParam("waveform", "square")} label="SQR" />
+        <WaveBtn active={params.waveform === "wavetable"} onClick={() => setParam("waveform", "wavetable")} label="WT" />
+        {params.waveform === "wavetable" && (
+          <select
+            value={params.wavetable ?? "harmonic"}
+            onChange={(e) => setParam("wavetable", e.target.value)}
+            className="h-6 px-1.5 text-[8px] bg-black/30 border border-white/15 rounded text-white/70 cursor-pointer"
+          >
+            <option value="harmonic">Harmonic</option>
+            <option value="bright-saw">Bright Saw</option>
+            <option value="hollow">Hollow</option>
+            <option value="glass">Glass</option>
+            <option value="vocal">Vocal</option>
+            <option value="pulse-25">Pulse 25%</option>
+            <option value="digital">Digital</option>
+            <option value="warm-stack">Warm Stack</option>
+          </select>
+        )}
 
         <Sep />
 
