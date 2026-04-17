@@ -406,7 +406,7 @@ interface BassStore {
   setRootNote: (midi: number, name: string) => void;
   setGlobalOctave: (oct: number) => void;
   setScale: (name: string) => void;
-  setParam: (key: keyof BassParams, value: number | string) => void;
+  setParam: (key: keyof BassParams, value: number | string | boolean) => void;
   setLength: (len: number) => void;
   setSelectedPage: (page: number) => void;
   clearSteps: () => void;

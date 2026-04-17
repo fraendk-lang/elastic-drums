@@ -30,6 +30,7 @@ export interface BassParams {
   decay: number;       // Filter envelope decay ms (50-1000)
   accent: number;      // Accent intensity (0-1)
   slideTime: number;   // Portamento time ms (0-200)
+  legato: boolean;     // When true, every note slides to the next (acid-style glide)
   distortion: number;  // Drive amount (0-1)
   volume: number;      // Output level (0-1)
   subOsc: number;      // Sub-oscillator level (0-1), 0 = off
@@ -51,6 +52,7 @@ export const DEFAULT_BASS_PARAMS: BassParams = {
   decay: 200,
   accent: 0.5,
   slideTime: 60,
+  legato: false,
   distortion: 0.08,
   volume: 0.7,
   subOsc: 0,
@@ -280,7 +282,7 @@ export class BassEngine {
     const decaySec = (p.decay / 1000) * (accent ? 0.4 : 1.0);
     const res = Math.min(p.resonance / 30, 1.0);
 
-    const attackMs = slide ? p.slideTime : 3;
+    const attackMs = (slide || p.legato) ? p.slideTime : 3;
     const startTime = performance.now();
     let currentFreq = filterBase;
 
@@ -323,8 +325,11 @@ export class BassEngine {
       this.output.gain.value = this.params.volume;
     }
 
+    // Legato mode forces slide on every note (acid-style glide between all notes)
+    const useSlide = slide || p.legato;
+
     // --- Pitch ---
-    if (slide && p.slideTime > 0) {
+    if (useSlide && p.slideTime > 0) {
       // Slide: exponential glide to target frequency
       const slideTau = p.slideTime / 1000 / 3;
       this.osc.frequency.setTargetAtTime(freq, time, slideTau);
@@ -353,7 +358,7 @@ export class BassEngine {
       this.vca.gain.linearRampToValueAtTime(level, time + 0.008); // 6ms settle to sustain level
 
       // Filter envelope: the heart of the 303 sound
-      this.scheduleFilterEnvelope(time, accent, slide);
+      this.scheduleFilterEnvelope(time, accent, useSlide);
     }
 
     this.noteIsOn = true;

@@ -416,6 +416,19 @@ export function BassSequencer() {
             label={m === "lpf" ? "12dB" : m === "ladder" ? "MOOG" : "STNR"} />
         ))}
 
+        <Sep />
+
+        {/* Glide / Legato — every note slides to the next (acid-style) */}
+        <button
+          onClick={() => setParam("legato", !params.legato)}
+          className={`px-2.5 h-6 text-[8px] font-bold rounded-md transition-all ${
+            params.legato
+              ? "bg-[var(--ed-accent-bass)]/25 text-[var(--ed-accent-bass)]"
+              : "text-white/25 hover:text-white/50 hover:bg-white/5"
+          }`}
+          title="Legato/Glide — jeder Ton gleitet zum nächsten (slideTime bestimmt Geschwindigkeit)"
+        >GLIDE</button>
+
         <div className="flex-1" />
 
         {/* Bassline Agent — strategy cycle + generate */}
