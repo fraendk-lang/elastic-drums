@@ -119,6 +119,16 @@ Plugin (plugin/)
 ## Current Sprint Status (updated April 2026)
 
 ### Recently Completed
+- **Phase 1: Workflow** — Scene-Transitions with launch quantize, Clip-Launcher (4×8 matrix),
+  Arrangement-Timeline with drag&drop, global Undo/Redo across all engines
+- **Phase 2: Mixing** — Sidechain (Kick→Bass/Chords/Melody), Per-channel 3-band EQ,
+  Per-channel Compressor, Send C (Chorus) + Send D (Phaser), FX-Rack with Drag&Drop
+  (Bitcrusher, RingMod, Tremolo, Widener, Autofilter)
+- **Phase 3: Sound Design** — Wavetable mode (8 tables) for Bass/Melody,
+  FM synthesis on Kick/Snare/Toms, Multi-sample velocity layers (up to 4 per pad),
+  Mod Matrix (4 LFO slots → any synth param)
+- **Phase 4+5+6 partial** — Scale-Highlighting in Piano Roll, Macro Knobs (8 × 4 bindings),
+  Stem Export (4 separate WAVs: drums/hats/cymperc/full)
 - **Piano Roll — Ableton-level overhaul** (refactored 1709-line monolith → 9 modules):
   - Sticky time ruler with bar.beat labels + playhead triangle
   - Functional loop brace (drag on ruler, L key, scheduler loops independently of drums)

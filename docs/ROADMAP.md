@@ -8,6 +8,35 @@
 
 ## Erledigte Meilensteine
 
+### Phase 1 — Workflow & Arrangement (April 2026) ✅
+- Scene-Transitions mit Launch Quantize (NOW / 1 / 2 / 4 BAR)
+- Clip-Launcher-View (4×8 Matrix, Ableton Session View Stil)
+- Arrangement-Timeline (visuelle Scene-Zeitachse mit Drag & Drop)
+- Globales Undo/Redo über Drum/Bass/Chords/Melody Engines
+
+### Phase 2 — Mixing & FX auf Pro-Level (April 2026) ✅
+- Sidechain-Routing (Kick → Bass/Chords/Melody Ducking, Per-Target Toggles)
+- Per-Channel 3-Band EQ auf allen 15 Kanälen
+- Per-Channel Compressor (Threshold/Ratio) auf allen 15 Kanälen
+- Send C (Stereo Chorus) + Send D (4-Stage Phaser)
+- FX-Rack: Insert-Kette mit Drag & Drop (Bitcrusher, RingMod, Tremolo, Widener, Autofilter)
+
+### Phase 3 — Sound Design (April 2026) ✅
+- Wavetable-Modus für Bass/Melody (8 Wellentabellen: Harmonic, Bright Saw, Hollow, Glass, Vocal, Pulse 25, Digital, Warm Stack)
+- FM-Synthesis auf Kick/Snare/Toms (Amount + Ratio Knobs)
+- Multi-Sample Velocity-Layer pro Pad (bis zu 4 Layer)
+- Mod Matrix — 4 LFO-Slots auf beliebige Synth-Parameter
+
+### Phase 4 — Piano Roll Advanced (April 2026) ✅ (Ghost-Notes + Scale-Highlighting)
+- Multi-Track Ghost-Notes (alle Lanes gleichzeitig sichtbar)
+- Scale-Highlighting (Root + Scale-Notes immer sichtbar, Out-of-Scale dimming)
+
+### Phase 5 — Performance & Live (April 2026) ✅ (Macro-Knobs)
+- Macro-Knobs: 8 meta-controls, je 4 Bindings mit Range-Override + Invert
+
+### Phase 6 — Export (April 2026) ✅ (Stem-Export)
+- Stem-Export: 4 separate WAVs (Drums / Hats / Cym+Perc / Full)
+
 ### Piano Roll Overhaul (April 2026) ✅
 - Refactor: 1709-Zeilen-Monolith → 9 Module
 - Sticky Zeit-Lineal mit Bar.Beat Labels
