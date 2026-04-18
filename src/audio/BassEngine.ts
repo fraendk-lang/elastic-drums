@@ -317,13 +317,13 @@ export class BassEngine {
     const subFreq = freq / 2; // One octave below
     const p = this.params;
 
-    // Unmute output on first note — smooth 15ms ramp instead of instant jump
-    // (was: clicks because running oscillators sit at random DC phase when gain opens).
+    // Unmute output — 3ms click-safe ramp, scene-transition-tight.
+    // (Scheduler's accent/attack envelope handles musical attack separately.)
     if (this.output && this.output.gain.value === 0 && this.ctx) {
       const t = this.ctx.currentTime;
       this.output.gain.cancelScheduledValues(t);
       this.output.gain.setValueAtTime(0.0001, t);
-      this.output.gain.linearRampToValueAtTime(this.params.volume, t + 0.015);
+      this.output.gain.linearRampToValueAtTime(this.params.volume, t + 0.003);
     }
 
     // Legato mode forces slide on every note (acid-style glide between all notes)
