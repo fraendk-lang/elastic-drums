@@ -404,9 +404,15 @@ export function PerformancePad({ isOpen, onClose }: Props) {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
+      // Guard against zero-sized canvas (pre-layout) — browsers render a
+      // "broken image" placeholder icon if canvas dims are 0.
+      if (rect.width < 2 || rect.height < 2) {
+        rafIdRef.current = requestAnimationFrame(draw);
+        return;
+      }
       const dpr = Math.max(1, window.devicePixelRatio || 1);
-      const targetW = Math.round(rect.width * dpr);
-      const targetH = Math.round(rect.height * dpr);
+      const targetW = Math.max(2, Math.round(rect.width * dpr));
+      const targetH = Math.max(2, Math.round(rect.height * dpr));
       if (canvas.width !== targetW || canvas.height !== targetH) {
         canvas.width = targetW;
         canvas.height = targetH;
@@ -584,7 +590,10 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   const activeYParam = Y_PARAMS.find((p) => p.id === yParam)!;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[var(--ed-bg-primary)]/98 backdrop-blur-xl">
+    <div
+      className="fixed inset-0 z-50 flex flex-col backdrop-blur-xl"
+      style={{ backgroundColor: "rgba(10, 8, 12, 0.98)" }}
+    >
       {/* Header */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--ed-border)] bg-[var(--ed-bg-secondary)]/80 px-5 py-2.5">
         <h2 className="text-[11px] font-bold tracking-[0.18em] text-[var(--ed-accent-melody)]">XY PERFORMANCE</h2>
@@ -823,15 +832,19 @@ export function PerformancePad({ isOpen, onClose }: Props) {
 
         <div
           ref={padRef}
-          className="relative flex-1 rounded-lg border border-[var(--ed-accent-melody)]/25 bg-gradient-to-b from-[var(--ed-bg-secondary)] to-[var(--ed-bg-primary)] overflow-hidden cursor-crosshair select-none touch-none"
+          className="relative flex-1 rounded-lg border border-[var(--ed-accent-melody)]/25 overflow-hidden cursor-crosshair select-none touch-none"
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
           style={{
             touchAction: "none",
+            // Hard-coded dark fallback BG guarantees contrast even if CSS vars
+            // fail to resolve (e.g. early paint, theme not hydrated).
+            backgroundColor: "#0d0a0f",
+            // Atmospheric radial accent glow layered on top.
             backgroundImage:
-              "radial-gradient(circle at 50% 50%, rgba(244,114,182,0.04) 0%, transparent 70%)",
+              "radial-gradient(circle at 50% 50%, rgba(244,114,182,0.06) 0%, transparent 70%)",
           }}
         >
           <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none" />
