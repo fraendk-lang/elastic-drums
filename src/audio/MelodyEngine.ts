@@ -324,9 +324,14 @@ export class MelodyEngine {
 
   /** Trigger a melody note */
   triggerNote(midiNote: number, time: number, accent: boolean, slide: boolean, tie: boolean, velocity = 0.85): void {
-    // Unmute output on first trigger
-    if (this.output && this.output.gain.value === 0) {
-      this.output.gain.value = this.params.volume;
+    // Unmute output on first trigger — smooth ramp to prevent click when
+    // oscillators are sitting at a non-zero DC value (they run muted before
+    // first note, so output gain going 0→volume instantly = click).
+    if (this.output && this.output.gain.value === 0 && this.ctx) {
+      const t = this.ctx.currentTime;
+      this.output.gain.cancelScheduledValues(t);
+      this.output.gain.setValueAtTime(0.0001, t);
+      this.output.gain.linearRampToValueAtTime(this.params.volume, t + 0.015);
     }
 
     const p = this.params;
@@ -588,8 +593,13 @@ export class MelodyEngine {
     // Voice limit — drop trigger silently if we're already at cap
     if (MelodyEngine.activePolyVoices >= MelodyEngine.MAX_POLY_VOICES) return null;
 
-    // Unmute output bus on first trigger
-    if (this.output.gain.value === 0) this.output.gain.value = this.params.volume;
+    // Unmute output bus on first trigger — smooth ramp prevents click
+    if (this.output.gain.value === 0 && this.ctx) {
+      const t = this.ctx.currentTime;
+      this.output.gain.cancelScheduledValues(t);
+      this.output.gain.setValueAtTime(0.0001, t);
+      this.output.gain.linearRampToValueAtTime(this.params.volume, t + 0.015);
+    }
 
     const p = this.params;
     const ctx = this.ctx;

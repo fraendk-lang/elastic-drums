@@ -339,9 +339,12 @@ export class ChordsEngine {
   triggerChord(midiNotes: number[], time: number, accent: boolean, tie: boolean, velocity = 0.85): void {
     if (!this.ctx || !this.vca || !this.filterChain || this.voices.length === 0) return;
 
-    // Unmute output on first trigger
-    if (this.output && this.output.gain.value === 0) {
-      this.output.gain.value = this.params.volume;
+    // Unmute output on first trigger — smooth 15ms ramp prevents click
+    if (this.output && this.output.gain.value === 0 && this.ctx) {
+      const t = this.ctx.currentTime;
+      this.output.gain.cancelScheduledValues(t);
+      this.output.gain.setValueAtTime(0.0001, t);
+      this.output.gain.linearRampToValueAtTime(this.params.volume, t + 0.015);
     }
 
     const p = this.params;

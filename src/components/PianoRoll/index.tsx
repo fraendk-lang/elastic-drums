@@ -1285,6 +1285,12 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
               const noteColor = TARGET_COLORS[note.track];
               // Velocity → brightness (0.5 dim → 1.0 bright)
               const velBrightness = 0.55 + note.velocity * 0.55;
+              // Currently-playing detection — the playhead is within this note's span.
+              // Wrap-aware: if loop is on, playheadBeat resets to 0 at end — still catches.
+              const isActive =
+                isPlaying &&
+                playheadBeat >= note.start &&
+                playheadBeat < note.start + note.duration;
 
               return (
                 <div
@@ -1299,15 +1305,21 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                     top: y + 1,
                     width: w,
                     height: rowHeight - 2,
-                    background: `linear-gradient(180deg, ${noteColor} 0%, ${noteColor}aa 100%)`,
-                    filter: `brightness(${velBrightness})`,
+                    background: isActive
+                      ? `linear-gradient(180deg, #fff 0%, ${noteColor} 100%)`
+                      : `linear-gradient(180deg, ${noteColor} 0%, ${noteColor}aa 100%)`,
+                    filter: isActive ? `brightness(1.3) saturate(1.4)` : `brightness(${velBrightness})`,
                     border: isSel
                       ? `2px solid rgba(255,255,255,0.9)`
-                      : `1px solid ${noteColor}55`,
-                    boxShadow: isSel
-                      ? `0 0 10px ${noteColor}60, inset 0 1px 2px rgba(255,255,255,0.25)`
-                      : `inset 0 1px 2px rgba(255,255,255,0.12), 0 1px 3px rgba(0,0,0,0.4)`,
-                    zIndex: isSel ? 10 : 1,
+                      : isActive
+                        ? `2px solid rgba(255,255,255,0.95)`
+                        : `1px solid ${noteColor}55`,
+                    boxShadow: isActive
+                      ? `0 0 16px ${noteColor}, 0 0 6px rgba(255,255,255,0.8), inset 0 1px 2px rgba(255,255,255,0.35)`
+                      : isSel
+                        ? `0 0 10px ${noteColor}60, inset 0 1px 2px rgba(255,255,255,0.25)`
+                        : `inset 0 1px 2px rgba(255,255,255,0.12), 0 1px 3px rgba(0,0,0,0.4)`,
+                    zIndex: isActive ? 15 : isSel ? 10 : 1,
                     cursor:
                       dragMode === "resize"
                         ? "col-resize"

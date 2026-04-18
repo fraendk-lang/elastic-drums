@@ -53,9 +53,9 @@ interface ActiveVoice {
 export function PerformancePad({ isOpen, onClose }: Props) {
   const {
     target, mode, chordSetIndex, yParam, scaleOctaves, scaleLowestOct, gridSnap, trailEnabled, chordFollow,
-    events, isArmed, isRecording, isLooping, loopDuration, loopBars, quantize,
+    events, isArmed, isRecording, isStepRecording, stepCursorMs, isLooping, loopDuration, loopBars, quantize,
     setTarget, setMode, setChordSetIndex, setYParam, setScaleOctaves, setScaleLowestOct, setGridSnap, setTrailEnabled, setChordFollow,
-    armRecording, stopRecording, clearRecording, appendEvent, setLoopBars, setQuantize,
+    armRecording, startStepRecording, stopRecording, clearRecording, appendEvent, setLoopBars, setQuantize,
     startLoop, stopLoop,
   } = usePerformancePadStore();
 
@@ -774,16 +774,32 @@ export function PerformancePad({ isOpen, onClose }: Props) {
         )}
 
         {/* Recording controls */}
-        {!isRecording && !isArmed ? (
-          <button onClick={armRecording}
-            className="px-3 h-6 text-[9px] font-bold rounded bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-all"
-            title="Arm recording — starts on first note"
-          >● REC</button>
+        {!isRecording && !isArmed && !isStepRecording ? (
+          <>
+            <button onClick={armRecording}
+              className="px-3 h-6 text-[9px] font-bold rounded bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-all"
+              title="Live recording — starts on first note you play"
+            >● REC</button>
+            <button onClick={() => startStepRecording(bpm)}
+              className="px-3 h-6 text-[9px] font-bold rounded bg-blue-500/15 text-blue-300 hover:bg-blue-500/25 transition-all"
+              title="Step recording — each tap places a note at the current step (Q-grid), then auto-advances"
+            >⏵ STEP</button>
+          </>
         ) : isArmed ? (
           <button onClick={() => stopRecording(bpm)}
             className="px-3 h-6 text-[9px] font-bold rounded bg-yellow-500/25 text-yellow-300 animate-pulse transition-all"
             title="Waiting for first note — click to cancel"
           >◉ ARMED</button>
+        ) : isStepRecording ? (
+          <>
+            <button onClick={() => stopRecording(bpm)}
+              className="px-3 h-6 text-[9px] font-bold rounded bg-blue-500/40 text-blue-100 animate-pulse transition-all"
+              title={`Step recording — cursor at ${(stepCursorMs / 1000).toFixed(2)}s`}
+            >■ STOP STEP</button>
+            <span className="text-[8px] text-blue-300/70 font-mono">
+              {(stepCursorMs / 1000).toFixed(2)}s / {(loopDuration / 1000).toFixed(1)}s
+            </span>
+          </>
         ) : (
           <button onClick={() => stopRecording(bpm)}
             className="px-3 h-6 text-[9px] font-bold rounded bg-red-500/40 text-red-100 animate-pulse transition-all"
@@ -866,9 +882,11 @@ export function PerformancePad({ isOpen, onClose }: Props) {
               ? <span className="text-yellow-400 animate-pulse font-bold tracking-[0.3em]">● ARMED — PRESS ANY KEY TO START RECORDING</span>
               : isRecording
                 ? <span className="text-red-400 font-bold tracking-[0.3em]">● RECORDING</span>
-                : mode === "chords"
-                  ? `${chordSet.name} · ${chordSet.cells.length} CHORDS · MULTI-TOUCH`
-                  : "BERÜHREN · HALTEN · BEWEGEN — MULTI-TOUCH"}
+                : isStepRecording
+                  ? <span className="text-blue-300 font-bold tracking-[0.3em]">⏵ STEP MODE — each tap advances one {quantize === "off" ? "1/16" : quantize} step</span>
+                  : mode === "chords"
+                    ? `${chordSet.name} · ${chordSet.cells.length} CHORDS · MULTI-TOUCH`
+                    : "BERÜHREN · HALTEN · BEWEGEN — MULTI-TOUCH"}
           </div>
 
           {/* Key/Scale indicator — top-right corner */}

@@ -142,6 +142,8 @@ interface PerformancePadState {
   events: PadEvent[];
   isArmed: boolean;         // REC pressed, waiting for first note to actually start
   isRecording: boolean;
+  isStepRecording: boolean; // Step-record mode — each press places a note at the current step and advances
+  stepCursorMs: number;     // Current "virtual time" position in step mode (ms from loop start)
   isLooping: boolean;
   recordStart: number;      // performance.now() at record start (first-note-touch)
   loopDuration: number;     // ms, set after first recording (quantized if loopBars set)
@@ -164,6 +166,7 @@ interface PerformancePadState {
 
   // Recording API
   armRecording: () => void;     // Arm for recording — starts on first note
+  startStepRecording: (bpm: number) => void;
   stopRecording: (bpm: number) => void;  // bpm needed to compute bar-snapped loop length
   clearRecording: () => void;
   appendEvent: (ev: Omit<PadEvent, "t">) => void;
@@ -190,6 +193,8 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
   events: [],
   isArmed: false,
   isRecording: false,
+  isStepRecording: false,
+  stepCursorMs: 0,
   isLooping: false,
   recordStart: 0,
   loopDuration: 0,
@@ -215,14 +220,37 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
     set({
       isArmed: true,
       isRecording: false,
+      isStepRecording: false,
       events: [],
       loopDuration: 0,
       recordStart: 0,
     });
   },
 
+  startStepRecording: (bpm: number) => {
+    const s = get();
+    if (s.isLooping) s.stopLoop();
+    set({
+      isArmed: false,
+      isRecording: false,
+      isStepRecording: true,
+      stepCursorMs: 0,
+      recordStart: performance.now(), // placeholder, step mode doesn't use it
+      events: [],
+      // Auto-set loopDuration based on loopBars or default 2 bars
+      loopDuration: s.loopBars > 0
+        ? s.loopBars * (60000 / bpm) * 4
+        : 2 * (60000 / bpm) * 4,
+    });
+  },
+
   stopRecording: (bpm: number) => {
     const s = get();
+    // Step recording: just flip the flag off — events + loopDuration are already set
+    if (s.isStepRecording) {
+      set({ isStepRecording: false });
+      return;
+    }
     if (!s.isRecording && !s.isArmed) return;
     const now = performance.now();
     const measuredDuration = s.recordStart > 0 ? now - s.recordStart : 0;
@@ -234,7 +262,12 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
       finalDuration = s.loopBars * msPerBar;
     }
 
-    // Apply quantization to event timings if enabled
+    // Apply quantization to event timings if enabled.
+    //   - Note starts (down) snap to grid.
+    //   - Note ends (up) snap to grid AND are guaranteed to be at least one
+    //     grid step AFTER their matching down (prevents zero-length notes).
+    //   - Move events (gesture trails) stay unquantized so pitch-bends / Y-
+    //     modulation remain smooth.
     let finalEvents = s.events;
     if (s.quantize !== "off" && bpm > 0) {
       const beatMs = 60000 / bpm;
@@ -245,15 +278,24 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
         "1/32": beatMs / 8,
       };
       const grid = divisions[s.quantize as Exclude<typeof s.quantize, "off">];
-      finalEvents = s.events.map((e) => ({
-        ...e,
-        t: e.type === "down"
-          ? Math.round(e.t / grid) * grid          // Snap note starts
-          : e.type === "up"
-            ? Math.round(e.t / grid) * grid        // Snap note ends
-            : e.t,                                  // Don't snap moves (would stutter gestures)
-      }));
-      // Ensure events stay sorted after quantization
+      // Pass 1: snap down events to grid; remember each pointer's quantized down time
+      const downTimes = new Map<number, number>();
+      finalEvents = s.events.map((e) => {
+        if (e.type === "down") {
+          const snapped = Math.round(e.t / grid) * grid;
+          downTimes.set(e.pointerId, snapped);
+          return { ...e, t: snapped };
+        }
+        if (e.type === "up") {
+          const downT = downTimes.get(e.pointerId) ?? e.t;
+          const snapped = Math.round(e.t / grid) * grid;
+          // Ensure at least one grid step between down and up (no zero-length notes)
+          const t = Math.max(snapped, downT + grid);
+          downTimes.delete(e.pointerId);
+          return { ...e, t };
+        }
+        return e; // move events unquantized
+      });
       finalEvents.sort((a, b) => a.t - b.t);
     }
 
@@ -268,11 +310,46 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
   clearRecording: () => {
     const s = get();
     if (s.isLooping) s.stopLoop();
-    set({ events: [], loopDuration: 0, isRecording: false, isArmed: false });
+    set({ events: [], loopDuration: 0, isRecording: false, isArmed: false, isStepRecording: false, stepCursorMs: 0 });
   },
 
   appendEvent: (ev) => {
     const s = get();
+
+    // Step-record mode: each pointer-down places a note at stepCursorMs
+    // and auto-advances the cursor by one quantize grid. "move" events are
+    // ignored. "up" event finalizes note length (one grid step by default).
+    if (s.isStepRecording) {
+      if (ev.type === "move") return; // no gesture tracking in step mode
+      // We need BPM to compute grid — read from drumStore via window
+      const bpm = (window as unknown as { __drumStore?: { getState: () => { bpm: number } } })
+        .__drumStore?.getState().bpm ?? 120;
+      const beatMs = 60000 / bpm;
+      const gridMap: Record<typeof s.quantize, number> = {
+        "off":  beatMs / 4,   // default: 1/16 if Q is off in step mode
+        "1/4":  beatMs,
+        "1/8":  beatMs / 2,
+        "1/16": beatMs / 4,
+        "1/32": beatMs / 8,
+      };
+      const grid = gridMap[s.quantize];
+
+      if (ev.type === "down") {
+        const downT = s.stepCursorMs;
+        // Push synthetic down + up pair for this step
+        set((state) => ({
+          events: [
+            ...state.events,
+            { ...ev, t: downT },
+            { ...ev, t: downT + grid * 0.95, type: "up" as const },
+          ],
+          // Advance cursor by one grid step, wrap at loopDuration
+          stepCursorMs: (downT + grid) % (state.loopDuration || grid * 16),
+        }));
+      }
+      return;
+    }
+
     // If armed and this is the first event, start recording NOW
     if (s.isArmed && ev.type === "down") {
       const startTime = performance.now();

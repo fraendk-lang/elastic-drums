@@ -264,9 +264,9 @@ export class BassEngine {
 
   /**
    * Schedule the 303 filter envelope via the filter chain.
-   * The 303 has a very fast attack (~2-3ms) and a sharp exponential decay.
-   * Accent dramatically increases the envelope depth and peak.
-   * Uses smooth 5ms timer update for professional envelope shaping.
+   * Fast attack + sharp exponential decay. Accent dramatically increases
+   * envelope depth and peak. JS timer drives filterChain.update at 60Hz
+   * (down from 200Hz) — imperceptibly smooth for filter sweeps, 3× less CPU.
    */
   private scheduleFilterEnvelope(_time: number, accent: boolean, slide: boolean): void {
     if (!this.filterChain) return;
@@ -291,11 +291,9 @@ export class BassEngine {
       const now = this.ctx?.currentTime ?? 0;
 
       if (elapsed < attackMs / 1000) {
-        // Attack phase: ramp to peak
         const t = elapsed / (attackMs / 1000);
         currentFreq = filterBase + (filterPeak - filterBase) * t;
       } else {
-        // Decay phase: exponential decay from peak to base
         const decayElapsed = elapsed - attackMs / 1000;
         const t = Math.exp(-decayElapsed / (decaySec / 3));
         currentFreq = filterBase + (filterPeak - filterBase) * t;
@@ -303,13 +301,12 @@ export class BassEngine {
 
       this.filterChain?.update(currentFreq, res, now);
 
-      // Stop after envelope is essentially done
       if (elapsed > attackMs / 1000 + decaySec * 2) {
         clearInterval(this._filterEnvTimer!);
         this._filterEnvTimer = null;
         this.filterChain?.update(filterBase, res, now);
       }
-    }, 5); // 5ms = 200Hz update rate, smooth enough for filter sweep
+    }, 16); // 16ms = 60Hz — smooth for filter envelopes, 3× less CPU than 5ms
   }
 
   /** Trigger a bass note */
@@ -320,9 +317,13 @@ export class BassEngine {
     const subFreq = freq / 2; // One octave below
     const p = this.params;
 
-    // Unmute output on first note (was muted at init to prevent idle noise)
-    if (this.output && this.output.gain.value === 0) {
-      this.output.gain.value = this.params.volume;
+    // Unmute output on first note — smooth 15ms ramp instead of instant jump
+    // (was: clicks because running oscillators sit at random DC phase when gain opens).
+    if (this.output && this.output.gain.value === 0 && this.ctx) {
+      const t = this.ctx.currentTime;
+      this.output.gain.cancelScheduledValues(t);
+      this.output.gain.setValueAtTime(0.0001, t);
+      this.output.gain.linearRampToValueAtTime(this.params.volume, t + 0.015);
     }
 
     // Legato mode forces slide on every note (acid-style glide between all notes)
