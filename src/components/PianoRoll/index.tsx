@@ -21,7 +21,7 @@ import {
 } from "./types";
 import { generateHarmony, harmonizeNotes, type HarmonyType } from "./harmony";
 import { previewNote } from "./preview";
-import { setPianoRollNotes, setPianoRollLoop } from "./scheduler";
+import { setPianoRollNotes, setPianoRollLoop, getPianoRollCurrentStep } from "./scheduler";
 import {
   _persistedNotes as initialPersistedNotes,
   _persistedLoop as initialPersistedLoop,
@@ -104,7 +104,18 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
 
   // ─── Layout ──────────────────────────────────────────────────
   const patternLength = useDrumStore((s) => s.pattern.length);
-  const totalBeats = Math.max(16, patternLength / 4);
+  // Auto-extend Piano Roll length to fit all imported notes — rounded up
+  // to the nearest 4-bar boundary (16 beats). Prevents off-screen clipping
+  // of notes from long XY-pad recordings or MIDI imports.
+  const notesMaxEnd = useMemo(() => {
+    if (notes.length === 0) return 0;
+    return notes.reduce((m, n) => Math.max(m, n.start + n.duration), 0);
+  }, [notes]);
+  const totalBeats = useMemo(() => {
+    const minBeats = Math.max(16, patternLength / 4);
+    const notesBeats = Math.ceil(notesMaxEnd / 16) * 16; // Round up to 4-bar unit
+    return Math.max(minBeats, notesBeats);
+  }, [patternLength, notesMaxEnd]);
   const rootMidi = 60 + rootNote;
   const accentColor = TARGET_COLORS[target];
 
@@ -1016,7 +1027,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         );
         return;
       }
-      const playheadBeat = (useTransportStore.getState().currentStep * 0.25) % totalBeats;
+      const playheadBeat = (getPianoRollCurrentStep() * 0.25) % totalBeats;
       if (type === "harmonize-3rds" || type === "harmonize-5ths") {
         const selected = notes.filter((n) => selectedNoteIds.has(n.id));
         if (selected.length === 0) return;
@@ -1032,7 +1043,11 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   );
 
   // ─── DERIVED ──────────────────────────────────────────────────
-  const playheadBeat = currentStep / 4;
+  // Use piano roll's independent step counter — the scheduler keeps counting
+  // past the drum pattern's wrap (e.g. drum = 1 bar, piano roll = 4 bars).
+  // currentStep dep ensures this recomputes every transport tick for playhead animation.
+  void currentStep;
+  const playheadBeat = getPianoRollCurrentStep() / 4;
   const selectedCount = selectedNoteIds.size;
   const targetNoteCount = notes.filter((note) => note.track === target).length;
   const averageSelectedVelocity = useMemo(() => {

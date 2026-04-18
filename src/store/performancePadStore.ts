@@ -336,12 +336,13 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
 
       if (ev.type === "down") {
         const downT = s.stepCursorMs;
-        // Push synthetic down + up pair for this step
+        // Note dauert volle grid-Länge (legato feel) — liefert sichtbare,
+        // musikalische Noten in der Piano Roll statt winzigen Dots.
         set((state) => ({
           events: [
             ...state.events,
             { ...ev, t: downT },
-            { ...ev, t: downT + grid * 0.95, type: "up" as const },
+            { ...ev, t: downT + grid, type: "up" as const },
           ],
           // Advance cursor by one grid step, wrap at loopDuration
           stepCursorMs: (downT + grid) % (state.loopDuration || grid * 16),

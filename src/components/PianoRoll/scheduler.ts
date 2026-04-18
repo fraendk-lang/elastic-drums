@@ -20,6 +20,21 @@ let _pianoRollStepCounter = 0;
 const _activePlaybackNotes = new Set<string>();
 const _noteReleaseTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+/** Current piano-roll-internal step position, independent of drum pattern length.
+ *  Used by the UI to render a playhead that traverses the full piano-roll length
+ *  even when the underlying drum pattern is only 1 bar and loops. */
+export function getPianoRollCurrentStep(): number {
+  if (_pianoRollNotes.length === 0) return 0;
+  const drumPatternLen = useDrumStore.getState().pattern.length;
+  const defaultLen = Math.max(64, drumPatternLen);
+  const pianoRollLen = _loopRange.enabled
+    ? Math.max(1, Math.round((_loopRange.end - _loopRange.start) * 4))
+    : defaultLen;
+  const wrapped = _pianoRollStepCounter % pianoRollLen;
+  const loopOffset = _loopRange.enabled ? Math.round(_loopRange.start * 4) : 0;
+  return loopOffset + wrapped;
+}
+
 export function setPianoRollNotes(notes: PianoRollNote[]): void {
   _pianoRollNotes = notes;
 }

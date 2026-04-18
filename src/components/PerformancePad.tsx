@@ -163,11 +163,14 @@ export function PerformancePad({ isOpen, onClose }: Props) {
 
     const { importPianoRollNotes } = await import("./PianoRoll/persistedState");
     const { uid } = await import("./PianoRoll/types");
+    // Minimum note duration = 1/16 (0.25 beats) so exported notes are always
+    // clearly visible and musical in the Piano Roll. Very-short taps on the
+    // pad wouldn't survive otherwise.
     const pianoRollNotes: import("./PianoRoll/types").PianoRollNote[] = rawNotes.map((n) => ({
       id: uid(),
       midi: xToMidi(n.x),
       start: n.startMs / msPerBeat,
-      duration: Math.max(0.05, (n.endMs - n.startMs) / msPerBeat),
+      duration: Math.max(0.25, (n.endMs - n.startMs) / msPerBeat),
       velocity: Math.max(0.1, Math.min(1, n.velocity)),
       track: target === "bass" ? "bass" : "melody",
     }));
