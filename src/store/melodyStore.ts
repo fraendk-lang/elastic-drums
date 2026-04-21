@@ -940,7 +940,9 @@ export function startMelodyScheduler() {
             : baseVel;
           // Humanize: timing jitter ±30ms max
           const humanOffset = humanize.timing > 0 ? (Math.random() - 0.5) * humanize.timing * 0.03 : 0;
-          const startT = nextMelodyStepTime + humanOffset;
+          // Clamp to 2 ms ahead — scheduling in the past causes cancelScheduledValues
+          // to fire on currently-active audio graph nodes, producing click artefacts.
+          const startT = Math.max(nextMelodyStepTime + humanOffset, audioEngine.currentTime + 0.002);
 
           // Layer intervals (octave/fifth/triad) — fires additional softer voices
           const layerOffsets = computeLayerIntervals(layerMode, midiNote, rootNote, scaleName);

@@ -114,6 +114,97 @@ export const CHORD_SETS: ChordSet[] = [
       C("Cmaj9", 5, [0,4,7,11,14],"#fbbf24"), C("Am7",   14, SEVEN_MIN7, "#a78bfa"),
     ],
   },
+
+  // Funk — dominant 7ths + 9ths
+  {
+    name: "Funk / R&B",
+    rootMidi: 60, // C anchor
+    cols: 4, rows: 2,
+    cells: [
+      C("C9",    0, [0,4,7,10,14], "#f59e0b"), C("F9",    5, [0,4,7,10,14], "#f59e0b"),
+      C("G7",    7, SEVEN_DOM7,    "#f472b6"), C("Bb7",  10, SEVEN_DOM7,    "#f472b6"),
+      C("Cm7",   0, SEVEN_MIN7,    "#a78bfa"), C("Fm7",   5, SEVEN_MIN7,    "#a78bfa"),
+      C("Ab7",   8, SEVEN_DOM7,    "#fb923c"), C("Eb9",   3, [0,4,7,10,14], "#f59e0b"),
+    ],
+  },
+
+  // Gospel / Soul — rich 7ths with chromatic moves
+  {
+    name: "Gospel / Soul",
+    rootMidi: 60, // C anchor
+    cols: 4, rows: 2,
+    cells: [
+      C("Cmaj7",  0, SEVEN_MAJ7,    "#fbbf24"), C("Am7",    9, SEVEN_MIN7, "#a78bfa"),
+      C("Fmaj7",  5, SEVEN_MAJ7,    "#fbbf24"), C("G7sus4", 7, [0,5,7,10], "#34d399"),
+      C("Dm9",    2, [0,3,7,10,14], "#a78bfa"), C("E7",     4, SEVEN_DOM7, "#f472b6"),
+      C("Ab7",    8, SEVEN_DOM7,    "#fb923c"), C("G7",     7, SEVEN_DOM7, "#f472b6"),
+    ],
+  },
+
+  // Natural Minor — diatonic triads of A minor
+  {
+    name: "A Minor Diatonic",
+    rootMidi: 57, // A anchor
+    cols: 4, rows: 2,
+    cells: [
+      C("i   Am",  0, TRIAD_MIN, "#a78bfa"), C("ii° B°", 2, TRIAD_DIM, "#f87171"),
+      C("III C",   3, TRIAD_MAJ, "#f472b6"), C("iv  Dm", 5, TRIAD_MIN, "#a78bfa"),
+      C("v   Em",  7, TRIAD_MIN, "#a78bfa"), C("VI  F",  8, TRIAD_MAJ, "#f472b6"),
+      C("VII G",  10, TRIAD_MAJ, "#f472b6"), C("i+8",   12, TRIAD_MIN, "#fbbf24"),
+    ],
+  },
+
+  // Dorian Mode — minor with raised 6th (jazz / neo-soul)
+  {
+    name: "Dorian Modal",
+    rootMidi: 62, // D anchor
+    cols: 4, rows: 2,
+    cells: [
+      C("i  Dm7",  0, SEVEN_MIN7, "#a78bfa"), C("II E7",  2, SEVEN_DOM7, "#f472b6"),
+      C("III F",   3, TRIAD_MAJ,  "#f472b6"), C("IV G7",  5, SEVEN_DOM7, "#fb923c"),
+      C("v  Am7",  7, SEVEN_MIN7, "#a78bfa"), C("vi B°",  9, TRIAD_DIM,  "#f87171"),
+      C("VII C",  10, TRIAD_MAJ,  "#f472b6"), C("Dm9",    0, [0,3,7,10,14], "#fbbf24"),
+    ],
+  },
+
+  // Blues — dominant 7ths I-IV-V classic 12-bar building blocks
+  {
+    name: "12-Bar Blues",
+    rootMidi: 60, // C anchor
+    cols: 4, rows: 2,
+    cells: [
+      C("C7",   0, SEVEN_DOM7, "#f59e0b"), C("F7",   5, SEVEN_DOM7, "#f59e0b"),
+      C("G7",   7, SEVEN_DOM7, "#f59e0b"), C("Bb",  10, TRIAD_MAJ,  "#f472b6"),
+      C("C9",   0, [0,4,7,10,14], "#fb923c"), C("F9",  5, [0,4,7,10,14], "#fb923c"),
+      C("G9",   7, [0,4,7,10,14], "#fb923c"), C("Eb7", 3, SEVEN_DOM7, "#f59e0b"),
+    ],
+  },
+
+  // Techno / Dark — power chords + minor movement
+  {
+    name: "Techno / Dark",
+    rootMidi: 57, // A anchor
+    cols: 4, rows: 2,
+    cells: [
+      C("Am",   0, TRIAD_MIN, "#f87171"), C("F",    8, TRIAD_MAJ, "#a78bfa"),
+      C("G",   10, TRIAD_MAJ, "#a78bfa"), C("Em",   7, TRIAD_MIN, "#f87171"),
+      C("A5",   0, [0,7],     "#f87171"), C("D5",   5, [0,7],     "#f87171"),
+      C("E5",   7, [0,7],     "#f87171"), C("C5",   3, [0,7],     "#a78bfa"),
+    ],
+  },
+
+  // Andalusian Cadence — iv–III–II–I (Flamenco / Exotic)
+  {
+    name: "Andalusian",
+    rootMidi: 64, // E anchor (Phrygian feel)
+    cols: 4, rows: 2,
+    cells: [
+      C("Am",   0, TRIAD_MIN, "#f59e0b"), C("G",   -2, TRIAD_MAJ, "#f472b6"),
+      C("F",   -4, TRIAD_MAJ, "#f472b6"), C("E",   -5, TRIAD_MAJ, "#fb923c"),
+      C("Am7",  0, SEVEN_MIN7,"#f59e0b"), C("Gsus4",-2,[0,5,7],   "#34d399"),
+      C("Fmaj7",-4,SEVEN_MAJ7,"#fbbf24"), C("E7",  -5, SEVEN_DOM7,"#fb923c"),
+    ],
+  },
 ];
 
 export interface PadEvent {

@@ -323,11 +323,17 @@ export class MelodyEngine {
   }
 
   /** Trigger a melody note */
-  triggerNote(midiNote: number, time: number, accent: boolean, slide: boolean, tie: boolean, velocity = 0.85): void {
+  triggerNote(midiNote: number, timeRaw: number, accent: boolean, slide: boolean, tie: boolean, velocity = 0.85): void {
+    if (!this.ctx) return;
+    // Clamp scheduling time to at least 2 ms in the future.
+    // Scheduling in the past causes cancelScheduledValues to abruptly
+    // zero the VCA, producing the characteristic crackle/click artefact.
+    const time = Math.max(timeRaw, this.ctx.currentTime + 0.002);
+
     // Unmute output — 3ms ramp prevents DC clicks from running oscillators
     // while staying below audible soft-attack threshold (scene transitions
     // on bar-downbeats stay tight).
-    if (this.output && this.output.gain.value === 0 && this.ctx) {
+    if (this.output && this.output.gain.value === 0) {
       const t = this.ctx.currentTime;
       this.output.gain.cancelScheduledValues(t);
       this.output.gain.setValueAtTime(0.0001, t);
@@ -459,10 +465,12 @@ export class MelodyEngine {
 
   /** Release (note off) */
   releaseNote(time: number): void {
-    if (!this.vca) return;
-    this.vca.gain.cancelScheduledValues(time);
+    if (!this.vca || !this.ctx) return;
+    // Clamp to 1 ms ahead to avoid cancelling already-applied envelope work
+    const safeTime = Math.max(time, this.ctx.currentTime + 0.001);
+    this.vca.gain.cancelScheduledValues(safeTime);
     // Fairly fast release but not instant
-    this.vca.gain.setTargetAtTime(0, time, 0.015);
+    this.vca.gain.setTargetAtTime(0, safeTime, 0.015);
     this.noteIsOn = false;
     if (this._autoReleaseTimer) { clearTimeout(this._autoReleaseTimer); this._autoReleaseTimer = null; }
   }

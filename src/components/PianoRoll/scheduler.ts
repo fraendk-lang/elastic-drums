@@ -59,7 +59,12 @@ function releaseAllActiveNotes(): void {
   const now = audioEngine.currentTime + 0.005;
   bassEngine.releaseNote(now);
   chordsEngine.releaseChord(now);
-  melodyEngine.releaseNote(now);
+  // Only release melodyEngine when it is the active audio path.
+  // When soundFontEngine handles melody the step-sequencer still owns
+  // melodyEngine, so we must not cancel its scheduled releases.
+  if (!soundFontEngine.isLoaded("melody")) {
+    melodyEngine.releaseNote(now);
+  }
   _activePlaybackNotes.clear();
   for (const timer of _noteReleaseTimers.values()) clearTimeout(timer);
   _noteReleaseTimers.clear();
@@ -127,7 +132,8 @@ function pianoRollTick(currentStep: number, bpm: number): void {
       }
       if (target === "bass") bassEngine.releaseNote(t);
       else if (target === "chords") chordsEngine.releaseChord(t);
-      else if (target === "melody") melodyEngine.releaseNote(t);
+      // Melody: only release monophonic engine when it is the active path.
+      else if (target === "melody" && !soundFontEngine.isLoaded("melody")) melodyEngine.releaseNote(t);
     }
   }
 
@@ -188,7 +194,8 @@ function pianoRollTick(currentStep: number, bpm: number): void {
         const now = audioEngine.currentTime;
         if (target === "bass") bassEngine.releaseNote(now);
         else if (target === "chords") chordsEngine.releaseChord(now);
-        else if (target === "melody") melodyEngine.releaseNote(now);
+        // Melody safety net: only fire when piano roll owns the engine path.
+        else if (target === "melody" && !soundFontEngine.isLoaded("melody")) melodyEngine.releaseNote(now);
       }, safetyMs);
       _noteReleaseTimers.set(note.id, timer);
     }
