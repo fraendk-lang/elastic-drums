@@ -788,6 +788,8 @@ export const MELODY_STRATEGIES: MelodyStrategy[] = [
 
 // ─── Store Interface ─────────────────────────────────────
 
+export type MelodyStepNoteValue = "1/4" | "1/8" | "1/16";
+
 interface MelodyStore {
   steps: MelodyStep[];
   length: number;
@@ -808,6 +810,8 @@ interface MelodyStore {
   humanize: HumanizeSettings;
   layerMode: LayerMode;
   layerVelocity: number;  // 0-1, relative to main note velocity
+  stepNoteValue: MelodyStepNoteValue;
+  setStepNoteValue: (v: MelodyStepNoteValue) => void;
   /** Live semitone transpose applied on top of every scheduled note
    *  (used by XY Pad chord-follow — set on chord down, reset on chord up). */
   liveTransposeOffset: number;
@@ -869,7 +873,9 @@ export function startMelodyScheduler() {
     if (!drumState?.isPlaying) return;
 
     const bpm = drumState.bpm;
-    const secondsPerStep = 60.0 / bpm / 4;
+    const { stepNoteValue } = useMelodyStore.getState();
+    const stepDivider = stepNoteValue === "1/4" ? 1 : stepNoteValue === "1/8" ? 2 : 4;
+    const secondsPerStep = 60.0 / bpm / stepDivider;
 
     const getLegacyTieLength = (sequence: MelodyStep[], startIndex: number, sequenceLength: number) => {
       let span = 1;
@@ -1023,8 +1029,10 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
   humanize: { ...DEFAULT_HUMANIZE },
   layerMode: "off",
   layerVelocity: 0.55,
+  stepNoteValue: "1/16",
   liveTransposeOffset: 0,
   setLiveTransposeOffset: (semis) => set({ liveTransposeOffset: semis }),
+  setStepNoteValue: (v) => set({ stepNoteValue: v }),
 
   setArp: (key, value) => set((s) => ({ arp: { ...s.arp, [key]: value } })),
   setHumanize: (key, value) => set((s) => ({ humanize: { ...s.humanize, [key]: value } })),

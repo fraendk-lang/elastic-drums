@@ -50,6 +50,7 @@ export function MelodySequencer() {
     setAutomationValue, setAutomationParam,
     arp, humanize, setArp, setHumanize,
     layerMode, layerVelocity, setLayerMode, setLayerVelocity,
+    stepNoteValue, setStepNoteValue,
   } = useMelodyStore();
 
   const isPlaying = useDrumStore((s) => s.isPlaying);
@@ -325,6 +326,7 @@ export function MelodySequencer() {
       {/* Compact Knobs Row — show synth or Soundfont knobs based on instrument */}
       {instrument === "_synth_" ? (
         <div className="flex items-center gap-1 px-3 py-1.5 border-b border-white/5 overflow-x-auto">
+          {/* Core filter + VCA knobs */}
           <Knob value={params.cutoff} min={200} max={8000} defaultValue={2000} label="CUT" color={MELODY_COLOR} size={34} onChange={(v) => setParam("cutoff", v)} />
           <Knob value={params.resonance} min={0} max={30} defaultValue={8} label="RES" color={MELODY_COLOR} size={34} onChange={(v) => setParam("resonance", v)} />
           <Knob value={Math.round(params.envMod * 100)} min={0} max={100} defaultValue={40} label="ENV" color={MELODY_COLOR} size={34} onChange={(v) => setParam("envMod", v / 100)} />
@@ -333,6 +335,28 @@ export function MelodySequencer() {
           <Knob value={params.slideTime} min={0} max={200} defaultValue={40} label="SLD" color={MELODY_COLOR} size={34} onChange={(v) => setParam("slideTime", v)} />
           <Knob value={Math.round(params.distortion * 100)} min={0} max={100} defaultValue={15} label="DRV" color={MELODY_COLOR} size={34} onChange={(v) => setParam("distortion", v / 100)} />
           <Knob value={Math.round(params.subOsc * 100)} min={0} max={100} defaultValue={10} label="SUB" color={MELODY_COLOR} size={34} onChange={(v) => setParam("subOsc", v / 100)} />
+
+          {/* Separator */}
+          <div className="w-px h-8 bg-white/8 mx-1 shrink-0" />
+
+          {/* Sound modeling: PW (only for square), Unison, Vibrato */}
+          {params.waveform === "square" && (
+            <Knob value={Math.round(params.pulseWidth * 100)} min={10} max={90} defaultValue={50} label="P·W" color={MELODY_COLOR} size={34} onChange={(v) => setParam("pulseWidth", v / 100)} />
+          )}
+          <Knob value={Math.round(params.unison * 100)} min={0} max={100} defaultValue={0} label="UNI" color={MELODY_COLOR} size={34} onChange={(v) => setParam("unison", v / 100)} />
+          <Knob value={Math.round(params.vibratoDepth * 100)} min={0} max={100} defaultValue={0} label="VBD" color={MELODY_COLOR} size={34} onChange={(v) => setParam("vibratoDepth", v / 100)} />
+          {params.vibratoDepth > 0 && (
+            <Knob value={params.vibratoRate} min={0.5} max={8} defaultValue={4} label="VBR" color={MELODY_COLOR} size={34} onChange={(v) => setParam("vibratoRate", v)} />
+          )}
+
+          {/* FM-specific knobs */}
+          {params.synthType === "fm" && (
+            <>
+              <div className="w-px h-8 bg-white/8 mx-1 shrink-0" />
+              <Knob value={params.fmHarmonicity} min={0.5} max={8} defaultValue={3} label="HRM" color={MELODY_COLOR} size={34} onChange={(v) => setParam("fmHarmonicity", v)} />
+              <Knob value={params.fmModIndex} min={0} max={30} defaultValue={10} label="FMI" color={MELODY_COLOR} size={34} onChange={(v) => setParam("fmModIndex", v)} />
+            </>
+          )}
         </div>
       ) : (
         <SoundFontKnobs channel={14} color={MELODY_COLOR} />
@@ -461,6 +485,22 @@ export function MelodySequencer() {
 
       {/* Row 2: Pages + length */}
       <div className="flex items-center gap-2 px-3 py-1 border-b border-white/5">
+        {/* Step note value selector */}
+        <div className="flex items-center gap-px bg-white/[0.03] rounded-md p-px shrink-0">
+          {(["1/4", "1/8", "1/16"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setStepNoteValue(v)}
+              title={`Step = ${v} note`}
+              className={`px-2 py-0.5 text-[8px] font-bold rounded transition-all ${
+                stepNoteValue === v
+                  ? "bg-[var(--ed-accent-melody)] text-black shadow-[0_0_6px_rgba(244,114,182,0.3)]"
+                  : "text-white/35 hover:text-white/65"
+              }`}
+            >{v}</button>
+          ))}
+        </div>
+        <div className="w-px h-4 bg-white/6" />
         <div className="flex gap-1">
           {pageNumbers.map((page) => (
             <button key={`page-tab-${page}`} onClick={() => setSelectedPage(page)}
