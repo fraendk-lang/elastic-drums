@@ -59,7 +59,22 @@ export function MelodySequencer() {
   const [durationDrag, setDurationDrag] = useState<{ sourceStep: number; endStep: number } | null>(null);
   const stepElRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [velocityLaneExpanded, setVelocityLaneExpanded] = useState(true);
-  // Knobs always visible (no collapse)
+
+  // ── Playhead trail: keep last 4 played absolute step indices ─────────────
+  const trailRef = useRef<number[]>([]);
+  const [trailSteps, setTrailSteps] = useState<number[]>([]);
+
+  useEffect(() => {
+    if (!isPlaying) {
+      trailRef.current = [];
+      setTrailSteps([]);
+      return;
+    }
+    // Prepend current step, keep at most 4 entries (head = most recent)
+    const next = [currentStep, ...trailRef.current.filter((s) => s !== currentStep)].slice(0, 4);
+    trailRef.current = next;
+    setTrailSteps(next);
+  }, [currentStep, isPlaying]);
 
   const pageOffset = selectedPage * 16;
   const totalPages = Math.max(1, Math.ceil(length / 16));
@@ -579,8 +594,14 @@ export function MelodySequencer() {
               onAuxClick={(e) => { if (e.button === 1 && isActive) { e.preventDefault(); cycleOctave(absStep); } }}>
               {isBeat && <div className="absolute top-0 bottom-0 left-0 w-px bg-white/[0.04]" />}
               {isCurrent && (
-                <div className="absolute top-0 left-0 right-0 h-[2px] rounded-full"
-                  style={{ background: "linear-gradient(90deg, var(--ed-accent-melody), transparent)", boxShadow: "0 0 8px rgba(244,114,182,0.4)" }} />
+                <>
+                  {/* Full-column background glow */}
+                  <div className="absolute inset-0 pointer-events-none rounded-sm"
+                    style={{ background: "linear-gradient(180deg, rgba(244,114,182,0.12) 0%, rgba(244,114,182,0.04) 100%)" }} />
+                  {/* Top accent bar */}
+                  <div className="absolute top-0 left-0 right-0 h-[3px] rounded-full"
+                    style={{ background: "var(--ed-accent-melody)", boxShadow: "0 0 10px rgba(244,114,182,0.6), 0 0 3px rgba(244,114,182,0.8)" }} />
+                </>
               )}
               {isActive && !isTiedFromPrev && visibleLength > 1 && (
                 <div
@@ -630,7 +651,26 @@ export function MelodySequencer() {
                   <div className="absolute inset-0 rounded-sm" style={{ backgroundColor: "rgba(34,211,238,0.25)" }} />
                 )}
               </div>
-              <div className={`text-center text-[7px] font-mono mt-0.5 ${isCurrent ? "text-[var(--ed-accent-melody)] font-bold" : isBeat ? "text-white/15" : "text-white/8"}`}>{absStep + 1}</div>
+              {/* Playhead trail dot */}
+              {(() => {
+                const trailIdx = trailSteps.indexOf(absStep);
+                const trailOpacity = trailIdx === 0 ? 1 : trailIdx === 1 ? 0.5 : trailIdx === 2 ? 0.25 : 0;
+                return trailOpacity > 0 ? (
+                  <div
+                    className="mx-auto mt-0.5 rounded-full transition-all duration-75"
+                    style={{
+                      width: trailIdx === 0 ? 6 : trailIdx === 1 ? 4 : 3,
+                      height: trailIdx === 0 ? 6 : trailIdx === 1 ? 4 : 3,
+                      backgroundColor: "var(--ed-accent-melody)",
+                      opacity: trailOpacity,
+                      boxShadow: trailIdx === 0
+                        ? "0 0 8px var(--ed-accent-melody), 0 0 2px var(--ed-accent-melody)"
+                        : "none",
+                    }}
+                  />
+                ) : <div className="mt-0.5" style={{ height: 6 }} />;
+              })()}
+              <div className={`text-center text-[7px] font-mono ${isCurrent ? "text-[var(--ed-accent-melody)] font-bold" : isBeat ? "text-white/15" : "text-white/8"}`}>{absStep + 1}</div>
               {isActive && (
                 <div className="flex justify-center gap-[2px] mt-[1px] min-h-[8px]">
                   {step.accent && <div className="w-2 h-2 rounded-full bg-red-400/80" />}
