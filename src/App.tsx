@@ -3,6 +3,7 @@ import { PadGrid } from "./components/PadGrid";
 import { StepSequencer } from "./components/StepSequencer";
 import { Transport } from "./components/Transport";
 import { MixerStrip } from "./components/MixerStrip";
+import { MixerBar } from "./components/MixerBar";
 import { VoiceEditor } from "./components/VoiceEditor";
 import { FxRack } from "./components/FxRack";
 import { SynthSection } from "./components/SynthSection";
@@ -435,6 +436,9 @@ export function App() {
             <MixerStrip onOpenMixer={() => overlay.openOverlay("mixer")} />
           </div>
         </div>
+
+        {/* Permanent Mixer Bar — always visible below sequencer */}
+        <MixerBar />
 
         <div className="relative shrink-0">
           <div
