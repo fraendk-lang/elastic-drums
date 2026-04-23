@@ -1,0 +1,163 @@
+/**
+ * Loop Player Engine — 4-slot tempo-synced audio loop player
+ *
+ * Architecture per slot:
+ *   source (loop=true) → gainNode → output
+ *
+ * Tempo sync:
+ *   source.playbackRate = globalBpm / slotOriginalBpm
+ *
+ * Changing BPM while playing:
+ *   updatePlaybackRate() applies the new rate without restarting the source
+ */
+
+const SLOT_COUNT = 4;
+
+export class LoopPlayerEngine {
+  private ctx: AudioContext | null = null;
+  private output: GainNode | null = null;
+
+  // Per-slot active audio nodes
+  private sources: (AudioBufferSourceNode | null)[] = new Array(SLOT_COUNT).fill(null);
+  private gains:   (GainNode | null)[]              = new Array(SLOT_COUNT).fill(null);
+
+  init(ctx: AudioContext): void {
+    this.ctx = ctx;
+    this.output = ctx.createGain();
+    this.output.gain.value = 0.9;
+    // Caller is responsible for connecting output to destination
+  }
+
+  /**
+   * Start a loop slot. Stops any existing source on the slot first.
+   *
+   * @param slotIdx      - 0-based slot index (0–3)
+   * @param buffer       - decoded AudioBuffer (the full loop file)
+   * @param originalBpm  - native BPM of the audio file (e.g. 128)
+   * @param globalBpm    - current project BPM (e.g. 140)
+   * @param volume       - 0–1 slot volume
+   * @param startTime    - AudioContext time to begin playback
+   */
+  startSlot(
+    slotIdx: number,
+    buffer: AudioBuffer,
+    originalBpm: number,
+    globalBpm: number,
+    volume: number,
+    startTime: number,
+  ): void {
+    if (!this.ctx || !this.output) return;
+
+    // Always clean up any existing source first
+    this._stopSlotInternal(slotIdx, startTime);
+
+    const ctx = this.ctx;
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop      = true;
+    source.loopStart = 0;
+    source.loopEnd   = buffer.duration;
+
+    const rate = this._calcRate(originalBpm, globalBpm);
+    source.playbackRate.value = rate;
+
+    const gain = ctx.createGain();
+    gain.gain.value = Math.max(0, Math.min(1, volume));
+
+    source.connect(gain);
+    gain.connect(this.output);
+
+    source.start(Math.max(ctx.currentTime, startTime));
+
+    this.sources[slotIdx] = source;
+    this.gains[slotIdx]   = gain;
+
+    source.onended = () => {
+      if (this.sources[slotIdx] === source) {
+        this.sources[slotIdx] = null;
+        this.gains[slotIdx]   = null;
+      }
+    };
+  }
+
+  /**
+   * Stop a slot with a short fade-out (avoids click artifacts).
+   */
+  stopSlot(slotIdx: number, time: number): void {
+    this._stopSlotInternal(slotIdx, time);
+  }
+
+  /**
+   * Live-update playback rate of a running slot (e.g. when global BPM changes).
+   * No audio interruption — just adjusts speed.
+   */
+  updatePlaybackRate(slotIdx: number, originalBpm: number, globalBpm: number): void {
+    const source = this.sources[slotIdx];
+    if (!source || !this.ctx) return;
+    const rate = this._calcRate(originalBpm, globalBpm);
+    source.playbackRate.setValueAtTime(rate, this.ctx.currentTime);
+  }
+
+  /**
+   * Smoothly ramp slot volume (no click).
+   */
+  setVolume(slotIdx: number, volume: number): void {
+    const gain = this.gains[slotIdx];
+    if (!gain || !this.ctx) return;
+    gain.gain.setTargetAtTime(
+      Math.max(0, Math.min(1, volume)),
+      this.ctx.currentTime,
+      0.02,
+    );
+  }
+
+  /**
+   * Stop all slots immediately.
+   */
+  stopAll(): void {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      this._stopSlotInternal(i, now);
+    }
+  }
+
+  /** Returns true if a slot has an active AudioBufferSourceNode. */
+  isSlotActive(slotIdx: number): boolean {
+    return this.sources[slotIdx] !== null;
+  }
+
+  getOutput(): GainNode | null {
+    return this.output;
+  }
+
+  destroy(): void {
+    this.stopAll();
+    this.output = null;
+    this.ctx    = null;
+  }
+
+  // ── Private ──────────────────────────────────────────────
+
+  private _calcRate(originalBpm: number, globalBpm: number): number {
+    const raw = originalBpm > 0 ? globalBpm / originalBpm : 1;
+    return Math.max(0.1, Math.min(4, raw));
+  }
+
+  private _stopSlotInternal(slotIdx: number, time: number): void {
+    const source = this.sources[slotIdx];
+    const gain   = this.gains[slotIdx];
+    if (!source) return;
+
+    if (gain) {
+      try { gain.gain.setTargetAtTime(0, time, 0.015); } catch { /* ok */ }
+    }
+    try { source.stop(time + 0.06); } catch { /* already stopped */ }
+
+    this.sources[slotIdx] = null;
+    this.gains[slotIdx]   = null;
+  }
+}
+
+export const loopPlayerEngine = new LoopPlayerEngine();

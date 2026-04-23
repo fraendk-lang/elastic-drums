@@ -31,6 +31,7 @@ import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
 import { melodyEngine } from "./audio/MelodyEngine";
 import { samplerEngine } from "./audio/SamplerEngine";
+import { loopPlayerEngine } from "./audio/LoopPlayerEngine";
 import { startBassScheduler, stopBassScheduler } from "./store/bassStore";
 import { startChordsScheduler, stopChordsScheduler } from "./store/chordsStore";
 import { startMelodyScheduler, stopMelodyScheduler } from "./store/melodyStore";
@@ -162,6 +163,11 @@ export function App() {
         const samplerOut = samplerEngine.getOutput();
         const masterGain = audioEngine.getMasterGainNode();
         if (samplerOut && masterGain) samplerOut.connect(masterGain);
+
+        // Loop Player → Master gain
+        loopPlayerEngine.init(ctx);
+        const loopOut = loopPlayerEngine.getOutput();
+        if (loopOut && masterGain) loopOut.connect(masterGain);
       }
       setAudioReady(true);
 
