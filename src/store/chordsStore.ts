@@ -82,7 +82,7 @@ export const CHORDS_PRESETS: ChordsPreset[] = [
   // ── Genre ──
   { name: "Trance Supersaw", params: cp({ waveform: "sawtooth", cutoff: 1100, resonance: 5, envMod: 0.3, attack: 15, release: 250, detune: 22, distortion: 0.15, volume: 0.5, subOsc: 0.2 }) },
   { name: "Deep House", params: cp({ waveform: "triangle", filterModel: "ladder", cutoff: 820, resonance: 5, envMod: 0.22, attack: 10, release: 155, detune: 6, distortion: 0.06, volume: 0.52, subOsc: 0.16, chorus: 0.08, spread: 0.24, brightness: 0.22 }) },
-  { name: "Garage Stab", params: cp({ waveform: "sawtooth", cutoff: 1800, resonance: 11, envMod: 0.55, attack: 4, release: 110, detune: 7, distortion: 0.2, volume: 0.5, subOsc: 0 }) },
+  { name: "UK Garage Stab", params: cp({ waveform: "sawtooth", cutoff: 1800, resonance: 11, envMod: 0.55, attack: 4, release: 110, detune: 7, distortion: 0.2, volume: 0.5, subOsc: 0 }) },
   { name: "Dub Swell", params: cp({ waveform: "triangle", cutoff: 500, resonance: 8, envMod: 0.25, attack: 100, release: 600, detune: 20, distortion: 0.05, volume: 0.45, subOsc: 0.5 }) },
   // ── Professional New Presets ──
   { name: "Vintage Keys", params: cp({ waveform: "triangle", filterModel: "ladder", cutoff: 1500, resonance: 3, envMod: 0.1, attack: 10, release: 200, detune: 5, distortion: 0, volume: 0.55, subOsc: 0.1, chorus: 0, spread: 0.3, brightness: 0.2 }) },

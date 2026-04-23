@@ -21,11 +21,11 @@ export interface BassPreset {
 }
 
 export const BASS_SIGNATURE_PRESET_NAMES = [
-  "Deep Sub",
-  "Analog Warmth",
-  "House Groove",
-  "Tape Bass",
   "Classic 303",
+  "Deep Sub",
+  "House Groove",
+  "Analog Warmth",
+  "DnB Reese",
 ] as const;
 
 const bp = (p: Partial<BassParams>): BassParams => ({ ...DEFAULT_BASS_PARAMS, ...p });
@@ -36,74 +36,72 @@ function ensureFilterModel(p: BassParams): BassParams {
 }
 
 export const BASS_PRESETS: BassPreset[] = [
-  // ── Classic Acid ──
-  { name: "Classic 303", params: bp({ cutoff: 420, resonance: 20, envMod: 0.78, decay: 135, accent: 0.58, slideTime: 42, distortion: 0.34, volume: 0.64, subOsc: 0.08, filterModel: "ladder", punch: 0.22, harmonics: 0.18, subFilter: 72 }) },
-  { name: "Warm Vintage", params: bp({ waveform: "square", cutoff: 200, resonance: 4, envMod: 0.15, decay: 300, accent: 0.3, slideTime: 80, distortion: 0.35, volume: 0.7, subOsc: 0.6, filterModel: "ladder", punch: 0.15, harmonics: 0.2, subFilter: 60 }) },
-  { name: "Acid Squelch", params: bp({ cutoff: 400, resonance: 22, envMod: 0.85, decay: 120, accent: 0.7, slideTime: 50, distortion: 0.4 }) },
-  { name: "Acid Screamer", params: bp({ cutoff: 350, resonance: 28, envMod: 0.95, decay: 100, accent: 0.9, slideTime: 30, distortion: 0.6, volume: 0.65 }) },
-  { name: "Acid Whistle", params: bp({ cutoff: 600, resonance: 26, envMod: 0.9, decay: 60, accent: 0.8, slideTime: 40, distortion: 0.3, volume: 0.6 }) },
-  // ── Deep / Sub ──
-  { name: "Deep Sub", params: bp({ waveform: "square", cutoff: 235, resonance: 3, envMod: 0.08, decay: 420, accent: 0.16, slideTime: 55, distortion: 0.04, volume: 0.82, subOsc: 0.9, filterModel: "ladder", punch: 0.16, harmonics: 0.03, subFilter: 46 }) },
-  { name: "808 Sub", params: bp({ waveform: "square", cutoff: 200, resonance: 2, envMod: 0.05, decay: 600, accent: 0.2, slideTime: 0, distortion: 0, volume: 0.85, subOsc: 0.9, subFilter: 40 }) },
-  { name: "Dub Pressure", params: bp({ cutoff: 280, resonance: 10, envMod: 0.25, decay: 450, accent: 0.35, slideTime: 90, distortion: 0.1, volume: 0.75, subOsc: 0.65 }) },
+  // ── Sub / 808 ──
+  { name: "Deep Sub",         params: bp({ waveform: "square",    cutoff: 235, resonance:  3, envMod: 0.08, decay: 420, accent: 0.16, slideTime:  55, distortion: 0.04, volume: 0.82, subOsc: 0.90, filterModel: "ladder", punch: 0.16, harmonics: 0.03, subFilter: 46 }) },
+  { name: "808 Sub",          params: bp({ waveform: "square",    cutoff: 200, resonance:  2, envMod: 0.05, decay: 600, accent: 0.20, slideTime:   0, distortion: 0.00, volume: 0.85, subOsc: 0.90, subFilter: 40 }) },
+  { name: "Pure Sub 40Hz",    params: bp({ waveform: "square",    cutoff: 160, resonance:  1, envMod: 0.02, decay: 600, accent: 0.05, slideTime:   0, distortion: 0.00, volume: 0.85, subOsc: 1.00, filterModel: "ladder", punch: 0.05, harmonics: 0.00, subFilter: 38 }) },
+  { name: "Boomy 808",        params: bp({ waveform: "square",    cutoff: 180, resonance:  1, envMod: 0.03, decay: 800, accent: 0.08, slideTime:   0, distortion: 0.02, volume: 0.82, subOsc: 0.95, punch: 0.08, subFilter: 35 }) },
+  { name: "Trap 808 Long",    params: bp({ waveform: "square",    cutoff: 170, resonance:  1, envMod: 0.02, decay:1000, accent: 0.05, slideTime:   0, distortion: 0.05, volume: 0.80, subOsc: 0.95, punch: 0.06, subFilter: 32 }) },
+  { name: "DH Filtered Sine", params: bp({ waveform: "sawtooth",  cutoff: 180, resonance:  2, envMod: 0.05, decay: 500, accent: 0.10, slideTime:  40, distortion: 0.00, volume: 0.80, subOsc: 0.85, filterModel: "ladder", punch: 0.08, harmonics: 0.00, subFilter: 42 }) },
+  { name: "Afro House Sub",   params: bp({ waveform: "square",    cutoff: 200, resonance:  2, envMod: 0.06, decay: 500, accent: 0.10, slideTime:  30, distortion: 0.03, volume: 0.80, subOsc: 0.85, punch: 0.12, subFilter: 45 }) },
+  { name: "Garage Sub",       params: bp({ waveform: "square",    cutoff: 250, resonance:  4, envMod: 0.12, decay: 350, accent: 0.20, slideTime:  35, distortion: 0.08, volume: 0.75, subOsc: 0.75, filterModel: "ladder", punch: 0.20, harmonics: 0.06, subFilter: 52 }) },
+  { name: "DH Warm Sub",      params: bp({ waveform: "square",    cutoff: 220, resonance:  3, envMod: 0.08, decay: 450, accent: 0.12, slideTime:  50, distortion: 0.05, volume: 0.78, subOsc: 0.80, filterModel: "ladder", punch: 0.12, harmonics: 0.05, subFilter: 50 }) },
+
+  // ── Acid / 303 ──
+  { name: "Classic 303",  params: bp({ cutoff: 420, resonance: 20, envMod: 0.78, decay: 135, accent: 0.58, slideTime:  42, distortion: 0.34, volume: 0.64, subOsc: 0.08, filterModel: "ladder", punch: 0.22, harmonics: 0.18, subFilter: 72 }) },
+  { name: "Acid Squelch", params: bp({ cutoff: 380, resonance: 22, envMod: 0.85, decay: 120, accent: 0.70, slideTime:  50, distortion: 0.40 }) },
+  { name: "Acid Screamer",params: bp({ cutoff: 320, resonance: 28, envMod: 0.95, decay: 100, accent: 0.90, slideTime:  30, distortion: 0.60, volume: 0.65 }) },
+  { name: "Acid Whistle", params: bp({ cutoff: 380, resonance: 26, envMod: 0.90, decay:  60, accent: 0.80, slideTime:  40, distortion: 0.30, volume: 0.60 }) },
+  { name: "Acid Wobble",  params: bp({ cutoff: 380, resonance: 18, envMod: 0.75, decay: 180, accent: 0.60, slideTime:  55, distortion: 0.30, volume: 0.62, subOsc: 0.20, filterModel: "ladder", punch: 0.20 }) },
+  { name: "Acid Bass",    params: bp({ waveform: "sawtooth", cutoff: 350, resonance: 22, envMod: 0.60, decay: 100, accent: 0.30, slideTime:   0, distortion: 0.50, filterModel: "ladder", punch: 0.30 }) },
+
   // ── Pluck / Stab ──
-  { name: "Funky Pluck", params: bp({ cutoff: 700, resonance: 16, envMod: 0.7, decay: 80, accent: 0.4, slideTime: 0, distortion: 0.15 }) },
-  { name: "Tight Stab", params: bp({ cutoff: 900, resonance: 12, envMod: 0.65, decay: 50, accent: 0.5, slideTime: 0, distortion: 0.2, volume: 0.6 }) },
-  { name: "Disco Octave", params: bp({ cutoff: 1100, resonance: 8, envMod: 0.5, decay: 100, accent: 0.4, slideTime: 15, distortion: 0.1, subOsc: 0.4 }) },
-  // ── Warm / Pad ──
-  { name: "Warm Pad", params: bp({ cutoff: 800, resonance: 3, envMod: 0.15, decay: 600, accent: 0.2, slideTime: 120, distortion: 0, volume: 0.6, subOsc: 0.4 }) },
-  { name: "Velvet Sub", params: bp({ waveform: "square", cutoff: 400, resonance: 5, envMod: 0.1, decay: 500, accent: 0.15, slideTime: 100, distortion: 0, volume: 0.65, subOsc: 0.55 }) },
-  // ── Dirty / Distorted ──
-  { name: "Distorted Lead", params: bp({ cutoff: 1200, resonance: 10, envMod: 0.4, decay: 150, accent: 0.6, slideTime: 20, distortion: 0.8, volume: 0.55 }) },
-  { name: "Rave Hoover", params: bp({ cutoff: 500, resonance: 24, envMod: 0.8, decay: 130, accent: 0.8, slideTime: 70, distortion: 0.5, volume: 0.65, subOsc: 0.2 }) },
-  { name: "Industrial", params: bp({ cutoff: 350, resonance: 20, envMod: 0.7, decay: 90, accent: 0.9, slideTime: 10, distortion: 0.9, volume: 0.5 }) },
-  { name: "Fuzz Bass", params: bp({ waveform: "square", cutoff: 600, resonance: 6, envMod: 0.35, decay: 200, accent: 0.5, slideTime: 0, distortion: 0.7, volume: 0.55, subOsc: 0.3 }) },
-  // ── Genre-Specific ──
-  { name: "Rubber Bass", params: bp({ waveform: "square", cutoff: 500, resonance: 14, envMod: 0.5, decay: 180, slideTime: 40, distortion: 0.2, subOsc: 0.3 }) },
-  { name: "Techno Throb", params: bp({ waveform: "square", cutoff: 450, resonance: 18, envMod: 0.6, slideTime: 100, distortion: 0.35, subOsc: 0.5 }) },
-  { name: "Minimal Dub", params: bp({ cutoff: 350, resonance: 8, envMod: 0.3, decay: 500, accent: 0.3, distortion: 0.1, volume: 0.75, subOsc: 0.6 }) },
-  { name: "DnB Reese", params: bp({ cutoff: 550, resonance: 15, envMod: 0.55, decay: 160, accent: 0.6, slideTime: 60, distortion: 0.45, volume: 0.6, subOsc: 0.4 }) },
-  { name: "House Groove", params: bp({ waveform: "square", cutoff: 520, resonance: 9, envMod: 0.34, decay: 165, accent: 0.34, slideTime: 22, distortion: 0.12, volume: 0.72, subOsc: 0.42, filterModel: "ladder", punch: 0.34, harmonics: 0.12, subFilter: 62 }) },
-  { name: "Lo-Fi Wobble", params: bp({ waveform: "square", cutoff: 380, resonance: 19, envMod: 0.65, decay: 170, accent: 0.55, slideTime: 80, distortion: 0.3, volume: 0.6, subOsc: 0.45 }) },
-  { name: "Trance Gate", params: bp({ cutoff: 800, resonance: 13, envMod: 0.6, decay: 70, accent: 0.7, slideTime: 5, distortion: 0.25, volume: 0.6 }) },
-  { name: "Dark Ambient", params: bp({ waveform: "square", cutoff: 250, resonance: 6, envMod: 0.2, decay: 700, accent: 0.2, slideTime: 150, distortion: 0, volume: 0.6, subOsc: 0.8 }) },
-  // ── Professional New Presets ──
-  { name: "Analog Warmth", params: bp({ waveform: "square", cutoff: 360, resonance: 4, envMod: 0.16, decay: 300, accent: 0.2, slideTime: 48, distortion: 0.09, volume: 0.68, subOsc: 0.78, filterModel: "ladder", punch: 0.22, harmonics: 0.14, subFilter: 64 }) },
-  { name: "Tape Bass", params: bp({ waveform: "sawtooth", cutoff: 430, resonance: 7, envMod: 0.22, decay: 210, accent: 0.28, slideTime: 36, distortion: 0.28, volume: 0.63, subOsc: 0.34, filterModel: "ladder", harmonics: 0.22, punch: 0.24, subFilter: 70 }) },
-  { name: "Organic Evolve", params: bp({ waveform: "sawtooth", cutoff: 300, resonance: 6, envMod: 0.4, decay: 800, accent: 0.15, slideTime: 120, distortion: 0.08, volume: 0.55, subOsc: 0.7, filterModel: "ladder", punch: 0.05, harmonics: 0.12, subFilter: 55 }) },
-  // ── Comprehensive Designer Presets ──
-  { name: "Deep Sub XL", params: bp({ waveform: "square", cutoff: 200, resonance: 2, envMod: 0.1, decay: 400, accent: 0.1, slideTime: 0, distortion: 0.08, volume: 0.8, subOsc: 0.9, filterModel: "ladder", punch: 0.1, harmonics: 0, subFilter: 40 }) },
-  { name: "Punch Bass", params: bp({ waveform: "sawtooth", cutoff: 250, resonance: 4, envMod: 0.15, decay: 120, accent: 0.5, slideTime: 0, distortion: 0.3, volume: 0.7, subOsc: 0.6, punch: 0.5 }) },
-  { name: "Acid Bass", params: bp({ waveform: "sawtooth", cutoff: 400, resonance: 22, envMod: 0.6, decay: 100, accent: 0.3, slideTime: 0, distortion: 0.5, filterModel: "ladder", punch: 0.3 }) },
-  { name: "Analog Bass", params: bp({ waveform: "square", cutoff: 200, resonance: 3, envMod: 0.1, decay: 350, accent: 0.15, slideTime: 0, distortion: 0.1, volume: 0.7, subOsc: 0.7, punch: 0.15, harmonics: 0.25 }) },
-  { name: "Dirty Bass", params: bp({ waveform: "sawtooth", cutoff: 200, resonance: 4, envMod: 0.1, decay: 200, accent: 0.4, slideTime: 0, distortion: 0.7, volume: 0.65 }) },
-  { name: "Moving Bass", params: bp({ waveform: "sawtooth", cutoff: 300, resonance: 4, envMod: 0.4, decay: 600, accent: 0.05, slideTime: 100, distortion: 0, volume: 0.7, subOsc: 0.6, punch: 0.05 }) },
-  { name: "FM Bass", params: bp({ waveform: "sawtooth", cutoff: 200, resonance: 8, envMod: 0.15, decay: 150, accent: 0.3, slideTime: 0, distortion: 0.25, volume: 0.7 }) },
-  { name: "Reese Bass", params: bp({ waveform: "sawtooth", cutoff: 250, resonance: 4, envMod: 0.15, decay: 300, accent: 0.15, slideTime: 60, distortion: 0, volume: 0.7, subOsc: 0.5, harmonics: 0.3, punch: 0.15 }) },
-  { name: "Pluck Bass", params: bp({ waveform: "sawtooth", cutoff: 300, resonance: 3, envMod: 0.2, decay: 80, accent: 0.4, slideTime: 0, distortion: 0, volume: 0.7, punch: 0.4 }) },
-  { name: "Sub Growl", params: bp({ waveform: "sawtooth", cutoff: 200, resonance: 5, envMod: 0.2, decay: 150, accent: 0.35, slideTime: 0, distortion: 0.45, volume: 0.7, subOsc: 0.7, punch: 0.35, harmonics: 0.3 }) },
-  // ── Deep House Collection ──
-  { name: "DH Filtered Sine", params: bp({ waveform: "sawtooth", cutoff: 180, resonance: 2, envMod: 0.05, decay: 500, accent: 0.1, slideTime: 40, distortion: 0, volume: 0.8, subOsc: 0.85, filterModel: "ladder", punch: 0.08, harmonics: 0, subFilter: 42 }) },
-  { name: "DH Warm Sub", params: bp({ waveform: "square", cutoff: 220, resonance: 3, envMod: 0.08, decay: 450, accent: 0.12, slideTime: 50, distortion: 0.05, volume: 0.78, subOsc: 0.8, filterModel: "ladder", punch: 0.12, harmonics: 0.05, subFilter: 50 }) },
-  { name: "DH Moog Bass", params: bp({ waveform: "sawtooth", cutoff: 320, resonance: 6, envMod: 0.2, decay: 250, accent: 0.25, slideTime: 30, distortion: 0.08, volume: 0.72, subOsc: 0.6, filterModel: "ladder", punch: 0.2, harmonics: 0.1, subFilter: 65 }) },
-  { name: "DH Rubber Dub", params: bp({ waveform: "square", cutoff: 280, resonance: 5, envMod: 0.15, decay: 380, accent: 0.2, slideTime: 70, distortion: 0.06, volume: 0.75, subOsc: 0.7, filterModel: "ladder", punch: 0.15, harmonics: 0.08, subFilter: 55 }) },
-  { name: "DH Staccato", params: bp({ waveform: "sawtooth", cutoff: 400, resonance: 4, envMod: 0.35, decay: 60, accent: 0.4, slideTime: 0, distortion: 0.1, volume: 0.7, subOsc: 0.5, punch: 0.35, harmonics: 0.1 }) },
-  // ── Producer Essentials: Basses that work in every mix ──
-  { name: "Pure Sub 40Hz", params: bp({ waveform: "square", cutoff: 160, resonance: 1, envMod: 0.02, decay: 600, accent: 0.05, slideTime: 0, distortion: 0, volume: 0.85, subOsc: 1.0, filterModel: "ladder", punch: 0.05, harmonics: 0, subFilter: 38 }) },
-  { name: "Garage Sub", params: bp({ waveform: "square", cutoff: 250, resonance: 4, envMod: 0.12, decay: 350, accent: 0.2, slideTime: 35, distortion: 0.08, volume: 0.75, subOsc: 0.75, filterModel: "ladder", punch: 0.2, harmonics: 0.06, subFilter: 52 }) },
-  { name: "Neo Soul Bass", params: bp({ waveform: "sawtooth", cutoff: 350, resonance: 5, envMod: 0.18, decay: 280, accent: 0.22, slideTime: 45, distortion: 0.06, volume: 0.7, subOsc: 0.55, filterModel: "ladder", punch: 0.18, harmonics: 0.12, subFilter: 60 }) },
-  { name: "Lo-Fi Tape Sub", params: bp({ waveform: "square", cutoff: 280, resonance: 3, envMod: 0.1, decay: 400, accent: 0.15, slideTime: 60, distortion: 0.15, volume: 0.72, subOsc: 0.65, filterModel: "ladder", punch: 0.1, harmonics: 0.2, subFilter: 55 }) },
-  { name: "Afro House Sub", params: bp({ waveform: "square", cutoff: 200, resonance: 2, envMod: 0.06, decay: 500, accent: 0.1, slideTime: 30, distortion: 0.03, volume: 0.8, subOsc: 0.85, punch: 0.12, subFilter: 45 }) },
-  { name: "Latin Bass", params: bp({ waveform: "sawtooth", cutoff: 500, resonance: 6, envMod: 0.3, decay: 120, accent: 0.35, slideTime: 20, distortion: 0.12, volume: 0.68, subOsc: 0.4, punch: 0.3, harmonics: 0.08 }) },
-  { name: "UK Bass", params: bp({ waveform: "square", cutoff: 350, resonance: 8, envMod: 0.4, decay: 180, accent: 0.45, slideTime: 25, distortion: 0.2, volume: 0.68, subOsc: 0.5, filterModel: "ladder", punch: 0.25 }) },
-  { name: "Boomy 808", params: bp({ waveform: "square", cutoff: 180, resonance: 1, envMod: 0.03, decay: 800, accent: 0.08, slideTime: 0, distortion: 0.02, volume: 0.82, subOsc: 0.95, punch: 0.08, subFilter: 35 }) },
-  { name: "Synth Pop Bass", params: bp({ waveform: "sawtooth", cutoff: 600, resonance: 7, envMod: 0.35, decay: 150, accent: 0.3, slideTime: 15, distortion: 0.15, volume: 0.65, subOsc: 0.3, punch: 0.25 }) },
-  { name: "Smooth Jazz Bass", params: bp({ waveform: "sawtooth", cutoff: 280, resonance: 3, envMod: 0.1, decay: 350, accent: 0.15, slideTime: 80, distortion: 0.04, volume: 0.72, subOsc: 0.6, filterModel: "ladder", punch: 0.1, harmonics: 0.15, subFilter: 58 }) },
-  { name: "Retro Disco", params: bp({ waveform: "square", cutoff: 450, resonance: 8, envMod: 0.28, decay: 140, accent: 0.35, slideTime: 10, distortion: 0.1, volume: 0.65, subOsc: 0.35, punch: 0.3 }) },
-  { name: "Broken Beat", params: bp({ waveform: "sawtooth", cutoff: 380, resonance: 6, envMod: 0.25, decay: 200, accent: 0.3, slideTime: 35, distortion: 0.08, volume: 0.7, subOsc: 0.5, filterModel: "ladder", punch: 0.2 }) },
-  { name: "Ambient Drone", params: bp({ waveform: "sawtooth", cutoff: 200, resonance: 2, envMod: 0.05, decay: 900, accent: 0.05, slideTime: 150, distortion: 0, volume: 0.6, subOsc: 0.8, filterModel: "ladder", punch: 0, harmonics: 0.05, subFilter: 48 }) },
-  { name: "Acid Wobble", params: bp({ cutoff: 450, resonance: 18, envMod: 0.75, decay: 180, accent: 0.6, slideTime: 55, distortion: 0.3, volume: 0.62, subOsc: 0.2, filterModel: "ladder", punch: 0.2 }) },
-  { name: "Trap 808 Long", params: bp({ waveform: "square", cutoff: 170, resonance: 1, envMod: 0.02, decay: 1000, accent: 0.05, slideTime: 0, distortion: 0.05, volume: 0.8, subOsc: 0.95, punch: 0.06, subFilter: 32 }) },
+  // Note: high envMod does the brightening — cutoff is the dark rest position
+  { name: "Funky Pluck",  params: bp({ cutoff: 280, resonance: 16, envMod: 0.82, decay:  80, accent: 0.40, slideTime:   0, distortion: 0.15 }) },
+  { name: "Tight Stab",   params: bp({ cutoff: 300, resonance: 12, envMod: 0.85, decay:  50, accent: 0.50, slideTime:   0, distortion: 0.20, volume: 0.60 }) },
+  { name: "Disco Octave", params: bp({ cutoff: 280, resonance:  8, envMod: 0.75, decay: 100, accent: 0.40, slideTime:  15, distortion: 0.10, subOsc: 0.40 }) },
+  { name: "Pluck Bass",   params: bp({ waveform: "sawtooth", cutoff: 280, resonance:  3, envMod: 0.20, decay:  80, accent: 0.40, slideTime:   0, distortion: 0.00, volume: 0.70, punch: 0.40 }) },
+  { name: "DH Staccato",  params: bp({ waveform: "sawtooth", cutoff: 380, resonance:  4, envMod: 0.35, decay:  60, accent: 0.40, slideTime:   0, distortion: 0.10, volume: 0.70, subOsc: 0.50, punch: 0.35, harmonics: 0.10 }) },
+  { name: "Punch Bass",   params: bp({ waveform: "sawtooth", cutoff: 250, resonance:  4, envMod: 0.15, decay: 120, accent: 0.50, slideTime:   0, distortion: 0.30, volume: 0.70, subOsc: 0.60, punch: 0.50 }) },
+
+  // ── Warm / Groove ──
+  { name: "Warm Vintage",    params: bp({ waveform: "square",   cutoff: 200, resonance:  4, envMod: 0.15, decay: 300, accent: 0.30, slideTime:  80, distortion: 0.35, volume: 0.70, subOsc: 0.60, filterModel: "ladder", punch: 0.15, harmonics: 0.20, subFilter: 60 }) },
+  { name: "Analog Warmth",   params: bp({ waveform: "square",   cutoff: 360, resonance:  4, envMod: 0.16, decay: 300, accent: 0.20, slideTime:  48, distortion: 0.09, volume: 0.68, subOsc: 0.78, filterModel: "ladder", punch: 0.22, harmonics: 0.14, subFilter: 64 }) },
+  { name: "Tape Bass",       params: bp({ waveform: "sawtooth", cutoff: 430, resonance:  7, envMod: 0.22, decay: 210, accent: 0.28, slideTime:  36, distortion: 0.28, volume: 0.63, subOsc: 0.34, filterModel: "ladder", harmonics: 0.22, punch: 0.24, subFilter: 70 }) },
+  { name: "Dub Pressure",    params: bp({ cutoff: 280, resonance: 10, envMod: 0.25, decay: 450, accent: 0.35, slideTime:  90, distortion: 0.10, volume: 0.75, subOsc: 0.65 }) },
+  { name: "Rubber Bass",     params: bp({ waveform: "square",   cutoff: 420, resonance: 14, envMod: 0.50, decay: 180, slideTime:  40, distortion: 0.20, subOsc: 0.30 }) },
+  { name: "DH Moog Bass",    params: bp({ waveform: "sawtooth", cutoff: 320, resonance:  6, envMod: 0.20, decay: 250, accent: 0.25, slideTime:  30, distortion: 0.08, volume: 0.72, subOsc: 0.60, filterModel: "ladder", punch: 0.20, harmonics: 0.10, subFilter: 65 }) },
+  { name: "DH Rubber Dub",   params: bp({ waveform: "square",   cutoff: 280, resonance:  5, envMod: 0.15, decay: 380, accent: 0.20, slideTime:  70, distortion: 0.06, volume: 0.75, subOsc: 0.70, filterModel: "ladder", punch: 0.15, harmonics: 0.08, subFilter: 55 }) },
+  { name: "House Groove",    params: bp({ waveform: "square",   cutoff: 440, resonance:  9, envMod: 0.34, decay: 165, accent: 0.34, slideTime:  22, distortion: 0.12, volume: 0.72, subOsc: 0.42, filterModel: "ladder", punch: 0.34, harmonics: 0.12, subFilter: 62 }) },
+  { name: "Neo Soul Bass",   params: bp({ waveform: "sawtooth", cutoff: 350, resonance:  5, envMod: 0.18, decay: 280, accent: 0.22, slideTime:  45, distortion: 0.06, volume: 0.70, subOsc: 0.55, filterModel: "ladder", punch: 0.18, harmonics: 0.12, subFilter: 60 }) },
+  { name: "Smooth Jazz Bass",params: bp({ waveform: "sawtooth", cutoff: 280, resonance:  3, envMod: 0.10, decay: 350, accent: 0.15, slideTime:  80, distortion: 0.04, volume: 0.72, subOsc: 0.60, filterModel: "ladder", punch: 0.10, harmonics: 0.15, subFilter: 58 }) },
+  { name: "Velvet Sub",      params: bp({ waveform: "square",   cutoff: 350, resonance:  5, envMod: 0.10, decay: 500, accent: 0.15, slideTime: 100, distortion: 0.00, volume: 0.65, subOsc: 0.55 }) },
+  { name: "Lo-Fi Tape Sub",  params: bp({ waveform: "square",   cutoff: 280, resonance:  3, envMod: 0.10, decay: 400, accent: 0.15, slideTime:  60, distortion: 0.15, volume: 0.72, subOsc: 0.65, filterModel: "ladder", punch: 0.10, harmonics: 0.20, subFilter: 55 }) },
+  { name: "Moving Bass",     params: bp({ waveform: "sawtooth", cutoff: 300, resonance:  4, envMod: 0.40, decay: 600, accent: 0.05, slideTime: 100, distortion: 0.00, volume: 0.70, subOsc: 0.60, punch: 0.05 }) },
+
+  // ── Dirty / Driven ──
+  { name: "Grit Stab",   params: bp({ cutoff: 350, resonance: 10, envMod: 0.55, decay: 150, accent: 0.60, slideTime:  20, distortion: 0.80, volume: 0.55 }) },
+  { name: "Rave Hoover", params: bp({ cutoff: 380, resonance: 24, envMod: 0.80, decay: 130, accent: 0.80, slideTime:  70, distortion: 0.50, volume: 0.65, subOsc: 0.20 }) },
+  { name: "Industrial",  params: bp({ cutoff: 350, resonance: 20, envMod: 0.70, decay:  90, accent: 0.90, slideTime:  10, distortion: 0.90, volume: 0.50 }) },
+  { name: "Fuzz Bass",   params: bp({ waveform: "square",   cutoff: 350, resonance:  6, envMod: 0.35, decay: 200, accent: 0.50, slideTime:   0, distortion: 0.70, volume: 0.55, subOsc: 0.30 }) },
+  { name: "Dirty Bass",  params: bp({ waveform: "sawtooth", cutoff: 200, resonance:  4, envMod: 0.10, decay: 200, accent: 0.40, slideTime:   0, distortion: 0.70, volume: 0.65 }) },
+  { name: "Sub Growl",   params: bp({ waveform: "sawtooth", cutoff: 200, resonance:  5, envMod: 0.20, decay: 150, accent: 0.35, slideTime:   0, distortion: 0.45, volume: 0.70, subOsc: 0.70, punch: 0.35, harmonics: 0.30 }) },
+  { name: "FM Bass",     params: bp({ waveform: "sawtooth", cutoff: 200, resonance:  8, envMod: 0.15, decay: 150, accent: 0.30, slideTime:   0, distortion: 0.25, volume: 0.70 }) },
+
+  // ── Genre / Electronic ──
+  { name: "Techno Throb",  params: bp({ waveform: "square",   cutoff: 380, resonance: 18, envMod: 0.60, slideTime: 100, distortion: 0.35, subOsc: 0.50 }) },
+  { name: "DnB Reese",     params: bp({ cutoff: 420, resonance: 15, envMod: 0.55, decay: 160, accent: 0.60, slideTime:  60, distortion: 0.45, volume: 0.60, subOsc: 0.40 }) },
+  { name: "Reese Bass",    params: bp({ waveform: "sawtooth", cutoff: 250, resonance:  4, envMod: 0.15, decay: 300, accent: 0.15, slideTime:  60, distortion: 0.00, volume: 0.70, subOsc: 0.50, harmonics: 0.30, punch: 0.15 }) },
+  { name: "UK Bass",       params: bp({ waveform: "square",   cutoff: 350, resonance:  8, envMod: 0.40, decay: 180, accent: 0.45, slideTime:  25, distortion: 0.20, volume: 0.68, subOsc: 0.50, filterModel: "ladder", punch: 0.25 }) },
+  { name: "Lo-Fi Wobble",  params: bp({ waveform: "square",   cutoff: 380, resonance: 19, envMod: 0.65, decay: 170, accent: 0.55, slideTime:  80, distortion: 0.30, volume: 0.60, subOsc: 0.45 }) },
+  { name: "Trance Gate",   params: bp({ cutoff: 280, resonance: 13, envMod: 0.80, decay:  70, accent: 0.70, slideTime:   5, distortion: 0.25, volume: 0.60 }) },
+  { name: "Minimal Dub",   params: bp({ cutoff: 350, resonance:  8, envMod: 0.30, decay: 500, accent: 0.30, distortion: 0.10, volume: 0.75, subOsc: 0.60 }) },
+  { name: "Retro Disco",   params: bp({ waveform: "square",   cutoff: 380, resonance:  8, envMod: 0.28, decay: 140, accent: 0.35, slideTime:  10, distortion: 0.10, volume: 0.65, subOsc: 0.35, punch: 0.30 }) },
+  { name: "Synth Pop Bass",params: bp({ waveform: "sawtooth", cutoff: 320, resonance:  7, envMod: 0.45, decay: 150, accent: 0.30, slideTime:  15, distortion: 0.15, volume: 0.65, subOsc: 0.30, punch: 0.25 }) },
+  { name: "Latin Bass",    params: bp({ waveform: "sawtooth", cutoff: 300, resonance:  6, envMod: 0.45, decay: 120, accent: 0.35, slideTime:  20, distortion: 0.12, volume: 0.68, subOsc: 0.40, punch: 0.30, harmonics: 0.08 }) },
+  { name: "Broken Beat",   params: bp({ waveform: "sawtooth", cutoff: 380, resonance:  6, envMod: 0.25, decay: 200, accent: 0.30, slideTime:  35, distortion: 0.08, volume: 0.70, subOsc: 0.50, filterModel: "ladder", punch: 0.20 }) },
+  { name: "Analog Bass",   params: bp({ waveform: "square",   cutoff: 200, resonance:  3, envMod: 0.10, decay: 350, accent: 0.15, slideTime:   0, distortion: 0.10, volume: 0.70, subOsc: 0.70, punch: 0.15, harmonics: 0.25 }) },
+  { name: "Organic Evolve",params: bp({ waveform: "sawtooth", cutoff: 300, resonance:  6, envMod: 0.40, decay: 800, accent: 0.15, slideTime: 120, distortion: 0.08, volume: 0.55, subOsc: 0.70, filterModel: "ladder", punch: 0.05, harmonics: 0.12, subFilter: 55 }) },
 ];
 
 export const BASS_CORE_PRESETS = BASS_PRESETS.filter((preset) =>
