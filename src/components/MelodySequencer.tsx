@@ -811,40 +811,72 @@ function WaveBtn({ active, onClick, label }: { active: boolean; onClick: () => v
 }
 
 // ─── Sonar Kreis ─────────────────────────────────────────────────────────────
-// Circular note display with expanding ripple rings for the Melody panel.
-// Fires a new ring animation on every distinct note trigger.
+// Circular note display for the Melody panel.
+//  • Expanding ripple ring on each new note trigger
+//  • Static trail ring that fades slowly (2.2s) — sonar afterglow
+//  • Pitch dot: small indicator on the circle perimeter at the note's semitone angle
+//  • Center label: afterglow fade-out when note stops instead of instant cut
 const NOTE_DISPLAY_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+interface TrailEntry { id: number; midi: number }
 
 function SonarKreis({ midi, isPlaying, active }: {
   midi: number | null;
   isPlaying: boolean;
   active: boolean;
 }) {
-  const [rippleIds, setRippleIds] = useState<number[]>([]);
-  const counterRef = useRef(0);
-  const prevMidiRef = useRef<number | null>(null);
+  const [rippleIds,  setRippleIds]  = useState<number[]>([]);
+  const [trailItems, setTrailItems] = useState<TrailEntry[]>([]);
+  // lastMidi: keeps the previous note visible during afterglow
+  const [lastMidi,   setLastMidi]   = useState<number | null>(null);
+  const [glowOpacity, setGlowOpacity] = useState(0);
 
-  // Fire a new ripple ring whenever the note changes while playing
+  const counterRef  = useRef(0);
+  const prevMidiRef = useRef<number | null>(null);
+  const glowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (!isPlaying || !active || midi === null) {
+      // Note stopped → start afterglow fade
+      if (glowTimerRef.current) clearTimeout(glowTimerRef.current);
+      // keep lastMidi visible, fade opacity out
+      glowTimerRef.current = setTimeout(() => {
+        setGlowOpacity(0);
+        setLastMidi(null);
+      }, 700);
       prevMidiRef.current = null;
       return;
     }
+
     if (prevMidiRef.current !== midi) {
       prevMidiRef.current = midi;
+      setLastMidi(midi);
+      setGlowOpacity(1);
+      if (glowTimerRef.current) clearTimeout(glowTimerRef.current);
+
       const id = ++counterRef.current;
+
+      // Ripple ring (expanding, 900ms)
       setRippleIds((prev) => [...prev.slice(-4), id]);
-      // Remove after animation ends (900 ms + buffer)
-      const t = setTimeout(() => {
-        setRippleIds((prev) => prev.filter((r) => r !== id));
-      }, 1000);
-      return () => clearTimeout(t);
+      setTimeout(() => setRippleIds((prev) => prev.filter((r) => r !== id)), 1000);
+
+      // Trail ring + pitch dot (static, fades 2.2s)
+      setTrailItems((prev) => [...prev.slice(-3), { id, midi }]);
+      setTimeout(() => setTrailItems((prev) => prev.filter((t) => t.id !== id)), 2300);
     }
   }, [midi, isPlaying, active]);
 
-  const isActive = isPlaying && active && midi !== null;
-  const noteName = midi !== null ? (NOTE_DISPLAY_NAMES[midi % 12] ?? "—") : "—";
-  const octave   = midi !== null ? Math.floor(midi / 12) - 1 : null;
+  // Cleanup on unmount
+  useEffect(() => () => { if (glowTimerRef.current) clearTimeout(glowTimerRef.current); }, []);
+
+  const isActive  = isPlaying && active && midi !== null;
+  const showMidi  = isActive ? midi : lastMidi;
+  const noteName  = showMidi !== null ? (NOTE_DISPLAY_NAMES[showMidi % 12] ?? "—") : "—";
+  const octave    = showMidi !== null ? Math.floor(showMidi / 12) - 1 : null;
+
+  // Convert semitone (0–11) to angle in degrees (top = -90°)
+  const semitoneAngle = (semitone: number) => (semitone / 12) * 360 - 90;
+  const R = 34; // radius from center to pitch dot (px), circle is 76px wide
 
   return (
     <div
@@ -857,15 +889,26 @@ function SonarKreis({ midi, isPlaying, active }: {
         style={{ background: "radial-gradient(circle, rgba(244,114,182,0.07) 0%, transparent 68%)" }}
       />
 
-      {/* Inner ring — visible only when active */}
-      {isActive && (
-        <div
-          className="absolute rounded-full border border-[var(--ed-accent-melody)]/30"
-          style={{ inset: 8 }}
-        />
-      )}
+      {/* Inner ring — brightens when active */}
+      <div
+        className="absolute rounded-full border border-[var(--ed-accent-melody)] transition-opacity duration-150"
+        style={{ inset: 8, opacity: isActive ? 0.30 : 0.06 }}
+      />
 
-      {/* Expanding ripple rings — one per note trigger, CSS-animated */}
+      {/* Trail rings — static, slowly fading (ed-sonar-trail) */}
+      {trailItems.map((item, idx) => (
+        <div
+          key={item.id}
+          className="absolute rounded-full border border-[var(--ed-accent-melody)] ed-sonar-trail"
+          style={{
+            inset: 4 + idx * 3,
+            // stagger delay so each trail ring is offset
+            animationDelay: `${idx * 60}ms`,
+          }}
+        />
+      ))}
+
+      {/* Expanding ripple rings (ed-sonar-ring) */}
       {rippleIds.map((id) => (
         <div
           key={id}
@@ -873,20 +916,44 @@ function SonarKreis({ midi, isPlaying, active }: {
         />
       ))}
 
-      {/* Note name + octave */}
-      <div className="relative z-10 text-center leading-none select-none pointer-events-none">
+      {/* Pitch dots on perimeter — one per trail entry, at semitone angle */}
+      {trailItems.map((item) => {
+        const ang = semitoneAngle(item.midi % 12) * (Math.PI / 180);
+        const cx  = 38 + R * Math.cos(ang);
+        const cy  = 38 + R * Math.sin(ang);
+        return (
+          <div
+            key={`dot-${item.id}`}
+            className="absolute ed-sonar-dot rounded-full bg-[var(--ed-accent-melody)]"
+            style={{
+              width: 4, height: 4,
+              left: cx - 2, top: cy - 2,
+            }}
+          />
+        );
+      })}
+
+      {/* Center label — afterglow fade on note stop */}
+      <div
+        className="relative z-10 text-center leading-none select-none pointer-events-none transition-opacity"
+        style={{
+          opacity: isActive ? 1 : glowOpacity * 0.4,
+          transitionDuration: isActive ? "75ms" : "600ms",
+        }}
+      >
         <div
-          className={`font-black transition-colors duration-75 ${isActive ? "text-[var(--ed-accent-melody)]" : "text-white/12"}`}
+          className="font-black"
           style={{
             fontSize: isActive ? 22 : 18,
+            color: "var(--ed-accent-melody)",
             textShadow: isActive
               ? "0 0 16px rgba(244,114,182,0.7), 0 0 5px rgba(244,114,182,1)"
-              : "none",
+              : "0 0 8px rgba(244,114,182,0.3)",
           }}
         >
-          {isActive ? noteName : "·"}
+          {showMidi !== null ? noteName : "·"}
         </div>
-        {isActive && octave !== null && (
+        {showMidi !== null && octave !== null && (
           <div className="text-[8px] font-mono text-[var(--ed-accent-melody)]/50 leading-none mt-0.5">
             {octave}
           </div>
