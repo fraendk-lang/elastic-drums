@@ -10,7 +10,7 @@ import { melodyEngine, type MelodyStep, type MelodyParams, DEFAULT_MELODY_PARAMS
 import { scaleNote, SCALES } from "../audio/BassEngine";
 import { audioEngine } from "../audio/AudioEngine";
 import { soundFontEngine } from "../audio/SoundFontEngine";
-import { generateEuclidean, useDrumStore } from "./drumStore";
+import { generateEuclidean, useDrumStore, getDrumNextStepTime } from "./drumStore";
 import { syncScaleToOtherStores, registerScaleStore } from "./bassStore";
 import { generateArpNotes, DEFAULT_ARP_SETTINGS, type ArpSettings } from "../audio/Arpeggiator";
 
@@ -860,7 +860,13 @@ let melodyTimer: ReturnType<typeof setInterval> | null = null;
 let nextMelodyStepTime = 0;
 
 export function startMelodyScheduler() {
-  nextMelodyStepTime = audioEngine.currentTime + 0.05;
+  // Sync to drum scheduler's nextStepTime so melody steps land on the same
+  // Web Audio clock beats as the drum grid. Fall back to currentTime+0.05 if
+  // the drum scheduler hasn't started yet (edge case).
+  const drumNextStep = getDrumNextStepTime();
+  nextMelodyStepTime = drumNextStep > audioEngine.currentTime
+    ? drumNextStep
+    : audioEngine.currentTime + 0.05;
   if (melodyTimer !== null) clearInterval(melodyTimer);
 
   melodyTimer = setInterval(() => {

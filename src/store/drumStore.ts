@@ -357,6 +357,9 @@ const PRESET_PATTERNS: PatternData[] = [
 let schedulerTimer: ReturnType<typeof setInterval> | null = null;
 let nextStepTime = 0;
 
+/** Returns the Web Audio timestamp of the next scheduled drum step (for sync). */
+export function getDrumNextStepTime(): number { return nextStepTime; }
+
 function startScheduler() {
   nextStepTime = audioEngine.currentTime + 0.05;
   cycleCount = 0;

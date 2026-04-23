@@ -564,7 +564,7 @@ export function MelodySequencer() {
         <span className="hidden lg:inline text-[7px] text-white/12">click = select &middot; Shift + ↑/↓ = octave &middot; drag = pitch &middot; drag bright edge = note length &middot; rclick = accent &middot; shift = slide &middot; alt = legato tie</span>
       </div>
 
-      {/* Piano Roll + Automation */}
+      {/* Piano Roll */}
       <div className="flex gap-1.5 px-3 py-1.5 h-20 sm:h-28" onPointerMove={handleDurationDragMove} onPointerUp={handleDurationDragEnd}>
       <div className="flex gap-[1px] flex-1 min-w-0">
         {Array.from({ length: 16 }, (_, i) => {
@@ -689,6 +689,9 @@ export function MelodySequencer() {
           );
         })}
       </div>
+      </div>
+
+      {/* Automation Lane — full-width, collapsible */}
       <AutomationLane
         params={MELODY_AUTO_PARAMS}
         selectedParam={automationParam}
@@ -701,7 +704,7 @@ export function MelodySequencer() {
         onSelectParam={setAutomationParam}
         onChange={(step, value) => setAutomationValue(automationParam, step, value)}
       />
-      </div>
+
       <div className="px-3 pb-2">
         <div className="mb-1 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -880,7 +883,7 @@ function SonarKreis({ midi, isPlaying, active }: {
 
   return (
     <div
-      className="relative flex-shrink-0 flex items-center justify-center"
+      className="relative flex-shrink-0"
       style={{ width: 76, height: 76 }}
     >
       {/* Static background ring */}
@@ -892,21 +895,23 @@ function SonarKreis({ midi, isPlaying, active }: {
       {/* Inner ring — brightens when active */}
       <div
         className="absolute rounded-full border border-[var(--ed-accent-melody)] transition-opacity duration-150"
-        style={{ inset: 8, opacity: isActive ? 0.30 : 0.06 }}
+        style={{ top: "8px", right: "8px", bottom: "8px", left: "8px", opacity: isActive ? 0.30 : 0.06 }}
       />
 
       {/* Trail rings — static, slowly fading (ed-sonar-trail) */}
-      {trailItems.map((item, idx) => (
-        <div
-          key={item.id}
-          className="absolute rounded-full border border-[var(--ed-accent-melody)] ed-sonar-trail"
-          style={{
-            inset: 4 + idx * 3,
-            // stagger delay so each trail ring is offset
-            animationDelay: `${idx * 60}ms`,
-          }}
-        />
-      ))}
+      {trailItems.map((item, idx) => {
+        const ins = `${4 + idx * 3}px`;
+        return (
+          <div
+            key={item.id}
+            className="absolute rounded-full border border-[var(--ed-accent-melody)] ed-sonar-trail"
+            style={{
+              top: ins, right: ins, bottom: ins, left: ins,
+              animationDelay: `${idx * 60}ms`,
+            }}
+          />
+        );
+      })}
 
       {/* Expanding ripple rings (ed-sonar-ring) */}
       {rippleIds.map((id) => (
@@ -927,15 +932,19 @@ function SonarKreis({ midi, isPlaying, active }: {
             className="absolute ed-sonar-dot rounded-full bg-[var(--ed-accent-melody)]"
             style={{
               width: 4, height: 4,
-              left: cx - 2, top: cy - 2,
+              left: `${cx - 2}px`, top: `${cy - 2}px`,
             }}
           />
         );
       })}
 
-      {/* Center label — afterglow fade on note stop */}
+      {/* Center label — positioned at exact center with absolute positioning */}
       <div
-        className="relative z-10 text-center leading-none select-none pointer-events-none transition-opacity"
+        className="absolute inset-0 flex items-center justify-center"
+        style={{ pointerEvents: "none" }}
+      >
+      <div
+        className="z-10 text-center leading-none select-none pointer-events-none transition-opacity"
         style={{
           opacity: isActive ? 1 : glowOpacity * 0.4,
           transitionDuration: isActive ? "75ms" : "600ms",
@@ -958,6 +967,7 @@ function SonarKreis({ midi, isPlaying, active }: {
             {octave}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

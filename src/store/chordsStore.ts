@@ -16,7 +16,7 @@ import {
 import { scaleNote, SCALES } from "../audio/BassEngine";
 import { audioEngine } from "../audio/AudioEngine";
 import { soundFontEngine } from "../audio/SoundFontEngine";
-import { generateEuclidean, useDrumStore } from "./drumStore";
+import { generateEuclidean, useDrumStore, getDrumNextStepTime } from "./drumStore";
 import { syncScaleToOtherStores, registerScaleStore } from "./bassStore";
 
 export const CHORDS_MAX_CLIP_STEPS = 256;
@@ -387,7 +387,8 @@ let chordsTimer: ReturnType<typeof setInterval> | null = null;
 let nextChordsStepTime = 0;
 
 export function startChordsScheduler() {
-  nextChordsStepTime = audioEngine.currentTime + 0.05;
+  const drumNextStep = getDrumNextStepTime();
+  nextChordsStepTime = drumNextStep > audioEngine.currentTime ? drumNextStep : audioEngine.currentTime + 0.05;
   if (chordsTimer !== null) clearInterval(chordsTimer);
 
   chordsTimer = setInterval(() => {

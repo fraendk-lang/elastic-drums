@@ -10,7 +10,7 @@
 import { create } from "zustand";
 import { samplerEngine, DEFAULT_PAD_PARAMS, type SamplerPadParams } from "../audio/SamplerEngine";
 import { audioEngine } from "../audio/AudioEngine";
-import { useDrumStore } from "./drumStore";
+import { useDrumStore, getDrumNextStepTime } from "./drumStore";
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -63,7 +63,8 @@ let samplerTimer: ReturnType<typeof setInterval> | null = null;
 let nextSamplerStepTime = 0;
 
 export function startSamplerScheduler(): void {
-  nextSamplerStepTime = audioEngine.currentTime + 0.05;
+  const drumNextStep = getDrumNextStepTime();
+  nextSamplerStepTime = drumNextStep > audioEngine.currentTime ? drumNextStep : audioEngine.currentTime + 0.05;
   if (samplerTimer !== null) clearInterval(samplerTimer);
 
   samplerTimer = setInterval(() => {
