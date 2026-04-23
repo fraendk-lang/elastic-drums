@@ -179,7 +179,8 @@ export function SampleBrowser({
 
   const filteredSamples = useMemo(() => (
     availableSamples.filter((sample) => {
-      if (activeCategory && sample.category !== activeCategory) return false;
+      // When searching: ignore category filter so results span all categories
+      if (!searchQuery && activeCategory && sample.category !== activeCategory) return false;
       if (activePack && sample.pack !== activePack) return false;
       if (!searchQuery) return true;
       const query = searchQuery.toLowerCase();
@@ -465,7 +466,7 @@ export function SampleBrowser({
               <div className="flex flex-col md:flex-row md:items-center gap-3">
                 <input
                   type="text"
-                  placeholder="Search name, key, pack..."
+                  placeholder={searchQuery ? "Searching all categories…" : "Search name, key, pack…"}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="flex-1 px-3 py-2.5 bg-[var(--ed-bg-elevated)] border border-[var(--ed-border)] rounded-xl text-sm text-[var(--ed-text-primary)] placeholder-[var(--ed-text-muted)]"
