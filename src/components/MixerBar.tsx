@@ -9,7 +9,7 @@
  *   + EQ Hi/Mid/Lo knobs | Rev/Dly send knobs | Pan knob
  */
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef } from "react";
 import { audioEngine } from "../audio/AudioEngine";
 import { useMixerBarStore, faderToGain, NUM_MIXER_CHANNELS } from "../store/mixerBarStore";
 import { Knob } from "./Knob";
@@ -110,7 +110,8 @@ export function MixerBar() {
     channels.forEach((ch, i) => {
       let gain: number;
       if (soloed.size > 0) {
-        gain = soloed.has(i) ? faderToGain(ch.fader) : 0;
+        // Soloed+muted channels are silenced — mute takes precedence
+        gain = (soloed.has(i) && !ch.muted) ? faderToGain(ch.fader) : 0;
       } else {
         gain = ch.muted ? 0 : faderToGain(ch.fader);
       }
@@ -118,42 +119,19 @@ export function MixerBar() {
     });
   }, [channels]);
 
-  // Apply EQ to audioEngine
-  const applyEQ = useCallback((ch: number) => {
-    const s = channels[ch];
-    if (!s) return;
-    audioEngine.setChannelEQ(ch, "lo",  s.eqLo);
-    audioEngine.setChannelEQ(ch, "mid", s.eqMid);
-    audioEngine.setChannelEQ(ch, "hi",  s.eqHi);
-  }, [channels]);
-
-  // Apply pan
-  const applyPan = useCallback((ch: number, pan: number) => {
-    audioEngine.setChannelPan(ch, pan);
-  }, []);
-
-  // Apply sends
-  const applyRev = useCallback((ch: number, val: number) => {
-    audioEngine.setChannelReverbSend(ch, val / 100);
-  }, []);
-  const applyDly = useCallback((ch: number, val: number) => {
-    audioEngine.setChannelDelaySend(ch, val / 100);
-  }, []);
-
   return (
     <div className="relative flex flex-col bg-[#0e0e0e] border-t border-white/[0.07]">
       {/* Expanded panel — rendered above the strip */}
       {expandedChannel !== null && (
         <ExpandedPanel
-          chIdx={expandedChannel}
           channel={channels[expandedChannel]!}
           color={CHANNELS[expandedChannel]?.color ?? "#888"}
           label={CHANNELS[expandedChannel]?.label ?? ""}
           onClose={() => setExpanded(null)}
-          onEQ={(band, gain) => { setEQ(expandedChannel, band, gain); applyEQ(expandedChannel); }}
-          onPan={(pan) => { setPan(expandedChannel, pan); applyPan(expandedChannel, pan); }}
-          onSendRev={(v) => { setSendRev(expandedChannel, v); applyRev(expandedChannel, v); }}
-          onSendDly={(v) => { setSendDly(expandedChannel, v); applyDly(expandedChannel, v); }}
+          onEQ={(band, gain) => { setEQ(expandedChannel, band, gain); audioEngine.setChannelEQ(expandedChannel, band, gain); }}
+          onPan={(pan) => { setPan(expandedChannel, pan); audioEngine.setChannelPan(expandedChannel, pan); }}
+          onSendRev={(v) => { setSendRev(expandedChannel, v); audioEngine.setChannelReverbSend(expandedChannel, v / 100); }}
+          onSendDly={(v) => { setSendDly(expandedChannel, v); audioEngine.setChannelDelaySend(expandedChannel, v / 100); }}
         />
       )}
 
@@ -255,7 +233,6 @@ export function MixerBar() {
 // ── Expanded panel ────────────────────────────────────────────────────────────
 
 interface ExpandedPanelProps {
-  chIdx:    number;
   channel:  import("../store/mixerBarStore").ChannelMixState;
   color:    string;
   label:    string;
