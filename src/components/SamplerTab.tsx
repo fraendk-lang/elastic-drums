@@ -21,6 +21,18 @@ import { audioEngine } from "../audio/AudioEngine";
 import { Knob } from "./Knob";
 import type { SamplerPadParams } from "../audio/SamplerEngine";
 
+// ── Keyboard map: key → pad index (MPC-style bottom-up) ─────────────────────
+// Row 4 (pads 12-15): Z X C V
+// Row 3 (pads  8-11): A S D F
+// Row 2 (pads  4-7 ): Q W E R
+// Row 1 (pads  0-3 ): 1 2 3 4
+const SAMPLER_KEY_MAP: Record<string, number> = {
+  "1": 0,  "2": 1,  "3": 2,  "4": 3,
+  "q": 4,  "w": 5,  "e": 6,  "r": 7,
+  "a": 8,  "s": 9,  "d": 10, "f": 11,
+  "z": 12, "x": 13, "c": 14, "v": 15,
+};
+
 // ── Color palette per pad row ────────────────────────────────────────────────
 const PAD_COLORS = [
   "var(--ed-accent-orange)", // pads 0–3
@@ -105,6 +117,7 @@ interface PadCellProps {
   buffer: AudioBuffer | null;
   onSelect: () => void;
   onDrop: (file: File) => void;
+  onLoadFile: (file: File) => void;
 }
 
 const PadCell = memo(function PadCell({
@@ -115,10 +128,18 @@ const PadCell = memo(function PadCell({
   buffer,
   onSelect,
   onDrop,
+  onLoadFile,
 }: PadCellProps) {
   const color = getPadColor(padIndex);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) onLoadFile(file);
+    e.target.value = "";
+  }, [onLoadFile]);
 
   // Draw mini waveform
   useEffect(() => {
@@ -175,6 +196,14 @@ const PadCell = memo(function PadCell({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {/* Hidden file input for click-to-load */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        onChange={handleFileInputChange}
+      />
       {/* Pad number */}
       <span
         className="absolute top-1 left-1.5 text-[8px] font-bold tabular-nums"
@@ -194,13 +223,15 @@ const PadCell = memo(function PadCell({
         />
       )}
 
-      {/* Empty pad placeholder */}
+      {/* Empty pad placeholder — click opens file picker */}
       {!buffer && (
         <div
-          className="w-8 h-8 rounded border border-dashed flex items-center justify-center"
-          style={{ borderColor: `${color}30` }}
+          className="w-8 h-8 rounded border border-dashed flex items-center justify-center transition-all"
+          style={{ borderColor: isDragOver ? color : `${color}40` }}
+          onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+          title="Click to load sample"
         >
-          <span style={{ color: `${color}40`, fontSize: 14 }}>+</span>
+          <span style={{ color: isDragOver ? color : `${color}55`, fontSize: 14 }}>+</span>
         </div>
       )}
 
@@ -231,10 +262,13 @@ interface DetailPanelProps {
   padIndex: number;
 }
 
-function DetailPanel({ padIndex }: DetailPanelProps) {
+function DetailPanel({ padIndex, onLoadFile }: DetailPanelProps & { onLoadFile: (file: File) => void }) {
   const pad = useSamplerStore((s) => s.pads[padIndex]!);
   const setParam = useSamplerStore((s) => s.setParam);
+  const clearPad = useSamplerStore((s) => s.clearPad);
   const { buffer, params } = pad;
+  const detailFileInputRef = useRef<HTMLInputElement>(null);
+  const color = getPadColor(padIndex);
 
   const waveCanvasRef = useRef<HTMLCanvasElement>(null);
   const [dragTarget, setDragTarget] = useState<"start" | "end" | null>(null);
@@ -290,10 +324,68 @@ function DetailPanel({ padIndex }: DetailPanelProps) {
     [buffer, padIndex, params.startPoint, params.endPoint, setParam],
   );
 
-  const color = getPadColor(padIndex);
-
   return (
     <div className="flex-1 flex flex-col gap-2 min-w-0">
+
+      {/* Hidden file input for detail panel load */}
+      <input
+        ref={detailFileInputRef}
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) onLoadFile(file);
+          e.target.value = "";
+        }}
+      />
+
+      {/* Waveform header: pad name + LOAD + CLEAR */}
+      <div className="flex items-center gap-2">
+        <span
+          className="text-[8px] font-bold tracking-[0.14em] truncate flex-1"
+          style={{ color: buffer ? `${color}cc` : "rgba(255,255,255,0.2)" }}
+        >
+          {buffer
+            ? `PAD ${padIndex + 1} — ${pad.fileName.replace(/\.[^/.]+$/, "")}`
+            : `PAD ${padIndex + 1} — EMPTY`}
+        </span>
+        <label
+          className="text-[7px] font-bold px-2 py-0.5 rounded cursor-pointer transition-all shrink-0"
+          style={{
+            color:      `${color}cc`,
+            border:     `1px solid ${color}40`,
+            background: `${color}10`,
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = `${color}20`; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = `${color}10`; }}
+          onClick={() => detailFileInputRef.current?.click()}
+        >
+          LOAD
+        </label>
+        {buffer && (
+          <button
+            onClick={() => clearPad(padIndex)}
+            className="text-[7px] font-bold px-2 py-0.5 rounded transition-all shrink-0"
+            style={{
+              color:      "rgba(255,100,100,0.6)",
+              border:     "1px solid rgba(255,100,100,0.2)",
+              background: "rgba(255,100,100,0.05)",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.color      = "rgba(255,100,100,1)";
+              (e.currentTarget as HTMLElement).style.background = "rgba(255,100,100,0.12)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.color      = "rgba(255,100,100,0.6)";
+              (e.currentTarget as HTMLElement).style.background = "rgba(255,100,100,0.05)";
+            }}
+          >
+            CLEAR
+          </button>
+        )}
+      </div>
+
       {/* Waveform */}
       <div className="relative rounded overflow-hidden bg-black/30 border border-white/5">
         {buffer ? (
@@ -306,9 +398,12 @@ function DetailPanel({ padIndex }: DetailPanelProps) {
             onMouseDown={handleWaveMouseDown}
           />
         ) : (
-          <div className="flex items-center justify-center h-18 text-[9px] text-white/20 font-bold tracking-widest"
-            style={{ height: 72 }}>
-            DROP SAMPLE HERE OR LOAD FROM PAD
+          <div
+            className="flex items-center justify-center h-18 text-[9px] text-white/20 font-bold tracking-widest cursor-pointer"
+            style={{ height: 72 }}
+            onClick={() => detailFileInputRef.current?.click()}
+          >
+            DROP SAMPLE HERE OR CLICK TO LOAD
           </div>
         )}
         {dragTarget && (
@@ -756,12 +851,62 @@ export function SamplerTab() {
     [selectPad],
   );
 
+  // ── Keyboard triggers ──────────────────────────────────────
+  // Only active when Sampler tab is mounted. Ignored when user types in an input.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Skip if focus is on an input / textarea / select
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const padIdx = SAMPLER_KEY_MAP[e.key.toLowerCase()];
+      if (padIdx === undefined) return;
+
+      e.preventDefault();
+      const pad = useSamplerStore.getState().pads[padIdx];
+      if (!pad?.buffer) return;
+
+      const ctx = audioEngine.getAudioContext();
+      if (!ctx) return;
+      samplerEngine.trigger(padIdx, pad.buffer, pad.params, 0.9, ctx.currentTime);
+      selectPad(padIdx);
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      const padIdx = SAMPLER_KEY_MAP[e.key.toLowerCase()];
+      if (padIdx === undefined) return;
+
+      // Gate mode: release on key-up
+      const pad = useSamplerStore.getState().pads[padIdx];
+      if (pad?.params.playMode === "gate") {
+        const ctx = audioEngine.getAudioContext();
+        if (ctx) samplerEngine.releaseWithTime(padIdx, ctx.currentTime, pad.params.release);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, [selectPad]);
+
   return (
     <div className="flex flex-col">
       {/* Top section: pad grid + detail */}
       <div className="flex gap-4 p-3">
         {/* 4×4 pad grid */}
         <div className="shrink-0">
+          {/* Keyboard hint */}
+          <div className="mb-1.5 flex items-center justify-between px-0.5">
+            <span className="text-[7px] font-bold tracking-[0.12em] text-white/20">SAMPLER PADS</span>
+            <span className="text-[7px] text-white/15">Z–V · A–F · Q–R · 1–4</span>
+          </div>
           <div
             className="grid gap-1.5"
             style={{ gridTemplateColumns: "repeat(4, 72px)" }}
@@ -782,6 +927,10 @@ export function SamplerTab() {
                     void handleLoadFile(padIdx, file);
                     selectPad(padIdx);
                   }}
+                  onLoadFile={(file) => {
+                    void handleLoadFile(padIdx, file);
+                    selectPad(padIdx);
+                  }}
                 />
               );
             })}
@@ -789,7 +938,10 @@ export function SamplerTab() {
         </div>
 
         {/* Detail panel */}
-        <DetailPanel padIndex={selectedPad} />
+        <DetailPanel
+          padIndex={selectedPad}
+          onLoadFile={(file) => void handleLoadFile(selectedPad, file)}
+        />
       </div>
 
       {/* Step Sequencer */}
