@@ -579,6 +579,40 @@ export class MelodyEngine {
     if (p.distortion !== undefined) this.updateDistortion();
   }
 
+  /**
+   * Sweep the filter on ALL currently-playing pool voices in real-time.
+   * Called by PerformancePad Y-axis on every pointer-move so the filter
+   * opens/closes while notes are already sustaining.
+   */
+  sweepLiveFilter(cutoff: number, resonanceNorm?: number): void {
+    const now = this.ctx?.currentTime ?? 0;
+    const clampedCutoff = Math.max(20, Math.min(22000, cutoff));
+    // Update mono filterChain (non-pool path)
+    if (this.filterChain) {
+      const res = resonanceNorm !== undefined ? Math.min(resonanceNorm, 1.0) : Math.min(this.params.resonance / 30, 1.0);
+      this.filterChain.update(clampedCutoff, res, now);
+    }
+    // Update every active pool voice filter directly
+    for (const voice of this.voicePool) {
+      if (!voice.inUse) continue;
+      voice.filter.frequency.cancelScheduledValues(now);
+      voice.filter.frequency.setValueAtTime(clampedCutoff, now);
+      if (resonanceNorm !== undefined) {
+        // Q range: 0.5 (res=0) → 30 (res=1)
+        voice.filter.Q.value = 0.5 + resonanceNorm * 29.5;
+      }
+    }
+    // Also store as base cutoff so next trigger starts here, not from old preset value
+    this.params.cutoff = clampedCutoff;
+  }
+
+  /** Sweep output volume directly — used by PerformancePad "volume" Y-axis on playing notes. */
+  sweepLiveVolume(gain: number): void {
+    if (!this.output) return;
+    const clamped = Math.max(0, Math.min(1.5, gain));
+    this.output.gain.setTargetAtTime(clamped, this.ctx?.currentTime ?? 0, 0.01);
+  }
+
   /** Get output node for routing to mixer */
   getOutput(): GainNode | null {
     return this.output;

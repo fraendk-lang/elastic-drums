@@ -464,6 +464,25 @@ export class BassEngine {
     if (p.harmonics !== undefined) this.updateHarmonicEnhancer();
   }
 
+  /**
+   * Sweep the filter on the running voice in real-time.
+   * Called by PerformancePad Y-axis on every pointer-move.
+   */
+  sweepLiveFilter(cutoff: number, resonanceNorm?: number): void {
+    if (!this.filterChain || !this.ctx) return;
+    const clampedCutoff = Math.max(20, Math.min(22000, cutoff));
+    const res = resonanceNorm !== undefined ? Math.min(resonanceNorm, 1.0) : Math.min(this.params.resonance / 30, 1.0);
+    this.filterChain.update(clampedCutoff, res, this.ctx.currentTime);
+    this.params.cutoff = clampedCutoff;
+  }
+
+  /** Sweep output volume directly — used by PerformancePad "volume" Y-axis. */
+  sweepLiveVolume(gain: number): void {
+    if (!this.output) return;
+    const clamped = Math.max(0, Math.min(1.5, gain));
+    this.output.gain.setTargetAtTime(clamped, this.ctx?.currentTime ?? 0, 0.01);
+  }
+
   /** Get output node for routing to mixer */
   getOutput(): GainNode | null {
     return this.output;

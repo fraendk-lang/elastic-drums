@@ -17,6 +17,7 @@ import { useDrumStore } from "../store/drumStore";
 import { melodyEngine } from "../audio/MelodyEngine";
 import { bassEngine, SCALES } from "../audio/BassEngine";
 import { audioEngine } from "../audio/AudioEngine";
+import { sendFxManager } from "../audio/SendFx";
 
 interface Props {
   isOpen: boolean;
@@ -29,14 +30,20 @@ function midiToName(midi: number): string {
   return (NOTE_NAMES_SHARP[midi % 12] ?? "?") + (Math.floor(midi / 12) - 1);
 }
 
-// Which Y-Param applies to which engine. Both engines share most names.
-const Y_PARAMS: { id: YAxisParam; label: string; range: [number, number] }[] = [
-  { id: "cutoff",     label: "Cutoff",    range: [200, 9000] },
-  { id: "resonance",  label: "Reso",      range: [0, 25] },
-  { id: "envMod",     label: "EnvMod",    range: [0, 1] },
-  { id: "decay",      label: "Decay",     range: [60, 700] },
-  { id: "distortion", label: "Drive",     range: [0, 1] },
-  { id: "volume",     label: "Volume",    range: [0.1, 0.9] },
+// Y-Param definitions — wide, dramatic ranges that make every gesture feel powerful.
+// "springBack" params restore their original value when all pointers leave the pad.
+const Y_PARAMS: { id: YAxisParam; label: string; range: [number, number]; springBack?: boolean; group: "synth" | "fx" }[] = [
+  // ── Synth params (affect melody/bass engine directly) ──────────────────
+  { id: "cutoff",     label: "CUTOFF",   range: [60, 18000],  group: "synth" },  // full spectrum: bass rumble → hi-hat shimmer
+  { id: "resonance",  label: "RESO",     range: [0, 30],      group: "synth" },  // screaming acid resonance
+  { id: "envMod",     label: "ENVMOD",   range: [0, 1.2],     group: "synth" },  // heavy filter envelope depth
+  { id: "decay",      label: "DECAY",    range: [30, 1400],   group: "synth" },  // short stab → long sustain
+  { id: "distortion", label: "SYNTH DRV",range: [0, 1.5],     group: "synth" },  // light crunch → heavy saturation
+  { id: "volume",     label: "VOL",      range: [0.02, 1.4],  group: "synth" },  // silence → loud blast
+  // ── FX params (affect send buses — spring back to original on release) ─
+  { id: "reverb",    label: "REVERB",   range: [0, 1.8],  springBack: true, group: "fx" },  // dry → massive wash
+  { id: "delay",     label: "DELAY",    range: [0, 1.4],  springBack: true, group: "fx" },  // off → slapback echo
+  { id: "drive",     label: "MASTER DRV",range: [0, 1.5], springBack: true, group: "fx" },  // clean → crushed
 ];
 
 interface ActiveVoice {
@@ -48,6 +55,13 @@ interface ActiveVoice {
   releases: Array<(() => void) | null>;
   /** For chord mode: which cell is active */
   cellIndex?: number;
+}
+
+/** FX values saved before pad interaction — restored on last-finger-up if springBack param */
+interface FxSnapshot {
+  reverb: number;
+  delay: number;
+  drive: number;
 }
 
 export function PerformancePad({ isOpen, onClose }: Props) {
@@ -96,6 +110,8 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   const padRef = useRef<HTMLDivElement | null>(null);
   const activeVoicesRef = useRef<Map<number, ActiveVoice>>(new Map());
   const rafIdRef = useRef<number | null>(null);
+  /** FX levels captured at first pointer-down — restored on last pointer-up for spring-back params */
+  const fxSnapshotRef = useRef<FxSnapshot | null>(null);
 
   // Particle trail — each trail point decays over ~600ms
   interface TrailPoint { x: number; y: number; t: number; pointerId: number }
@@ -199,16 +215,24 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   }, [scaleName, rootNote, scaleLowestOct, scaleOctaves, gridSnap]);
 
   // ── Y mapping: Y [0-1] → param value ──
+  // Y=0 is TOP of pad (high value = most expressive at the top — natural gesture)
+  // Y=1 is BOTTOM (low value)
   const yToParam = useCallback((y: number): number => {
     const info = Y_PARAMS.find((p) => p.id === yParam)!;
     const [min, max] = info.range;
-    // Y=0 is top of pad (higher value feels more expressive)
-    // Exponential curve for cutoff/decay (perceptual)
+    // Flip: top of pad = max value
+    const t = 1 - y;
+    // Exponential perceptual curve for frequency/time params
     if (yParam === "cutoff" || yParam === "decay") {
       const ratio = max / min;
-      return min * Math.pow(ratio, y);
+      return min * Math.pow(ratio, t);
     }
-    return min + y * (max - min);
+    // Square-law for resonance (feels more gradual at low end)
+    if (yParam === "resonance") {
+      return min + t * t * (max - min);
+    }
+    // Linear for all others (reverb/delay/drive/envMod/distortion/volume)
+    return min + t * (max - min);
   }, [yParam]);
 
   // ── Fire a voice — returns release handle ──
@@ -235,6 +259,43 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   // ── Live Y modulation while dragging ──
   const modulateVoice = useCallback((y: number) => {
     const paramValue = yToParam(y);
+
+    // FX params → SendFx bus (spring-back captured at pointer-down)
+    if (yParam === "reverb") { sendFxManager.setReverbLevel(paramValue); return; }
+    if (yParam === "delay")  { sendFxManager.setDelayLevel(paramValue);  return; }
+    if (yParam === "drive") {
+      // Master saturation: route through setParam-equivalent
+      // sendFxManager doesn't expose master sat directly, so use distortion on engine
+      if (target === "melody") melodyEngine.setParams({ distortion: paramValue });
+      else bassEngine.setParams({ distortion: paramValue });
+      return;
+    }
+
+    // Cutoff/Resonance → sweepLiveFilter (updates PLAYING voice filters in real-time)
+    if (yParam === "cutoff") {
+      if (target === "melody") melodyEngine.sweepLiveFilter(paramValue);
+      else bassEngine.sweepLiveFilter(paramValue);
+      return;
+    }
+    if (yParam === "resonance") {
+      // Normalise to 0-1 for sweepLiveFilter resonanceNorm param
+      const normRes = paramValue / 30;
+      if (target === "melody") melodyEngine.sweepLiveFilter(melodyEngine["params"]?.cutoff ?? 2000, normRes);
+      else bassEngine.sweepLiveFilter(bassEngine["params"]?.cutoff ?? 2000, normRes);
+      // Also update engine params so next trigger uses the new resonance
+      if (target === "melody") melodyEngine.setParams({ resonance: paramValue });
+      else bassEngine.setParams({ resonance: paramValue });
+      return;
+    }
+
+    // Volume → direct output gain sweep (affects playing notes immediately)
+    if (yParam === "volume") {
+      if (target === "melody") melodyEngine.sweepLiveVolume(paramValue);
+      else bassEngine.sweepLiveVolume(paramValue);
+      return;
+    }
+
+    // All other params (envMod, decay, distortion) → setParams (affects next trigger)
     if (target === "melody") melodyEngine.setParams({ [yParam]: paramValue });
     else bassEngine.setParams({ [yParam]: paramValue });
   }, [target, yParam, yToParam]);
@@ -271,9 +332,29 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     e.preventDefault();
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     const { x, y } = getXY(e);
-    // Velocity: faster downward pointer movement in recent history = louder.
-    // Simple: use pressure if available, else 0.85 default.
-    const velocity = e.pressure > 0 ? 0.4 + e.pressure * 0.6 : 0.85;
+
+    // Snapshot FX levels for spring-back params on FIRST pointer down only
+    if (activeVoicesRef.current.size === 0) {
+      const paramDef = Y_PARAMS.find((p) => p.id === yParam);
+      if (paramDef?.springBack) {
+        fxSnapshotRef.current = {
+          reverb: sendFxManager.getReverbLevel(),
+          delay: sendFxManager.getDelayLevel(),
+          drive: 0, // drive is engine-specific, reset to 0 on release
+        };
+      } else {
+        fxSnapshotRef.current = null;
+      }
+    }
+
+    // Velocity: Y position (top = loud, bottom = soft) + pressure if available.
+    // This makes playing in the upper half louder — natural performance gesture.
+    const yVelocityBoost = 0.3 + (1 - y) * 0.7;  // top of pad → 1.0, bottom → 0.3
+    const pressureBoost = e.pressure > 0 ? e.pressure : 0.85;
+    const velocity = Math.min(1.0, yVelocityBoost * 0.6 + pressureBoost * 0.4);
+
+    // Apply Y modulation immediately on press
+    modulateVoice(y);
 
     let voice: ActiveVoice;
     if (mode === "chords") {
@@ -288,11 +369,24 @@ export function PerformancePad({ isOpen, onClose }: Props) {
       applyChordFollow(rootMidi);
 
       const releases: Array<(() => void) | null> = [];
-      // Slight strum: fire notes with tiny delay between each for a human feel
+      const ctx = audioEngine.getAudioContext();
+      // Strum: stagger notes by 0–35ms for human feel (root = 0ms, 5th = 12ms, 3rd = 22ms…)
+      const strumGap = 0.015; // 15ms between chord notes
       chord.intervals.forEach((interval, i) => {
         const noteMidi = rootMidi + interval;
-        // Y axis modulates something meaningful even in chord mode — use cell's vertical center
-        const r = fireVoice(noteMidi, velocity * (i === 0 ? 1 : 0.85), 1 - ((row + 0.5) / chordSet.rows));
+        const strumDelay = i * strumGap;
+        const yCell = 1 - ((row + 0.5) / chordSet.rows);
+        // Inner voices slightly softer than root
+        const noteVel = velocity * (i === 0 ? 1.0 : 0.82 - i * 0.04);
+        const startTime = (ctx?.currentTime ?? 0) + 0.001 + strumDelay;
+        // Fire with strum delay using direct engine calls
+        const r = (target === "melody")
+          ? melodyEngine.triggerPolyNote(noteMidi, startTime, 30.0, noteVel, false)
+          : (() => {
+              bassEngine.triggerNote(noteMidi, startTime, false, false, false, noteVel);
+              return () => bassEngine.releaseNote(ctx?.currentTime ?? 0);
+            })();
+        void yCell; // used in Y modulation callback
         releases.push(r);
       });
       voice = { pointerId: e.pointerId, midi: rootMidi, startAt: performance.now(), velocity, releases, cellIndex: cellIdx };
@@ -343,6 +437,41 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     if (mode === "chords") {
       const stillChordActive = Array.from(activeVoicesRef.current.values()).some((v) => v.cellIndex !== undefined);
       if (!stillChordActive) applyChordFollow(null);
+    }
+    // Spring-back: restore FX levels when ALL fingers are lifted
+    if (activeVoicesRef.current.size === 0 && fxSnapshotRef.current) {
+      const snap = fxSnapshotRef.current;
+      fxSnapshotRef.current = null;
+      // Smooth fade back over 400ms (not jarring)
+      const ctx = audioEngine.getAudioContext();
+      const fadeMs = 400;
+      if (yParam === "reverb") {
+        // Use ramp via a small setTimeout loop — sendFxManager doesn't expose AudioParam directly
+        const startLevel = sendFxManager.getReverbLevel();
+        const endLevel = snap.reverb;
+        const steps = 20;
+        for (let i = 1; i <= steps; i++) {
+          setTimeout(() => {
+            const t = i / steps;
+            sendFxManager.setReverbLevel(startLevel + (endLevel - startLevel) * t);
+          }, (fadeMs / steps) * i);
+        }
+      } else if (yParam === "delay") {
+        const startLevel = sendFxManager.getDelayLevel();
+        const endLevel = snap.delay;
+        const steps = 20;
+        for (let i = 1; i <= steps; i++) {
+          setTimeout(() => {
+            const t = i / steps;
+            sendFxManager.setDelayLevel(startLevel + (endLevel - startLevel) * t);
+          }, (fadeMs / steps) * i);
+        }
+      } else if (yParam === "drive") {
+        // Restore synth distortion (engine-specific)
+        void ctx; // suppress unused warning
+        if (target === "melody") melodyEngine.setParams({ distortion: 0 });
+        else bassEngine.setParams({ distortion: 0 });
+      }
     }
   };
 
@@ -443,29 +572,44 @@ export function PerformancePad({ isOpen, onClose }: Props) {
             // Check if any active pointer is in this cell
             const active = Array.from(activeVoicesRef.current.values()).some((v) => v.cellIndex === idx);
 
-            // Cell fill
-            ctx.fillStyle = active ? `${hue}26` : "rgba(255,255,255,0.015)";
+            // Cell fill — bright when active
+            ctx.fillStyle = active ? `${hue}3a` : "rgba(255,255,255,0.02)";
             ctx.fillRect(x + 1, y + 1, cellW - 2, cellH - 2);
 
-            // Border
-            ctx.strokeStyle = active ? `${hue}cc` : "rgba(255,255,255,0.08)";
-            ctx.lineWidth = active ? 2 : 1;
-            ctx.strokeRect(x + 1, y + 1, cellW - 2, cellH - 2);
-
-            // Glow on active
+            // Active: inner gradient wash
             if (active) {
-              ctx.shadowColor = hue;
-              ctx.shadowBlur = 20;
-              ctx.strokeRect(x + 1, y + 1, cellW - 2, cellH - 2);
-              ctx.shadowBlur = 0;
+              const cellGrad = ctx.createRadialGradient(
+                x + cellW / 2, y + cellH / 2, 0,
+                x + cellW / 2, y + cellH / 2, Math.max(cellW, cellH) * 0.7
+              );
+              cellGrad.addColorStop(0, `${hue}55`);
+              cellGrad.addColorStop(1, `${hue}00`);
+              ctx.fillStyle = cellGrad;
+              ctx.fillRect(x + 1, y + 1, cellW - 2, cellH - 2);
             }
 
+            // Border
+            ctx.strokeStyle = active ? `${hue}ff` : `${hue}33`;
+            ctx.lineWidth = active ? 2.5 : 1;
+            if (active) {
+              ctx.shadowColor = hue;
+              ctx.shadowBlur = 22;
+            }
+            ctx.strokeRect(x + 1, y + 1, cellW - 2, cellH - 2);
+            ctx.shadowBlur = 0;
+
             // Label
-            ctx.fillStyle = active ? "#fff" : hue + "cc";
-            ctx.font = `${active ? "bold " : ""}${Math.min(22, cellW / 6)}px ui-sans-serif, system-ui, -apple-system`;
+            ctx.fillStyle = active ? "#fff" : hue + "bb";
+            const fontSize = Math.min(active ? 26 : 20, cellW / 5.5);
+            ctx.font = `${active ? "bold " : ""}${fontSize}px ui-sans-serif, system-ui, -apple-system`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
+            if (active) {
+              ctx.shadowColor = hue;
+              ctx.shadowBlur = 12;
+            }
             ctx.fillText(chord.label, x + cellW / 2, y + cellH / 2);
+            ctx.shadowBlur = 0;
           }
         }
       } else {
@@ -492,25 +636,33 @@ export function PerformancePad({ isOpen, onClose }: Props) {
         }
       }
 
-      // ── Particle trail (hover + press) ──
+      // ── Particle trail (hover + press) — dramatically enlarged ──
       const nowT = performance.now();
       if (trailEnabled && trailRef.current.length > 0) {
-        const TRAIL_LIFETIME = 1100; // Longer lifetime for clearer trails
+        const TRAIL_LIFETIME = 1600;
         trailRef.current = trailRef.current.filter((p) => nowT - p.t < TRAIL_LIFETIME);
 
         for (const p of trailRef.current) {
           const age = (nowT - p.t) / TRAIL_LIFETIME;
-          const alpha = Math.pow(1 - age, 1.4);  // Slower fade
-          const radius = 10 + (1 - age) * 22;    // Bigger particles (20→32px)
+          const alpha = Math.pow(1 - age, 1.2);
+          const radius = 18 + (1 - age) * 42;  // 18 → 60px — much bigger blobs
           const px = p.x * W;
           const py = p.y * H;
+          const isActive = activeVoicesRef.current.has(p.pointerId);
 
-          // Softer additive-looking particle — bright magenta→violet→transparent
           const grad = ctx.createRadialGradient(px, py, 0, px, py, radius);
-          grad.addColorStop(0,   `rgba(255, 200, 240, ${alpha * 0.85})`);
-          grad.addColorStop(0.3, `rgba(244, 114, 182, ${alpha * 0.6})`);
-          grad.addColorStop(0.7, `rgba(167, 139, 250, ${alpha * 0.3})`);
-          grad.addColorStop(1,   "rgba(244, 114, 182, 0)");
+          if (isActive) {
+            // Active finger: warm white → magenta → violet
+            grad.addColorStop(0,   `rgba(255, 240, 255, ${alpha * 0.95})`);
+            grad.addColorStop(0.25, `rgba(255, 100, 220, ${alpha * 0.75})`);
+            grad.addColorStop(0.6, `rgba(167, 100, 250, ${alpha * 0.45})`);
+            grad.addColorStop(1,   "rgba(100, 50, 200, 0)");
+          } else {
+            // Hover / fading: cooler
+            grad.addColorStop(0,   `rgba(200, 180, 255, ${alpha * 0.5})`);
+            grad.addColorStop(0.5, `rgba(167, 100, 250, ${alpha * 0.25})`);
+            grad.addColorStop(1,   "rgba(100, 50, 200, 0)");
+          }
           ctx.fillStyle = grad;
           ctx.beginPath();
           ctx.arc(px, py, radius, 0, Math.PI * 2);
@@ -518,64 +670,97 @@ export function PerformancePad({ isOpen, onClose }: Props) {
         }
       }
 
-      // ── Active voice press-indicator: big circle with note inside ──
+      // ── Active voice press-indicator — big dramatic circle ──
       for (const voice of activeVoicesRef.current.values()) {
         const latest = [...trailRef.current].reverse().find((p) => p.pointerId === voice.pointerId);
         if (!latest) continue;
         const px = latest.x * W;
         const py = latest.y * H;
 
-        // Pick color: chord hue if chord mode, else accent pink
         const chordColor = mode === "chords" && voice.cellIndex !== undefined
           ? (chordSet.cells[voice.cellIndex]?.hue ?? "#f472b6")
           : "#f472b6";
 
-        // Scale-in animation: grows from 0 to full size in ~120ms after press
-        const pressAge = Math.min(1, (nowT - voice.startAt) / 120);
-        const pressScale = 1 - Math.pow(1 - pressAge, 3); // Ease-out cubic
+        // Impact burst: very fast initial expansion (0→60ms) then settle
+        const impactAge = Math.min(1, (nowT - voice.startAt) / 60);
+        const impactBurst = 1 - Math.pow(1 - impactAge, 2);
 
-        const R_FULL = 46;
-        const R = R_FULL * pressScale;
+        // Scale-in: full size at 150ms
+        const pressAge = Math.min(1, (nowT - voice.startAt) / 150);
+        const pressScale = 1 - Math.pow(1 - pressAge, 3);
 
-        // Outer ripple (pulses outward continuously while pressed)
-        const ripplePhase = ((nowT - voice.startAt) % 1400) / 1400;
-        const rippleR = R + ripplePhase * 32;
-        const rippleAlpha = (1 - ripplePhase) * 0.55;
-        ctx.strokeStyle = chordColor + Math.floor(rippleAlpha * 255).toString(16).padStart(2, "0");
-        ctx.lineWidth = 2;
+        // Breathe: subtle ±8% pulse while held
+        const breathe = 1 + 0.08 * Math.sin((nowT - voice.startAt) / 500 * Math.PI * 2);
+
+        const R_FULL = 62;
+        const R = R_FULL * pressScale * breathe;
+
+        // BIG outer ambient glow (spreads far)
+        const glowR = R + 80 + impactBurst * 60;
+        const glowAlpha = 0.18 * (1 - impactBurst * 0.4);
+        const bgGrad = ctx.createRadialGradient(px, py, 0, px, py, glowR);
+        bgGrad.addColorStop(0,   chordColor + Math.floor(glowAlpha * 255).toString(16).padStart(2, "0"));
+        bgGrad.addColorStop(1,   "rgba(0,0,0,0)");
+        ctx.fillStyle = bgGrad;
         ctx.beginPath();
-        ctx.arc(px, py, rippleR, 0, Math.PI * 2);
-        ctx.stroke();
+        ctx.arc(px, py, glowR, 0, Math.PI * 2);
+        ctx.fill();
 
-        // Solid inner disc (semi-transparent filled)
+        // FAST impact ring (expands 0→220px in 300ms then fades)
+        if (impactAge < 1) {
+          const impactR = impactBurst * 200;
+          const impactAlpha = (1 - impactAge) * 0.7;
+          ctx.strokeStyle = chordColor + Math.floor(impactAlpha * 255).toString(16).padStart(2, "0");
+          ctx.lineWidth = 3 - impactAge * 2;
+          ctx.beginPath();
+          ctx.arc(px, py, impactR, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        // Three concentric ripples (staggered phase)
+        for (let ripIdx = 0; ripIdx < 3; ripIdx++) {
+          const rippleOffset = (ripIdx / 3);
+          const ripplePhase = ((nowT - voice.startAt) / 1800 + rippleOffset) % 1;
+          const rippleR = R + 8 + ripplePhase * 55;
+          const rippleAlpha = (1 - ripplePhase) * 0.5;
+          ctx.strokeStyle = chordColor + Math.floor(rippleAlpha * 255).toString(16).padStart(2, "0");
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(px, py, rippleR, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        // Solid filled disc with gradient
         const discGrad = ctx.createRadialGradient(px, py, 0, px, py, R);
-        discGrad.addColorStop(0,   chordColor + "e6"); // 90% alpha
-        discGrad.addColorStop(0.6, chordColor + "80"); // 50% alpha
-        discGrad.addColorStop(1,   chordColor + "00"); // 0% alpha
+        discGrad.addColorStop(0,   chordColor + "f0");
+        discGrad.addColorStop(0.5, chordColor + "90");
+        discGrad.addColorStop(1,   chordColor + "10");
         ctx.fillStyle = discGrad;
+        ctx.shadowColor = chordColor;
+        ctx.shadowBlur = 30;
         ctx.beginPath();
         ctx.arc(px, py, R, 0, Math.PI * 2);
         ctx.fill();
+        ctx.shadowBlur = 0;
 
-        // Border ring
-        ctx.strokeStyle = chordColor;
-        ctx.lineWidth = 2;
+        // White ring
+        ctx.strokeStyle = "rgba(255,255,255,0.85)";
+        ctx.lineWidth = 2.5;
         ctx.beginPath();
-        ctx.arc(px, py, R, 0, Math.PI * 2);
+        ctx.arc(px, py, R * 0.92, 0, Math.PI * 2);
         ctx.stroke();
 
-        // Big note label in the center
+        // Label
         const label = mode === "chords" && voice.cellIndex !== undefined
           ? (chordSet.cells[voice.cellIndex]?.label ?? midiToName(voice.midi))
           : midiToName(voice.midi);
-
-        const labelFontSize = Math.min(22, Math.max(12, (R_FULL * pressScale) * 0.55));
+        const labelFontSize = Math.min(28, Math.max(14, R * 0.55));
         ctx.font = `bold ${labelFontSize}px ui-sans-serif, system-ui, -apple-system`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillStyle = "#fff";
-        ctx.shadowColor = "rgba(0, 0, 0, 0.9)";
-        ctx.shadowBlur = 6;
+        ctx.shadowColor = "rgba(0,0,0,0.95)";
+        ctx.shadowBlur = 8;
         ctx.fillText(label, px, py);
         ctx.shadowBlur = 0;
       }
@@ -654,14 +839,28 @@ export function PerformancePad({ isOpen, onClose }: Props) {
 
         <div className="mx-1 h-4 w-px bg-white/10" />
 
-        {/* Y Param */}
-        <div className="flex items-center gap-1">
-          <span className="text-[8px] text-[var(--ed-text-muted)] mr-1">Y →</span>
-          {Y_PARAMS.map((p) => (
+        {/* Y Param — grouped: SYNTH params + FX params (spring-back) */}
+        <div className="flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1.5 py-0.5">
+          <span className="text-[8px] text-[var(--ed-text-muted)] mr-1">Y AXIS</span>
+          {/* Synth group */}
+          {Y_PARAMS.filter((p) => p.group === "synth").map((p) => (
             <button key={p.id} onClick={() => setYParam(p.id)}
-              className={`px-2 h-6 text-[8px] font-bold rounded transition-all ${
-                yParam === p.id ? "bg-white/15 text-white/90" : "text-white/30 hover:text-white/60"
+              className={`px-2 h-5 text-[8px] font-bold rounded transition-all ${
+                yParam === p.id
+                  ? "bg-[var(--ed-accent-melody)]/30 text-[var(--ed-accent-melody)]"
+                  : "text-white/30 hover:text-white/60"
               }`}>{p.label}</button>
+          ))}
+          <span className="w-px h-3 bg-white/15 mx-1" />
+          {/* FX group — spring-back indicator */}
+          {Y_PARAMS.filter((p) => p.group === "fx").map((p) => (
+            <button key={p.id} onClick={() => setYParam(p.id)}
+              title={`${p.label} — springs back when you lift`}
+              className={`px-2 h-5 text-[8px] font-bold rounded transition-all ${
+                yParam === p.id
+                  ? "bg-orange-500/30 text-orange-300"
+                  : "text-orange-400/40 hover:text-orange-300/70"
+              }`}>{p.label} ⟲</button>
           ))}
         </div>
 
