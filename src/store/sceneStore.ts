@@ -40,9 +40,21 @@ export interface Scene {
   bassGlobalOctave?: number;
   chordsGlobalOctave?: number;
   melodyGlobalOctave?: number;
+  // Follow Action: what happens automatically after this scene's quantize cycle
+  followAction?: FollowAction;
 }
 
 export type LaunchQuantize = "immediate" | "1bar" | "2bar" | "4bar";
+
+/**
+ * Follow Action — what happens automatically after this scene finishes playing
+ * (fires at the next quantized boundary when no explicit queue is set).
+ *
+ * "none"   — nothing, scene keeps looping (default)
+ * "next"   — auto-advance to the next filled scene slot (wraps)
+ * "random" — jump to a random filled scene slot
+ */
+export type FollowAction = "none" | "next" | "random";
 
 interface SceneStore {
   scenes: (Scene | null)[]; // 16 slots
@@ -60,6 +72,7 @@ interface SceneStore {
   duplicateScene: (fromSlot: number, toSlot?: number) => void;
   swapScenes: (a: number, b: number) => void;
   setLaunchQuantize: (q: LaunchQuantize) => void;
+  setSceneFollowAction: (slot: number, action: FollowAction) => void;
 }
 
 // ─── Helpers ────────────────────────────────────────────
@@ -281,6 +294,14 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
   },
 
   setLaunchQuantize: (q: LaunchQuantize) => set({ launchQuantize: q }),
+
+  setSceneFollowAction: (slot, action) => {
+    const scene = get().scenes[slot];
+    if (!scene) return;
+    const newScenes = [...get().scenes];
+    newScenes[slot] = { ...scene, followAction: action };
+    set({ scenes: newScenes });
+  },
 
   clearScene: (slot: number) => {
     const newScenes = [...get().scenes];

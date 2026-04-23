@@ -3,7 +3,15 @@ import { audioEngine, VOICE_PARAM_DEFS } from "../audio/AudioEngine";
 import { sampleManager } from "../audio/SampleManager";
 
 // Scene store reference — set lazily to avoid circular imports
-let _sceneStoreRef: { getState: () => { scenes: (unknown | null)[]; loadScene: (slot: number) => void; nextScene: number | null; launchQuantize: string } } | null = null;
+let _sceneStoreRef: {
+  getState: () => {
+    scenes: ({ followAction?: string } | null)[];
+    loadScene: (slot: number) => void;
+    nextScene: number | null;
+    activeScene: number;
+    launchQuantize: string;
+  }
+} | null = null;
 export function setSceneStoreRef(ref: typeof _sceneStoreRef) { _sceneStoreRef = ref; }
 function getSceneStore() { return _sceneStoreRef; }
 
@@ -54,6 +62,7 @@ export interface TrackData {
   volume: number;
   pan: number;
   length: number;         // Per-track length for polymetric
+  swing?: number;         // Per-track swing override (50–75). undefined = follow global pattern swing.
 }
 
 export interface PatternData {
@@ -443,7 +452,17 @@ function startScheduler() {
         // Trigger with micro-timing offset + ratchet support
         const vel = step.velocity / 127;
         const nudge = (step.microTiming ?? 0) * (secondsPerStep / 24); // ±23 ticks → seconds
-        const trigTime = nextStepTime + nudge;
+
+        // Per-track swing offset (odd/offbeat steps only).
+        // nextStepTime is already positioned by global swing; this delta lets each
+        // track have its own groove without moving the shared grid cursor.
+        let perTrackSwingNudge = 0;
+        if (currentStep % 2 === 1 && trackData.swing !== undefined) {
+          const trackSwingRatio = (trackData.swing - 50) / 100;
+          perTrackSwingNudge = (trackSwingRatio - swingRatio) * secondsPerStep;
+        }
+
+        const trigTime = nextStepTime + nudge + perTrackSwingNudge;
         const ratchets = step.ratchetCount ?? 1;
         const gateDurationSec = Math.max(secondsPerStep, stepDuration * (step.gateLength ?? 1));
         if (ratchets <= 1) {
@@ -521,10 +540,30 @@ function startScheduler() {
         // Scene/Clip queue: resolve at quantized bar boundary
         const sceneStoreRef = getSceneStore();
         if (sceneStoreRef) {
-          const { nextScene, loadScene, launchQuantize } = sceneStoreRef.getState();
+          const { nextScene, loadScene, launchQuantize, activeScene, scenes } = sceneStoreRef.getState();
           const barInterval = launchQuantize === "4bar" ? 4 : launchQuantize === "2bar" ? 2 : 1;
           if (cycleCount % barInterval === 0) {
-            if (nextScene !== null) loadScene(nextScene);
+            if (nextScene !== null) {
+              loadScene(nextScene);
+            } else {
+              // Follow Actions: fire when no explicit queue is pending
+              const activeSceneData = activeScene >= 0 ? scenes[activeScene] : null;
+              const followAction = activeSceneData?.followAction ?? "none";
+              if (followAction === "next") {
+                // Advance to next filled slot (wraps around)
+                const filled = scenes.reduce<number[]>((acc, s, i) => (s ? [...acc, i] : acc), []);
+                if (filled.length > 0) {
+                  const afterIdx = filled.findIndex((i) => i > activeScene);
+                  loadScene(afterIdx >= 0 ? filled[afterIdx]! : filled[0]!);
+                }
+              } else if (followAction === "random") {
+                const filled = scenes.reduce<number[]>((acc, s, i) => (s && i !== activeScene ? [...acc, i] : acc), []);
+                if (filled.length > 0) {
+                  loadScene(filled[Math.floor(Math.random() * filled.length)]!);
+                }
+              }
+              // "none" / "loop" / undefined → no action, scene keeps looping
+            }
             // Resolve clip queue too (shared quantize)
             const clipRef = _clipStoreRef;
             if (clipRef) clipRef.getState().resolveQueuedClips();
@@ -532,7 +571,10 @@ function startScheduler() {
         }
       }
 
-      useDrumStore.setState({ currentStep: nextStep });
+      useDrumStore.setState({
+        currentStep: nextStep,
+        ...(nextStep === 0 ? { barCycle: cycleCount } : {}),
+      });
       nextStepTime += stepDuration;
     }
   }, 20); // 20ms tick for tighter timing resolution
@@ -635,6 +677,10 @@ interface DrumStore {
   // Mixer mute/solo (persistent in store)
   toggleTrackMute: (track: number) => void;
   toggleTrackSolo: (track: number) => void;
+
+  // Per-track swing
+  barCycle: number;         // Increments at each pattern wrap — used by SceneMini countdown
+  setTrackSwing: (track: number, swing: number | undefined) => void;
 }
 
 export const useDrumStore = create<DrumStore>((set, get) => ({
@@ -655,6 +701,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   selectedPage: 0,
   currentPatternIndex: -1, // -1 = empty/custom
   heldStep: null,
+  barCycle: 0,
   pattern: createEmptyPattern(),
 
   setBpm: (bpm) => set({ bpm: Math.max(30, Math.min(300, bpm)) }),
@@ -1004,6 +1051,17 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     set((state) => {
       const newPattern = structuredClone(state.pattern);
       newPattern.tracks[track]!.solo = !newPattern.tracks[track]!.solo;
+      return { pattern: newPattern };
+    }),
+
+  setTrackSwing: (track, swing) =>
+    set((state) => {
+      const newPattern = structuredClone(state.pattern);
+      if (swing === undefined) {
+        delete newPattern.tracks[track]!.swing;
+      } else {
+        newPattern.tracks[track]!.swing = Math.max(50, Math.min(75, swing));
+      }
       return { pattern: newPattern };
     }),
 }));

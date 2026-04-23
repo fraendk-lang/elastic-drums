@@ -170,29 +170,63 @@ interface TrackRowProps {
   onGateDragStart: (e: React.PointerEvent, track: number, absStep: number) => void;
 }
 
+const SWING_CYCLE = [undefined, 55, 60, 65, 70, 75] as const;
+
 const TrackRow = React.memo(function TrackRow({
   track, label, color, pageOffset, selectedVoice, currentStep, isPlaying, heldStep,
   pattern, gateDrag, gateDragEnd, stepRefs, onSelectTrack, onToggleStep,
   onSetStepVelocity, onContextMenu, onStepMouseDown, onGateDragStart,
 }: TrackRowProps) {
   const isSelectedTrack = selectedVoice === track;
+  const trackSwing = pattern.tracks[track]?.swing as number | undefined;
+  const hasSwing = trackSwing !== undefined;
+
+  // Right-click track label → cycle per-track swing preset
+  const handleSwingCycle = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const { setTrackSwing } = useDrumStore.getState();
+    const idx = SWING_CYCLE.findIndex((v) => v === trackSwing);
+    const next = SWING_CYCLE[(idx + 1) % SWING_CYCLE.length];
+    setTrackSwing(track, next);
+  }, [track, trackSwing]);
 
   return (
     <React.Fragment>
       <button
         onClick={() => onSelectTrack(track)}
-        aria-label={`Select track: ${label}`}
+        onContextMenu={handleSwingCycle}
+        aria-label={`Select track: ${label}${hasSwing ? ` (swing ${trackSwing})` : ""}`}
+        title={hasSwing ? `Swing: ${trackSwing} · Right-click to cycle` : "Right-click to set per-track swing"}
         className={`flex min-w-0 items-center text-[9px] font-semibold pr-1 h-[28px] rounded-l transition-all whitespace-nowrap overflow-hidden ${
           isSelectedTrack
             ? "text-[var(--ed-text-primary)]"
             : "text-[var(--ed-text-muted)] hover:text-[var(--ed-text-secondary)]"
         }`}
       >
-        <div className="w-[3px] h-3.5 rounded-full mr-1.5 shrink-0 transition-all" style={{
-          backgroundColor: isSelectedTrack ? color : color + "30",
-          boxShadow: isSelectedTrack ? `0 0 6px ${color}30` : "none",
-        }} />
-        <span className="truncate leading-none">{label}</span>
+        {/* Color bar — turns amber + grows when per-track swing is set */}
+        <div
+          className="rounded-full mr-1.5 shrink-0 transition-all"
+          style={{
+            width: hasSwing ? "5px" : "3px",
+            height: hasSwing ? "18px" : "14px",
+            backgroundColor: hasSwing
+              ? `color-mix(in srgb, #f59e0b 70%, ${color})`
+              : isSelectedTrack ? color : color + "30",
+            boxShadow: hasSwing
+              ? "0 0 6px rgba(245,158,11,0.5)"
+              : isSelectedTrack ? `0 0 6px ${color}30` : "none",
+          }}
+        />
+        <span className="truncate leading-none flex-1">{label}</span>
+        {/* Swing value badge */}
+        {hasSwing && (
+          <span
+            className="text-[6px] font-black tabular-nums shrink-0 ml-0.5"
+            style={{ color: "rgba(245,158,11,0.75)" }}
+          >
+            {trackSwing}
+          </span>
+        )}
       </button>
 
       {Array.from({ length: 16 }, (_, stepIdx) => {

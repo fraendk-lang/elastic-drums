@@ -7,17 +7,34 @@ import { useCallback } from "react";
 import { useDrumStore } from "../store/drumStore";
 import { useSceneStore } from "../store/sceneStore";
 
+// Bars remaining until queued scene fires
+function useBarsToSwitch(): number | null {
+  const nextScene    = useSceneStore((s) => s.nextScene);
+  const launchQ      = useSceneStore((s) => s.launchQuantize);
+  const barCycle     = useDrumStore((s) => s.barCycle);
+  const isPlaying    = useDrumStore((s) => s.isPlaying);
+
+  if (nextScene === null || !isPlaying || launchQ === "immediate") return null;
+
+  const barInterval  = launchQ === "4bar" ? 4 : launchQ === "2bar" ? 2 : 1;
+  const barsLeft     = barInterval - (barCycle % barInterval);
+  return barsLeft;
+}
+
 interface SceneMiniProps {
   onClose: () => void;
 }
 
 export function SceneMini({ onClose }: SceneMiniProps) {
-  const isPlaying = useDrumStore((s) => s.isPlaying);
-  const scenes = useSceneStore((s) => s.scenes);
+  const isPlaying   = useDrumStore((s) => s.isPlaying);
+  const scenes      = useSceneStore((s) => s.scenes);
   const activeScene = useSceneStore((s) => s.activeScene);
-  const nextScene = useSceneStore((s) => s.nextScene);
-  const loadScene = useSceneStore((s) => s.loadScene);
-  const queueScene = useSceneStore((s) => s.queueScene);
+  const nextScene   = useSceneStore((s) => s.nextScene);
+  const launchQ     = useSceneStore((s) => s.launchQuantize);
+  const loadScene   = useSceneStore((s) => s.loadScene);
+  const queueScene  = useSceneStore((s) => s.queueScene);
+  const barsToSwitch = useBarsToSwitch();
+  const barInterval  = launchQ === "4bar" ? 4 : launchQ === "2bar" ? 2 : 1;
 
   const handleShiftTap = useCallback((e: React.MouseEvent, slot: number) => {
     if (!scenes[slot]) return;
@@ -86,7 +103,19 @@ export function SceneMini({ onClose }: SceneMiniProps) {
                   style={{ animation: "scene-mini-pulse 1.5s ease-in-out infinite" }} />
               )}
               {isQueued && !isActive && (
-                <span className="absolute bottom-0.5 text-[6px] text-blue-400 font-bold animate-pulse">NEXT</span>
+                <>
+                  <span className="absolute bottom-0.5 text-[6px] text-blue-400 font-bold">NEXT</span>
+                  {/* Countdown fill */}
+                  {barsToSwitch !== null && barInterval > 1 && (
+                    <div
+                      className="absolute bottom-0 left-0 h-0.5 rounded-b transition-all"
+                      style={{
+                        background: "#3b82f6",
+                        width: `${((barInterval - barsToSwitch + 1) / barInterval) * 100}%`,
+                      }}
+                    />
+                  )}
+                </>
               )}
             </button>
           );
@@ -103,8 +132,13 @@ export function SceneMini({ onClose }: SceneMiniProps) {
             </span>
           )}
           {nextScene !== null && scenes[nextScene] && (
-            <span className="text-blue-400 font-bold animate-pulse truncate">
+            <span className="text-blue-400 font-bold truncate flex items-center gap-1">
               → {scenes[nextScene]?.name}
+              {barsToSwitch !== null && (
+                <span className="text-[7px] tabular-nums opacity-70">
+                  {barsToSwitch === 1 ? "(next bar)" : `(${barsToSwitch} bars)`}
+                </span>
+              )}
             </span>
           )}
         </div>

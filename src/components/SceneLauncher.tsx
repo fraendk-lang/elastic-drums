@@ -8,7 +8,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useSceneStore, type Scene } from "../store/sceneStore";
+import { useSceneStore, type Scene, type FollowAction } from "../store/sceneStore";
 
 interface SceneLauncherProps {
   isOpen: boolean;
@@ -34,9 +34,11 @@ interface ContextMenuProps {
   onRename: (slot: number) => void;
   onClear: (slot: number) => void;
   onDuplicate: (slot: number) => void;
+  onSetFollowAction: (slot: number, action: FollowAction) => void;
+  currentFollowAction?: FollowAction;
 }
 
-function SceneContextMenu({ menu, onClose, onCapture, onUpdate, onLoad, onQueue, onRename, onClear, onDuplicate }: ContextMenuProps) {
+function SceneContextMenu({ menu, onClose, onCapture, onUpdate, onLoad, onQueue, onRename, onClear, onDuplicate, onSetFollowAction, currentFollowAction }: ContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -53,6 +55,12 @@ function SceneContextMenu({ menu, onClose, onCapture, onUpdate, onLoad, onQueue,
       window.removeEventListener("keydown", handleEscape);
     };
   }, [onClose]);
+
+  const FA_OPTIONS: { action: FollowAction; label: string; icon: string }[] = [
+    { action: "none",   label: "Loop (default)", icon: "↺" },
+    { action: "next",   label: "Next Scene →",   icon: "⏭" },
+    { action: "random", label: "Random Scene ⚄", icon: "⚄" },
+  ];
 
   const items = menu.hasData
     ? [
@@ -73,7 +81,7 @@ function SceneContextMenu({ menu, onClose, onCapture, onUpdate, onLoad, onQueue,
   return (
     <div
       ref={ref}
-      className="fixed z-[60] min-w-[140px] py-1 bg-[#1a1a20] border border-[var(--ed-border)] rounded-lg shadow-2xl"
+      className="fixed z-[60] min-w-[160px] py-1 bg-[#1a1a20] border border-[var(--ed-border)] rounded-lg shadow-2xl"
       style={{ left: menu.x, top: menu.y }}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
@@ -85,15 +93,10 @@ function SceneContextMenu({ menu, onClose, onCapture, onUpdate, onLoad, onQueue,
         return (
           <button
             key={item.label}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
+            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
             onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              item.action?.();
-              onClose();
+              e.preventDefault(); e.stopPropagation();
+              item.action?.(); onClose();
             }}
             className="w-full flex items-center gap-2 px-3 py-1.5 text-[10px] text-left hover:bg-white/5 transition-colors"
             style={{ color: item.color ?? "var(--ed-text-secondary)" }}
@@ -103,6 +106,39 @@ function SceneContextMenu({ menu, onClose, onCapture, onUpdate, onLoad, onQueue,
           </button>
         );
       })}
+
+      {/* Follow Actions — only for filled slots */}
+      {menu.hasData && (
+        <>
+          <div className="h-px bg-[var(--ed-border)]/50 my-1 mx-2" />
+          <div className="px-3 pt-1 pb-0.5">
+            <span className="text-[8px] font-bold tracking-[0.18em] text-white/25">FOLLOW ACTION</span>
+          </div>
+          {FA_OPTIONS.map(({ action, label, icon }) => {
+            const isActive = (currentFollowAction ?? "none") === action;
+            return (
+              <button
+                key={action}
+                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onClick={(e) => {
+                  e.preventDefault(); e.stopPropagation();
+                  onSetFollowAction(menu.slotIndex, action);
+                  onClose();
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-[10px] text-left hover:bg-white/5 transition-colors"
+                style={{
+                  color: isActive ? "var(--ed-accent-orange)" : "var(--ed-text-secondary)",
+                  fontWeight: isActive ? "700" : "400",
+                }}
+              >
+                <span className="w-4 text-center text-[11px] opacity-70">{icon}</span>
+                <span className="tracking-wider">{label}</span>
+                {isActive && <span className="ml-auto text-[8px] text-[var(--ed-accent-orange)]">●</span>}
+              </button>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 }
@@ -231,6 +267,15 @@ function SceneSlot({ index, scene, isActive, isQueued, onLoad, onQueue, onContex
       {isQueued && !isActive && (
         <span className="absolute top-1 right-1 text-[7px] font-bold tracking-wider text-[var(--ed-accent-blue)]">NEXT</span>
       )}
+      {/* Follow Action indicator */}
+      {scene?.followAction && scene.followAction !== "none" && (
+        <span
+          className="absolute bottom-1 right-1 text-[8px] leading-none"
+          title={`Follow: ${scene.followAction}`}
+        >
+          {scene.followAction === "next" ? "⏭" : "⚄"}
+        </span>
+      )}
     </button>
   );
 }
@@ -238,7 +283,7 @@ function SceneSlot({ index, scene, isActive, isQueued, onLoad, onQueue, onContex
 // ─── Scene Launcher Modal ───────────────────────────────
 
 export function SceneLauncher({ isOpen, onClose }: SceneLauncherProps) {
-  const { scenes, activeScene, nextScene, captureScene, updateScene, loadScene, queueScene, clearScene, renameScene, duplicateScene, launchQuantize, setLaunchQuantize } = useSceneStore();
+  const { scenes, activeScene, nextScene, captureScene, updateScene, loadScene, queueScene, clearScene, renameScene, duplicateScene, launchQuantize, setLaunchQuantize, setSceneFollowAction } = useSceneStore();
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renamingSlot, setRenamingSlot] = useState<number | null>(null);
 
@@ -399,6 +444,8 @@ export function SceneLauncher({ isOpen, onClose }: SceneLauncherProps) {
           onRename={handleStartRename}
           onClear={clearScene}
           onDuplicate={handleDuplicate}
+          onSetFollowAction={setSceneFollowAction}
+          currentFollowAction={scenes[contextMenu.slotIndex]?.followAction}
         />
       )}
 
