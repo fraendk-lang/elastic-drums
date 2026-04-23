@@ -5,7 +5,7 @@
 import { useCallback, useRef, useState, useEffect } from "react";
 import { useBassStore, BASS_PRESETS, BASSLINE_STRATEGIES, BASS_SIGNATURE_PRESET_NAMES } from "../store/bassStore";
 import { BASS_INSTRUMENTS, findInstrumentOption } from "../audio/SoundFontEngine";
-import { SCALES, ROOT_NOTES, scaleNote } from "../audio/BassEngine";
+import { SCALES, ROOT_NOTES, scaleNote, type BassParams } from "../audio/BassEngine";
 import { useDrumStore } from "../store/drumStore";
 import { Knob } from "./Knob";
 import { SoundFontKnobs } from "./SoundFontKnobs";
@@ -494,16 +494,125 @@ export function BassSequencer() {
 
       {/* Compact Knobs Row — show synth or Soundfont knobs based on instrument */}
       {instrument === "_synth_" ? (
-        <div className="flex items-center gap-1 px-3 py-1.5 border-b border-white/5 overflow-x-auto">
-          <Knob value={params.cutoff} min={200} max={8000} defaultValue={600} label="CUT" color={BASS_COLOR} size={34} onChange={(v) => setParam("cutoff", v)} />
-          <Knob value={params.resonance} min={0} max={30} defaultValue={3} label="RES" color={BASS_COLOR} size={34} onChange={(v) => setParam("resonance", v)} />
-          <Knob value={Math.round(params.envMod * 100)} min={0} max={100} defaultValue={60} label="ENV" color={BASS_COLOR} size={34} onChange={(v) => setParam("envMod", v / 100)} />
-          <Knob value={params.decay} min={50} max={800} defaultValue={200} label="DEC" color={BASS_COLOR} size={34} onChange={(v) => setParam("decay", v)} />
-          <Knob value={Math.round(params.accent * 100)} min={0} max={100} defaultValue={50} label="ACC" color={BASS_COLOR} size={34} onChange={(v) => setParam("accent", v / 100)} />
-          <Knob value={params.slideTime} min={0} max={200} defaultValue={60} label="SLD" color={BASS_COLOR} size={34} onChange={(v) => setParam("slideTime", v)} />
-          <Knob value={Math.round(params.distortion * 100)} min={0} max={100} defaultValue={30} label="DRV" color={BASS_COLOR} size={34} onChange={(v) => setParam("distortion", v / 100)} />
-          <Knob value={Math.round(params.subOsc * 100)} min={0} max={100} defaultValue={0} label="SUB" color={BASS_COLOR} size={34} onChange={(v) => setParam("subOsc", v / 100)} />
-        </div>
+        <>
+          <div className="flex items-center gap-1 px-3 py-1.5 border-b border-white/5 overflow-x-auto">
+            <Knob value={params.cutoff} min={200} max={8000} defaultValue={600} label="CUT" color={BASS_COLOR} size={34} onChange={(v) => setParam("cutoff", v)} />
+            <Knob value={params.resonance} min={0} max={30} defaultValue={3} label="RES" color={BASS_COLOR} size={34} onChange={(v) => setParam("resonance", v)} />
+            <Knob value={Math.round(params.envMod * 100)} min={0} max={100} defaultValue={60} label="ENV" color={BASS_COLOR} size={34} onChange={(v) => setParam("envMod", v / 100)} />
+            <Knob value={params.decay} min={50} max={800} defaultValue={200} label="DEC" color={BASS_COLOR} size={34} onChange={(v) => setParam("decay", v)} />
+            <Knob value={Math.round(params.accent * 100)} min={0} max={100} defaultValue={50} label="ACC" color={BASS_COLOR} size={34} onChange={(v) => setParam("accent", v / 100)} />
+            <Knob value={params.slideTime} min={0} max={200} defaultValue={60} label="SLD" color={BASS_COLOR} size={34} onChange={(v) => setParam("slideTime", v)} />
+            <Knob value={Math.round(params.distortion * 100)} min={0} max={100} defaultValue={30} label="DRV" color={BASS_COLOR} size={34} onChange={(v) => setParam("distortion", v / 100)} />
+            <Knob value={Math.round(params.subOsc * 100)} min={0} max={100} defaultValue={0} label="SUB" color={BASS_COLOR} size={34} onChange={(v) => setParam("subOsc", v / 100)} />
+          </div>
+          {/* ── LFO ─────────────────────────────────────── */}
+          <div className="px-3 py-1.5 border-b border-white/5">
+            <div className="border-t border-white/[0.06] pt-2 mt-1">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[8px] font-bold tracking-[0.2em] text-[var(--ed-text-muted)] uppercase">LFO</span>
+                <button
+                  onClick={() => setParam("lfoEnabled", !params.lfoEnabled)}
+                  className={`px-2 py-0.5 text-[7px] font-bold tracking-widest uppercase rounded border transition-colors ${
+                    params.lfoEnabled
+                      ? "bg-[var(--ed-accent-bass)]/20 border-[var(--ed-accent-bass)]/60 text-[var(--ed-accent-bass)]"
+                      : "bg-transparent border-white/10 text-white/25 hover:border-white/20"
+                  }`}
+                >
+                  {params.lfoEnabled ? "ON" : "OFF"}
+                </button>
+              </div>
+
+              {params.lfoEnabled && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-1">
+                    {(["filter", "pitch", "volume"] as const).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setParam("lfoTarget", t)}
+                        className={`flex-1 py-0.5 text-[7px] font-bold tracking-widest uppercase rounded border transition-colors ${
+                          params.lfoTarget === t
+                            ? "bg-[var(--ed-accent-bass)]/20 border-[var(--ed-accent-bass)]/60 text-[var(--ed-accent-bass)]"
+                            : "bg-transparent border-white/10 text-white/20 hover:border-white/20"
+                        }`}
+                      >
+                        {t === "filter" ? "FILT" : t === "pitch" ? "PITCH" : "VOL"}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-1">
+                    {([
+                      { id: "sine",     label: "~"  },
+                      { id: "triangle", label: "△"  },
+                      { id: "sawtooth", label: "/|" },
+                      { id: "square",   label: "⊓"  },
+                    ] as const).map(({ id, label }) => (
+                      <button
+                        key={id}
+                        onClick={() => setParam("lfoShape", id)}
+                        className={`flex-1 py-0.5 text-[9px] font-bold rounded border transition-colors ${
+                          params.lfoShape === id
+                            ? "bg-[var(--ed-accent-bass)]/20 border-[var(--ed-accent-bass)]/60 text-[var(--ed-accent-bass)]"
+                            : "bg-transparent border-white/10 text-white/20 hover:border-white/20"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-3 items-end">
+                    {!params.lfoSync && (
+                      <Knob
+                        label="RATE"
+                        value={params.lfoRate}
+                        min={0.1}
+                        max={20}
+                        defaultValue={2.0}
+                        onChange={(v) => setParam("lfoRate", v)}
+                        color={BASS_COLOR}
+                        size={28}
+                      />
+                    )}
+                    <Knob
+                      label="DEPTH"
+                      value={params.lfoDepth * 100}
+                      min={0}
+                      max={100}
+                      defaultValue={30}
+                      onChange={(v) => setParam("lfoDepth", v / 100)}
+                      color={BASS_COLOR}
+                      size={28}
+                    />
+                    <div className="flex flex-col items-center gap-1">
+                      <button
+                        onClick={() => setParam("lfoSync", !params.lfoSync)}
+                        className={`px-1.5 py-0.5 text-[6px] font-bold tracking-widest uppercase rounded border transition-colors ${
+                          params.lfoSync
+                            ? "bg-[var(--ed-accent-bass)]/20 border-[var(--ed-accent-bass)]/60 text-[var(--ed-accent-bass)]"
+                            : "bg-transparent border-white/10 text-white/20 hover:border-white/20"
+                        }`}
+                      >
+                        SYNC
+                      </button>
+                      {params.lfoSync && (
+                        <select
+                          value={params.lfoSyncNote}
+                          onChange={(e) => setParam("lfoSyncNote", e.target.value as BassParams["lfoSyncNote"])}
+                          className="bg-[var(--ed-bg-elevated)] border border-white/10 text-[7px] text-[var(--ed-text-muted)] rounded px-1"
+                        >
+                          {(["1/16","1/8","1/4","1/2","1","2","4"] as const).map((n) => (
+                            <option key={n} value={n}>{n}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
       ) : (
         <SoundFontKnobs channel={12} color={BASS_COLOR} />
       )}

@@ -37,6 +37,13 @@ export interface BassParams {
   punch: number;       // Transient punch amount (0-1), default 0.3
   harmonics: number;   // Harmonic enhancer mix (0-1), default 0.15
   subFilter: number;   // Sub lowpass cutoff (30-150Hz), default 80
+  lfoEnabled:  boolean;
+  lfoTarget:   "filter" | "pitch" | "volume";
+  lfoShape:    "sine" | "triangle" | "sawtooth" | "square";
+  lfoRate:     number;   // 0.1–20 Hz (free)
+  lfoDepth:    number;   // 0–1
+  lfoSync:     boolean;
+  lfoSyncNote: "1/16" | "1/8" | "1/4" | "1/2" | "1" | "2" | "4";
 }
 
 export const DEFAULT_BASS_PARAMS: BassParams = {
@@ -59,6 +66,13 @@ export const DEFAULT_BASS_PARAMS: BassParams = {
   punch: 0.3,
   harmonics: 0.15,
   subFilter: 80,
+  lfoEnabled:  false,
+  lfoTarget:   "filter",
+  lfoShape:    "sine",
+  lfoRate:     2.0,
+  lfoDepth:    0.3,
+  lfoSync:     false,
+  lfoSyncNote: "1/4",
 };
 
 // Musical scales
@@ -92,6 +106,20 @@ export function scaleNote(rootMidi: number, scaleName: string, degree: number, o
 function midiToFreq(midi: number): number {
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
+
+function lfoWave(shape: BassParams["lfoShape"], phase: number): number {
+  const p = ((phase % 1) + 1) % 1;
+  switch (shape) {
+    case "sine":     return Math.sin(2 * Math.PI * p);
+    case "triangle": return 1 - 4 * Math.abs(p - 0.5);
+    case "sawtooth": return p * 2 - 1;
+    case "square":   return p < 0.5 ? 1 : -1;
+  }
+}
+
+const SYNC_BEATS: Record<BassParams["lfoSyncNote"], number> = {
+  "1/16": 0.25, "1/8": 0.5, "1/4": 1, "1/2": 2, "1": 4, "2": 8, "4": 16,
+};
 
 export interface BassStep {
   active: boolean;
@@ -133,6 +161,10 @@ export class BassEngine {
   private _filterEnvTimer: ReturnType<typeof setInterval> | null = null;
   // Auto-release safety net: setTimeout that cannot be killed by cancelScheduledValues
   private _autoReleaseTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private _lfoInterval: ReturnType<typeof setInterval> | null = null;
+  private _lfoPhase = 0;
+  private _lfoLastTick = 0;
 
   params: BassParams = { ...DEFAULT_BASS_PARAMS };
 
@@ -462,6 +494,22 @@ export class BassEngine {
     if (this.output && p.volume !== undefined) this.output.gain.value = p.volume;
     if (p.distortion !== undefined) this.updateDistortion();
     if (p.harmonics !== undefined) this.updateHarmonicEnhancer();
+
+    if (
+      p.lfoEnabled !== undefined ||
+      p.lfoTarget  !== undefined ||
+      p.lfoShape   !== undefined ||
+      p.lfoRate    !== undefined ||
+      p.lfoDepth   !== undefined ||
+      p.lfoSync    !== undefined ||
+      p.lfoSyncNote !== undefined
+    ) {
+      if (this.params.lfoEnabled) {
+        this.startLFO();
+      } else {
+        this.stopLFO();
+      }
+    }
   }
 
   /**
@@ -483,6 +531,68 @@ export class BassEngine {
     this.output.gain.setTargetAtTime(clamped, this.ctx?.currentTime ?? 0, 0.01);
   }
 
+  startLFO(bpm = 120): void {
+    this.stopLFO();
+    if (!this.params.lfoEnabled || !this.ctx) return;
+
+    const rate = this.params.lfoSync
+      ? (bpm / 60) / SYNC_BEATS[this.params.lfoSyncNote]
+      : this.params.lfoRate;
+
+    this._lfoPhase = 0;
+    this._lfoLastTick = performance.now();
+
+    this._lfoInterval = setInterval(() => {
+      if (!this.ctx) return;
+      const now = performance.now();
+      const dt = (now - this._lfoLastTick) / 1000;
+      this._lfoLastTick = now;
+      this._lfoPhase += rate * dt;
+
+      const raw = lfoWave(this.params.lfoShape, this._lfoPhase);
+      const depth = this.params.lfoDepth;
+
+      switch (this.params.lfoTarget) {
+        case "filter": {
+          if (!this.filterChain) break;
+          const base = this.params.cutoff;
+          const mod = raw * depth * base * 1.5;
+          const freq = Math.max(50, Math.min(18000, base + mod));
+          const res = Math.min(this.params.resonance / 30, 1.0);
+          this.filterChain.update(freq, res, this.ctx.currentTime);
+          break;
+        }
+        case "pitch": {
+          if (!this.osc) break;
+          this.osc.detune.setValueAtTime(raw * depth * 100, this.ctx.currentTime);
+          break;
+        }
+        case "volume": {
+          if (!this.output) break;
+          const baseVol = this.params.volume;
+          const gain = Math.max(0, baseVol * (1 + raw * depth * 0.5));
+          this.output.gain.setValueAtTime(gain, this.ctx.currentTime);
+          break;
+        }
+      }
+    }, 16);
+  }
+
+  stopLFO(): void {
+    if (this._lfoInterval !== null) {
+      clearInterval(this._lfoInterval);
+      this._lfoInterval = null;
+    }
+    if (this.ctx) {
+      if (this.filterChain) {
+        const res = Math.min(this.params.resonance / 30, 1.0);
+        this.filterChain.update(this.params.cutoff, res, this.ctx.currentTime);
+      }
+      if (this.osc) this.osc.detune.setValueAtTime(0, this.ctx.currentTime);
+      if (this.output) this.output.gain.setValueAtTime(this.params.volume, this.ctx.currentTime);
+    }
+  }
+
   /** Get output node for routing to mixer */
   getOutput(): GainNode | null {
     return this.output;
@@ -500,6 +610,7 @@ export class BassEngine {
       clearInterval(this._filterEnvTimer);
       this._filterEnvTimer = null;
     }
+    this.stopLFO();
     if (this._autoReleaseTimer) {
       clearTimeout(this._autoReleaseTimer);
       this._autoReleaseTimer = null;
