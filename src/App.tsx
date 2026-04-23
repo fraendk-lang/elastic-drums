@@ -30,9 +30,11 @@ import { getMidiClockMode, subscribeMidiClockMode } from "./store/midiClockMode"
 import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
 import { melodyEngine } from "./audio/MelodyEngine";
+import { samplerEngine } from "./audio/SamplerEngine";
 import { startBassScheduler, stopBassScheduler } from "./store/bassStore";
 import { startChordsScheduler, stopChordsScheduler } from "./store/chordsStore";
 import { startMelodyScheduler, stopMelodyScheduler } from "./store/melodyStore";
+import { startSamplerScheduler, stopSamplerScheduler } from "./store/samplerStore";
 import { useSceneStore } from "./store/sceneStore";
 import { useClipStore } from "./store/clipStore";
 import { setSceneStoreRef, setClipStoreRef } from "./store/drumStore";
@@ -154,6 +156,12 @@ export function App() {
         const melodyOut = melodyEngine.getOutput();
         const melodyCh = audioEngine.getChannelOutput(14);
         if (melodyOut && melodyCh) melodyOut.connect(melodyCh);
+
+        // Sampler → Master gain (no dedicated strip — shares master)
+        samplerEngine.init(ctx);
+        const samplerOut = samplerEngine.getOutput();
+        const masterGain = audioEngine.getMasterGainNode();
+        if (samplerOut && masterGain) samplerOut.connect(masterGain);
       }
       setAudioReady(true);
 
@@ -189,11 +197,13 @@ export function App() {
         startBassScheduler();
         startChordsScheduler();
         startMelodyScheduler();
+        startSamplerScheduler();
       }
       if (!state.isPlaying && prev.isPlaying) {
         stopBassScheduler();
         stopChordsScheduler();
         stopMelodyScheduler();
+        stopSamplerScheduler();
       }
 
       // Sync transport store (replaces window.__drumStore hack)
