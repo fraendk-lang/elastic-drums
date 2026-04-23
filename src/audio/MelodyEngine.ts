@@ -90,6 +90,17 @@ export interface MelodyStep {
   gateLength?: number; // Step length in sequencer steps
 }
 
+interface PolyVoiceSlot {
+  osc: OscillatorNode;
+  sub: OscillatorNode;
+  subGain: GainNode;
+  filter: BiquadFilterNode;
+  vca: GainNode;
+  dist: WaveShaperNode;
+  inUse: boolean;
+  releaseAt: number; // audio-clock time when voice tail ends (for voice stealing)
+}
+
 export class MelodyEngine {
   private ctx: AudioContext | null = null;
 
@@ -137,6 +148,8 @@ export class MelodyEngine {
   }
 
   init(audioCtx: AudioContext): void {
+    // Clean up any existing pool before re-init (e.g. after AudioContext close/reopen)
+    this.destroyPool();
     this.ctx = audioCtx;
 
     // --- VCO (main) ---
@@ -577,6 +590,7 @@ export class MelodyEngine {
   /** Stop all running oscillators and clear context reference.
    *  Call before AudioContext.close() to avoid orphaned oscillators. */
   destroy(): void {
+    this.destroyPool();
     for (const osc of [this.osc, this.subOsc, this.unisonOsc1, this.unisonOsc2, this.vibratoLfo]) {
       if (osc) {
         try { osc.stop(); } catch { /* already stopped */ }
@@ -592,21 +606,107 @@ export class MelodyEngine {
   }
 
   /**
-   * POLYPHONIC one-shot voice — fire-and-forget.
-   * Spawns an independent voice graph (osc+filter+env+dist) routed into the
-   * engine's output bus. Each call creates a fresh graph that auto-disconnects
-   * after release. Used by arpeggiator, chord spreads, overlapping piano-roll
-   * notes etc. — anywhere the mono path would steal itself.
+   * POLYPHONIC voices — pool-based, zero GC.
    *
-   * Respects current params (synthType, waveform, cutoff, resonance, envMod,
-   * decay, distortion, filterModel, subOsc). Ignores: legato/slide/tie
-   * (polyphonic voices are independent), vibrato/unison/PWM (apply to mono path).
+   * Instead of creating new Web Audio nodes per trigger (GC pressure, CPU spikes),
+   * we maintain a fixed pool of pre-allocated voice graphs. Oscillators run
+   * continuously at VCA=0 when idle. On trigger we just schedule parameter events
+   * — no node allocation, no node destruction, no GC.
+   *
+   * Pool size: 16 subtractive voices (covers arp + 4-note chord layers comfortably).
+   * Non-subtractive types (FM/AM/pluck) stay fire-and-forget (they're cheap one-shots).
    */
-  // ── Simple global voice counter + soft limit ──
-  // Prevents CPU meltdown when arp + layer combos fire huge voice clouds.
-  // 24 is enough for rich polyphony but won't choke most machines.
-  private static activePolyVoices = 0;
-  private static readonly MAX_POLY_VOICES = 24;
+
+  // ── Pool types & state ─────────────────────────────────────────────────────
+
+  private static readonly POOL_SIZE = 16;
+
+  private voicePool: PolyVoiceSlot[] = [];
+
+  private poolReady = false;
+
+  // ── Pool lifecycle ──────────────────────────────────────────────────────────
+
+  private initPool(): void {
+    if (this.poolReady || !this.ctx || !this.output) return;
+    const ctx = this.ctx;
+
+    for (let i = 0; i < MelodyEngine.POOL_SIZE; i++) {
+      const osc = ctx.createOscillator();
+      osc.type = "sawtooth";
+      osc.frequency.value = 261.63;
+
+      const sub = ctx.createOscillator();
+      sub.type = "square";
+      sub.frequency.value = 130.81;
+
+      const subGain = ctx.createGain();
+      subGain.gain.value = 0;
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.value = 2000;
+      filter.Q.value = 1;
+
+      const vca = ctx.createGain();
+      vca.gain.value = 0; // silent until triggered
+
+      const dist = ctx.createWaveShaper();
+      dist.curve = null; // bypass until distortion > 0
+
+      // Wire: osc+sub → filter → vca → dist → output
+      osc.connect(filter);
+      sub.connect(subGain);
+      subGain.connect(filter);
+      filter.connect(vca);
+      vca.connect(dist);
+      dist.connect(this.output);
+
+      osc.start();
+      sub.start();
+
+      this.voicePool.push({
+        osc, sub, subGain, filter, vca, dist,
+        inUse: false,
+        releaseAt: 0,
+      });
+    }
+    this.poolReady = true;
+  }
+
+  private acquirePoolVoice(): PolyVoiceSlot | null {
+    const pool = this.voicePool;
+    // 1. Prefer an idle slot
+    for (const v of pool) {
+      if (!v.inUse) { v.inUse = true; return v; }
+    }
+    // 2. Steal the voice whose envelope ends soonest (least perceptible interruption)
+    let oldest = pool[0]!;
+    for (const v of pool) {
+      if (v.releaseAt < oldest.releaseAt) oldest = v;
+    }
+    // Hard-silence the stolen voice immediately
+    if (this.ctx) {
+      const now = this.ctx.currentTime;
+      oldest.vca.gain.cancelScheduledValues(now);
+      oldest.vca.gain.setValueAtTime(0, now);
+    }
+    oldest.inUse = true;
+    return oldest;
+  }
+
+  private releasePoolVoice(
+    voice: PolyVoiceSlot,
+    releaseEndTime: number,
+  ): void {
+    // Return to pool after the release tail finishes.
+    // Use JS timer — cheap, not on audio thread.
+    const msUntilFree = Math.max(50, (releaseEndTime - (this.ctx?.currentTime ?? 0)) * 1000);
+    setTimeout(() => { voice.inUse = false; }, msUntilFree);
+    voice.releaseAt = releaseEndTime;
+  }
+
+  // ── Trigger ────────────────────────────────────────────────────────────────
 
   triggerPolyNote(
     midiNote: number,
@@ -616,11 +716,9 @@ export class MelodyEngine {
     accent = false
   ): (() => void) | null {
     if (!this.ctx || !this.output) return null;
-    // Voice limit — drop trigger silently if we're already at cap
-    if (MelodyEngine.activePolyVoices >= MelodyEngine.MAX_POLY_VOICES) return null;
 
     // Unmute output bus — 3ms click-safe, scene-transition-tight
-    if (this.output.gain.value === 0 && this.ctx) {
+    if (this.output.gain.value === 0) {
       const t = this.ctx.currentTime;
       this.output.gain.cancelScheduledValues(t);
       this.output.gain.setValueAtTime(0.0001, t);
@@ -633,7 +731,7 @@ export class MelodyEngine {
     const accentBoost = accent ? (1 + p.accent * 0.8) : 1;
     const level = velLevel * accentBoost;
 
-    // Non-subtractive types reuse existing one-shot helpers
+    // Non-subtractive: lightweight fire-and-forget helpers (no node explosion risk)
     switch (p.synthType) {
       case "fm":
         playFM(
@@ -659,132 +757,99 @@ export class MelodyEngine {
         return null;
     }
 
-    // ── Subtractive one-shot ──
-    const freq = midiToFreq(midiNote);
-    const subFreq = freq / 2;
+    // ── Subtractive: use pool voice — zero allocation ──────────────────────
 
-    // Allocate graph
-    const osc = ctx.createOscillator();
+    if (!this.poolReady) this.initPool();
+    const voice = this.acquirePoolVoice();
+    if (!voice) return null;
+
+    const { osc, sub, subGain, filter, vca, dist } = voice;
+    const freq = midiToFreq(midiNote);
+
+    // Update oscillator waveform + frequency
     this.applyWaveform(osc);
+    osc.frequency.cancelScheduledValues(startTime);
     osc.frequency.setValueAtTime(freq, startTime);
 
-    const sub = p.subOsc > 0 ? ctx.createOscillator() : null;
-    const subG = p.subOsc > 0 ? ctx.createGain() : null;
-    if (sub && subG) {
-      sub.type = "square";
-      sub.frequency.setValueAtTime(subFreq, startTime);
-      subG.gain.value = p.subOsc;
-      sub.connect(subG);
-    }
+    sub.frequency.cancelScheduledValues(startTime);
+    sub.frequency.setValueAtTime(freq / 2, startTime);
+    subGain.gain.cancelScheduledValues(startTime);
+    subGain.gain.setValueAtTime(p.subOsc, startTime);
 
-    // Filter: use plain biquad per-voice (avoids shared filterChain state races)
-    const filter = ctx.createBiquadFilter();
-    filter.type = (p.filterType === "highpass" || p.filterType === "bandpass" || p.filterType === "notch")
-      ? p.filterType
-      : "lowpass";
-    filter.Q.value = Math.max(0.0001, p.resonance * 0.6); // Scaled softer for per-voice (no self-osc runaway)
+    // Update filter
+    const fType = (p.filterType === "highpass" || p.filterType === "bandpass" || p.filterType === "notch")
+      ? p.filterType : "lowpass";
+    filter.type = fType;
+    filter.Q.value = Math.max(0.0001, p.resonance * 0.6);
 
-    const vca = ctx.createGain();
-    vca.gain.value = 0;
+    // Update distortion curve (reuse from mono path — same shape)
+    dist.curve = (p.distortion > 0.01 && this.distNode?.curve) ? this.distNode.curve : null;
+    dist.oversample = p.distortion > 0.01 ? "2x" : "none";
 
-    // Optional distortion (shared curve is ok — cheap)
-    let dist: WaveShaperNode | null = null;
-    if (p.distortion > 0.01 && this.distNode?.curve) {
-      dist = ctx.createWaveShaper();
-      dist.curve = this.distNode.curve;
-      dist.oversample = "2x";
-    }
-
-    // Wire: osc(+sub) → filter → vca → [dist] → engine.output
-    osc.connect(filter);
-    if (subG) subG.connect(filter);
-    filter.connect(vca);
-    if (dist) {
-      vca.connect(dist);
-      dist.connect(this.output);
-    } else {
-      vca.connect(this.output);
-    }
-
-    // ── Filter envelope ──
+    // ── Filter envelope ────────────────────────────────────────────────────
     const envAmount = p.envMod * (accent ? 1 + p.accent * 2 : 1);
     const filterPeak = Math.min(p.cutoff + envAmount * 10000, 18000);
     const filterBase = Math.max(p.cutoff, 40);
     const fAttack = 0.005;
     const fDecaySec = (p.decay / 1000) * (accent ? 0.5 : 1);
 
+    filter.frequency.cancelScheduledValues(startTime);
     filter.frequency.setValueAtTime(filterBase, startTime);
     filter.frequency.linearRampToValueAtTime(filterPeak, startTime + fAttack);
     filter.frequency.setTargetAtTime(filterBase, startTime + fAttack, Math.max(0.02, fDecaySec / 3.5));
 
-    // ── Amp envelope (ADSR, polyphony-friendly) ──
+    // ── Amp envelope ───────────────────────────────────────────────────────
     const attack = 0.006;
     const decayT = Math.min(0.12, duration * 0.25);
     const sustain = 0.78;
-    // Release scales with duration — short arp/layer notes get short releases
-    // so voices don't pile up (CPU). Long pad notes get long tails.
     const release = Math.min(0.9, Math.max(0.04, duration * 0.35));
     const peak = level;
     const sustainLvl = peak * sustain;
+    const scheduledReleaseStart = startTime + Math.max(attack + decayT, duration);
+    const releaseEndTime = scheduledReleaseStart + release;
 
+    vca.gain.cancelScheduledValues(startTime);
     vca.gain.setValueAtTime(0.0001, startTime);
     vca.gain.linearRampToValueAtTime(peak, startTime + attack);
     vca.gain.linearRampToValueAtTime(sustainLvl, startTime + attack + decayT);
-    // Default scheduled release (runs if user never calls early-release)
-    const scheduledReleaseStart = startTime + Math.max(attack + decayT, duration);
     vca.gain.setValueAtTime(sustainLvl, scheduledReleaseStart);
-    vca.gain.exponentialRampToValueAtTime(0.0001, scheduledReleaseStart + release);
+    vca.gain.exponentialRampToValueAtTime(0.0001, releaseEndTime);
+    // Ensure silence after release — pool voice must go fully quiet
+    vca.gain.setValueAtTime(0, releaseEndTime + 0.005);
 
-    // Oscillator stop: schedule far enough out that early-release can extend
-    const longestPossibleEnd = scheduledReleaseStart + release + 0.05;
-    let oscStopTime = longestPossibleEnd;
+    // Schedule return to pool
+    this.releasePoolVoice(voice, releaseEndTime + 0.01);
 
-    // Start/stop
-    osc.start(startTime);
-    osc.stop(oscStopTime);
-    if (sub) {
-      sub.start(startTime);
-      sub.stop(oscStopTime);
-    }
-
-    // Voice accounting (for soft limiter)
-    MelodyEngine.activePolyVoices++;
-
-    // Auto-cleanup after voice ends
-    osc.onended = () => {
-      MelodyEngine.activePolyVoices = Math.max(0, MelodyEngine.activePolyVoices - 1);
-      try { osc.disconnect(); } catch {}
-      try { sub?.disconnect(); } catch {}
-      try { subG?.disconnect(); } catch {}
-      try { filter.disconnect(); } catch {}
-      try { vca.disconnect(); } catch {}
-      try { dist?.disconnect(); } catch {}
-    };
-
-    // ── Release handle: caller can trigger an early release (e.g. note-off on pad pointer-up).
-    //   Uses setTargetAtTime — starts smoothly from the CURRENT automation-driven value
-    //   (no need to read .value which only returns intrinsic value, not the interpolated one).
-    //   Reading .value mid-ramp gives stale data → setValueAtTime(stale) = click. This avoids that.
+    // ── Early-release handle (pointer-up on XY pad, note-off, etc.) ────────
     let released = false;
     return () => {
       if (released) return;
       released = true;
       const t = Math.max(ctx.currentTime, startTime + attack);
-      const earlyRelease = release;
-      // Cancel the far-future scheduled release, then smoothly pull gain to silence
-      // from whatever its current automation value is. setTargetAtTime is
-      // continuous — no click.
       vca.gain.cancelScheduledValues(t);
-      vca.gain.setTargetAtTime(0.0001, t, earlyRelease / 4);
-
-      // Reschedule osc stop to match early release end (~5× time constant for ~99% decay)
-      const newStop = t + earlyRelease + 0.08;
-      if (newStop < oscStopTime) {
-        try { osc.stop(newStop); } catch { /* already stopped */ }
-        if (sub) { try { sub.stop(newStop); } catch { /* already stopped */ } }
-        oscStopTime = newStop;
-      }
+      vca.gain.setTargetAtTime(0.0001, t, release / 4);
+      // Silence + pool return after early-release tail
+      const earlyEnd = t + release + 0.06;
+      vca.gain.setValueAtTime(0, earlyEnd);
+      this.releasePoolVoice(voice, earlyEnd);
     };
+  }
+
+  // ── Pool teardown ──────────────────────────────────────────────────────────
+
+  private destroyPool(): void {
+    for (const v of this.voicePool) {
+      try { v.osc.stop(); } catch { /* ok */ }
+      try { v.sub.stop(); } catch { /* ok */ }
+      try { v.osc.disconnect(); } catch { /* ok */ }
+      try { v.sub.disconnect(); } catch { /* ok */ }
+      try { v.subGain.disconnect(); } catch { /* ok */ }
+      try { v.filter.disconnect(); } catch { /* ok */ }
+      try { v.vca.disconnect(); } catch { /* ok */ }
+      try { v.dist.disconnect(); } catch { /* ok */ }
+    }
+    this.voicePool = [];
+    this.poolReady = false;
   }
 }
 
