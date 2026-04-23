@@ -7,6 +7,7 @@ import { VoiceEditor } from "./components/VoiceEditor";
 import { FxRack } from "./components/FxRack";
 import { SynthSection } from "./components/SynthSection";
 import { SceneMini } from "./components/SceneMini";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 // Lazy-loaded overlays — pulled in only when opened for the first time
 const MixerPanel = lazy(() => import("./components/MixerPanel").then((m) => ({ default: m.MixerPanel })));
@@ -363,7 +364,8 @@ export function App() {
 
   // ─── Main App ───────────────────────────────────────────
   return (
-    <div ref={appShellRef} className="flex flex-col min-h-screen bg-[var(--ed-bg-primary)] relative ed-noise app-shell">
+    <ErrorBoundary>
+      <div ref={appShellRef} className="flex flex-col min-h-screen bg-[var(--ed-bg-primary)] relative ed-noise app-shell">
       {/* Auto-save indicator */}
       {autoSaveStatus === "restored" && (
         <div className="absolute top-0 left-1/2 -translate-x-1/2 z-50 px-3 py-1 bg-[var(--ed-accent-green)]/10 border border-[var(--ed-accent-green)]/30 rounded-b-lg text-[9px] text-[var(--ed-accent-green)] font-bold tracking-wider animate-pulse">
@@ -518,5 +520,6 @@ export function App() {
       </Suspense>
       {sceneMiniOpen && <SceneMini onClose={() => setSceneMiniOpen(false)} />}
     </div>
+    </ErrorBoundary>
   );
 }
