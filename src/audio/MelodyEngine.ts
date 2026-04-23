@@ -606,23 +606,29 @@ export class MelodyEngine {
   }
 
   /**
-   * POLYPHONIC voices — pool-based, zero GC.
+   * POLYPHONIC voices — pool-based, zero GC, zero setTimeout.
    *
-   * Instead of creating new Web Audio nodes per trigger (GC pressure, CPU spikes),
-   * we maintain a fixed pool of pre-allocated voice graphs. Oscillators run
-   * continuously at VCA=0 when idle. On trigger we just schedule parameter events
-   * — no node allocation, no node destruction, no GC.
+   * Pool of 8 pre-allocated subtractive voice graphs. Oscillators run
+   * continuously at VCA=0 when idle. On trigger we schedule parameter events only
+   * — no node allocation, no node destruction, no GC, no JS timers.
    *
-   * Pool size: 16 subtractive voices (covers arp + 4-note chord layers comfortably).
-   * Non-subtractive types (FM/AM/pluck) stay fire-and-forget (they're cheap one-shots).
+   * Voice release is tracked via audio-clock timestamps (releaseAt). The pool
+   * checks these lazily in acquirePoolVoice() — no setTimeout callbacks needed.
+   *
+   * Critical correctness fixes vs naive pool implementations:
+   *   1. cancelScheduledValues(0) on acquisition — clears ALL stale events
+   *      including any running setTargetAtTime curves from the previous use.
+   *   2. Filter setTargetAtTime is explicitly terminated with setValueAtTime
+   *      — prevents the browser computing the exponential curve indefinitely.
+   *   3. VCA silenced with setValueAtTime(0) after release tail — pool
+   *      voices are guaranteed silent before reuse.
+   *
+   * Non-subtractive types (FM/AM/pluck) stay fire-and-forget (they're cheap
+   * one-shots and pooling oscillators for them offers no benefit).
    */
 
-  // ── Pool types & state ─────────────────────────────────────────────────────
-
-  private static readonly POOL_SIZE = 16;
-
+  private static readonly POOL_SIZE = 8;
   private voicePool: PolyVoiceSlot[] = [];
-
   private poolReady = false;
 
   // ── Pool lifecycle ──────────────────────────────────────────────────────────
@@ -649,12 +655,11 @@ export class MelodyEngine {
       filter.Q.value = 1;
 
       const vca = ctx.createGain();
-      vca.gain.value = 0; // silent until triggered
+      vca.gain.value = 0;
 
       const dist = ctx.createWaveShaper();
-      dist.curve = null; // bypass until distortion > 0
+      dist.curve = null;
 
-      // Wire: osc+sub → filter → vca → dist → output
       osc.connect(filter);
       sub.connect(subGain);
       subGain.connect(filter);
@@ -665,45 +670,44 @@ export class MelodyEngine {
       osc.start();
       sub.start();
 
-      this.voicePool.push({
-        osc, sub, subGain, filter, vca, dist,
-        inUse: false,
-        releaseAt: 0,
-      });
+      this.voicePool.push({ osc, sub, subGain, filter, vca, dist, inUse: false, releaseAt: 0 });
     }
     this.poolReady = true;
   }
 
+  /** Find a free voice. Frees expired voices lazily (no setTimeout needed). */
   private acquirePoolVoice(): PolyVoiceSlot | null {
+    if (!this.ctx) return null;
     const pool = this.voicePool;
-    // 1. Prefer an idle slot
-    for (const v of pool) {
-      if (!v.inUse) { v.inUse = true; return v; }
-    }
-    // 2. Steal the voice whose envelope ends soonest (least perceptible interruption)
-    let oldest = pool[0]!;
-    for (const v of pool) {
-      if (v.releaseAt < oldest.releaseAt) oldest = v;
-    }
-    // Hard-silence the stolen voice immediately
-    if (this.ctx) {
-      const now = this.ctx.currentTime;
-      oldest.vca.gain.cancelScheduledValues(now);
-      oldest.vca.gain.setValueAtTime(0, now);
-    }
-    oldest.inUse = true;
-    return oldest;
-  }
+    const now = this.ctx.currentTime;
 
-  private releasePoolVoice(
-    voice: PolyVoiceSlot,
-    releaseEndTime: number,
-  ): void {
-    // Return to pool after the release tail finishes.
-    // Use JS timer — cheap, not on audio thread.
-    const msUntilFree = Math.max(50, (releaseEndTime - (this.ctx?.currentTime ?? 0)) * 1000);
-    setTimeout(() => { voice.inUse = false; }, msUntilFree);
-    voice.releaseAt = releaseEndTime;
+    // Lazily release voices whose audio envelope has ended
+    for (const v of pool) {
+      if (v.inUse && v.releaseAt <= now) v.inUse = false;
+    }
+
+    // Prefer idle slot
+    let chosen = pool.find(v => !v.inUse) ?? null;
+
+    // Otherwise steal the voice ending soonest
+    if (!chosen && pool.length > 0) {
+      chosen = pool.reduce((a, b) => a.releaseAt < b.releaseAt ? a : b);
+    }
+    if (!chosen) return null;
+
+    // Hard-clean ALL scheduled param events before reuse.
+    // cancelScheduledValues(0) removes everything — including any running
+    // setTargetAtTime that would otherwise continue computing indefinitely.
+    chosen.vca.gain.cancelScheduledValues(0);
+    chosen.vca.gain.setValueAtTime(0, now);
+    chosen.filter.frequency.cancelScheduledValues(0);
+    chosen.filter.frequency.setValueAtTime(this.params.cutoff, now);
+    chosen.osc.frequency.cancelScheduledValues(0);
+    chosen.sub.frequency.cancelScheduledValues(0);
+    chosen.subGain.gain.cancelScheduledValues(0);
+
+    chosen.inUse = true;
+    return chosen;
   }
 
   // ── Trigger ────────────────────────────────────────────────────────────────
@@ -731,33 +735,27 @@ export class MelodyEngine {
     const accentBoost = accent ? (1 + p.accent * 0.8) : 1;
     const level = velLevel * accentBoost;
 
-    // Non-subtractive: lightweight fire-and-forget helpers (no node explosion risk)
+    // Non-subtractive: fire-and-forget helpers (cheap one-shots, not the bottleneck)
     switch (p.synthType) {
       case "fm":
         playFM(
-          ctx, this.output, startTime,
-          midiNote, p.volume * level, duration,
+          ctx, this.output, startTime, midiNote, p.volume * level, duration,
           p.fmHarmonicity, p.fmModIndex,
           0.008, Math.max(0.06, duration * 0.3), 0.3, Math.max(0.05, duration * 0.3)
         );
         return null;
       case "am":
         playAM(
-          ctx, this.output, startTime,
-          midiNote, p.volume * level, duration,
-          2, 0.8,
-          0.008, 0.15, 0.5, Math.max(0.05, duration * 0.3)
+          ctx, this.output, startTime, midiNote, p.volume * level, duration,
+          2, 0.8, 0.008, 0.15, 0.5, Math.max(0.05, duration * 0.3)
         );
         return null;
       case "pluck":
-        playPluck(
-          ctx, this.output, startTime,
-          midiNote, p.volume * level, p.cutoff, 0.98
-        );
+        playPluck(ctx, this.output, startTime, midiNote, p.volume * level, p.cutoff, 0.98);
         return null;
     }
 
-    // ── Subtractive: use pool voice — zero allocation ──────────────────────
+    // ── Subtractive: pool voice — zero allocation ──────────────────────────
 
     if (!this.poolReady) this.initPool();
     const voice = this.acquirePoolVoice();
@@ -766,61 +764,57 @@ export class MelodyEngine {
     const { osc, sub, subGain, filter, vca, dist } = voice;
     const freq = midiToFreq(midiNote);
 
-    // Update oscillator waveform + frequency
+    // Oscillator waveform + frequency
     this.applyWaveform(osc);
-    osc.frequency.cancelScheduledValues(startTime);
     osc.frequency.setValueAtTime(freq, startTime);
-
-    sub.frequency.cancelScheduledValues(startTime);
     sub.frequency.setValueAtTime(freq / 2, startTime);
-    subGain.gain.cancelScheduledValues(startTime);
     subGain.gain.setValueAtTime(p.subOsc, startTime);
 
-    // Update filter
-    const fType = (p.filterType === "highpass" || p.filterType === "bandpass" || p.filterType === "notch")
+    // Filter type + Q
+    filter.type = (p.filterType === "highpass" || p.filterType === "bandpass" || p.filterType === "notch")
       ? p.filterType : "lowpass";
-    filter.type = fType;
     filter.Q.value = Math.max(0.0001, p.resonance * 0.6);
 
-    // Update distortion curve (reuse from mono path — same shape)
+    // Distortion curve (shared from mono path — same shape, no alloc)
     dist.curve = (p.distortion > 0.01 && this.distNode?.curve) ? this.distNode.curve : null;
     dist.oversample = p.distortion > 0.01 ? "2x" : "none";
 
-    // ── Filter envelope ────────────────────────────────────────────────────
+    // ── Filter envelope ─────────────────────────────────────────────────────
     const envAmount = p.envMod * (accent ? 1 + p.accent * 2 : 1);
     const filterPeak = Math.min(p.cutoff + envAmount * 10000, 18000);
     const filterBase = Math.max(p.cutoff, 40);
     const fAttack = 0.005;
     const fDecaySec = (p.decay / 1000) * (accent ? 0.5 : 1);
+    const fDecayTau = Math.max(0.02, fDecaySec / 3.5);
+    // Terminate the exponential at ~5× time constant (~99% converged).
+    // Without this, the browser computes the curve indefinitely — accumulates over time.
+    const fSettleTime = startTime + fAttack + fDecayTau * 5;
 
-    filter.frequency.cancelScheduledValues(startTime);
     filter.frequency.setValueAtTime(filterBase, startTime);
     filter.frequency.linearRampToValueAtTime(filterPeak, startTime + fAttack);
-    filter.frequency.setTargetAtTime(filterBase, startTime + fAttack, Math.max(0.02, fDecaySec / 3.5));
+    filter.frequency.setTargetAtTime(filterBase, startTime + fAttack, fDecayTau);
+    filter.frequency.setValueAtTime(filterBase, fSettleTime); // ← terminates the curve
 
-    // ── Amp envelope ───────────────────────────────────────────────────────
+    // ── Amp envelope ────────────────────────────────────────────────────────
     const attack = 0.006;
     const decayT = Math.min(0.12, duration * 0.25);
     const sustain = 0.78;
     const release = Math.min(0.9, Math.max(0.04, duration * 0.35));
-    const peak = level;
-    const sustainLvl = peak * sustain;
-    const scheduledReleaseStart = startTime + Math.max(attack + decayT, duration);
-    const releaseEndTime = scheduledReleaseStart + release;
+    const sustainLvl = level * sustain;
+    const releaseStart = startTime + Math.max(attack + decayT, duration);
+    const releaseEnd = releaseStart + release;
 
-    vca.gain.cancelScheduledValues(startTime);
     vca.gain.setValueAtTime(0.0001, startTime);
-    vca.gain.linearRampToValueAtTime(peak, startTime + attack);
+    vca.gain.linearRampToValueAtTime(level, startTime + attack);
     vca.gain.linearRampToValueAtTime(sustainLvl, startTime + attack + decayT);
-    vca.gain.setValueAtTime(sustainLvl, scheduledReleaseStart);
-    vca.gain.exponentialRampToValueAtTime(0.0001, releaseEndTime);
-    // Ensure silence after release — pool voice must go fully quiet
-    vca.gain.setValueAtTime(0, releaseEndTime + 0.005);
+    vca.gain.setValueAtTime(sustainLvl, releaseStart);
+    vca.gain.exponentialRampToValueAtTime(0.0001, releaseEnd);
+    vca.gain.setValueAtTime(0, releaseEnd + 0.004); // guarantee silence for pool reuse
 
-    // Schedule return to pool
-    this.releasePoolVoice(voice, releaseEndTime + 0.01);
+    // Voice is free once audio has gone silent
+    voice.releaseAt = releaseEnd + 0.005; // lazily freed on next acquirePoolVoice()
 
-    // ── Early-release handle (pointer-up on XY pad, note-off, etc.) ────────
+    // ── Early-release handle (pointer-up, note-off, etc.) ──────────────────
     let released = false;
     return () => {
       if (released) return;
@@ -828,10 +822,10 @@ export class MelodyEngine {
       const t = Math.max(ctx.currentTime, startTime + attack);
       vca.gain.cancelScheduledValues(t);
       vca.gain.setTargetAtTime(0.0001, t, release / 4);
-      // Silence + pool return after early-release tail
-      const earlyEnd = t + release + 0.06;
+      const earlyEnd = t + release + 0.05;
       vca.gain.setValueAtTime(0, earlyEnd);
-      this.releasePoolVoice(voice, earlyEnd);
+      // Update releaseAt so the lazy check can free the voice sooner
+      voice.releaseAt = earlyEnd + 0.005;
     };
   }
 

@@ -75,6 +75,14 @@ export function playFM(
 
   mod.start(time); mod.stop(time + totalDur + 0.05);
   carrier.start(time); carrier.stop(time + totalDur + 0.05);
+
+  // Disconnect nodes after oscillators stop — prevents graph node accumulation
+  carrier.onended = () => {
+    try { mod.disconnect(); } catch { /* ok */ }
+    try { modGain.disconnect(); } catch { /* ok */ }
+    try { carrier.disconnect(); } catch { /* ok */ }
+    try { g.disconnect(); } catch { /* ok */ }
+  };
 }
 
 /**
@@ -124,6 +132,14 @@ export function playAM(
 
   carrier.start(time); carrier.stop(time + totalDur + 0.05);
   mod.start(time); mod.stop(time + totalDur + 0.05);
+
+  carrier.onended = () => {
+    try { mod.disconnect(); } catch { /* ok */ }
+    try { modGain.disconnect(); } catch { /* ok */ }
+    try { carrier.disconnect(); } catch { /* ok */ }
+    try { carrierGain.disconnect(); } catch { /* ok */ }
+    try { env.disconnect(); } catch { /* ok */ }
+  };
 }
 
 /**
