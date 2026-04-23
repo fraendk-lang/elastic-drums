@@ -2,8 +2,8 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useDrumStore, setFillMode } from "../store/drumStore";
 import { downloadMidi } from "../utils/midiExport";
 import { sharePattern } from "../utils/patternShare";
-import { exportPatternAsWav, exportStems, exportPatternAsMp3 } from "../utils/audioExport";
 import { startSongRecording, stopSongRecording, isRecording, type ExportState } from "../utils/songExport";
+import { autoRecordExport, cancelAutoRecord, type RecordExportProgress } from "../utils/autoRecordExport";
 
 interface TransportProps {
   onOpenBrowser: () => void;
@@ -226,9 +226,6 @@ export function Transport({
         <ExportMenu
           onSave={onOpenBrowser}
           onMidiExport={() => downloadMidi(pattern, bpm)}
-          onWavExport={() => exportPatternAsWav(pattern, bpm, 4)}
-          onStemExport={() => exportStems(pattern, bpm, 4)}
-          onMp3Export={() => exportPatternAsMp3(pattern, bpm, 4)}
           onShare={() => sharePattern(pattern, bpm)}
         />
 
@@ -382,37 +379,72 @@ function ToolBtn({ onClick, label, accent }: { onClick: () => void; label: strin
   );
 }
 
-function ExportMenu({ onSave, onMidiExport, onWavExport, onStemExport, onMp3Export, onShare }: {
-  onSave: () => void;
+function ExportMenu({ onSave, onMidiExport, onShare }: {
+  onSave:       () => void;
   onMidiExport: () => void;
-  onWavExport: () => void;
-  onStemExport: () => void;
-  onMp3Export: () => Promise<void>;
-  onShare: () => void;
+  onShare:      () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [mp3Loading, setMp3Loading] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [open,     setOpen]     = useState(false);
+  const [bars,     setBars]     = useState(4);
+  const [progress, setProgress] = useState<RecordExportProgress | null>(null);
+  const ref    = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number }>({ top: 40, right: 4 });
 
+  const mp3ServerUrl = (import.meta.env.VITE_MP3_SERVER_URL as string | undefined)?.replace(/\/$/, "");
+
+  const isExporting = !!progress && progress.state !== "idle" && progress.state !== "done" && progress.state !== "error";
+  const isDone      = progress?.state === "done";
+  const isError     = progress?.state === "error";
+
+  // Close on outside click — but not while exporting
   useEffect(() => {
-    if (!open) return;
+    if (!open || isExporting) return;
     const close = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
     window.addEventListener("mousedown", close);
     return () => window.removeEventListener("mousedown", close);
-  }, [open]);
-
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const [menuPos, setMenuPos] = useState<{ top: number; right: number }>({ top: 40, right: 4 });
+  }, [open, isExporting]);
 
   const handleToggle = useCallback(() => {
+    if (isExporting) return;
     if (!open && btnRef.current) {
       const r = btnRef.current.getBoundingClientRect();
       setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
     }
-    setOpen(!open);
-  }, [open]);
+    setOpen((v) => !v);
+  }, [open, isExporting]);
+
+  const runExport = useCallback(async (mode: "wav" | "mp3") => {
+    if (isExporting) return;
+    setProgress({ state: "starting", barsDone: 0, barsTotal: bars, elapsedSec: 0, totalSec: 0 });
+    await autoRecordExport({
+      bars,
+      tail: 0.5,
+      mp3ServerUrl: mode === "mp3" ? mp3ServerUrl : undefined,
+      onProgress:   setProgress,
+    });
+    // Auto-clear after 3 s
+    setTimeout(() => setProgress(null), 3000);
+  }, [bars, isExporting, mp3ServerUrl]);
+
+  // Progress bar fraction 0–1
+  const fraction = progress
+    ? progress.state === "encoding" || progress.state === "uploading" || progress.state === "done"
+      ? 1
+      : Math.min(1, progress.barsDone / Math.max(1, progress.barsTotal))
+    : 0;
+
+  const stateLabel: Record<RecordExportProgress["state"], string> = {
+    idle:      "",
+    starting:  "Starting…",
+    recording: `Recording bar ${Math.ceil(progress?.barsDone ?? 0)} / ${progress?.barsTotal ?? bars}`,
+    encoding:  "Encoding WAV…",
+    uploading: "Uploading to MP3 server…",
+    done:      "✓ Done",
+    error:     progress?.errorMsg ?? "Error",
+  };
 
   return (
     <div ref={ref} className="relative">
@@ -420,19 +452,20 @@ function ExportMenu({ onSave, onMidiExport, onWavExport, onStemExport, onMp3Expo
         ref={btnRef}
         onClick={handleToggle}
         className={`h-6 px-2.5 rounded-md text-[8px] font-bold tracking-wider transition-all flex items-center gap-1 ${
-          open
+          open || isExporting
             ? "bg-[var(--ed-accent-orange)]/15 text-[var(--ed-accent-orange)]"
             : "text-white/30 hover:text-white/70 hover:bg-white/5"
         }`}
       >
-        EXPORT ▾
+        {isExporting ? "● REC" : "EXPORT ▾"}
       </button>
 
       {open && (
         <div
-          className="fixed z-[9999] min-w-[140px] bg-[#1a1a22] border border-[var(--ed-border)] rounded-lg shadow-2xl py-1 overflow-hidden"
+          className="fixed z-[9999] min-w-[172px] bg-[#1a1a22] border border-[var(--ed-border)] rounded-lg shadow-2xl py-1 overflow-hidden"
           style={{ top: menuPos.top, right: menuPos.right }}
         >
+          {/* ── Save / Share ───────────────────────────────── */}
           <button
             onClick={() => { onSave(); setOpen(false); }}
             className="w-full text-left px-3 py-1.5 text-[9px] text-white/70 hover:text-white hover:bg-white/8 transition-colors flex items-center gap-2"
@@ -445,36 +478,95 @@ function ExportMenu({ onSave, onMidiExport, onWavExport, onStemExport, onMp3Expo
           >
             <span className="text-[7px] text-white/30">🎹</span> Export MIDI
           </button>
+
+          <div className="border-t border-white/8 my-1" />
+
+          {/* ── Bar count selector ─────────────────────────── */}
+          <div className="px-3 py-1 flex items-center gap-1.5">
+            <span className="text-[7px] font-bold tracking-[0.1em] text-white/25">BARS</span>
+            {[1, 2, 4, 8].map((b) => (
+              <button
+                key={b}
+                disabled={isExporting}
+                onClick={() => setBars(b)}
+                className="w-6 h-5 rounded text-[8px] font-bold transition-all"
+                style={{
+                  background: bars === b ? "rgba(245,158,11,0.18)" : "rgba(255,255,255,0.04)",
+                  color:      bars === b ? "rgb(245,158,11)"       : "rgba(255,255,255,0.35)",
+                  border:     `1px solid ${bars === b ? "rgba(245,158,11,0.4)" : "rgba(255,255,255,0.06)"}`,
+                }}
+              >
+                {b}
+              </button>
+            ))}
+          </div>
+
+          {/* ── Progress / status bar ─────────────────────── */}
+          {progress && (
+            <div className="px-3 py-1.5">
+              <div
+                className="h-0.5 rounded-full mb-1 overflow-hidden"
+                style={{ background: "rgba(255,255,255,0.06)" }}
+              >
+                <div
+                  className="h-full rounded-full transition-all duration-300"
+                  style={{
+                    width:      `${fraction * 100}%`,
+                    background: isDone ? "#34d399" : isError ? "#f87171" : "rgb(245,158,11)",
+                  }}
+                />
+              </div>
+              <span
+                className="text-[7px] font-bold tabular-nums"
+                style={{ color: isDone ? "#34d399" : isError ? "#f87171" : "rgba(255,255,255,0.55)" }}
+              >
+                {stateLabel[progress.state]}
+              </span>
+            </div>
+          )}
+
+          {/* ── WAV export ─────────────────────────────────── */}
           <button
-            onClick={() => { onWavExport(); setOpen(false); }}
-            className="w-full text-left px-3 py-1.5 text-[9px] text-white/70 hover:text-white hover:bg-white/8 transition-colors flex items-center gap-2"
-          >
-            <span className="text-[7px] text-white/30">🔊</span> Export WAV
-          </button>
-          <button
-            disabled={mp3Loading}
-            onClick={async () => {
-              setMp3Loading(true);
-              setOpen(false);
-              try {
-                await onMp3Export();
-              } catch (e) {
-                alert(`MP3 export failed: ${e instanceof Error ? e.message : String(e)}`);
-              } finally {
-                setMp3Loading(false);
-              }
-            }}
+            disabled={isExporting}
+            onClick={() => void runExport("wav")}
             className="w-full text-left px-3 py-1.5 text-[9px] text-white/70 hover:text-white hover:bg-white/8 transition-colors flex items-center gap-2 disabled:opacity-40 disabled:cursor-wait"
           >
-            <span className="text-[7px] text-white/30">🎵</span>
-            {mp3Loading ? "Converting…" : "Export MP3"}
+            <span className="text-[7px] text-white/30">🔊</span>
+            Export WAV ({bars} bar{bars > 1 ? "s" : ""})
           </button>
+
+          {/* ── MP3 export ─────────────────────────────────── */}
           <button
-            onClick={() => { onStemExport(); setOpen(false); }}
-            className="w-full text-left px-3 py-1.5 text-[9px] text-white/70 hover:text-white hover:bg-white/8 transition-colors flex items-center gap-2"
+            disabled={isExporting}
+            onClick={() => {
+              if (!mp3ServerUrl) {
+                alert(
+                  "MP3 export server not configured.\n" +
+                  "Set VITE_MP3_SERVER_URL in your .env file.\n\n" +
+                  "Deploy export-server/ to Railway to get the URL."
+                );
+                return;
+              }
+              void runExport("mp3");
+            }}
+            className={`w-full text-left px-3 py-1.5 text-[9px] hover:bg-white/8 transition-colors flex items-center gap-2 disabled:opacity-40 disabled:cursor-wait ${
+              mp3ServerUrl ? "text-white/70 hover:text-white" : "text-white/30"
+            }`}
           >
-            <span className="text-[7px] text-white/30">🎛</span> Export Stems (4×)
+            <span className="text-[7px] text-white/30">🎵</span>
+            Export MP3{!mp3ServerUrl ? " (server needed)" : ` (${bars} bar${bars > 1 ? "s" : ""})`}
           </button>
+
+          {/* ── Cancel (during export) ───────────────────── */}
+          {isExporting && (
+            <button
+              onClick={() => cancelAutoRecord()}
+              className="w-full text-left px-3 py-1.5 text-[9px] text-red-400/70 hover:text-red-400 hover:bg-white/5 transition-colors flex items-center gap-2"
+            >
+              <span className="text-[7px]">✕</span> Cancel
+            </button>
+          )}
+
           <div className="border-t border-white/8 my-1" />
           <RecordButton />
           <div className="border-t border-white/8 my-1" />
