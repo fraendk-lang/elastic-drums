@@ -165,6 +165,8 @@ export class BassEngine {
   private _lfoInterval: ReturnType<typeof setInterval> | null = null;
   private _lfoPhase = 0;
   private _lfoLastTick = 0;
+  private _bpm = 120;
+  private _filterEnvFreq = -1;
 
   params: BassParams = { ...DEFAULT_BASS_PARAMS };
 
@@ -261,6 +263,8 @@ export class BassEngine {
     this.osc.start();
     this.subOsc.start();
     this.isRunning = true;
+    // Start LFO if it was enabled before init (e.g. preset loaded before audio context)
+    if (this.params.lfoEnabled) this.startLFO();
   }
 
   private updateDistortion(): void {
@@ -327,10 +331,12 @@ export class BassEngine {
       if (elapsed < attackMs / 1000) {
         const t = elapsed / (attackMs / 1000);
         currentFreq = filterBase + (filterPeak - filterBase) * t;
+        this._filterEnvFreq = currentFreq;
       } else {
         const decayElapsed = elapsed - attackMs / 1000;
         const t = Math.exp(-decayElapsed / (decaySec / 3));
         currentFreq = filterBase + (filterPeak - filterBase) * t;
+        this._filterEnvFreq = currentFreq;
       }
 
       this.filterChain?.update(currentFreq, res, now);
@@ -338,6 +344,7 @@ export class BassEngine {
       if (elapsed > attackMs / 1000 + decaySec * 2) {
         clearInterval(this._filterEnvTimer!);
         this._filterEnvTimer = null;
+        this._filterEnvFreq = -1;
         this.filterChain?.update(filterBase, res, now);
       }
     }, 16); // 16ms = 60Hz — smooth for filter envelopes, 3× less CPU than 5ms
@@ -356,8 +363,13 @@ export class BassEngine {
     if (this.output && this.output.gain.value === 0 && this.ctx) {
       const t = this.ctx.currentTime;
       this.output.gain.cancelScheduledValues(t);
-      this.output.gain.setValueAtTime(0.0001, t);
-      this.output.gain.linearRampToValueAtTime(this.params.volume, t + 0.003);
+      if (this.params.lfoEnabled && this.params.lfoTarget === "volume") {
+        // LFO controls output gain — set directly so the ramp doesn't fight the LFO
+        this.output.gain.setValueAtTime(this.params.volume, t);
+      } else {
+        this.output.gain.setValueAtTime(0.0001, t);
+        this.output.gain.linearRampToValueAtTime(this.params.volume, t + 0.003);
+      }
     }
 
     // Legato mode forces slide on every note (acid-style glide between all notes)
@@ -421,6 +433,7 @@ export class BassEngine {
     if (this._filterEnvTimer) {
       clearInterval(this._filterEnvTimer);
       this._filterEnvTimer = null;
+      this._filterEnvFreq = -1;
     }
   }
 
@@ -531,15 +544,17 @@ export class BassEngine {
     this.output.gain.setTargetAtTime(clamped, this.ctx?.currentTime ?? 0, 0.01);
   }
 
-  startLFO(bpm = 120): void {
+  startLFO(): void {
+    const wasRunning = this._lfoInterval !== null;
     this.stopLFO();
     if (!this.params.lfoEnabled || !this.ctx) return;
 
     const rate = this.params.lfoSync
-      ? (bpm / 60) / SYNC_BEATS[this.params.lfoSyncNote]
+      ? (this._bpm / 60) / SYNC_BEATS[this.params.lfoSyncNote]
       : this.params.lfoRate;
 
-    this._lfoPhase = 0;
+    // Only reset phase on fresh start — preserve phase when changing rate/target while running
+    if (!wasRunning) this._lfoPhase = 0;
     this._lfoLastTick = performance.now();
 
     this._lfoInterval = setInterval(() => {
@@ -555,7 +570,8 @@ export class BassEngine {
       switch (this.params.lfoTarget) {
         case "filter": {
           if (!this.filterChain) break;
-          const base = this.params.cutoff;
+          // Use envelope's current frequency as base when envelope is active
+          const base = this._filterEnvFreq > 0 ? this._filterEnvFreq : this.params.cutoff;
           const mod = raw * depth * base * 1.5;
           const freq = Math.max(50, Math.min(18000, base + mod));
           const res = Math.min(this.params.resonance / 30, 1.0);
@@ -564,7 +580,9 @@ export class BassEngine {
         }
         case "pitch": {
           if (!this.osc) break;
-          this.osc.detune.setValueAtTime(raw * depth * 100, this.ctx.currentTime);
+          const detuneCents = raw * depth * 100;
+          this.osc.detune.setValueAtTime(detuneCents, this.ctx.currentTime);
+          this.subOsc?.detune.setValueAtTime(detuneCents, this.ctx.currentTime);
           break;
         }
         case "volume": {
@@ -589,8 +607,16 @@ export class BassEngine {
         this.filterChain.update(this.params.cutoff, res, this.ctx.currentTime);
       }
       if (this.osc) this.osc.detune.setValueAtTime(0, this.ctx.currentTime);
+      if (this.subOsc) this.subOsc.detune.setValueAtTime(0, this.ctx.currentTime);
       if (this.output) this.output.gain.setValueAtTime(this.params.volume, this.ctx.currentTime);
     }
+  }
+
+  /** Update BPM for sync-mode LFO — call from scheduler on every tick */
+  setBpm(bpm: number): void {
+    this._bpm = bpm;
+    // If LFO is running in sync mode, restart it at the new rate
+    if (this._lfoInterval !== null && this.params.lfoSync) this.startLFO();
   }
 
   /** Get output node for routing to mixer */

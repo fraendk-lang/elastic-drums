@@ -455,6 +455,7 @@ export function startBassScheduler() {
     if (!drumState.isPlaying) return;
 
     const bpm = drumState.bpm;
+    bassEngine.setBpm(bpm);
     const secondsPerStep = 60.0 / bpm / 4;
 
     const getLegacyTieLength = (steps: BassStep[], startIndex: number, sequenceLength: number) => {
