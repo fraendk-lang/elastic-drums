@@ -12,6 +12,11 @@
  * - Noise: White noise burst generator
  */
 
+// Lazy Web Worker for off-thread reverb IR generation (avoids ~40-100ms main-thread block)
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore — Vite handles ?worker imports at build time
+import ReverbWorkerCtor from "./reverbWorker?worker";
+
 // Delay sync divisions: name → beat multiplier (1 = quarter note)
 export const DELAY_DIVISIONS: Record<string, number> = {
   "1/4": 1, "1/8": 0.5, "1/16": 0.25,
@@ -37,6 +42,10 @@ export class SendFxManager {
   private reverbType: "room" | "hall" | "plate" | "ambient" = "hall";
   private reverbSize = 2.5;
   private reverbDecayVal = 2.5;
+
+  // Off-thread IR generation
+  private _reverbWorker: Worker | null = null;
+  private _reverbWorkerPending = 0; // monotonic request ID — only the latest response is applied
 
   // ─── Send FX: Delay (Send B) ───────────────────────────
   private sendBBus: GainNode | null = null;
@@ -85,6 +94,8 @@ export class SendFxManager {
   // ─── Performance FX: Stutter ──────────────────────────
   private stutterLfo: OscillatorNode | null = null;
   private stutterGain: GainNode | null = null;
+  /** Timer ID for the pending 40 ms stutter-teardown — cancel if startStutter fires again */
+  private _stopStutterTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ─── Performance FX: Pump (sidechain LFO) ──────────────
   private pumpGain: GainNode | null = null;
@@ -153,7 +164,9 @@ export class SendFxManager {
     this.reverbPreDelay.delayTime.value = 0.012;
 
     this.reverbNode = ctx.createConvolver();
-    this.reverbNode.buffer = this.generateReverbIR(ctx, 2.0, 2.5, "hall");
+    // Buffer starts null (ConvolverNode passes through silently until IR is ready)
+    // IR is generated off-thread to avoid a ~40-100ms main-thread stall
+    this._scheduleReverbIR(ctx, 2.0, 2.5, "hall");
 
     this.reverbDamping = ctx.createBiquadFilter();
     this.reverbDamping.type = "lowpass";
@@ -596,7 +609,7 @@ export class SendFxManager {
     return this.reverbGain?.gain.value ?? 0;
   }
 
-  /** Set reverb type — regenerates IR */
+  /** Set reverb type — regenerates IR off-thread */
   setReverbType(type: "room" | "hall" | "plate" | "ambient"): void {
     if (!this.ctx || !this.reverbNode) return;
     this.reverbType = type;
@@ -605,21 +618,65 @@ export class SendFxManager {
     const decays: Record<string, number> = { room: 1.5, hall: 2.5, plate: 2.0, ambient: 5.0 };
     this.reverbSize = durations[type] ?? 2.0;
     this.reverbDecayVal = decays[type] ?? 2.5;
-    this.reverbNode.buffer = this.generateReverbIR(this.ctx, this.reverbSize, this.reverbDecayVal, type);
+    this._scheduleReverbIR(this.ctx, this.reverbSize, this.reverbDecayVal, type);
   }
 
-  /** Set reverb size (IR duration multiplier) */
+  /** Set reverb size (IR duration multiplier) — regenerates IR off-thread */
   setReverbSize(size: number): void {
     if (!this.ctx || !this.reverbNode) return;
     this.reverbSize = Math.max(0.3, Math.min(6, size));
-    this.reverbNode.buffer = this.generateReverbIR(this.ctx, this.reverbSize, this.reverbDecayVal, this.reverbType);
+    this._scheduleReverbIR(this.ctx, this.reverbSize, this.reverbDecayVal, this.reverbType);
   }
 
-  /** Set reverb decay rate */
+  /** Set reverb decay rate — regenerates IR off-thread */
   setReverbDecay(decay: number): void {
     if (!this.ctx || !this.reverbNode) return;
     this.reverbDecayVal = Math.max(0.5, Math.min(8, decay));
-    this.reverbNode.buffer = this.generateReverbIR(this.ctx, this.reverbSize, this.reverbDecayVal, this.reverbType);
+    this._scheduleReverbIR(this.ctx, this.reverbSize, this.reverbDecayVal, this.reverbType);
+  }
+
+  /**
+   * Kick off off-thread IR generation. Only the most-recent request (by ID)
+   * is applied — stale responses from rapid parameter changes are dropped.
+   */
+  private _scheduleReverbIR(
+    ctx: AudioContext,
+    duration: number,
+    decay: number,
+    type: string,
+  ): void {
+    if (!this._reverbWorker) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
+        this._reverbWorker = new ReverbWorkerCtor() as Worker;
+        this._reverbWorker.onmessage = (e: MessageEvent) => {
+          const { id, left: leftRaw, right: rightRaw, sampleRate } = e.data as { id: number; left: Float32Array; right: Float32Array; sampleRate: number };
+          // Drop stale responses (e.g. rapid type-change)
+          if (id !== this._reverbWorkerPending) return;
+          if (!this.ctx || !this.reverbNode) return;
+          // Wrap in explicit Float32Array<ArrayBuffer> to satisfy copyToChannel types
+          const left  = new Float32Array(leftRaw.buffer  as ArrayBuffer);
+          const right = new Float32Array(rightRaw.buffer as ArrayBuffer);
+          const buffer = this.ctx.createBuffer(2, left.length, sampleRate);
+          buffer.copyToChannel(left, 0);
+          buffer.copyToChannel(right, 1);
+          this.reverbNode.buffer = buffer;
+        };
+        this._reverbWorker.onerror = (err) => {
+          console.warn("ReverbWorker error — falling back to main-thread IR:", err);
+          this._reverbWorker = null;
+          if (!this.ctx) return;
+          const buf = this.generateReverbIR(ctx, duration, decay, type);
+          if (this.reverbNode) this.reverbNode.buffer = buf;
+        };
+      } catch {
+        // Worker unavailable (CSP or old browser) — run synchronously
+        if (this.reverbNode) this.reverbNode.buffer = this.generateReverbIR(ctx, duration, decay, type);
+        return;
+      }
+    }
+    const id = ++this._reverbWorkerPending;
+    this._reverbWorker.postMessage({ id, sampleRate: ctx.sampleRate, duration, decay, type });
   }
 
   /** Set post-reverb damping (lowpass cutoff) */
@@ -880,10 +937,18 @@ export class SendFxManager {
     this.stutterLfo.start();
   }
 
-  /** Stop stutter effect — restore direct connection */
-  /** Stop stutter — fades the gate back to 1.0 over 30 ms before disconnecting. */
+  /** Stop stutter — fades the gate back to 1.0 over 30 ms before disconnecting.
+   *  Cancels any already-pending teardown timer to prevent the previous stop
+   *  from disconnecting a newly-started stutter (rapid-retrigger race condition). */
   stopStutter(masterCompressor: DynamicsCompressorNode): void {
     if (!this.ctx) return;
+
+    // Cancel any previous teardown that hasn't fired yet
+    if (this._stopStutterTimer !== null) {
+      clearTimeout(this._stopStutterTimer);
+      this._stopStutterTimer = null;
+    }
+
     const lfo = this.stutterLfo;
     const gate = this.stutterGain;
     this.stutterLfo = null;
@@ -898,16 +963,22 @@ export class SendFxManager {
       } catch { /* */ }
     }
 
-    // Disconnect after fade completes — restore direct pumpGain → compressor
-    window.setTimeout(() => {
+    // Disconnect after fade completes — restore direct pumpGain → compressor.
+    // Guard: only reconnect if NO new stutter was started before the timer fires.
+    this._stopStutterTimer = window.setTimeout(() => {
+      this._stopStutterTimer = null;
       if (lfo) {
         try { lfo.stop(); } catch { /* */ }
         try { lfo.disconnect(); } catch { /* */ }
       }
-      if (gate && this.pumpGain && masterCompressor) {
+      // Only restore direct routing if stutter is still stopped
+      if (gate && this.stutterGain === null && this.pumpGain && masterCompressor) {
         try { this.pumpGain.disconnect(gate); } catch { /* */ }
         try { gate.disconnect(); } catch { /* */ }
         try { this.pumpGain.connect(masterCompressor); } catch { /* */ }
+      } else if (gate) {
+        // New stutter already started — just clean up the old gate node
+        try { gate.disconnect(); } catch { /* */ }
       }
     }, 40);
   }
@@ -1045,6 +1116,18 @@ export class SendFxManager {
     if (this.pumpGain) {
       this.pumpGain.disconnect();
       this.pumpGain = null;
+    }
+
+    // Cancel any pending stutter teardown
+    if (this._stopStutterTimer !== null) {
+      clearTimeout(this._stopStutterTimer);
+      this._stopStutterTimer = null;
+    }
+
+    // Terminate reverb worker
+    if (this._reverbWorker) {
+      this._reverbWorker.terminate();
+      this._reverbWorker = null;
     }
 
     this.ctx = null;

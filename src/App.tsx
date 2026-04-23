@@ -32,9 +32,9 @@ import { chordsEngine } from "./audio/ChordsEngine";
 import { melodyEngine } from "./audio/MelodyEngine";
 import { samplerEngine } from "./audio/SamplerEngine";
 import { loopPlayerEngine } from "./audio/LoopPlayerEngine";
-import { startBassScheduler, stopBassScheduler } from "./store/bassStore";
-import { startChordsScheduler, stopChordsScheduler } from "./store/chordsStore";
-import { startMelodyScheduler, stopMelodyScheduler } from "./store/melodyStore";
+import { useBassStore, startBassScheduler, stopBassScheduler } from "./store/bassStore";
+import { useChordsStore, startChordsScheduler, stopChordsScheduler } from "./store/chordsStore";
+import { useMelodyStore, startMelodyScheduler, stopMelodyScheduler } from "./store/melodyStore";
 import { startSamplerScheduler, stopSamplerScheduler } from "./store/samplerStore";
 import { useSceneStore } from "./store/sceneStore";
 import { useClipStore } from "./store/clipStore";
@@ -98,11 +98,23 @@ export function App() {
 
     // Try to restore auto-saved state
     loadAutoSave().then((data) => {
-      if (data && data.drumPattern) {
+      if (!data) return;
+      if (data.drumPattern) {
         useDrumStore.setState({
           pattern: data.drumPattern as never,
           bpm: data.bpm ?? 120,
         });
+      }
+      if (data.bassState) {
+        useBassStore.getState().loadBassPattern(data.bassState as Parameters<ReturnType<typeof useBassStore.getState>["loadBassPattern"]>[0]);
+      }
+      if (data.chordsState) {
+        useChordsStore.getState().loadChordsPattern(data.chordsState as Parameters<ReturnType<typeof useChordsStore.getState>["loadChordsPattern"]>[0]);
+      }
+      if (data.melodyState) {
+        useMelodyStore.getState().loadMelodyPattern(data.melodyState as Parameters<ReturnType<typeof useMelodyStore.getState>["loadMelodyPattern"]>[0]);
+      }
+      if (data.drumPattern || data.bassState || data.chordsState || data.melodyState) {
         setAutoSaveStatus("restored");
         setTimeout(() => setAutoSaveStatus("idle"), 2000);
       }
@@ -118,19 +130,56 @@ export function App() {
       return;
     }
 
-    const unsub = useDrumStore.subscribe(() => {
-      const state = useDrumStore.getState();
-      scheduleAutoSave(() => ({
-        drumPattern: state.pattern,
-        bpm: state.bpm,
-        swing: state.swing,
-        bassState: null,
-        chordsState: null,
-        melodyState: null,
-        timestamp: Date.now(),
-      }));
-    });
-    return unsub;
+    const triggerSave = () => {
+      scheduleAutoSave(() => {
+        const drum = useDrumStore.getState();
+        const bass = useBassStore.getState();
+        const chords = useChordsStore.getState();
+        const melody = useMelodyStore.getState();
+        return {
+          drumPattern: drum.pattern,
+          bpm: drum.bpm,
+          swing: drum.swing,
+          bassState: {
+            steps: bass.steps,
+            length: bass.length,
+            params: bass.params,
+            rootNote: bass.rootNote,
+            rootName: bass.rootName,
+            scaleName: bass.scaleName,
+          },
+          chordsState: {
+            steps: chords.steps,
+            length: chords.length,
+            params: chords.params,
+            rootNote: chords.rootNote,
+            rootName: chords.rootName,
+            scaleName: chords.scaleName,
+          },
+          melodyState: {
+            steps: melody.steps,
+            length: melody.length,
+            params: melody.params,
+            rootNote: melody.rootNote,
+            rootName: melody.rootName,
+            scaleName: melody.scaleName,
+          },
+          timestamp: Date.now(),
+        };
+      });
+    };
+
+    const unsubDrum   = useDrumStore.subscribe(triggerSave);
+    const unsubBass   = useBassStore.subscribe(triggerSave);
+    const unsubChords = useChordsStore.subscribe(triggerSave);
+    const unsubMelody = useMelodyStore.subscribe(triggerSave);
+
+    return () => {
+      unsubDrum();
+      unsubBass();
+      unsubChords();
+      unsubMelody();
+    };
   }, []);
 
   const startAudio = useCallback(async () => {

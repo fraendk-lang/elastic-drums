@@ -133,6 +133,8 @@ export class ChordsEngine {
   params: ChordsParams = { ...DEFAULT_CHORDS_PARAMS };
 
   init(audioCtx: AudioContext): void {
+    // C2 fix: idempotent re-init — clean up previous state if already running
+    if (this.isRunning) this.destroy();
     this.ctx = audioCtx;
 
     // --- Shared mixer ---
@@ -523,6 +525,39 @@ export class ChordsEngine {
 
   get isInitialized(): boolean {
     return this.isRunning;
+  }
+
+  /** C1+C2 fix: stop all running nodes and timers. Safe to call multiple times. */
+  destroy(): void {
+    if (this._autoReleaseTimer) {
+      clearTimeout(this._autoReleaseTimer);
+      this._autoReleaseTimer = null;
+    }
+    for (const v of this.voices) {
+      try { v.osc.stop(); } catch { /* ok */ }
+      try { v.subOsc.stop(); } catch { /* ok */ }
+      try { v.osc.disconnect(); } catch { /* ok */ }
+      try { v.subOsc.disconnect(); } catch { /* ok */ }
+      try { v.subGain.disconnect(); } catch { /* ok */ }
+      try { v.panner.disconnect(); } catch { /* ok */ }
+    }
+    this.voices = [];
+    if (this.chorusLfo) {
+      try { this.chorusLfo.stop(); } catch { /* ok */ }
+      this.chorusLfo = null;
+    }
+    try { this.mixer?.disconnect(); } catch { /* ok */ }
+    try { this.filterChain?.input.disconnect(); } catch { /* ok */ }
+    try { this.vca?.disconnect(); } catch { /* ok */ }
+    try { this.distNode?.disconnect(); } catch { /* ok */ }
+    try { this.output?.disconnect(); } catch { /* ok */ }
+    this.mixer = null;
+    this.filterChain = null;
+    this.vca = null;
+    this.distNode = null;
+    this.output = null;
+    this.isRunning = false;
+    this.ctx = null;
   }
 }
 

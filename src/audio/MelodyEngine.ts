@@ -148,8 +148,9 @@ export class MelodyEngine {
   }
 
   init(audioCtx: AudioContext): void {
-    // Clean up any existing pool before re-init (e.g. after AudioContext close/reopen)
-    this.destroyPool();
+    // C2 fix: idempotent re-init — clean up previous state if already running
+    if (this.isRunning) this.destroy();
+    else this.destroyPool(); // ensure pool is clean even on first init
     this.ctx = audioCtx;
 
     // --- VCO (main) ---
@@ -590,6 +591,11 @@ export class MelodyEngine {
   /** Stop all running oscillators and clear context reference.
    *  Call before AudioContext.close() to avoid orphaned oscillators. */
   destroy(): void {
+    // C1 fix: clear auto-release timer before nulling ctx
+    if (this._autoReleaseTimer) {
+      clearTimeout(this._autoReleaseTimer);
+      this._autoReleaseTimer = null;
+    }
     this.destroyPool();
     for (const osc of [this.osc, this.subOsc, this.unisonOsc1, this.unisonOsc2, this.vibratoLfo]) {
       if (osc) {

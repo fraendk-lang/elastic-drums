@@ -137,6 +137,8 @@ export class BassEngine {
   params: BassParams = { ...DEFAULT_BASS_PARAMS };
 
   init(audioCtx: AudioContext): void {
+    // C2 fix: idempotent re-init — clean up previous state if already running
+    if (this.isRunning) this.destroy();
     this.ctx = audioCtx;
 
     // --- VCO (main) ---
@@ -474,6 +476,15 @@ export class BassEngine {
   /** Stop all running oscillators and clear context reference.
    *  Call before AudioContext.close() to avoid orphaned oscillators. */
   destroy(): void {
+    // C1 fix: stop filter envelope timer before nulling ctx
+    if (this._filterEnvTimer) {
+      clearInterval(this._filterEnvTimer);
+      this._filterEnvTimer = null;
+    }
+    if (this._autoReleaseTimer) {
+      clearTimeout(this._autoReleaseTimer);
+      this._autoReleaseTimer = null;
+    }
     if (this.osc) {
       try { this.osc.stop(); } catch { /* already stopped */ }
       this.osc = null;
