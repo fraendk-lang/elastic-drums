@@ -31,12 +31,14 @@ export class LoopPlayerEngine {
   /**
    * Start a loop slot. Stops any existing source on the slot first.
    *
-   * @param slotIdx      - 0-based slot index (0–3)
-   * @param buffer       - decoded AudioBuffer (the full loop file)
-   * @param originalBpm  - native BPM of the audio file (e.g. 128)
-   * @param globalBpm    - current project BPM (e.g. 140)
-   * @param volume       - 0–1 slot volume
-   * @param startTime    - AudioContext time to begin playback
+   * @param slotIdx           - 0-based slot index (0–3)
+   * @param buffer            - decoded AudioBuffer (the full loop file)
+   * @param originalBpm       - native BPM of the audio file (e.g. 128)
+   * @param globalBpm         - current project BPM (e.g. 140)
+   * @param volume            - 0–1 slot volume
+   * @param startTime         - AudioContext time to begin playback
+   * @param loopStartSeconds  - beat-aligned loop start within buffer (default: 0)
+   * @param loopEndSeconds    - beat-aligned loop end within buffer (default: buffer.duration)
    */
   startSlot(
     slotIdx: number,
@@ -45,6 +47,8 @@ export class LoopPlayerEngine {
     globalBpm: number,
     volume: number,
     startTime: number,
+    loopStartSeconds?: number,
+    loopEndSeconds?: number,
   ): void {
     if (!this.ctx || !this.output) return;
 
@@ -53,11 +57,14 @@ export class LoopPlayerEngine {
 
     const ctx = this.ctx;
 
+    const loopStart = Math.max(0, loopStartSeconds ?? 0);
+    const loopEnd   = Math.min(buffer.duration, loopEndSeconds ?? buffer.duration);
+
     const source = ctx.createBufferSource();
-    source.buffer = buffer;
+    source.buffer    = buffer;
     source.loop      = true;
-    source.loopStart = 0;
-    source.loopEnd   = buffer.duration;
+    source.loopStart = loopStart;
+    source.loopEnd   = loopEnd > loopStart ? loopEnd : buffer.duration;
 
     const rate = this._calcRate(originalBpm, globalBpm);
     source.playbackRate.value = rate;
@@ -68,7 +75,8 @@ export class LoopPlayerEngine {
     source.connect(gain);
     gain.connect(this.output);
 
-    source.start(Math.max(ctx.currentTime, startTime));
+    // Start reading from loopStart so playback begins on beat 1
+    source.start(Math.max(ctx.currentTime, startTime), loopStart);
 
     this.sources[slotIdx] = source;
     this.gains[slotIdx]   = gain;

@@ -1,15 +1,17 @@
 /**
- * LoopPlayerTab — 4-slot tempo-synced audio loop player
+ * LoopPlayerTab — 4-slot Ableton-quality tempo-synced loop player
  *
  * Each slot:
  *  - Drag & drop or click-to-load any audio file
- *  - Waveform display
+ *  - Auto BPM detection (Web Worker) with waveform + beat-grid overlay
+ *  - Tap BPM button for manual tempo tapping
  *  - Original BPM input → playbackRate auto-adjusted to global BPM
+ *  - Beat-aligned looping (firstBeatOffset → loopEnd on bar boundary)
+ *  - Quantized launch: next bar boundary when transport is running
  *  - Volume slider
- *  - PLAY / STOP button
  *
- * Slots start immediately on PLAY (no transport required).
- * When transport starts, all armed slots restart in phase.
+ * Slots start immediately on PLAY when transport is stopped.
+ * When transport starts, all armed slots restart at the next bar.
  * BPM changes update playback rates in real time — no restart needed.
  */
 
@@ -21,28 +23,87 @@ import { audioEngine } from "../audio/AudioEngine";
 // ── Theme ──────────────────────────────────────────────────────────────────────
 const TEAL = "#2EC4B6";
 
-// ── Waveform drawing ───────────────────────────────────────────────────────────
+// ── Waveform + beat-grid drawing ───────────────────────────────────────────────
 
-function drawWaveform(canvas: HTMLCanvasElement, buffer: AudioBuffer): void {
+function drawWaveform(
+  canvas: HTMLCanvasElement,
+  buffer: AudioBuffer,
+  firstBeatOffset: number,
+  loopEndSeconds: number,
+  bpm: number,
+): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
-  const data = buffer.getChannelData(0);
-  const w    = canvas.width;
-  const h    = canvas.height;
+  const data  = buffer.getChannelData(0);
+  const w     = canvas.width;
+  const h     = canvas.height;
   ctx.clearRect(0, 0, w, h);
 
-  const step = data.length / w;
+  const duration = buffer.duration;
+  const step     = data.length / w;
 
-  // Background grid lines (subtle)
-  ctx.fillStyle = "rgba(46,196,182,0.04)";
-  ctx.fillRect(0, h / 2 - 0.5, w, 1);
-
-  // Waveform bars
+  // ── Waveform bars
   for (let x = 0; x < w; x++) {
     const idx = Math.floor(x * step);
     const amp = Math.abs(data[idx] ?? 0) * h * 0.88;
     ctx.fillStyle = "rgba(46,196,182,0.72)";
     ctx.fillRect(x, h / 2 - amp / 2, 1, Math.max(1, amp));
+  }
+
+  if (bpm <= 0 || duration <= 0) return;
+
+  const timeToX = (t: number) => (t / duration) * w;
+
+  // ── Loop region highlight (beat 1 → loopEnd)
+  const lx0 = timeToX(firstBeatOffset);
+  const lx1 = loopEndSeconds > firstBeatOffset ? timeToX(loopEndSeconds) : w;
+  ctx.fillStyle = "rgba(46,196,182,0.06)";
+  ctx.fillRect(lx0, 0, lx1 - lx0, h);
+
+  // ── Beat-grid lines
+  const secondsPerBeat = 60 / bpm;
+  const numBeats       = Math.ceil(duration / secondsPerBeat) + 1;
+
+  for (let b = 0; b < numBeats; b++) {
+    const t  = firstBeatOffset + b * secondsPerBeat;
+    if (t > duration + 0.01) break;
+    const x  = timeToX(t);
+    const isBar = b % 4 === 0;
+
+    ctx.strokeStyle = isBar ? `rgba(46,196,182,0.6)` : `rgba(46,196,182,0.2)`;
+    ctx.lineWidth   = isBar ? 1.5 : 0.75;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+
+    // Bar number label
+    if (isBar) {
+      const barNum = b / 4 + 1;
+      ctx.fillStyle = "rgba(46,196,182,0.55)";
+      ctx.font      = "bold 7px monospace";
+      ctx.fillText(String(barNum), x + 2, 9);
+    }
+  }
+
+  // ── Pre-beat region dim (before beat 1)
+  if (firstBeatOffset > 0.01) {
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.fillRect(0, 0, lx0, h);
+    ctx.strokeStyle = `${TEAL}90`;
+    ctx.lineWidth   = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(lx0, 0);
+    ctx.lineTo(lx0, h);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // ── Post-loop region dim
+  if (loopEndSeconds > firstBeatOffset && loopEndSeconds < duration - 0.05) {
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.fillRect(lx1, 0, w - lx1, h);
   }
 }
 
@@ -53,29 +114,36 @@ interface LoopSlotProps {
 }
 
 const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
-  const slot          = useLoopPlayerStore((s) => s.slots[slotIndex]!);
-  const setBuffer     = useLoopPlayerStore((s) => s.setBuffer);
-  const setOriginalBpm = useLoopPlayerStore((s) => s.setOriginalBpm);
-  const setVolume     = useLoopPlayerStore((s) => s.setVolume);
-  const togglePlay    = useLoopPlayerStore((s) => s.togglePlay);
-  const globalBpm     = useDrumStore((s) => s.bpm);
-  const isTransportPlaying = useDrumStore((s) => s.isPlaying);
+  const slot            = useLoopPlayerStore((s) => s.slots[slotIndex]!);
+  const setBuffer       = useLoopPlayerStore((s) => s.setBuffer);
+  const setOriginalBpm  = useLoopPlayerStore((s) => s.setOriginalBpm);
+  const setVolume       = useLoopPlayerStore((s) => s.setVolume);
+  const togglePlay      = useLoopPlayerStore((s) => s.togglePlay);
+  const tapBpm          = useLoopPlayerStore((s) => s.tapBpm);
+  const globalBpm       = useDrumStore((s) => s.bpm);
+  const isTransportPlay = useDrumStore((s) => s.isPlaying);
 
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [bpmInput,  setBpmInput]    = useState(String(slot.originalBpm));
+  const [bpmInput,   setBpmInput]   = useState(String(slot.originalBpm));
 
-  // Keep bpmInput text in sync when originalBpm changes externally
+  // Sync BPM input when originalBpm changes externally (e.g. auto-detected)
   useEffect(() => {
     setBpmInput(String(slot.originalBpm));
   }, [slot.originalBpm]);
 
-  // Redraw waveform when buffer changes
+  // Redraw waveform + beat grid whenever relevant state changes
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !slot.buffer) return;
-    drawWaveform(canvas, slot.buffer);
-  }, [slot.buffer]);
+    drawWaveform(
+      canvas,
+      slot.buffer,
+      slot.firstBeatOffset,
+      slot.loopEndSeconds,
+      slot.analyzing ? 0 : slot.originalBpm,
+    );
+  }, [slot.buffer, slot.firstBeatOffset, slot.loopEndSeconds, slot.originalBpm, slot.analyzing]);
 
   // ── File loading ─────────────────────────────────────────
   const handleLoadFile = useCallback(async (file: File) => {
@@ -100,15 +168,17 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
   const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) void handleLoadFile(file);
+    // Reset so same file can be reloaded
+    e.target.value = "";
   }, [handleLoadFile]);
 
   // ── BPM commit ───────────────────────────────────────────
   const commitBpm = useCallback(() => {
     const parsed = parseFloat(bpmInput);
-    if (!isNaN(parsed) && parsed >= 1 && parsed <= 999) {
+    if (!isNaN(parsed) && parsed >= 20 && parsed <= 999) {
       setOriginalBpm(slotIndex, parsed);
     } else {
-      setBpmInput(String(slot.originalBpm)); // revert on bad input
+      setBpmInput(String(slot.originalBpm));
     }
   }, [bpmInput, slotIndex, slot.originalBpm, setOriginalBpm]);
 
@@ -119,16 +189,18 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
   const ratioLabel     = clampedRatio.toFixed(2);
   const ratioOff       = Math.abs(clampedRatio - 1) > 0.015;
 
-  // A slot is audibly active when it is armed AND audio sources are running.
-  // (Transport-stopped arm = armed but silent, transport-started arm = armed + active)
   const isArmed  = slot.playing;
-  const isActive = isArmed && isTransportPlaying;
+  const isActive = isArmed && isTransportPlay;
 
-  // Format duration as mm:ss
-  const dur       = slot.duration;
-  const durMin    = Math.floor(dur / 60);
-  const durSec    = (dur % 60).toFixed(1).padStart(4, "0");
-  const durLabel  = slot.buffer ? `${durMin}:${durSec}` : "";
+  const dur      = slot.duration;
+  const durMin   = Math.floor(dur / 60);
+  const durSec   = (dur % 60).toFixed(1).padStart(4, "0");
+  const durLabel = slot.buffer ? `${durMin}:${durSec}` : "";
+
+  // Number of bars in the loop region
+  const numBars = slot.loopEndSeconds > slot.firstBeatOffset && slot.originalBpm > 0
+    ? Math.round((slot.loopEndSeconds - slot.firstBeatOffset) / (60 / slot.originalBpm / 4) / 4)
+    : 0;
 
   return (
     <div
@@ -149,14 +221,14 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
       onDragLeave={() => setIsDragOver(false)}
       onDrop={handleDrop}
     >
-      {/* ── Row 1: Slot ID + filename + duration + LOAD button ── */}
+      {/* ── Row 1: Slot ID + filename + duration + LOAD ── */}
       <div className="flex items-center gap-2 min-w-0">
-        {/* Slot number badge */}
+        {/* Slot badge */}
         <div
           className="w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold shrink-0 transition-all"
           style={{
             background: isArmed ? TEAL : "rgba(255,255,255,0.06)",
-            color: isArmed ? "#000" : "rgba(255,255,255,0.3)",
+            color:      isArmed ? "#000" : "rgba(255,255,255,0.3)",
           }}
         >
           {slotIndex + 1}
@@ -174,11 +246,22 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
 
         {/* Duration */}
         {durLabel && (
-          <span
-            className="text-[8px] font-bold tabular-nums shrink-0"
-            style={{ color: `${TEAL}70` }}
-          >
+          <span className="text-[8px] font-bold tabular-nums shrink-0" style={{ color: `${TEAL}70` }}>
             {durLabel}
+          </span>
+        )}
+
+        {/* Bars badge */}
+        {numBars > 0 && !slot.analyzing && (
+          <span
+            className="text-[7px] font-bold px-1.5 py-0.5 rounded shrink-0"
+            style={{
+              background: `rgba(46,196,182,0.10)`,
+              color:      `${TEAL}cc`,
+              border:     `1px solid ${TEAL}25`,
+            }}
+          >
+            {numBars} BAR{numBars !== 1 ? "S" : ""}
           </span>
         )}
 
@@ -186,8 +269,8 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
         <label
           className="text-[8px] font-bold px-2 py-0.5 rounded cursor-pointer transition-all shrink-0"
           style={{
-            color: "rgba(255,255,255,0.35)",
-            border: "1px solid rgba(255,255,255,0.09)",
+            color:      "rgba(255,255,255,0.35)",
+            border:     "1px solid rgba(255,255,255,0.09)",
             background: "rgba(255,255,255,0.03)",
           }}
           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.65)"; }}
@@ -202,16 +285,16 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
       <div
         className="relative rounded overflow-hidden"
         style={{
-          height: 52,
+          height:     60,
           background: "rgba(0,0,0,0.35)",
-          border: "1px solid rgba(255,255,255,0.04)",
+          border:     "1px solid rgba(255,255,255,0.04)",
         }}
       >
         {slot.buffer ? (
           <canvas
             ref={canvasRef}
             width={900}
-            height={52}
+            height={60}
             className="w-full h-full"
             style={{ imageRendering: "pixelated", display: "block" }}
           />
@@ -224,14 +307,31 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
           </div>
         )}
 
-        {/* Active shimmer overlay */}
+        {/* Analyzing overlay */}
+        {slot.analyzing && (
+          <div
+            className="absolute inset-0 flex items-center justify-center gap-2"
+            style={{ background: "rgba(0,0,0,0.55)" }}
+          >
+            {/* Spinning ring */}
+            <svg width="14" height="14" viewBox="0 0 14 14" style={{ animation: "spin 0.9s linear infinite" }}>
+              <circle cx="7" cy="7" r="5.5" stroke={`${TEAL}30`} strokeWidth="2" fill="none" />
+              <path d="M 7 1.5 A 5.5 5.5 0 0 1 12.5 7" stroke={TEAL} strokeWidth="2" fill="none" strokeLinecap="round" />
+            </svg>
+            <span className="text-[8px] font-bold tracking-[0.14em]" style={{ color: TEAL }}>
+              ANALYZING BPM…
+            </span>
+          </div>
+        )}
+
+        {/* Active shimmer */}
         {isActive && (
           <div
-            className="absolute inset-0 pointer-events-none ed-shimmer-text"
+            className="absolute inset-0 pointer-events-none"
             style={{
-              background: `linear-gradient(90deg, transparent, ${TEAL}12 50%, transparent)`,
+              background:     `linear-gradient(90deg, transparent, ${TEAL}12 50%, transparent)`,
               backgroundSize: "200% 100%",
-              animation: "ed-shimmer 2.5s linear infinite",
+              animation:      "ed-shimmer 2.5s linear infinite",
             }}
           />
         )}
@@ -248,32 +348,47 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
           style={{
             background: isArmed
               ? TEAL
-              : slot.buffer
-                ? "rgba(255,255,255,0.06)"
-                : "rgba(255,255,255,0.02)",
+              : slot.buffer ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.02)",
             color: isArmed
               ? "#000814"
-              : slot.buffer
-                ? "rgba(255,255,255,0.75)"
-                : "rgba(255,255,255,0.18)",
-            border: `1px solid ${isArmed ? TEAL : "rgba(255,255,255,0.08)"}`,
+              : slot.buffer ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.18)",
+            border:    `1px solid ${isArmed ? TEAL : "rgba(255,255,255,0.08)"}`,
             boxShadow: isActive ? `0 0 12px ${TEAL}70` : "none",
-            cursor: slot.buffer ? "pointer" : "default",
+            cursor:    slot.buffer ? "pointer" : "default",
           }}
         >
           <span style={{ fontSize: 8 }}>{isArmed ? "■" : "▶"}</span>
-          {isArmed ? "STOP" : "PLAY"}
+          {isArmed
+            ? (slot.analyzing ? "ARMED" : isTransportPlay ? "STOP" : "STOP")
+            : "PLAY"}
         </button>
 
         {/* Divider */}
         <div className="w-px h-5 bg-white/8 shrink-0" />
 
-        {/* Original BPM input */}
+        {/* FILE BPM section */}
         <div className="flex items-center gap-1.5 shrink-0">
           <span className="text-[7px] font-bold tracking-[0.12em] text-white/30">FILE BPM</span>
+
+          {/* Auto-detected badge */}
+          {slot.detectedBpm !== null && !slot.analyzing && (
+            <span
+              className="text-[7px] font-bold px-1 py-0.5 rounded"
+              style={{
+                background: `rgba(46,196,182,0.12)`,
+                color:      `${TEAL}bb`,
+                border:     `1px solid ${TEAL}20`,
+              }}
+              title="Auto-detected BPM"
+            >
+              AUTO
+            </span>
+          )}
+
+          {/* BPM number input */}
           <input
             type="number"
-            min={1}
+            min={20}
             max={999}
             step={0.5}
             value={bpmInput}
@@ -283,11 +398,35 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
             className="w-14 text-center text-[10px] font-bold rounded px-1 py-0.5 tabular-nums"
             style={{
               background: "rgba(0,0,0,0.3)",
-              border: "1px solid rgba(255,255,255,0.1)",
-              color: "rgba(255,255,255,0.82)",
-              outline: "none",
+              border:     `1px solid ${slot.detectedBpm !== null && !slot.analyzing ? `${TEAL}30` : "rgba(255,255,255,0.1)"}`,
+              color:      "rgba(255,255,255,0.82)",
+              outline:    "none",
             }}
           />
+
+          {/* Tap BPM button */}
+          <button
+            onClick={() => tapBpm(slotIndex)}
+            className="text-[7px] font-bold px-1.5 py-0.5 rounded transition-all shrink-0"
+            style={{
+              color:      "rgba(255,255,255,0.45)",
+              border:     "1px solid rgba(255,255,255,0.1)",
+              background: "rgba(255,255,255,0.04)",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.color      = "rgba(255,255,255,0.8)";
+              (e.currentTarget as HTMLElement).style.background = `rgba(46,196,182,0.1)`;
+              (e.currentTarget as HTMLElement).style.borderColor = `${TEAL}40`;
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.color       = "rgba(255,255,255,0.45)";
+              (e.currentTarget as HTMLElement).style.background  = "rgba(255,255,255,0.04)";
+              (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.1)";
+            }}
+            title="Tap BPM (tap repeatedly to set tempo)"
+          >
+            TAP
+          </button>
         </div>
 
         {/* Playback ratio badge */}
@@ -295,7 +434,7 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
           className="flex items-center gap-1 px-2 py-0.5 rounded shrink-0"
           style={{
             background: "rgba(0,0,0,0.22)",
-            border: "1px solid rgba(255,255,255,0.05)",
+            border:     "1px solid rgba(255,255,255,0.05)",
           }}
         >
           <span className="text-[7px] text-white/25 font-bold">×</span>
@@ -306,10 +445,7 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
             {ratioLabel}
           </span>
           {Math.abs(pitchSemitones) >= 0.4 && (
-            <span
-              className="text-[7px] font-bold tabular-nums"
-              style={{ color: `${TEAL}70` }}
-            >
+            <span className="text-[7px] font-bold tabular-nums" style={{ color: `${TEAL}70` }}>
               {pitchSemitones > 0 ? "+" : ""}{pitchSemitones.toFixed(1)} st
             </span>
           )}
@@ -353,6 +489,7 @@ export function LoopPlayerTab() {
 
   const armedCount  = slots.filter((s) => s.playing).length;
   const activeCount = armedCount > 0 && isPlaying ? armedCount : 0;
+  const anyAnalyzing = slots.some((s) => s.analyzing);
 
   return (
     <div className="flex flex-col gap-3 p-3">
@@ -361,13 +498,13 @@ export function LoopPlayerTab() {
       <div className="flex items-center gap-3 px-0.5">
         <span className="text-[8px] font-bold tracking-[0.18em] text-white/30">LOOP PLAYER</span>
 
-        {/* Transport indicator */}
+        {/* Transport dot + BPM */}
         <div className="flex items-center gap-1.5">
           <div
             className="w-1.5 h-1.5 rounded-full transition-all"
             style={{
               background: isPlaying ? TEAL : "rgba(255,255,255,0.12)",
-              boxShadow: isPlaying ? `0 0 6px ${TEAL}` : "none",
+              boxShadow:  isPlaying ? `0 0 6px ${TEAL}` : "none",
             }}
           />
           <span
@@ -382,19 +519,28 @@ export function LoopPlayerTab() {
         {activeCount > 0 && (
           <span
             className="text-[7px] font-bold px-1.5 py-0.5 rounded"
-            style={{
-              background: `${TEAL}18`,
-              color: TEAL,
-              border: `1px solid ${TEAL}30`,
-            }}
+            style={{ background: `${TEAL}18`, color: TEAL, border: `1px solid ${TEAL}30` }}
           >
             {activeCount} PLAYING
           </span>
         )}
 
-        <span className="text-[7px] text-white/18 ml-1 hidden sm:block">
-          Loops start immediately · Restart in phase when transport plays
-        </span>
+        {/* Quantized launch hint */}
+        {isPlaying && armedCount > 0 && (
+          <span className="text-[7px] text-white/20 hidden sm:block">
+            ⊞ Launches on next bar
+          </span>
+        )}
+
+        {/* Analyzing indicator */}
+        {anyAnalyzing && (
+          <span
+            className="text-[7px] font-bold px-1.5 py-0.5 rounded"
+            style={{ background: `rgba(46,196,182,0.08)`, color: `${TEAL}80`, border: `1px solid ${TEAL}20` }}
+          >
+            ANALYZING…
+          </span>
+        )}
 
         <div className="flex-1" />
 
@@ -403,7 +549,7 @@ export function LoopPlayerTab() {
           onClick={stopAll}
           className="text-[8px] font-bold px-2 py-0.5 rounded transition-all"
           style={{
-            color: armedCount > 0 ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.2)",
+            color:  armedCount > 0 ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.2)",
             border: `1px solid ${armedCount > 0 ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.06)"}`,
           }}
         >
@@ -418,7 +564,7 @@ export function LoopPlayerTab() {
 
       {/* Hint */}
       <p className="text-[7px] text-white/15 text-center pt-1 pb-0.5">
-        Drop WAV / MP3 onto any slot · Set FILE BPM to match the loop's native tempo
+        Drop WAV · MP3 → BPM auto-detected · Loops lock to bar grid · TAP to set BPM manually
       </p>
 
     </div>
