@@ -16,7 +16,7 @@ import {
 import { scaleNote, SCALES } from "../audio/BassEngine";
 import { audioEngine } from "../audio/AudioEngine";
 import { soundFontEngine } from "../audio/SoundFontEngine";
-import { generateEuclidean } from "./drumStore";
+import { generateEuclidean, useDrumStore } from "./drumStore";
 import { syncScaleToOtherStores, registerScaleStore } from "./bassStore";
 
 export const CHORDS_MAX_CLIP_STEPS = 256;
@@ -391,8 +391,8 @@ export function startChordsScheduler() {
   if (chordsTimer !== null) clearInterval(chordsTimer);
 
   chordsTimer = setInterval(() => {
-    const drumState = (window as unknown as { __drumStore?: { getState: () => { bpm: number; isPlaying: boolean } } }).__drumStore?.getState();
-    if (!drumState?.isPlaying) return;
+    const drumState = useDrumStore.getState();
+    if (!drumState.isPlaying) return;
 
     const bpm = drumState.bpm;
     const secondsPerStep = 60.0 / bpm / 4;

@@ -415,6 +415,9 @@ export class BassEngine {
 
   /** Update parameters live */
   setParams(p: Partial<BassParams>): void {
+    // Capture before merging — Object.assign mutates this.params immediately,
+    // so any comparison like `p.x !== this.params.x` below would always be false.
+    const prevFilterModel = this.params.filterModel;
     Object.assign(this.params, p);
 
     if (this.osc && this.ctx && (p.waveform || p.wavetable)) {
@@ -431,7 +434,7 @@ export class BassEngine {
         this.filterChain.update(cutoff, res, this.ctx?.currentTime ?? 0);
       }
       // Hot-swap filter chain when filterModel changes
-      if (p.filterModel && p.filterModel !== this.params.filterModel) {
+      if (p.filterModel && p.filterModel !== prevFilterModel) {
         if (this.ctx && this.osc && this.vca) {
           // Disconnect old filter chain from signal path
           this.osc.disconnect(this.filterChain.input);
@@ -466,6 +469,21 @@ export class BassEngine {
 
   get isInitialized(): boolean {
     return this.isRunning;
+  }
+
+  /** Stop all running oscillators and clear context reference.
+   *  Call before AudioContext.close() to avoid orphaned oscillators. */
+  destroy(): void {
+    if (this.osc) {
+      try { this.osc.stop(); } catch { /* already stopped */ }
+      this.osc = null;
+    }
+    if (this.subOsc) {
+      try { this.subOsc.stop(); } catch { /* already stopped */ }
+      this.subOsc = null;
+    }
+    this.isRunning = false;
+    this.ctx = null;
   }
 }
 

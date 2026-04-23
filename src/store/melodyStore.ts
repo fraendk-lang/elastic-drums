@@ -10,7 +10,7 @@ import { melodyEngine, type MelodyStep, type MelodyParams, DEFAULT_MELODY_PARAMS
 import { scaleNote, SCALES } from "../audio/BassEngine";
 import { audioEngine } from "../audio/AudioEngine";
 import { soundFontEngine } from "../audio/SoundFontEngine";
-import { generateEuclidean } from "./drumStore";
+import { generateEuclidean, useDrumStore } from "./drumStore";
 import { syncScaleToOtherStores, registerScaleStore } from "./bassStore";
 import { generateArpNotes, DEFAULT_ARP_SETTINGS, type ArpSettings } from "../audio/Arpeggiator";
 
@@ -869,8 +869,8 @@ export function startMelodyScheduler() {
   if (melodyTimer !== null) clearInterval(melodyTimer);
 
   melodyTimer = setInterval(() => {
-    const drumState = (window as unknown as { __drumStore?: { getState: () => { bpm: number; isPlaying: boolean } } }).__drumStore?.getState();
-    if (!drumState?.isPlaying) return;
+    const drumState = useDrumStore.getState();
+    if (!drumState.isPlaying) return;
 
     const bpm = drumState.bpm;
     const { stepNoteValue } = useMelodyStore.getState();

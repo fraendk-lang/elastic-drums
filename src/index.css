@@ -148,6 +148,15 @@ body {
               0 0 2px var(--ed-accent-melody);
 }
 
+/* Sonar / Radar ring animation for Melody panel */
+@keyframes ed-sonar-ring {
+  0%   { transform: scale(0.25); opacity: 0.9; }
+  100% { transform: scale(2.2);  opacity: 0; }
+}
+.ed-sonar-ring {
+  animation: ed-sonar-ring 900ms cubic-bezier(0.2, 0.8, 0.4, 1) forwards;
+}
+
 /* Smooth meter bars */
 .ed-meter-bar {
   transition: height 60ms linear;

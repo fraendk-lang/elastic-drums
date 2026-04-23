@@ -172,7 +172,10 @@ export class VoiceRenderer {
 
   private getNoise(ctx: AudioContext, duration: number, startTime: number): AudioBufferSourceNode {
     const src = ctx.createBufferSource();
-    src.buffer = this.noiseBuffer;
+    // Guard: noiseBuffer may be null if AudioContext was recreated before initNoise ran
+    if (this.noiseBuffer) {
+      src.buffer = this.noiseBuffer;
+    }
     src.start(startTime);
     src.stop(startTime + duration + 0.01);
     return src;
@@ -576,7 +579,9 @@ export class VoiceRenderer {
     const combDelay = ctx.createDelay(0.05);
     combDelay.delayTime.value = 0.025; // 25ms comb
     const combFeedback = ctx.createGain();
-    combFeedback.gain.value = 0.45; // Feedback for shimmer
+    combFeedback.gain.setValueAtTime(0.45, t + 0.035); // Feedback for shimmer
+    // Kill feedback loop at end of decay — prevents gain accumulation across rapid triggers
+    combFeedback.gain.setTargetAtTime(0, t + decaySec * 0.8, 0.01);
 
     const tailGain = ctx.createGain();
     tailGain.gain.setValueAtTime(0.50, t + 0.035);

@@ -35,7 +35,9 @@ export function scheduleAutoSave(getData: () => AutoSaveData): void {
         const data = getData();
         openAutoSaveDB().then((db) => {
           const txn = db.transaction("autosave", "readwrite");
-          txn.objectStore("autosave").put({ id: AUTO_SAVE_KEY, ...data });
+          txn.onerror = () => console.warn("Auto-save transaction error:", txn.error);
+          const req = txn.objectStore("autosave").put({ id: AUTO_SAVE_KEY, ...data });
+          req.onerror = () => console.warn("Auto-save put error:", req.error);
         }).catch((err) => console.warn("Auto-save failed:", err));
       } catch (err) {
         console.warn("Auto-save error:", err);

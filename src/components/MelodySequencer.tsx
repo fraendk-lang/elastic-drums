@@ -183,6 +183,12 @@ export function MelodySequencer() {
   const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
   const maxNote = Math.max(7, scale.length + 3);
 
+  // Current midi note for Sonar Kreis — only set when a step is actively playing
+  const currentActiveStep = isPlaying ? steps[currentStep] : null;
+  const currentMidi = currentActiveStep?.active
+    ? scaleNote(rootNote, scaleName, currentActiveStep.note, currentActiveStep.octave + globalOctave)
+    : null;
+
   return (
     <div className="border-t border-[var(--ed-accent-melody)]/15 bg-gradient-to-b from-[#0d0a0c] to-[#0a080a]">
       {/* Row 1: Main controls */}
@@ -766,7 +772,14 @@ export function MelodySequencer() {
               );
             })}
           </div>
-          <div className="hidden sm:block w-32 shrink-0" />
+          {/* Sonar Kreis — lives here so it never touches the AutomationLane flex row */}
+          <div className="hidden sm:flex w-32 shrink-0 items-center justify-center">
+            <SonarKreis
+              midi={currentMidi}
+              isPlaying={isPlaying}
+              active={currentMidi !== null}
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -794,5 +807,91 @@ function WaveBtn({ active, onClick, label }: { active: boolean; onClick: () => v
       }`}>
       {label}
     </button>
+  );
+}
+
+// ─── Sonar Kreis ─────────────────────────────────────────────────────────────
+// Circular note display with expanding ripple rings for the Melody panel.
+// Fires a new ring animation on every distinct note trigger.
+const NOTE_DISPLAY_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+function SonarKreis({ midi, isPlaying, active }: {
+  midi: number | null;
+  isPlaying: boolean;
+  active: boolean;
+}) {
+  const [rippleIds, setRippleIds] = useState<number[]>([]);
+  const counterRef = useRef(0);
+  const prevMidiRef = useRef<number | null>(null);
+
+  // Fire a new ripple ring whenever the note changes while playing
+  useEffect(() => {
+    if (!isPlaying || !active || midi === null) {
+      prevMidiRef.current = null;
+      return;
+    }
+    if (prevMidiRef.current !== midi) {
+      prevMidiRef.current = midi;
+      const id = ++counterRef.current;
+      setRippleIds((prev) => [...prev.slice(-4), id]);
+      // Remove after animation ends (900 ms + buffer)
+      const t = setTimeout(() => {
+        setRippleIds((prev) => prev.filter((r) => r !== id));
+      }, 1000);
+      return () => clearTimeout(t);
+    }
+  }, [midi, isPlaying, active]);
+
+  const isActive = isPlaying && active && midi !== null;
+  const noteName = midi !== null ? (NOTE_DISPLAY_NAMES[midi % 12] ?? "—") : "—";
+  const octave   = midi !== null ? Math.floor(midi / 12) - 1 : null;
+
+  return (
+    <div
+      className="relative flex-shrink-0 flex items-center justify-center"
+      style={{ width: 76, height: 76 }}
+    >
+      {/* Static background ring */}
+      <div
+        className="absolute inset-0 rounded-full border border-[var(--ed-accent-melody)]/15"
+        style={{ background: "radial-gradient(circle, rgba(244,114,182,0.07) 0%, transparent 68%)" }}
+      />
+
+      {/* Inner ring — visible only when active */}
+      {isActive && (
+        <div
+          className="absolute rounded-full border border-[var(--ed-accent-melody)]/30"
+          style={{ inset: 8 }}
+        />
+      )}
+
+      {/* Expanding ripple rings — one per note trigger, CSS-animated */}
+      {rippleIds.map((id) => (
+        <div
+          key={id}
+          className="absolute inset-0 rounded-full border border-[var(--ed-accent-melody)]/65 ed-sonar-ring"
+        />
+      ))}
+
+      {/* Note name + octave */}
+      <div className="relative z-10 text-center leading-none select-none pointer-events-none">
+        <div
+          className={`font-black transition-colors duration-75 ${isActive ? "text-[var(--ed-accent-melody)]" : "text-white/12"}`}
+          style={{
+            fontSize: isActive ? 22 : 18,
+            textShadow: isActive
+              ? "0 0 16px rgba(244,114,182,0.7), 0 0 5px rgba(244,114,182,1)"
+              : "none",
+          }}
+        >
+          {isActive ? noteName : "·"}
+        </div>
+        {isActive && octave !== null && (
+          <div className="text-[8px] font-mono text-[var(--ed-accent-melody)]/50 leading-none mt-0.5">
+            {octave}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

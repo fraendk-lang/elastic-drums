@@ -303,22 +303,19 @@ export class MelodyEngine {
     const res = Math.min(p.resonance / 30, 1.0);
 
     if (slide) {
-      // During slide: glide filter cutoff to peak more slowly
-      void (p.slideTime / 1000 / 3); // Calculate but don't use
-      this.filterChain.update(filterPeak, res, time);
-      setTimeout(() => {
-        this.filterChain?.update(filterBase, res, time + p.slideTime / 1000);
-      }, 0);
-    } else {
-      // Fast attack to peak
+      // During slide: glide filter cutoff to peak over 1/3 of slideTime, then decay to base.
+      // All three updates are queued synchronously as audio-timed parameter events —
+      // no setTimeout (which mis-aligns wall-clock vs audio-clock).
+      const glideTime = p.slideTime / 1000 / 3;
       this.filterChain.update(filterBase, res, time);
-      setTimeout(() => {
-        this.filterChain?.update(filterPeak, res, time + attackTime);
-      }, attackTime * 1000);
-      // Decay back
-      setTimeout(() => {
-        this.filterChain?.update(filterBase, res, time + attackTime);
-      }, (attackTime + decayTau) * 1000);
+      this.filterChain.update(filterPeak, res, time + glideTime);
+      this.filterChain.update(filterBase, res, time + p.slideTime / 1000);
+    } else {
+      // Fast 5ms attack to peak, then exponential decay back to base.
+      // Queue all three events synchronously — correct audio-time scheduling.
+      this.filterChain.update(filterBase, res, time);
+      this.filterChain.update(filterPeak, res, time + attackTime);
+      this.filterChain.update(filterBase, res, time + attackTime + decayTau);
     }
   }
 
@@ -495,6 +492,10 @@ export class MelodyEngine {
 
   /** Update parameters live */
   setParams(p: Partial<MelodyParams>): void {
+    // Capture before merging — Object.assign mutates this.params immediately,
+    // so comparisons like `p.x !== this.params.x` below would always be false.
+    const prevFilterModel = this.params.filterModel;
+    const prevSynthType = this.params.synthType;
     Object.assign(this.params, p);
 
     if (this.osc && (p.waveform || p.wavetable)) {
@@ -510,7 +511,7 @@ export class MelodyEngine {
     }
 
     // Hot-swap synthType: create/destroy filter chain as needed
-    if (p.synthType && p.synthType !== this.params.synthType) {
+    if (p.synthType && p.synthType !== prevSynthType) {
       const switchingToSubtractive = p.synthType === "subtractive";
 
       if (switchingToSubtractive && !this.filterChain && this.ctx && this.oscMix && this.vca) {
@@ -539,7 +540,7 @@ export class MelodyEngine {
         this.filterChain.update(cutoff, res, this.ctx?.currentTime ?? 0);
       }
       // Hot-swap filter chain when filterModel changes (only matters for subtractive)
-      if (p.filterModel && p.filterModel !== this.params.filterModel && this.params.synthType === "subtractive") {
+      if (p.filterModel && p.filterModel !== prevFilterModel && this.params.synthType === "subtractive") {
         if (this.ctx && this.oscMix && this.vca) {
           // Disconnect old filter chain from signal path
           this.oscMix.disconnect(this.filterChain.input);
@@ -571,6 +572,23 @@ export class MelodyEngine {
 
   get isInitialized(): boolean {
     return this.isRunning;
+  }
+
+  /** Stop all running oscillators and clear context reference.
+   *  Call before AudioContext.close() to avoid orphaned oscillators. */
+  destroy(): void {
+    for (const osc of [this.osc, this.subOsc, this.unisonOsc1, this.unisonOsc2, this.vibratoLfo]) {
+      if (osc) {
+        try { osc.stop(); } catch { /* already stopped */ }
+      }
+    }
+    this.osc = null;
+    this.subOsc = null;
+    this.unisonOsc1 = null;
+    this.unisonOsc2 = null;
+    this.vibratoLfo = null;
+    this.isRunning = false;
+    this.ctx = null;
   }
 
   /**

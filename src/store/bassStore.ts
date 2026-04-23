@@ -9,7 +9,7 @@ import { create } from "zustand";
 import { bassEngine, scaleNote, SCALES, type BassStep, type BassParams, DEFAULT_BASS_PARAMS } from "../audio/BassEngine";
 import { audioEngine } from "../audio/AudioEngine";
 import { soundFontEngine } from "../audio/SoundFontEngine";
-import { generateEuclidean } from "./drumStore";
+import { generateEuclidean, useDrumStore } from "./drumStore";
 
 export const BASS_MAX_CLIP_STEPS = 256;
 
@@ -442,8 +442,8 @@ export function startBassScheduler() {
   if (bassTimer !== null) clearInterval(bassTimer);
 
   bassTimer = setInterval(() => {
-    const drumState = (window as unknown as { __drumStore?: { getState: () => { bpm: number; isPlaying: boolean } } }).__drumStore?.getState();
-    if (!drumState?.isPlaying) return;
+    const drumState = useDrumStore.getState();
+    if (!drumState.isPlaying) return;
 
     const bpm = drumState.bpm;
     const secondsPerStep = 60.0 / bpm / 4;

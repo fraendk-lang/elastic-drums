@@ -202,8 +202,8 @@ function pianoRollTick(currentStep: number, bpm: number): void {
   }
 }
 
-// Subscribe to transport — runs globally, not tied to component lifecycle
-useTransportStore.subscribe((state, prev) => {
+// Subscribe to transport — runs globally, not tied to component lifecycle.
+const _transportUnsub = useTransportStore.subscribe((state, prev) => {
   if (state.currentStep !== prev.currentStep) {
     const bpm = useDrumStore.getState().bpm;
     const isPlaying = useDrumStore.getState().isPlaying;
@@ -216,3 +216,8 @@ useTransportStore.subscribe((state, prev) => {
     }
   }
 });
+
+// Clean up subscription if Vite HMR replaces this module
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => _transportUnsub());
+}

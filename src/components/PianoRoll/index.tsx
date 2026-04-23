@@ -22,6 +22,8 @@ import {
 import { generateHarmony, harmonizeNotes, type HarmonyType } from "./harmony";
 import { previewNote } from "./preview";
 import { setPianoRollNotes, setPianoRollLoop, getPianoRollCurrentStep } from "./scheduler";
+import { melodyEngine } from "../../audio/MelodyEngine";
+import { soundFontEngine } from "../../audio/SoundFontEngine";
 import {
   _persistedNotes as initialPersistedNotes,
   _persistedLoop as initialPersistedLoop,
@@ -116,7 +118,9 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     const notesBeats = Math.ceil(notesMaxEnd / 16) * 16; // Round up to 4-bar unit
     return Math.max(minBeats, notesBeats);
   }, [patternLength, notesMaxEnd]);
-  const rootMidi = 60 + rootNote;
+  // rootNote from melodyStore is already a full MIDI number (default 36 = C2).
+  // Do NOT add 60 — that would give MIDI 96 (C7) and break all scale/harmony calculations.
+  const rootMidi = rootNote;
   const accentColor = TARGET_COLORS[target];
 
   // ─── Fold view: only show rows that have notes ──────────────
@@ -669,6 +673,19 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     },
     [rubberBand, tool, rowHeight, cellW, addNote, gridH, midiForRow],
   );
+
+  // ─── Cut any step-sequencer-held melody note the moment the Piano Roll opens.
+  //     Without this, the mono melodyEngine keeps sustaining a note while the
+  //     Piano Roll scheduler also tries to manage it → stuck / hanging note.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!soundFontEngine.isLoaded("melody")) {
+      // Small positive offset so cancelScheduledValues lands safely in the future
+      const ctx = (melodyEngine as unknown as { ctx: AudioContext | null }).ctx;
+      const t = ctx ? ctx.currentTime + 0.01 : 0;
+      melodyEngine.releaseNote(t);
+    }
+  }, [isOpen]);
 
   // ─── Safety net: global pointerup clears any leftover drag/rubber-band state
   useEffect(() => {

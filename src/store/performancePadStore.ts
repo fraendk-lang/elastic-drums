@@ -11,6 +11,7 @@
  */
 
 import { create } from "zustand";
+import { useDrumStore } from "./drumStore";
 
 export type YAxisParam = "cutoff" | "resonance" | "envMod" | "decay" | "distortion" | "volume";
 
@@ -412,9 +413,8 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
     // ignored. "up" event finalizes note length (one grid step by default).
     if (s.isStepRecording) {
       if (ev.type === "move") return; // no gesture tracking in step mode
-      // We need BPM to compute grid — read from drumStore via window
-      const bpm = (window as unknown as { __drumStore?: { getState: () => { bpm: number } } })
-        .__drumStore?.getState().bpm ?? 120;
+      // We need BPM to compute grid — read directly from drumStore
+      const bpm = useDrumStore.getState().bpm;
       const beatMs = 60000 / bpm;
       const gridMap: Record<typeof s.quantize, number> = {
         "off":  beatMs / 4,   // default: 1/16 if Q is off in step mode

@@ -12,6 +12,8 @@ import { sendFxManager } from './SendFx';
 import { meteringEngine, MeteringEngine } from './Metering';
 import { mixerRouter } from './MixerRouting';
 import { soundFontEngine } from './SoundFontEngine';
+import { bassEngine } from './BassEngine';
+import { melodyEngine } from './MelodyEngine';
 
 export class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -503,6 +505,9 @@ export class AudioEngine {
 
   /** Clean up all audio resources and close the AudioContext */
   destroy(): void {
+    // Stop synth oscillators before closing context to avoid orphaned nodes
+    bassEngine.destroy();
+    melodyEngine.destroy();
     soundFontEngine.destroy();
     sendFxManager.destroy();
     this.workletNode = null;
