@@ -7,6 +7,42 @@
 
 import type { PatternData } from "../store/drumStore";
 
+// ─── Core render helper (shared by WAV + MP3 export) ───────────────────────
+
+async function renderPatternToWavBuffer(
+  pattern: PatternData,
+  bpm: number,
+  loops = 1,
+  trackFilter?: (voice: number) => boolean,
+): Promise<ArrayBuffer> {
+  const sampleRate = 44100;
+  const secondsPerStep = 60 / bpm / 4; // 16th notes
+  const totalSteps = pattern.length * loops;
+  const totalSeconds = totalSteps * secondsPerStep + 2; // +2s for tails
+  const totalSamples = Math.ceil(sampleRate * totalSeconds);
+
+  const offline = new OfflineAudioContext(2, totalSamples, sampleRate);
+
+  for (let loop = 0; loop < loops; loop++) {
+    for (let step = 0; step < pattern.length; step++) {
+      const time = (loop * pattern.length + step) * secondsPerStep;
+      for (let track = 0; track < 12; track++) {
+        if (trackFilter && !trackFilter(track)) continue;
+        const trackData = pattern.tracks[track];
+        if (!trackData || trackData.mute) continue;
+        const s = trackData.steps[step];
+        if (!s?.active) continue;
+        scheduleVoiceOffline(offline, track, s.velocity / 127, time);
+      }
+    }
+  }
+
+  const renderedBuffer = await offline.startRendering();
+  return encodeWav(renderedBuffer);
+}
+
+// ─── WAV Export ─────────────────────────────────────────────────────────────
+
 export async function exportPatternAsWav(
   pattern: PatternData,
   bpm: number,
@@ -14,49 +50,54 @@ export async function exportPatternAsWav(
   trackFilter?: (voice: number) => boolean,
   filenameSuffix?: string,
 ): Promise<void> {
-  const sampleRate = 44100;
-  const secondsPerStep = 60 / bpm / 4; // 16th notes
-  const totalSteps = pattern.length * loops;
-  const totalSeconds = totalSteps * secondsPerStep + 2; // +2s for tails (reverb/delay)
-  const totalSamples = Math.ceil(sampleRate * totalSeconds);
-
-  // Create offline context
-  const offline = new OfflineAudioContext(2, totalSamples, sampleRate);
-
-  // Schedule all events
-  for (let loop = 0; loop < loops; loop++) {
-    for (let step = 0; step < pattern.length; step++) {
-      const time = (loop * pattern.length + step) * secondsPerStep;
-
-      for (let track = 0; track < 12; track++) {
-        if (trackFilter && !trackFilter(track)) continue;
-        const trackData = pattern.tracks[track];
-        if (!trackData || trackData.mute) continue;
-
-        const s = trackData.steps[step];
-        if (!s?.active) continue;
-
-        const vel = s.velocity / 127;
-
-        // Schedule voice trigger at exact time
-        scheduleVoiceOffline(offline, track, vel, time);
-      }
-    }
-  }
-
-  // Render
-  const renderedBuffer = await offline.startRendering();
-
-  // Encode as WAV
-  const wav = encodeWav(renderedBuffer);
+  const wav = await renderPatternToWavBuffer(pattern, bpm, loops, trackFilter);
   const blob = new Blob([wav], { type: "audio/wav" });
   const url = URL.createObjectURL(blob);
-
-  // Download
   const a = document.createElement("a");
   a.href = url;
   const suffix = filenameSuffix ? `_${filenameSuffix}` : "";
   a.download = `${pattern.name.replace(/[^a-zA-Z0-9]/g, "_")}_${bpm}bpm${suffix}.wav`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─── MP3 Export (via Railway backend) ───────────────────────────────────────
+
+export async function exportPatternAsMp3(
+  pattern: PatternData,
+  bpm: number,
+  loops = 1,
+): Promise<void> {
+  const serverUrl = (import.meta.env.VITE_MP3_SERVER_URL as string | undefined)?.replace(/\/$/, "");
+
+  if (!serverUrl) {
+    alert(
+      "MP3 export server not configured.\n" +
+      "Set VITE_MP3_SERVER_URL in your .env file\n" +
+      "(e.g. VITE_MP3_SERVER_URL=https://your-service.up.railway.app)"
+    );
+    return;
+  }
+
+  // Render pattern to WAV first (client-side, no server round-trip for the heavy work)
+  const wavBuffer = await renderPatternToWavBuffer(pattern, bpm, loops);
+
+  const response = await fetch(`${serverUrl}/mp3`, {
+    method: "POST",
+    headers: { "Content-Type": "audio/wav" },
+    body: wavBuffer,
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => response.statusText);
+    throw new Error(`MP3 server error ${response.status}: ${errText}`);
+  }
+
+  const mp3Blob = await response.blob();
+  const url = URL.createObjectURL(mp3Blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${pattern.name.replace(/[^a-zA-Z0-9]/g, "_")}_${bpm}bpm.mp3`;
   a.click();
   URL.revokeObjectURL(url);
 }
