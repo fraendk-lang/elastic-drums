@@ -31,7 +31,7 @@ interface FxPanelProps {
   onClose: () => void;
 }
 
-type FxMode = "FILTER" | "DELAY" | "REVERB" | "FLANGER" | "CRUSH";
+type FxMode = "FILTER" | "DELAY" | "REVERB" | "FLANGER" | "CRUSH" | "PHASER" | "CHORUS";
 
 interface ModeConfig {
   color: string;
@@ -51,7 +51,9 @@ const MODE_CONFIG: Record<FxMode, ModeConfig> = {
   DELAY: { color: "#3b82f6", xLabel: "Division", yLabel: "Feedback" },
   REVERB: { color: "#8b5cf6", xLabel: "Brightness", yLabel: "Level" },
   FLANGER: { color: "#06b6d4", xLabel: "Rate", yLabel: "Depth + Feedback" },
-  CRUSH: { color: "#ef4444", xLabel: "Filter Mode", yLabel: "Drive" },
+  CRUSH:   { color: "#ef4444", xLabel: "Filter Mode", yLabel: "Drive" },
+  PHASER:  { color: "#22d3ee", xLabel: "Rate",        yLabel: "Depth + Feedback" },
+  CHORUS:  { color: "#a3e635", xLabel: "Rate",        yLabel: "Depth" },
 };
 
 // Compact SVG icons — each tells you at a glance what the FX does
@@ -95,10 +97,25 @@ function ModeIcon({ mode, color }: { mode: FxMode; color: string }) {
           <path d="M 1 11 L 5 11 L 5 8 L 11 8 L 11 5 L 17 5 L 17 8 L 23 8 L 23 11 L 27 11" {...common} />
         </svg>
       );
+    case "PHASER": // Phase-shifted double wave
+      return (
+        <svg viewBox="0 0 28 14" className="w-5 h-[12px]" aria-hidden>
+          <path d="M 1 7 Q 5 1 9 7 T 17 7 T 25 7" {...common} />
+          <path d="M 1 7 Q 5 13 9 7 T 17 7 T 25 7" {...common} opacity="0.4" />
+        </svg>
+      );
+    case "CHORUS": // Three parallel waves
+      return (
+        <svg viewBox="0 0 28 14" className="w-5 h-[12px]" aria-hidden>
+          <path d="M 1 4 Q 7 1 13 4 T 25 4" {...common} />
+          <path d="M 1 7 Q 7 4 13 7 T 25 7" {...common} opacity="0.65" />
+          <path d="M 1 10 Q 7 7 13 10 T 25 10" {...common} opacity="0.35" />
+        </svg>
+      );
   }
 }
 
-const FX_MODES: FxMode[] = ["FILTER", "DELAY", "REVERB", "FLANGER", "CRUSH"];
+const FX_MODES: FxMode[] = ["FILTER", "DELAY", "REVERB", "FLANGER", "CRUSH", "PHASER", "CHORUS"];
 
 const FX_MODE_PRESETS: Record<FxMode, { label: string; x: number; y: number }[]> = {
   FILTER: [
@@ -122,9 +139,19 @@ const FX_MODE_PRESETS: Record<FxMode, { label: string; x: number; y: number }[]>
     { label: "Soft Chorus", x: 0.34, y: 0.36 },
   ],
   CRUSH: [
-    { label: "Telephone", x: 0.2, y: 0.48 },
+    { label: "Telephone", x: 0.2,  y: 0.48 },
     { label: "Dusty Drive", x: 0.62, y: 0.54 },
     { label: "Hard Smash", x: 0.88, y: 0.92 },
+  ],
+  PHASER: [
+    { label: "Slow",   x: 0.15, y: 0.35 },
+    { label: "Medium", x: 0.45, y: 0.55 },
+    { label: "Fast",   x: 0.75, y: 0.70 },
+  ],
+  CHORUS: [
+    { label: "Subtle", x: 0.25, y: 0.30 },
+    { label: "Lush",   x: 0.50, y: 0.65 },
+    { label: "Wide",   x: 0.70, y: 0.85 },
   ],
 };
 
@@ -169,6 +196,16 @@ function getMusicalValue(mode: FxMode, x: number, y: number, _bpm: number): Musi
       } else {
         return { text: "CRUSH", description: `Drive: ${Math.round(Math.pow(y, 1.3) * 100)}%` };
       }
+    }
+    case "PHASER": {
+      const rate = Math.round((0.05 * Math.pow(6 / 0.05, x)) * 100) / 100;
+      const depth = Math.round(y * 100);
+      return { text: `${rate}Hz`, description: `Depth: ${depth}%` };
+    }
+    case "CHORUS": {
+      const rate  = Math.round((0.5 + x * 3.5) * 10) / 10;
+      const width = Math.round(y * 100);
+      return { text: `${rate}Hz`, description: `Width: ${width}%` };
     }
   }
 }
@@ -259,6 +296,24 @@ function applyFxMode(mode: FxMode, x: number, y: number, target: FxTarget, bpm: 
       audioEngine.setMasterSaturation(drive);
       break;
     }
+    case "PHASER": {
+      // X: rate 0.05–6Hz (exponential), Y: depth 0–1 + feedback 0–0.7
+      const rate     = 0.05 * Math.pow(6 / 0.05, x);
+      const feedback = y * 0.7;
+      audioEngine.setPhaserRate(rate);
+      audioEngine.setPhaserFeedback(feedback);
+      audioEngine.setPhaserLevel(0.35 + y * 0.4);
+      break;
+    }
+    case "CHORUS": {
+      // X: rate 0.5–4Hz, Y: depth/width 0–1
+      const rate  = 0.5 + x * 3.5;
+      const depth = y;
+      audioEngine.setChorusRate(rate);
+      audioEngine.setChorusDepth(depth);
+      audioEngine.setChorusLevel(0.3 + y * 0.5);
+      break;
+    }
   }
 }
 
@@ -268,6 +323,12 @@ function activateFxMode(mode: FxMode, x: number, y: number, target: FxTarget, bp
     const depth = Math.min(1.0, y * 1.5);
     const feedback = y > 0.3 ? 0.3 + (y - 0.3) * 0.93 : 0.3;
     audioEngine.startFlanger(rate, depth, feedback);
+  }
+  if (mode === "PHASER") {
+    [12, 13, 14].forEach((ch) => audioEngine.setChannelPhaserSend(ch, 0.38));
+  }
+  if (mode === "CHORUS") {
+    [12, 13, 14].forEach((ch) => audioEngine.setChannelChorusSend(ch, 0.38));
   }
   applyFxMode(mode, x, y, target, bpm);
 }
@@ -292,6 +353,14 @@ function releaseFxMode(mode: FxMode, target: FxTarget): void {
     case "CRUSH":
       releaseFilter(target);
       audioEngine.setMasterSaturation(0);
+      break;
+    case "PHASER":
+      audioEngine.setPhaserLevel(0);
+      [12, 13, 14].forEach((ch) => audioEngine.setChannelPhaserSend(ch, 0));
+      break;
+    case "CHORUS":
+      audioEngine.setChorusLevel(0);
+      [12, 13, 14].forEach((ch) => audioEngine.setChannelChorusSend(ch, 0));
       break;
   }
 }
