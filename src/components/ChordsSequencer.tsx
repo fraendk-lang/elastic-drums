@@ -7,6 +7,7 @@ import { useChordsStore, CHORDS_PRESETS, CHORDLINE_STRATEGIES, CHORD_TYPE_NAMES,
 import { CHORDS_INSTRUMENTS, findInstrumentOption } from "../audio/SoundFontEngine";
 import { SCALES, ROOT_NOTES, scaleNote } from "../audio/BassEngine";
 import { useDrumStore } from "../store/drumStore";
+import { WAVETABLE_NAMES } from "../audio/Wavetables";
 import { Knob } from "./Knob";
 import { SoundFontKnobs } from "./SoundFontKnobs";
 import { AutomationLane, type AutomationParam } from "./AutomationLane";
@@ -233,6 +234,30 @@ export function ChordsSequencer() {
         <Sel value={rootName} options={ROOT_NOTES}
           onChange={(v) => { const i = ROOT_NOTES.indexOf(v); if (i >= 0) setRootNote(48 + i, v); }} />
         <Sel value={scaleName} options={SCALE_NAMES} onChange={setScale} />
+
+        <Sep />
+
+        {/* Synth Type: SUBTR / WAVE */}
+        <WaveBtn
+          active={params.synthType !== "wavetable"}
+          onClick={() => setParam("synthType", "subtractive")}
+          label="SUBTR"
+        />
+        <WaveBtn
+          active={params.synthType === "wavetable"}
+          onClick={() => setParam("synthType", "wavetable")}
+          label="WAVE"
+        />
+
+        {/* Wavetable selector — only visible when WAVE active */}
+        {params.synthType === "wavetable" && WAVETABLE_NAMES.map((wt) => (
+          <WaveBtn
+            key={wt}
+            active={params.wavetable === wt}
+            onClick={() => setParam("wavetable", wt)}
+            label={wt.toUpperCase().slice(0, 6)}
+          />
+        ))}
 
         <Sep />
 
