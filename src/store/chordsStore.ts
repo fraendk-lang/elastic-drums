@@ -127,6 +127,22 @@ export const CHORDS_PRESETS: ChordsPreset[] = [
   { name: "Disco Strings", params: cp({ waveform: "sawtooth", cutoff: 3500, resonance: 2, envMod: 0.12, attack: 250, release: 800, detune: 15, distortion: 0, volume: 0.55, subOsc: 0, chorus: 0.5, spread: 0.85, brightness: 0.3 }) },
   { name: "Trance Pad", params: cp({ waveform: "sawtooth", cutoff: 2800, resonance: 4, envMod: 0.2, attack: 200, release: 1000, detune: 20, distortion: 0.03, volume: 0.55, subOsc: 0.1, chorus: 0.4, spread: 0.7, brightness: 0.4 }) },
   { name: "Minimal Stab", params: cp({ waveform: "square", cutoff: 1500, resonance: 6, envMod: 0.5, attack: 1, release: 40, detune: 2, distortion: 0.05, volume: 0.58, subOsc: 0, chorus: 0, spread: 0.1, brightness: 0.2 }) },
+
+  // ── Wavetable Pads ──────────────────────────────────────────────────────────
+  { name: "Warm Strings",    params: cp({ synthType: "wavetable", wavetable: "warm-stack",  cutoff: 3200, resonance: 2,  envMod: 0.12, attack: 320, release: 1800, detune: 18, distortion: 0.02, volume: 0.52, subOsc: 0.15, chorus: 0.62, spread: 0.92, brightness: 0.45 }) },
+  { name: "Choir Pad",       params: cp({ synthType: "wavetable", wavetable: "vocal",       cutoff: 2800, resonance: 2,  envMod: 0.08, attack: 380, release: 2000, detune: 22, distortion: 0.01, volume: 0.48, subOsc: 0.10, chorus: 0.44, spread: 0.88, brightness: 0.55 }) },
+  { name: "Analog Poly",     params: cp({ synthType: "wavetable", wavetable: "harmonic",    cutoff: 2400, resonance: 4,  envMod: 0.18, attack:  45, release:  900, detune: 28, distortion: 0.08, volume: 0.50, subOsc: 0.20, chorus: 0.32, spread: 0.70, brightness: 0.38 }) },
+  { name: "Electric Piano",  params: cp({ synthType: "wavetable", wavetable: "pulse-25",    cutoff: 3600, resonance: 3,  envMod: 0.22, attack:  10, release:  420, detune:  8, distortion: 0.04, volume: 0.54, subOsc: 0.08, chorus: 0.16, spread: 0.42, brightness: 0.60 }) },
+  { name: "Ambient Glass",   params: cp({ synthType: "wavetable", wavetable: "glass",       cutoff: 5000, resonance: 5,  envMod: 0.10, attack: 500, release: 2000, detune: 12, distortion: 0.01, volume: 0.44, subOsc: 0.05, chorus: 0.28, spread: 0.78, brightness: 0.72 }) },
+  { name: "Hollow Pad",      params: cp({ synthType: "wavetable", wavetable: "hollow",      cutoff: 2200, resonance: 3,  envMod: 0.14, attack: 420, release: 1600, detune: 20, distortion: 0.02, volume: 0.50, subOsc: 0.12, chorus: 0.50, spread: 0.86, brightness: 0.40 }) },
+  { name: "Bright Arp Pad",  params: cp({ synthType: "wavetable", wavetable: "bright-saw",  cutoff: 4800, resonance: 6,  envMod: 0.25, attack:  18, release:  340, detune: 14, distortion: 0.06, volume: 0.50, subOsc: 0.10, chorus: 0.20, spread: 0.60, brightness: 0.65 }) },
+  { name: "Digital Stack",   params: cp({ synthType: "wavetable", wavetable: "digital",     cutoff: 3000, resonance: 8,  envMod: 0.30, attack:   8, release:  260, detune: 10, distortion: 0.12, volume: 0.48, subOsc: 0.06, chorus: 0.10, spread: 0.50, brightness: 0.52 }) },
+
+  // ── Subtractive Stabs ───────────────────────────────────────────────────────
+  { name: "House Stab",      params: cp({ synthType: "subtractive", waveform: "sawtooth",  cutoff: 4200, resonance: 8,  envMod: 0.45, attack:   5, release:  150, detune: 12, distortion: 0.08, volume: 0.58, subOsc: 0.15, chorus: 0.18, spread: 0.52, brightness: 0.50 }) },
+  { name: "Techno Chord",    params: cp({ synthType: "subtractive", waveform: "square",    cutoff: 2800, resonance: 10, envMod: 0.55, attack:   3, release:  100, detune:  6, distortion: 0.22, volume: 0.54, subOsc: 0.20, chorus: 0.08, spread: 0.38, brightness: 0.35 }) },
+  { name: "Funk Stab",       params: cp({ synthType: "subtractive", waveform: "sawtooth",  cutoff: 3500, resonance: 12, envMod: 0.60, attack:   8, release:  200, detune:  8, distortion: 0.10, volume: 0.56, subOsc: 0.10, chorus: 0.42, spread: 0.60, brightness: 0.48 }) },
+  { name: "Jazz Voicing",    params: cp({ synthType: "subtractive", waveform: "triangle",  cutoff: 1800, resonance: 3,  envMod: 0.12, attack:  22, release:  650, detune:  6, distortion: 0.02, volume: 0.50, subOsc: 0.08, chorus: 0.22, spread: 0.44, brightness: 0.32 }) },
 ];
 
 export const CHORDS_CORE_PRESETS = CHORDS_PRESETS.filter((preset) =>
