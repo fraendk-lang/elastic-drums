@@ -11,12 +11,13 @@ export class MeteringEngine {
   private rmsLevels: Float32Array;
   private masterPeakLevel = 0;
   private masterRmsLevel = 0;
-  private readonly PEAK_DECAY = 0.995;
+  // ~2s fallback from 0dB to -60dB at 15fps (0.90^15 ≈ 0.206/frame = -13.7dB/s)
+  private readonly PEAK_DECAY = 0.90;
   private readonly RMS_SMOOTH = 0.5;
   private meterBuffer: Float32Array<ArrayBuffer> | null = null;
   private frequencyBuffer: Float32Array<ArrayBuffer> | null = null;
 
-  constructor(channelCount = 15) {
+  constructor(channelCount = 16) {
     this.peakLevels = new Float32Array(channelCount);
     this.rmsLevels = new Float32Array(channelCount);
   }
@@ -60,10 +61,18 @@ export class MeteringEngine {
 
     const { rms, peak } = this.analyseLevel(analyser);
 
+    // Noise-floor gate: if the analyser is truly silent (< -120 dBFS),
+    // hard-reset both levels so meters clear instantly instead of slow-decaying.
+    if (peak < 1e-6) {
+      this.rmsLevels[channel]  = 0;
+      this.peakLevels[channel] = 0;
+      return { rmsDb: -Infinity, peakDb: -Infinity, rmsLinear: 0, peakLinear: 0 };
+    }
+
     // Smooth RMS (exponential moving average)
     this.rmsLevels[channel] = this.RMS_SMOOTH * (this.rmsLevels[channel] ?? 0) + (1 - this.RMS_SMOOTH) * rms;
 
-    // Peak hold with slow decay
+    // Peak hold with decay
     if (peak > (this.peakLevels[channel] ?? 0)) {
       this.peakLevels[channel] = peak;
     } else {

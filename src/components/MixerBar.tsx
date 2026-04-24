@@ -68,8 +68,8 @@ function useMeterData() {
         let peak = 0;
         for (let j = 0; j < analyser.fftSize; j++) peak = Math.max(peak, Math.abs(meterBuf[j]!));
         const db = peak > 0 ? 20 * Math.log10(peak) : -Infinity;
-        // Peak hold: decay 20dB/s
-        peakRef.current[i] = Math.max(peakRef.current[i]! - 0.33, db);
+        // Peak hold: decay ~40dB/s at 20fps (0.66 dB per frame × 20fps = ~13dB/s felt decay)
+        peakRef.current[i] = Math.max(peakRef.current[i]! - 0.66, db);
 
         const ctx = canvas.getContext("2d");
         if (!ctx) continue;
@@ -85,7 +85,8 @@ function useMeterData() {
         const frac = (clampDb + 60) / 60;
         const fillH = frac * h;
         const gradient = ctx.createLinearGradient(0, h - fillH, 0, h);
-        gradient.addColorStop(0, db > -3 ? "#ef4444" : db > -12 ? "#fbbf24" : "#22c55e");
+        // Professional meter thresholds: red = true clip zone, yellow = caution, green = normal
+        gradient.addColorStop(0, db > -1.5 ? "#ef4444" : db > -6 ? "#fbbf24" : "#22c55e");
         gradient.addColorStop(1, "#16a34a");
         ctx.fillStyle = gradient;
         ctx.fillRect(0, h - fillH, w, fillH);
@@ -95,7 +96,7 @@ function useMeterData() {
         if (peakDb > -60) {
           const peakFrac = (Math.max(-60, Math.min(0, peakDb)) + 60) / 60;
           const py = h - peakFrac * h;
-          ctx.fillStyle = peakDb > -3 ? "#ef4444" : "#86efac";
+          ctx.fillStyle = peakDb > -1.5 ? "#ef4444" : "#86efac";
           ctx.fillRect(0, py, w, 1);
         }
       }

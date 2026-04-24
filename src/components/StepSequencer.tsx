@@ -235,7 +235,7 @@ const TrackRow = React.memo(function TrackRow({
         const isActive = step?.active ?? false;
         const isCurrent = isPlaying && currentStep === absoluteStep;
         const velocity = step?.velocity ?? 100;
-        const hasLocks = isActive && step !== undefined && Object.keys(step.paramLocks).length > 0;
+        const hasLocks = step !== undefined && Object.keys(step.paramLocks).length > 0;
         const ratchetCount = step?.ratchetCount ?? 1;
         const condition = step?.condition ?? "always";
         const isHeld = heldStep?.track === track && heldStep?.step === absoluteStep;

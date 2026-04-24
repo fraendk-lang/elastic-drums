@@ -154,7 +154,7 @@ export class AudioEngine {
       // ─── SoundFont Engine setup ──────────────────────────
       soundFontEngine.init(this.ctx);
 
-      meteringEngine.reset(15);
+      meteringEngine.reset(16);
 
       // Initialize shared AudioWorklet scheduler clock
       schedulerClock.init(this.ctx).catch((e) =>
