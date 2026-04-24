@@ -20,7 +20,7 @@
  */
 
 import { createFilterChain, type FilterModel, type FilterChain } from "./filters";
-import { type WavetableName } from "./Wavetables";
+import { getWavetable, type WavetableName } from "./Wavetables";
 
 export interface ChordsParams {
   waveform: "sawtooth" | "square" | "triangle";
@@ -152,7 +152,11 @@ export class ChordsEngine {
 
     for (let i = 0; i < NUM_VOICES; i++) {
       const osc = audioCtx.createOscillator();
-      osc.type = this.params.waveform;
+      if (this.params.synthType === "wavetable") {
+        osc.setPeriodicWave(getWavetable(audioCtx, this.params.wavetable ?? "harmonic"));
+      } else {
+        osc.type = this.params.waveform;
+      }
       osc.frequency.value = 261.63; // C4 default
       osc.detune.value = this.params.detune * detuneSpread[i]!;
 
@@ -455,9 +459,14 @@ export class ChordsEngine {
 
     Object.assign(this.params, normalized);
 
-    if (normalized.waveform) {
+    if (normalized.waveform || normalized.synthType !== undefined || normalized.wavetable) {
       for (const voice of this.voices) {
-        voice.osc.type = normalized.waveform;
+        if (this.params.synthType === "wavetable") {
+          if (!this.ctx) continue;
+          voice.osc.setPeriodicWave(getWavetable(this.ctx, this.params.wavetable ?? "harmonic"));
+        } else {
+          voice.osc.type = this.params.waveform;
+        }
       }
     }
     if (normalized.detune !== undefined) {
