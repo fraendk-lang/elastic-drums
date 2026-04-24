@@ -49,6 +49,11 @@ export interface MelodyParams {
   vibratoDepth: number; // LFO depth: 0-1, default 0
   fmHarmonicity: number; // FM carrier:modulator ratio, default 3
   fmModIndex: number;  // FM brightness, default 10
+  // VCA Amplitude Envelope
+  ampAttack: number;   // VCA attack time ms (1-500)
+  ampDecay: number;    // VCA decay time ms (1-500)
+  ampSustain: number;  // VCA sustain level 0-1
+  ampRelease: number;  // VCA release time ms (1-2000)
 }
 
 export const DEFAULT_MELODY_PARAMS: MelodyParams = {
@@ -72,6 +77,10 @@ export const DEFAULT_MELODY_PARAMS: MelodyParams = {
   vibratoDepth: 0,
   fmHarmonicity: 3,
   fmModIndex: 10,
+  ampAttack: 5,
+  ampDecay: 50,
+  ampSustain: 1.0,
+  ampRelease: 80,
 };
 
 // MIDI note to frequency
@@ -451,12 +460,19 @@ export class MelodyEngine {
           this.scheduleFilterEnvelope(time, accent, true);
         } else {
           // Normal trigger or first note
-          // VCA: fast attack (5ms for lead character)
+          // VCA: attack from params (default 5ms), with optional decay+sustain
           this.vca.gain.cancelScheduledValues(time);
           const velocityLevel = 0.45 + Math.max(0, Math.min(1, velocity)) * 0.55;
-          const level = (accent ? 1.0 : 0.75) * velocityLevel;
+          const peakLevel = (accent ? 1.0 : 0.75) * velocityLevel;
+          const sustainLevel = peakLevel * p.ampSustain;
+          const attackSec = Math.max(0.001, p.ampAttack / 1000);
+          const decaySec = Math.max(0.001, p.ampDecay / 1000);
           this.vca.gain.setValueAtTime(0.001, time);
-          this.vca.gain.linearRampToValueAtTime(level, time + 0.005);
+          this.vca.gain.linearRampToValueAtTime(peakLevel, time + attackSec);
+          // If sustain < 1: apply decay after attack
+          if (p.ampSustain < 0.99) {
+            this.vca.gain.linearRampToValueAtTime(sustainLevel, time + attackSec + decaySec);
+          }
 
           // Filter envelope: the heart of the lead sound
           this.scheduleFilterEnvelope(time, accent, useSlide);
@@ -480,8 +496,9 @@ export class MelodyEngine {
     // Clamp to 1 ms ahead to avoid cancelling already-applied envelope work
     const safeTime = Math.max(time, this.ctx.currentTime + 0.001);
     this.vca.gain.cancelScheduledValues(safeTime);
-    // Fairly fast release but not instant
-    this.vca.gain.setTargetAtTime(0, safeTime, 0.015);
+    // Use ampRelease param: time constant = release_ms / 3000 (reaches ~95% in release_ms)
+    const releaseTau = Math.max(0.003, this.params.ampRelease / 3000);
+    this.vca.gain.setTargetAtTime(0, safeTime, releaseTau);
     this.noteIsOn = false;
     if (this._autoReleaseTimer) { clearTimeout(this._autoReleaseTimer); this._autoReleaseTimer = null; }
   }
@@ -838,10 +855,11 @@ export class MelodyEngine {
     filter.frequency.setValueAtTime(filterBase, fSettleTime); // ← terminates the curve
 
     // ── Amp envelope ────────────────────────────────────────────────────────
-    const attack = 0.006;
-    const decayT = Math.min(0.12, duration * 0.25);
-    const sustain = 0.78;
-    const release = Math.min(0.9, Math.max(0.04, duration * 0.35));
+    // Use user ADSR params; clamp release so it doesn't exceed note duration + 2s
+    const attack = Math.max(0.001, p.ampAttack / 1000);
+    const decayT = Math.max(0.001, p.ampDecay / 1000);
+    const sustain = p.ampSustain;
+    const release = Math.max(0.005, Math.min(2.0, p.ampRelease / 1000));
     const sustainLvl = level * sustain;
     const releaseStart = startTime + Math.max(attack + decayT, duration);
     const releaseEnd = releaseStart + release;

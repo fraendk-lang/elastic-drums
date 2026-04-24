@@ -144,7 +144,7 @@ export function Transport({
         <input type="range" min={50} max={75} value={swing}
           onChange={(e) => setSwing(Number(e.target.value))}
           aria-label="Swing amount"
-          className="w-10 h-[3px] accent-white/40" />
+          className="w-10 h-[3px] accent-gray-500" />
         <span className="text-[9px] font-mono text-white/35 w-4 tabular-nums">{swing}</span>
       </div>
 
@@ -197,6 +197,22 @@ export function Transport({
           className="text-[7px] text-white/15 hover:text-[var(--ed-accent-green)]/60 transition-colors ml-1 font-bold tracking-wider"
         >
           NEW
+        </button>
+        <button
+          onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true }))}
+          aria-label="Undo"
+          title="Undo (Ctrl+Z)"
+          className="text-[7px] text-white/15 hover:text-white/55 transition-colors ml-1 font-bold tracking-wider"
+        >
+          ↺
+        </button>
+        <button
+          onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, shiftKey: true, bubbles: true }))}
+          aria-label="Redo"
+          title="Redo (Ctrl+Shift+Z)"
+          className="text-[7px] text-white/15 hover:text-white/55 transition-colors ml-0.5 font-bold tracking-wider"
+        >
+          ↻
         </button>
       </div>
 

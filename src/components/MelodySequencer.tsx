@@ -606,6 +606,13 @@ export function MelodySequencer() {
           <Knob value={Math.round(params.distortion * 100)} min={0} max={100} defaultValue={15} label="DRV" color={MELODY_COLOR} size={34} onChange={(v) => setParam("distortion", v / 100)} />
           <Knob value={Math.round(params.subOsc * 100)} min={0} max={100} defaultValue={10} label="SUB" color={MELODY_COLOR} size={34} onChange={(v) => setParam("subOsc", v / 100)} />
 
+          {/* VCA ADSR */}
+          <div className="w-px h-8 bg-white/8 mx-1 shrink-0" />
+          <Knob value={params.ampAttack} min={1} max={500} defaultValue={5} label="ATK" color={MELODY_COLOR} size={34} onChange={(v) => setParam("ampAttack", v)} />
+          <Knob value={params.ampDecay} min={1} max={500} defaultValue={50} label="DCY" color={MELODY_COLOR} size={34} onChange={(v) => setParam("ampDecay", v)} />
+          <Knob value={Math.round(params.ampSustain * 100)} min={0} max={100} defaultValue={100} label="SUS" color={MELODY_COLOR} size={34} onChange={(v) => setParam("ampSustain", v / 100)} />
+          <Knob value={params.ampRelease} min={1} max={2000} defaultValue={80} label="RLS" color={MELODY_COLOR} size={34} onChange={(v) => setParam("ampRelease", v)} />
+
           {/* Separator */}
           <div className="w-px h-8 bg-white/8 mx-1 shrink-0" />
 
