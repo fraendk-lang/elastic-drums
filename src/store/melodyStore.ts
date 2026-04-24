@@ -900,7 +900,12 @@ export function startMelodyScheduler() {
     };
 
     while (nextMelodyStepTime < audioEngine.currentTime + 0.1) {
-      const { steps, currentStep, length, rootNote, scaleName, automationData, globalOctave } = useMelodyStore.getState();
+      // Single getState() call per loop iteration — avoids redundant store reads.
+      const {
+        steps, currentStep, length, rootNote, scaleName, automationData, globalOctave,
+        liveTransposeOffset: melodyTranspose,
+        instrument, arp, humanize, layerMode, layerVelocity,
+      } = useMelodyStore.getState();
       const stepIndex = currentStep % length;
       const step = steps[stepIndex];
       const prevStep = stepIndex > 0 ? steps[stepIndex - 1] : steps[length - 1];
@@ -932,12 +937,11 @@ export function startMelodyScheduler() {
       }
 
       if (step?.active && !isContinuationTie) {
-        const { liveTransposeOffset: melodyTranspose } = useMelodyStore.getState();
+        // All state already read at top of while-loop iteration (single getState())
         const midiNote = scaleNote(rootNote, scaleName, step.note, step.octave + globalOctave) + (melodyTranspose ?? 0);
         const explicitGateLength = Math.max(1, step.gateLength ?? 1);
         const sustainSteps = explicitGateLength > 1 ? explicitGateLength : getLegacyTieLength(steps, stepIndex, length);
         const sustainDuration = secondsPerStep * sustainSteps;
-        const { instrument, arp, humanize, layerMode, layerVelocity } = useMelodyStore.getState();
 
         // Humanize: probability gate (random skip)
         const humanProbPass = humanize.probability >= 1 || Math.random() < humanize.probability;

@@ -667,7 +667,9 @@ export class MelodyEngine {
    * one-shots and pooling oscillators for them offers no benefit).
    */
 
-  private static readonly POOL_SIZE = 8;
+  // 4 pool voices covers the max useful case: 1 melody note + triad (3 layers).
+  // Halves the pool oscillator count from 16 running oscillators to 8.
+  private static readonly POOL_SIZE = 4;
   private voicePool: PolyVoiceSlot[] = [];
   private poolReady = false;
 

@@ -60,21 +60,15 @@ export function MelodySequencer() {
   const stepElRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [velocityLaneExpanded, setVelocityLaneExpanded] = useState(true);
 
-  // ── Playhead trail: keep last 4 played absolute step indices ─────────────
-  const trailRef = useRef<number[]>([]);
-  const [trailSteps, setTrailSteps] = useState<number[]>([]);
-
-  useEffect(() => {
-    if (!isPlaying) {
-      trailRef.current = [];
-      setTrailSteps([]);
-      return;
-    }
-    // Prepend current step, keep at most 4 entries (head = most recent)
-    const next = [currentStep, ...trailRef.current.filter((s) => s !== currentStep)].slice(0, 4);
-    trailRef.current = next;
-    setTrailSteps(next);
-  }, [currentStep, isPlaying]);
+  // ── Playhead trail: computed inline — no useState/useEffect needed.
+  // trailDepth(absStep) → 0 = current step, 1 = 1 ago, 2 = 2 ago, -1 = hidden.
+  // Wraps correctly around sequence boundaries via modular arithmetic.
+  const trailDepth = isPlaying
+    ? (absStep: number) => {
+        const d = ((currentStep - absStep) % length + length) % length;
+        return d <= 2 ? d : -1;
+      }
+    : (_: number) => -1 as const;
 
   const pageOffset = selectedPage * 16;
   const totalPages = Math.max(1, Math.ceil(length / 16));
@@ -657,9 +651,9 @@ export function MelodySequencer() {
                   <div className="absolute inset-0 rounded-sm" style={{ backgroundColor: "rgba(34,211,238,0.25)" }} />
                 )}
               </div>
-              {/* Playhead trail dot */}
+              {/* Playhead trail dot — depth computed inline, no useState */}
               {(() => {
-                const trailIdx = trailSteps.indexOf(absStep);
+                const trailIdx = trailDepth(absStep);
                 const trailOpacity = trailIdx === 0 ? 1 : trailIdx === 1 ? 0.5 : trailIdx === 2 ? 0.25 : 0;
                 return trailOpacity > 0 ? (
                   <div
