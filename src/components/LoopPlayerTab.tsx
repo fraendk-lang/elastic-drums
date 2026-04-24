@@ -155,6 +155,7 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
   const setOriginalBpm     = useLoopPlayerStore((s) => s.setOriginalBpm);
   const setFirstBeatOffset = useLoopPlayerStore((s) => s.setFirstBeatOffset);
   const setLoopEndSeconds  = useLoopPlayerStore((s) => s.setLoopEndSeconds);
+  const setLoopRegion      = useLoopPlayerStore((s) => s.setLoopRegion);
   const restartSlot        = useLoopPlayerStore((s) => s.restartSlot);
   const setVolume          = useLoopPlayerStore((s) => s.setVolume);
   const togglePlay         = useLoopPlayerStore((s) => s.togglePlay);
@@ -187,12 +188,14 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
     return ratio * slot.duration;
   }, [slot.buffer, slot.duration]);
 
-  /** Snap a time value to the nearest beat (if BPM is known). */
+  /** Snap a time value to the nearest beat of the global (drum) grid.
+   *  This keeps handles aligned to the project bar grid regardless of
+   *  whatever BPM the auto-detector guessed for the file. */
   const snapToBeat = useCallback((t: number): number => {
-    if (slot.originalBpm <= 0 || slot.analyzing) return t;
-    const beat = 60 / slot.originalBpm;
+    if (globalBpm <= 0) return t;
+    const beat = 60 / globalBpm;
     return Math.round(t / beat) * beat;
-  }, [slot.originalBpm, slot.analyzing]);
+  }, [globalBpm]);
 
   const handleCanvasPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!slot.buffer || !canvasRef.current) return;
@@ -507,23 +510,27 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
         {/* Divider */}
         <div className="w-px h-5 bg-white/8 shrink-0" />
 
-        {/* Bar-length presets */}
-        {slot.buffer && !slot.analyzing && slot.originalBpm > 0 && (
+        {/* Bar-length tempo-lock presets
+            Clicking "2B" means: "this loop region = 2 bars at the project BPM".
+            Sets originalBpm = globalBpm so playbackRate = 1.0 (play at native speed).
+            This is independent of auto-BPM detection — always reliable. */}
+        {slot.buffer && !slot.analyzing && globalBpm > 0 && (
           <div className="flex items-center gap-1 shrink-0">
-            <span className="text-[6px] font-bold tracking-[0.1em] text-white/25">LOOP</span>
+            <span className="text-[6px] font-bold tracking-[0.1em] text-white/25">LOCK</span>
             {([0.5, 1, 2, 4, 8] as const).map((bars) => {
-              const beat      = 60 / slot.originalBpm;
-              const regionEnd = slot.firstBeatOffset + bars * 4 * beat;
-              const isActive  = Math.abs(slot.loopEndSeconds - regionEnd) < beat * 0.5;
+              const barDur    = (60 / globalBpm) * 4;
+              const loopEnd   = slot.firstBeatOffset + bars * barDur;
+              // Active = current region matches this bar count at globalBpm within half a beat
+              const currentLoopEnd = slot.loopEndSeconds > slot.firstBeatOffset
+                ? slot.loopEndSeconds
+                : slot.duration;
+              const isActive = Math.abs(currentLoopEnd - loopEnd) < (60 / globalBpm) * 0.5
+                && Math.abs(slot.originalBpm - globalBpm) < 1;
               return (
                 <button
                   key={bars}
-                  title={`Set loop to ${bars === 0.5 ? "½" : bars} bar${bars !== 1 ? "s" : ""}`}
-                  onClick={() => {
-                    const end = Math.min(regionEnd, slot.duration);
-                    setLoopEndSeconds(slotIndex, end);
-                    restartSlot(slotIndex);
-                  }}
+                  title={`Tempo-lock: this loop = ${bars === 0.5 ? "½" : bars} bar${bars !== 1 ? "s" : ""} at ${globalBpm} BPM`}
+                  onClick={() => setLoopRegion(slotIndex, bars)}
                   className="text-[7px] font-bold px-1.5 py-0.5 rounded transition-all"
                   style={{
                     background:  isActive ? `${TEAL}22` : "rgba(255,255,255,0.04)",
@@ -739,7 +746,7 @@ export function LoopPlayerTab() {
 
       {/* Hint */}
       <p className="text-[7px] text-white/15 text-center pt-1 pb-0.5">
-        Drop WAV · MP3 → BPM auto-detected · Drag S/E handles on waveform to set loop region · TAP to set BPM manually
+        Drop WAV/MP3 → Drag S/E handles to mark region → click LOCK bar count (½B–8B) to tempo-lock to project BPM
       </p>
 
     </div>

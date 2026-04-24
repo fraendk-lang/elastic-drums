@@ -49,6 +49,10 @@ interface LoopPlayerStore {
   setOriginalBpm     (idx: number, bpm: number): void;
   setFirstBeatOffset (idx: number, offset: number): void;
   setLoopEndSeconds  (idx: number, end: number): void;
+  /** Mark this slot's current loop region as numBars bars at the global (project) BPM.
+   *  Sets originalBpm = globalBpm and loopEnd = firstBeatOffset + numBars*4*(60/globalBpm).
+   *  This is the primary "tempo lock" action — independent of auto-detection. */
+  setLoopRegion      (idx: number, numBars: number): void;
   restartSlot        (idx: number): void;
   setVolume          (idx: number, volume: number): void;
   togglePlay         (idx: number): void;
@@ -141,14 +145,23 @@ function _nextBarTime(): number {
   const drum = useDrumStore.getState();
   if (!drum.isPlaying) return audioEngine.currentTime + 0.05;
 
-  const now          = audioEngine.currentTime;
-  const barDuration  = (60 / drum.bpm) * 4;      // 4 quarter-notes per bar
-  const startTime    = getDrumTransportStartTime();
-  const elapsed      = now - startTime;
-  const barsElapsed  = Math.floor(elapsed / barDuration);
-  const nextBar      = startTime + (barsElapsed + 1) * barDuration;
+  const now         = audioEngine.currentTime;
+  const barDuration = (60 / drum.bpm) * 4;   // 4 quarter-notes per bar
+  const startTime   = getDrumTransportStartTime();
+  const elapsed     = now - startTime;
 
-  // Never schedule more than 2 bars ahead, and never in the past
+  // Guard: if we are still within the scheduler lookahead window of bar-1 start
+  // (elapsed < 0 means startTime is in the future; < 5% of a bar means we just
+  //  started and the Zustand subscriber fired a few ms after setState).
+  // In both cases lock directly to startTime instead of skipping to bar 2.
+  if (elapsed < barDuration * 0.05) {
+    return Math.max(now + 0.005, startTime);
+  }
+
+  const barsElapsed = Math.floor(elapsed / barDuration);
+  const nextBar     = startTime + (barsElapsed + 1) * barDuration;
+
+  // Never schedule more than 2 bars ahead, never in the past
   return Math.max(now + 0.01, Math.min(now + barDuration * 2, nextBar));
 }
 
@@ -245,6 +258,41 @@ export const useLoopPlayerStore = create<LoopPlayerStore>((set, get) => ({
       slots[idx] = { ...slots[idx]!, loopEndSeconds: end };
       return { slots };
     });
+  },
+
+  // ── Tempo-lock: define loop region as N bars at project BPM ──
+  setLoopRegion: (idx, numBars) => {
+    const globalBpm = useDrumStore.getState().bpm;
+    const slot      = get().slots[idx]!;
+    if (!slot.buffer || numBars <= 0 || globalBpm <= 0) return;
+
+    // One bar = 4 quarter-notes at globalBpm
+    const barDuration   = (60 / globalBpm) * 4;
+    const loopDuration  = numBars * barDuration;
+    const loopEnd       = Math.min(slot.firstBeatOffset + loopDuration, slot.duration);
+
+    // originalBpm = globalBpm → playbackRate will be 1.0 (plays at native speed)
+    // This is correct when the file was recorded at the project BPM.
+    // For files at a different BPM, the user can still override via the BPM input.
+    set((s) => {
+      const slots = [...s.slots];
+      slots[idx] = {
+        ...slots[idx]!,
+        originalBpm:    globalBpm,
+        loopEndSeconds: loopEnd,
+        detectedBpm:    null, // clear auto-detected marker so input shows manual state
+      };
+      return { slots };
+    });
+
+    // Live-update playback rate if already playing
+    loopPlayerEngine.updatePlaybackRate(idx, globalBpm, globalBpm); // = 1.0
+
+    // Restart at next bar boundary to apply new loop end
+    const updated = useLoopPlayerStore.getState().slots[idx]!;
+    if (updated.playing && updated.buffer && !updated.analyzing) {
+      _launchSlot(idx, updated);
+    }
   },
 
   // Restart a slot with its current (possibly updated) loop points.
