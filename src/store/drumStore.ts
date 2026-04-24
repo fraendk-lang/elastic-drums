@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { audioEngine, VOICE_PARAM_DEFS } from "../audio/AudioEngine";
 import { sampleManager } from "../audio/SampleManager";
-import { WorkerTimer } from "../audio/WorkerTimer";
+import { schedulerClock } from "../audio/SchedulerClock";
 
 // Scene store reference — set lazily to avoid circular imports
 let _sceneStoreRef: {
@@ -382,7 +382,7 @@ const PRESET_PATTERNS: PatternData[] = [
 // ─── Sequencer Scheduler ─────────────────────────────────
 // Look-ahead scheduler with swing support
 
-const _schedulerWorkerTimer = new WorkerTimer(20);
+let _removeSchedulerClock: (() => void) | null = null;
 let nextStepTime = 0;
 let transportStartTime = 0; // AudioContext time of step 0, bar 1
 
@@ -398,7 +398,8 @@ function startScheduler() {
   cycleCount = 0;
   prevStepTriggered = new Array(12).fill(false);
 
-  _schedulerWorkerTimer.start(() => {
+  _removeSchedulerClock?.(); // clean up previous listener if any
+  _removeSchedulerClock = schedulerClock.addListener(() => {
     const state = useDrumStore.getState();
     if (!state.isPlaying) return;
 
@@ -408,7 +409,7 @@ function startScheduler() {
     const secondsPerStep = 60.0 / state.bpm / 4;
     const swingRatio = (state.pattern.swing - 50) / 100;
 
-    while (nextStepTime < audioEngine.currentTime + 0.15) { // Larger lookahead for tighter timing
+    while (nextStepTime < audioEngine.currentTime + 0.3) { // Larger lookahead for tighter timing
       const { pattern, songMode, songChain, songPosition, songRepeatCount } =
         useDrumStore.getState();
       const currentStep = _drumStep;
@@ -631,11 +632,12 @@ function startScheduler() {
       if (nextStep === 0) useDrumStore.setState({ barCycle: cycleCount });
       nextStepTime += stepDuration;
     }
-  }); // WorkerTimer 20ms
+  });
 }
 
 function stopScheduler() {
-  _schedulerWorkerTimer.stop();
+  _removeSchedulerClock?.();
+  _removeSchedulerClock = null;
   // Clear all active P-Lock timers to prevent memory leaks
   activePLockTimers.forEach(timerId => clearTimeout(timerId));
   activePLockTimers.clear();

@@ -13,7 +13,7 @@ import { soundFontEngine } from "../audio/SoundFontEngine";
 import { generateEuclidean, useDrumStore, getDrumNextStepTime } from "./drumStore";
 import { syncScaleToOtherStores, registerScaleStore } from "./bassStore";
 import { generateArpNotes, DEFAULT_ARP_SETTINGS, type ArpSettings } from "../audio/Arpeggiator";
-import { WorkerTimer } from "../audio/WorkerTimer";
+import { schedulerClock } from "../audio/SchedulerClock";
 
 // ─── Melody step external store ────────────────────────────
 // currentStep is intentionally NOT stored in Zustand. The scheduler updates a
@@ -887,7 +887,7 @@ function createEmptySteps(): MelodyStep[] {
 
 // ─── Melody Scheduler ───────────────────────────────────
 
-const _melodyWorkerTimer = new WorkerTimer(20);
+let _removeMelodySchedulerClock: (() => void) | null = null;
 let nextMelodyStepTime = 0;
 
 export function startMelodyScheduler() {
@@ -898,7 +898,8 @@ export function startMelodyScheduler() {
   nextMelodyStepTime = drumNextStep > audioEngine.currentTime
     ? drumNextStep
     : audioEngine.currentTime + 0.05;
-  _melodyWorkerTimer.start(() => {
+  _removeMelodySchedulerClock?.();
+  _removeMelodySchedulerClock = schedulerClock.addListener(() => {
     const drumState = useDrumStore.getState();
     if (!drumState.isPlaying) return;
 
@@ -924,7 +925,7 @@ export function startMelodyScheduler() {
       nextMelodyStepTime = audioEngine.currentTime;
     }
 
-    while (nextMelodyStepTime < audioEngine.currentTime + 0.1) {
+    while (nextMelodyStepTime < audioEngine.currentTime + 0.3) {
       // Single getState() call per loop iteration — avoids redundant store reads.
       // currentStep comes from module variable (not Zustand) to avoid cascading re-renders.
       const {
@@ -1044,7 +1045,8 @@ export function startMelodyScheduler() {
 }
 
 export function stopMelodyScheduler() {
-  _melodyWorkerTimer.stop();
+  _removeMelodySchedulerClock?.();
+  _removeMelodySchedulerClock = null;
   const now = audioEngine.currentTime;
   if (now > 0) melodyEngine.releaseNote(now);
   setMelodyStep(0);

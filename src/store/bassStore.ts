@@ -10,7 +10,7 @@ import { bassEngine, scaleNote, SCALES, type BassStep, type BassParams, DEFAULT_
 import { audioEngine } from "../audio/AudioEngine";
 import { soundFontEngine } from "../audio/SoundFontEngine";
 import { generateEuclidean, useDrumStore, getDrumNextStepTime } from "./drumStore";
-import { WorkerTimer } from "../audio/WorkerTimer";
+import { schedulerClock } from "../audio/SchedulerClock";
 
 export const BASS_MAX_CLIP_STEPS = 256;
 
@@ -479,13 +479,14 @@ function getLegacyTieLength(steps: BassStep[], startIndex: number, sequenceLengt
   return span;
 }
 
-const _bassWorkerTimer = new WorkerTimer(20);
+let _removeBassSchedulerClock: (() => void) | null = null;
 let nextBassStepTime = 0;
 
 export function startBassScheduler() {
   const drumNextStep = getDrumNextStepTime();
   nextBassStepTime = drumNextStep > audioEngine.currentTime ? drumNextStep : audioEngine.currentTime + 0.05;
-  _bassWorkerTimer.start(() => {
+  _removeBassSchedulerClock?.();
+  _removeBassSchedulerClock = schedulerClock.addListener(() => {
     const drumState = useDrumStore.getState();
     if (!drumState.isPlaying) return;
 
@@ -498,7 +499,7 @@ export function startBassScheduler() {
       nextBassStepTime = audioEngine.currentTime;
     }
 
-    while (nextBassStepTime < audioEngine.currentTime + 0.1) {
+    while (nextBassStepTime < audioEngine.currentTime + 0.3) {
       const { steps, length, rootNote, scaleName, automationData, globalOctave } = useBassStore.getState();
       const currentStep = _bassStep;
       const step = steps[currentStep % length];
@@ -569,7 +570,8 @@ export function startBassScheduler() {
 }
 
 export function stopBassScheduler() {
-  _bassWorkerTimer.stop();
+  _removeBassSchedulerClock?.();
+  _removeBassSchedulerClock = null;
   const now = audioEngine.currentTime;
   if (now > 0) bassEngine.releaseNote(now);
   setBassStep(0);

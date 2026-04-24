@@ -14,6 +14,7 @@ import { mixerRouter } from './MixerRouting';
 import { soundFontEngine } from './SoundFontEngine';
 import { bassEngine } from './BassEngine';
 import { melodyEngine } from './MelodyEngine';
+import { schedulerClock } from './SchedulerClock';
 
 export class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -154,6 +155,11 @@ export class AudioEngine {
       soundFontEngine.init(this.ctx);
 
       meteringEngine.reset(15);
+
+      // Initialize shared AudioWorklet scheduler clock
+      schedulerClock.init(this.ctx).catch((e) =>
+        console.warn('SchedulerClock init error:', e)
+      );
     }
     return this.ctx;
   }

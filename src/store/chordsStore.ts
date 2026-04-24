@@ -18,7 +18,7 @@ import { audioEngine } from "../audio/AudioEngine";
 import { soundFontEngine } from "../audio/SoundFontEngine";
 import { generateEuclidean, useDrumStore, getDrumNextStepTime } from "./drumStore";
 import { syncScaleToOtherStores, registerScaleStore } from "./bassStore";
-import { WorkerTimer } from "../audio/WorkerTimer";
+import { schedulerClock } from "../audio/SchedulerClock";
 
 export const CHORDS_MAX_CLIP_STEPS = 256;
 
@@ -415,13 +415,14 @@ function createEmptySteps(): ChordsStep[] {
 
 // ─── Chords Scheduler ───────────────────────────────────
 
-const _chordsWorkerTimer = new WorkerTimer(20);
+let _removeChordsSchedulerClock: (() => void) | null = null;
 let nextChordsStepTime = 0;
 
 export function startChordsScheduler() {
   const drumNextStep = getDrumNextStepTime();
   nextChordsStepTime = drumNextStep > audioEngine.currentTime ? drumNextStep : audioEngine.currentTime + 0.05;
-  _chordsWorkerTimer.start(() => {
+  _removeChordsSchedulerClock?.();
+  _removeChordsSchedulerClock = schedulerClock.addListener(() => {
     const drumState = useDrumStore.getState();
     if (!drumState.isPlaying) return;
 
@@ -445,7 +446,7 @@ export function startChordsScheduler() {
       nextChordsStepTime = audioEngine.currentTime;
     }
 
-    while (nextChordsStepTime < audioEngine.currentTime + 0.1) {
+    while (nextChordsStepTime < audioEngine.currentTime + 0.3) {
       const { steps, length, rootNote, scaleName, automationData, globalOctave } = useChordsStore.getState();
       const currentStep = _chordsStep;
       const stepIndex = currentStep % length;
@@ -512,7 +513,8 @@ export function startChordsScheduler() {
 }
 
 export function stopChordsScheduler() {
-  _chordsWorkerTimer.stop();
+  _removeChordsSchedulerClock?.();
+  _removeChordsSchedulerClock = null;
   const now = audioEngine.currentTime;
   if (now > 0) chordsEngine.releaseChord(now);
   setChordsStep(0);
