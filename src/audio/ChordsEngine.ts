@@ -20,6 +20,7 @@
  */
 
 import { createFilterChain, type FilterModel, type FilterChain } from "./filters";
+import { type WavetableName } from "./Wavetables";
 
 export interface ChordsParams {
   waveform: "sawtooth" | "square" | "triangle";
@@ -37,6 +38,8 @@ export interface ChordsParams {
   chorus: number;      // Chorus depth (0-1), default 0.3
   spread: number;      // Stereo spread (0-1), default 0.5
   brightness: number;  // High-shelf boost (0-1), default 0.3
+  synthType: "subtractive" | "wavetable";  // Default: "subtractive"
+  wavetable?: WavetableName;               // Default: "harmonic"
 }
 
 export const DEFAULT_CHORDS_PARAMS: ChordsParams = {
@@ -55,6 +58,8 @@ export const DEFAULT_CHORDS_PARAMS: ChordsParams = {
   chorus: 0.3,
   spread: 0.5,
   brightness: 0.3,
+  synthType: "subtractive",
+  wavetable: "harmonic",
 };
 
 export const CHORD_TYPES: Record<string, number[]> = {
