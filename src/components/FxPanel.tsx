@@ -10,6 +10,10 @@ import { audioEngine } from "../audio/AudioEngine";
 import { useDrumStore } from "../store/drumStore";
 import { motionRecorder, type MotionRecording } from "../audio/MotionRecorder";
 
+// Synth channels that get auto-sends when Kaoss Pad uses REVERB/DELAY modes
+const KAOSS_SYNTH_CHANNELS = [12, 13, 14] as const;
+const KAOSS_AUTO_SEND = 0.38;
+
 // ─── Types ───────────────────────────────────────────────
 
 type FxTarget = "master" | "drums" | "bass" | "chords" | "melody";
@@ -484,6 +488,7 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
 
   const padRef = useRef<HTMLDivElement>(null);
   const beatFxListRef = useRef(createBeatFxList());
+  const savedSendsRef = useRef<{ reverb: number[]; delay: number[] } | null>(null);
 
   const applyPadState = useCallback((x: number, y: number, latch = false) => {
     setPadX(x);
@@ -527,6 +532,17 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
       const { x, y } = calcXY(e);
       setPadX(x);
       setPadY(y);
+      // Auto-open synth channel sends for REVERB/DELAY modes so the Kaoss Pad
+      // actually routes signal through the send buses (they start at 0 by default).
+      if ((activeMode === "REVERB" || activeMode === "DELAY") && savedSendsRef.current === null) {
+        const savedReverb = KAOSS_SYNTH_CHANNELS.map((ch) => audioEngine.getChannelReverbSend(ch));
+        const savedDelay  = KAOSS_SYNTH_CHANNELS.map((ch) => audioEngine.getChannelDelaySend(ch));
+        savedSendsRef.current = { reverb: savedReverb, delay: savedDelay };
+        for (const ch of KAOSS_SYNTH_CHANNELS) {
+          audioEngine.setChannelReverbSend(ch, KAOSS_AUTO_SEND);
+          audioEngine.setChannelDelaySend(ch, KAOSS_AUTO_SEND);
+        }
+      }
       activateFxMode(activeMode, x, y, fxTarget, bpm);
     },
     [activeMode, fxTarget, bpm, calcXY]
@@ -553,12 +569,30 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
       setHoldLocked(true);
     } else {
       releaseFxMode(activeMode, fxTarget);
+      // Restore auto-opened sends when releasing without hold
+      if (savedSendsRef.current !== null) {
+        const saved = savedSendsRef.current;
+        savedSendsRef.current = null;
+        KAOSS_SYNTH_CHANNELS.forEach((ch, i) => {
+          audioEngine.setChannelReverbSend(ch, saved.reverb[i] ?? 0);
+          audioEngine.setChannelDelaySend(ch, saved.delay[i] ?? 0);
+        });
+      }
     }
   }, [activeMode, fxTarget, holdMode]);
 
   const releaseHold = useCallback(() => {
     setHoldLocked(false);
     releaseFxMode(activeMode, fxTarget);
+    // Restore auto-opened sends when hold is released
+    if (savedSendsRef.current !== null) {
+      const saved = savedSendsRef.current;
+      savedSendsRef.current = null;
+      KAOSS_SYNTH_CHANNELS.forEach((ch, i) => {
+        audioEngine.setChannelReverbSend(ch, saved.reverb[i] ?? 0);
+        audioEngine.setChannelDelaySend(ch, saved.delay[i] ?? 0);
+      });
+    }
   }, [activeMode, fxTarget]);
 
   // ─── Beat FX Handlers ───────────────────────────────

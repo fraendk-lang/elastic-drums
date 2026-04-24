@@ -207,11 +207,10 @@ function applyFxParam(
 
     case "chorus":
       if (paramId === "rate" || paramId === "depth") {
-        // Use flanger as chorus (slow sweep with moderate depth)
-        const rate = 0.8 + (allParams.rate ?? 30) / 100 * 2; // 0.8-2.8 Hz
-        const depth = (allParams.depth ?? 40) / 100 * 0.6; // 0-0.6
-        const feedback = 0.3; // Fixed feedback for chorus effect
-        audioEngine.setFlangerParams(rate, depth, feedback);
+        const rate  = 0.8 + (allParams.rate  ?? 30) / 100 * 2.0; // 0.8–2.8 Hz
+        const depth = (allParams.depth ?? 40) / 100;              // 0–1
+        audioEngine.setChorusRate(rate);
+        audioEngine.setChorusDepth(depth);
       }
       break;
 
@@ -312,11 +311,23 @@ function applyModuleToggle(
 
     case "chorus":
       if (enabled) {
-        const rate = 0.8 + (params.rate ?? 30) / 100 * 2;
-        const depth = (params.depth ?? 40) / 100 * 0.6;
-        audioEngine.setFlangerParams(rate, depth, 0.3);
+        const rate  = 0.8 + (params.rate  ?? 30) / 100 * 2.0; // 0.8–2.8 Hz
+        const depth = (params.depth ?? 40) / 100;              // 0–1
+        audioEngine.setChorusRate(rate);
+        audioEngine.setChorusDepth(depth);
+        audioEngine.setChorusLevel(0.65);
+        if (isPerChannel) {
+          for (const ch of channels) audioEngine.setChannelChorusSend(ch, 0.4);
+        } else {
+          for (let ch = 0; ch < 15; ch++) audioEngine.setChannelChorusSend(ch, 0.3);
+        }
       } else {
-        audioEngine.stopFlanger();
+        audioEngine.setChorusLevel(0);
+        if (isPerChannel) {
+          for (const ch of channels) audioEngine.setChannelChorusSend(ch, 0);
+        } else {
+          for (let ch = 0; ch < 15; ch++) audioEngine.setChannelChorusSend(ch, 0);
+        }
       }
       break;
 

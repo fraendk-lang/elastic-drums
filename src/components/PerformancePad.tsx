@@ -442,33 +442,13 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     if (activeVoicesRef.current.size === 0 && fxSnapshotRef.current) {
       const snap = fxSnapshotRef.current;
       fxSnapshotRef.current = null;
-      // Smooth fade back over 400ms (not jarring)
-      const ctx = audioEngine.getAudioContext();
-      const fadeMs = 400;
+      // Smooth fade back — AudioParam.setTargetAtTime gives a clean exponential fade
       if (yParam === "reverb") {
-        // Use ramp via a small setTimeout loop — sendFxManager doesn't expose AudioParam directly
-        const startLevel = sendFxManager.getReverbLevel();
-        const endLevel = snap.reverb;
-        const steps = 20;
-        for (let i = 1; i <= steps; i++) {
-          setTimeout(() => {
-            const t = i / steps;
-            sendFxManager.setReverbLevel(startLevel + (endLevel - startLevel) * t);
-          }, (fadeMs / steps) * i);
-        }
+        audioEngine.setReverbLevelSmooth(snap.reverb, 0.18); // 180ms time constant ≈ 400ms perceptual fade
       } else if (yParam === "delay") {
-        const startLevel = sendFxManager.getDelayLevel();
-        const endLevel = snap.delay;
-        const steps = 20;
-        for (let i = 1; i <= steps; i++) {
-          setTimeout(() => {
-            const t = i / steps;
-            sendFxManager.setDelayLevel(startLevel + (endLevel - startLevel) * t);
-          }, (fadeMs / steps) * i);
-        }
+        audioEngine.setDelayLevelSmooth(snap.delay, 0.18);
       } else if (yParam === "drive") {
         // Restore synth distortion (engine-specific)
-        void ctx; // suppress unused warning
         if (target === "melody") melodyEngine.setParams({ distortion: 0 });
         else bassEngine.setParams({ distortion: 0 });
       }

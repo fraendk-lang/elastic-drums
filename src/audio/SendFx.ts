@@ -710,6 +710,28 @@ export class SendFxManager {
     return this.delayGain?.gain.value ?? 0;
   }
 
+  /** Smooth reverb level transition — uses AudioParam.setTargetAtTime, no clicks */
+  setReverbLevelSmooth(target: number, timeConstant: number): void {
+    if (!this.reverbGain || !this.ctx) return;
+    this.reverbGain.gain.cancelScheduledValues(this.ctx.currentTime);
+    this.reverbGain.gain.setTargetAtTime(
+      Math.max(0, target),
+      this.ctx.currentTime,
+      timeConstant,
+    );
+  }
+
+  /** Smooth delay level transition — uses AudioParam.setTargetAtTime, no clicks */
+  setDelayLevelSmooth(target: number, timeConstant: number): void {
+    if (!this.delayGain || !this.ctx) return;
+    this.delayGain.gain.cancelScheduledValues(this.ctx.currentTime);
+    this.delayGain.gain.setTargetAtTime(
+      Math.max(0, target),
+      this.ctx.currentTime,
+      timeConstant,
+    );
+  }
+
   /** Sync delay time to BPM with named division */
   syncDelayToBpm(bpm: number, division?: number): void {
     const beatSec = 60 / bpm;

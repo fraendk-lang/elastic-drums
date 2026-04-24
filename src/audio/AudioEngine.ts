@@ -365,6 +365,8 @@ export class AudioEngine {
 
   setChannelReverbSend(channel: number, amount: number): void { sendFxManager.setChannelReverbSend(channel, amount); }
   setChannelDelaySend(channel: number, amount: number): void { sendFxManager.setChannelDelaySend(channel, amount); }
+  setReverbLevelSmooth(target: number, timeConstant: number): void { sendFxManager.setReverbLevelSmooth(target, timeConstant); }
+  setDelayLevelSmooth(target: number, timeConstant: number): void { sendFxManager.setDelayLevelSmooth(target, timeConstant); }
 
   setMasterFilter(type: BiquadFilterType, freq: number, q: number): void { sendFxManager.setMasterFilter(type, freq, q); }
   bypassMasterFilter(): void { sendFxManager.bypassMasterFilter(); }
