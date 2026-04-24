@@ -339,12 +339,27 @@ export const CHORDLINE_STRATEGIES: ChordlineStrategy[] = [
   },
 ];
 
+// ─── External step counter (not in Zustand) ──────────────────────────────────
+let _chordsStep = 0;
+const _chordsStepListeners = new Set<() => void>();
+export const chordsCurrentStepStore = {
+  subscribe: (fn: () => void): (() => void) => {
+    _chordsStepListeners.add(fn);
+    return () => _chordsStepListeners.delete(fn);
+  },
+  getSnapshot: (): number => _chordsStep,
+};
+export function getChordsCurrentStep(): number { return _chordsStep; }
+function setChordsStep(n: number): void {
+  _chordsStep = n;
+  for (const fn of _chordsStepListeners) fn();
+}
+
 // ─── Store Interface ─────────────────────────────────────
 
 interface ChordsStore {
   steps: ChordsStep[];
   length: number;
-  currentStep: number;
   selectedPage: number;
   rootNote: number;
   rootName: string;
@@ -427,7 +442,8 @@ export function startChordsScheduler() {
     };
 
     while (nextChordsStepTime < audioEngine.currentTime + 0.1) {
-      const { steps, currentStep, length, rootNote, scaleName, automationData, globalOctave } = useChordsStore.getState();
+      const { steps, length, rootNote, scaleName, automationData, globalOctave } = useChordsStore.getState();
+      const currentStep = _chordsStep;
       const stepIndex = currentStep % length;
       const step = steps[stepIndex];
       const prevStep = stepIndex > 0 ? steps[stepIndex - 1] : steps[length - 1];
@@ -485,7 +501,7 @@ export function startChordsScheduler() {
         }
       }
 
-      useChordsStore.setState({ currentStep: (currentStep + 1) % length });
+      setChordsStep((currentStep + 1) % length);
       nextChordsStepTime += secondsPerStep;
     }
   }, 25);
@@ -495,7 +511,7 @@ export function stopChordsScheduler() {
   if (chordsTimer !== null) { clearInterval(chordsTimer); chordsTimer = null; }
   const now = audioEngine.currentTime;
   if (now > 0) chordsEngine.releaseChord(now);
-  useChordsStore.setState({ currentStep: 0 });
+  setChordsStep(0);
 }
 
 // ─── Store ───────────────────────────────────────────────
@@ -503,7 +519,6 @@ export function stopChordsScheduler() {
 export const useChordsStore = create<ChordsStore>((set, get) => ({
   steps: createEmptySteps(),
   length: 16,
-  currentStep: 0,
   selectedPage: 0,
   rootNote: 48,
   rootName: "C",
@@ -601,7 +616,8 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
     chordsEngine.setParams({ [key]: value });
 
     // Motion Recording: write automation on current step while playing
-    const { isPlaying, currentStep, length, automationData } = get();
+    const { isPlaying, length, automationData } = get();
+    const currentStep = getChordsCurrentStep();
     if (isPlaying && typeof value === "number") {
       const data = { ...automationData };
       if (!data[key]) data[key] = new Array(CHORDS_MAX_CLIP_STEPS).fill(undefined);

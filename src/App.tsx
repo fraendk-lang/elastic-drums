@@ -268,12 +268,11 @@ export function App() {
       if (state.bpm !== prev.bpm) useTransportStore.getState().setBpm(state.bpm);
       if (state.isPlaying !== prev.isPlaying) useTransportStore.getState().setPlaying(state.isPlaying);
       if (state.swing !== prev.swing) useTransportStore.getState().setSwing(state.swing);
-      if (state.currentStep !== prev.currentStep) useTransportStore.getState().setCurrentStep(state.currentStep);
     });
 
     // Initialize transport store with current values
-    const { bpm, isPlaying, swing, currentStep } = useDrumStore.getState();
-    useTransportStore.setState({ bpm, isPlaying, swing, currentStep });
+    const { bpm, isPlaying, swing } = useDrumStore.getState();
+    useTransportStore.setState({ bpm, isPlaying, swing });
 
     // Legacy compat: still set window ref for any code that reads it
     (window as unknown as Record<string, unknown>).__drumStore = useDrumStore;

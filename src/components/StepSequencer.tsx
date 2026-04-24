@@ -1,5 +1,5 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
-import { useDrumStore } from "../store/drumStore";
+import React, { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useDrumStore, drumCurrentStepStore } from "../store/drumStore";
 
 const VOICE_LABELS = [
   "KICK", "SNARE", "CLAP", "TOM L",
@@ -155,7 +155,6 @@ interface TrackRowProps {
   color: string;
   pageOffset: number;
   selectedVoice: number;
-  currentStep: number;
   isPlaying: boolean;
   heldStep: { track: number; step: number } | null;
   pattern: any;
@@ -173,10 +172,11 @@ interface TrackRowProps {
 const SWING_CYCLE = [undefined, 55, 60, 65, 70, 75] as const;
 
 const TrackRow = React.memo(function TrackRow({
-  track, label, color, pageOffset, selectedVoice, currentStep, isPlaying, heldStep,
+  track, label, color, pageOffset, selectedVoice, isPlaying, heldStep,
   pattern, gateDrag, gateDragEnd, stepRefs, onSelectTrack, onToggleStep,
   onSetStepVelocity, onContextMenu, onStepMouseDown, onGateDragStart,
 }: TrackRowProps) {
+  const currentStep = useSyncExternalStore(drumCurrentStepStore.subscribe, drumCurrentStepStore.getSnapshot);
   const isSelectedTrack = selectedVoice === track;
   const trackSwing = pattern.tracks[track]?.swing as number | undefined;
   const hasSwing = trackSwing !== undefined;
@@ -302,7 +302,6 @@ const TrackRow = React.memo(function TrackRow({
   return (
     prevProps.track === nextProps.track &&
     prevProps.selectedVoice === nextProps.selectedVoice &&
-    prevProps.currentStep === nextProps.currentStep &&
     prevProps.isPlaying === nextProps.isPlaying &&
     prevProps.heldStep === nextProps.heldStep &&
     prevProps.pattern === nextProps.pattern &&
@@ -314,8 +313,9 @@ const TrackRow = React.memo(function TrackRow({
 export function StepSequencer() {
   // Per-field selectors — prevents re-render cascade from currentStep tick
   const pattern = useDrumStore((s) => s.pattern);
-  const currentStep = useDrumStore((s) => s.currentStep);
   const isPlaying = useDrumStore((s) => s.isPlaying);
+  // currentStep from external store — only this component and TrackRow subscribe
+  const currentStep = useSyncExternalStore(drumCurrentStepStore.subscribe, drumCurrentStepStore.getSnapshot);
   const selectedPage = useDrumStore((s) => s.selectedPage);
   const heldStep = useDrumStore((s) => s.heldStep);
   const selectedVoice = useDrumStore((s) => s.selectedVoice);
@@ -704,7 +704,6 @@ export function StepSequencer() {
                 color={trackColor}
                 pageOffset={pageOffset}
                 selectedVoice={selectedVoice}
-                currentStep={currentStep}
                 isPlaying={isPlaying}
                 heldStep={heldStep}
                 pattern={pattern}

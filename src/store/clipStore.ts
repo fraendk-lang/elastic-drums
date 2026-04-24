@@ -48,7 +48,7 @@ export interface MelodyClip {
 export type Clip = DrumClip | BassClip | ChordsClip | MelodyClip;
 
 function deepClone<T>(v: T): T {
-  return JSON.parse(JSON.stringify(v));
+  return structuredClone(v);
 }
 
 interface ClipStore {

@@ -386,12 +386,29 @@ export const BASSLINE_STRATEGIES: BasslineStrategy[] = [
   },
 ];
 
+// ─── External step counter (not in Zustand) ──────────────────────────────────
+// Keeping currentStep out of Zustand prevents the entire BassSequencer
+// (900 lines) from re-rendering on every scheduler tick.
+let _bassStep = 0;
+const _bassStepListeners = new Set<() => void>();
+export const bassCurrentStepStore = {
+  subscribe: (fn: () => void): (() => void) => {
+    _bassStepListeners.add(fn);
+    return () => _bassStepListeners.delete(fn);
+  },
+  getSnapshot: (): number => _bassStep,
+};
+export function getBassCurrentStep(): number { return _bassStep; }
+function setBassStep(n: number): void {
+  _bassStep = n;
+  for (const fn of _bassStepListeners) fn();
+}
+
 // ─── Store Interface ─────────────────────────────────────
 
 interface BassStore {
   steps: BassStep[];
   length: number;
-  currentStep: number;
   selectedPage: number;
   rootNote: number;
   rootName: string;
@@ -478,7 +495,8 @@ export function startBassScheduler() {
     };
 
     while (nextBassStepTime < audioEngine.currentTime + 0.1) {
-      const { steps, currentStep, length, rootNote, scaleName, automationData, globalOctave } = useBassStore.getState();
+      const { steps, length, rootNote, scaleName, automationData, globalOctave } = useBassStore.getState();
+      const currentStep = _bassStep;
       const step = steps[currentStep % length];
       const stepIndex = currentStep % length;
       const prevStep = stepIndex > 0 ? steps[stepIndex - 1] : steps[length - 1];
@@ -540,7 +558,7 @@ export function startBassScheduler() {
         }
       }
 
-      useBassStore.setState({ currentStep: (currentStep + 1) % length });
+      setBassStep((currentStep + 1) % length);
       nextBassStepTime += secondsPerStep;
     }
   }, 25);
@@ -550,7 +568,7 @@ export function stopBassScheduler() {
   if (bassTimer !== null) { clearInterval(bassTimer); bassTimer = null; }
   const now = audioEngine.currentTime;
   if (now > 0) bassEngine.releaseNote(now);
-  useBassStore.setState({ currentStep: 0 });
+  setBassStep(0);
 }
 
 // ─── Store ───────────────────────────────────────────────
@@ -560,7 +578,6 @@ export const useBassStore = create<BassStore>((set, get) => ({
   automationData: {},
   automationParam: "cutoff",
   length: 16,
-  currentStep: 0,
   selectedPage: 0,
   rootNote: 36,
   rootName: "C",
@@ -648,7 +665,8 @@ export const useBassStore = create<BassStore>((set, get) => ({
     bassEngine.setParams({ [key]: value });
 
     // Motion Recording: write automation on current step while playing
-    const { isPlaying, currentStep, length, automationData } = get();
+    const { isPlaying, length, automationData } = get();
+    const currentStep = getBassCurrentStep();
     if (isPlaying && typeof value === "number") {
       const data = { ...automationData };
       if (!data[key]) data[key] = new Array(BASS_MAX_CLIP_STEPS).fill(undefined);

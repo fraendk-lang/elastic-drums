@@ -24,6 +24,24 @@ let _sceneLoadPending = false;
 let _clipStoreRef: { getState: () => { resolveQueuedClips: () => void } } | null = null;
 export function setClipStoreRef(ref: typeof _clipStoreRef) { _clipStoreRef = ref; }
 
+// ─── External step counter (not in Zustand) ──────────────────────────────────
+// Keeps drum currentStep out of Zustand so StepSequencer's 12 TrackRows
+// don't cascade-re-render on every scheduler tick.
+let _drumStep = 0;
+const _drumStepListeners = new Set<() => void>();
+export const drumCurrentStepStore = {
+  subscribe: (fn: () => void): (() => void) => {
+    _drumStepListeners.add(fn);
+    return () => _drumStepListeners.delete(fn);
+  },
+  getSnapshot: (): number => _drumStep,
+};
+export function getDrumCurrentStep(): number { return _drumStep; }
+function setDrumStep(n: number): void {
+  _drumStep = n;
+  for (const fn of _drumStepListeners) fn();
+}
+
 // Conditional Trig types (Elektron-style)
 export type ConditionType =
   | "always"       // Always trigger
@@ -389,8 +407,9 @@ function startScheduler() {
     const swingRatio = (state.pattern.swing - 50) / 100;
 
     while (nextStepTime < audioEngine.currentTime + 0.15) { // Larger lookahead for tighter timing
-      const { pattern, currentStep, songMode, songChain, songPosition, songRepeatCount } =
+      const { pattern, songMode, songChain, songPosition, songRepeatCount } =
         useDrumStore.getState();
+      const currentStep = _drumStep;
 
       // Song Mode: determine which scene to play
       let activePattern = pattern;
@@ -606,10 +625,8 @@ function startScheduler() {
         }
       }
 
-      useDrumStore.setState({
-        currentStep: nextStep,
-        ...(nextStep === 0 ? { barCycle: cycleCount } : {}),
-      });
+      setDrumStep(nextStep);
+      if (nextStep === 0) useDrumStore.setState({ barCycle: cycleCount });
       nextStepTime += stepDuration;
     }
   }, 20); // 20ms tick for tighter timing resolution
@@ -634,7 +651,6 @@ interface DrumStore {
   bpm: number;
   swing: number;
   isPlaying: boolean;
-  currentStep: number;
 
   // Selection
   selectedVoice: number;
@@ -660,7 +676,6 @@ interface DrumStore {
   setBpm: (bpm: number) => void;
   setSwing: (swing: number) => void;
   togglePlay: () => void;
-  setCurrentStep: (step: number) => void;
   setSelectedVoice: (voice: number) => void;
   setSelectedPage: (page: number) => void;
   toggleStep: (track: number, step: number) => void;
@@ -724,7 +739,6 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   clipboard: null,
   pageClipboard: null,
   isPlaying: false,
-  currentStep: 0,
   songMode: "pattern" as SongMode,
   songChain: [],
   songPosition: 0,
@@ -753,17 +767,18 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     const wasPlaying = get().isPlaying;
     if (wasPlaying) {
       stopScheduler();
-      set({ isPlaying: false, currentStep: 0 });
+      setDrumStep(0);
+      set({ isPlaying: false });
     } else {
       // startScheduler() must run BEFORE set() — it sets transportStartTime synchronously.
       // The loopPlayerStore subscriber fires inside set(), so it must see the correct
       // transportStartTime already in place or loops always launch 1+ bars late.
       startScheduler();
-      set({ isPlaying: true, currentStep: 0 });
+      setDrumStep(0);
+      set({ isPlaying: true });
     }
   },
 
-  setCurrentStep: (currentStep) => set({ currentStep }),
   setSelectedVoice: (selectedVoice) => set({ selectedVoice }),
   setSelectedPage: (selectedPage) => set({ selectedPage }),
 
@@ -809,11 +824,11 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     activePLockTimers.clear();
 
     // Hot-swap pattern without stopping playback
+    setDrumStep(0);
     set({
       pattern,
       currentPatternIndex: index,
       swing: pattern.swing,
-      currentStep: 0,
       isPlaying: wasPlaying, // Keep transport running
     });
   },
@@ -833,10 +848,10 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   clearPattern: () => {
     const wasPlaying = get().isPlaying;
     if (wasPlaying) stopScheduler();
+    setDrumStep(0);
     set({
       pattern: createEmptyPattern(),
       currentPatternIndex: -1,
-      currentStep: 0,
       isPlaying: false,
     });
   },
@@ -851,10 +866,10 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     activePLockTimers.clear();
 
     // Reset drum pattern
+    setDrumStep(0);
     set({
       pattern: createEmptyPattern(),
       currentPatternIndex: -1,
-      currentStep: 0,
       isPlaying: false,
       bpm: 120,
       swing: 50,

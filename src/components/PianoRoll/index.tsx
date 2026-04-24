@@ -165,20 +165,20 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const undoStackRef = useRef<PianoRollNote[][]>([]);
   const redoStackRef = useRef<PianoRollNote[][]>([]);
   const pushUndo = useCallback(() => {
-    undoStackRef.current.push(JSON.parse(JSON.stringify(notes)));
+    undoStackRef.current.push(structuredClone(notes));
     if (undoStackRef.current.length > 50) undoStackRef.current.shift();
     redoStackRef.current = [];
   }, [notes]);
   const undo = useCallback(() => {
     const prev = undoStackRef.current.pop();
     if (!prev) return;
-    redoStackRef.current.push(JSON.parse(JSON.stringify(notes)));
+    redoStackRef.current.push(structuredClone(notes));
     setNotes(prev);
   }, [notes, setNotes]);
   const redo = useCallback(() => {
     const next = redoStackRef.current.pop();
     if (!next) return;
-    undoStackRef.current.push(JSON.parse(JSON.stringify(notes)));
+    undoStackRef.current.push(structuredClone(notes));
     setNotes(next);
   }, [notes, setNotes]);
 

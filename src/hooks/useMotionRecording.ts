@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useRef } from "react";
-import { useDrumStore } from "../store/drumStore";
+import { useDrumStore, getDrumCurrentStep } from "../store/drumStore";
 
 export function useMotionRecording() {
   const isRecording = useRef(false);
@@ -45,10 +45,11 @@ export function useMotionRecording() {
   const recordParam = useCallback((voice: number, paramId: string, value: number) => {
     if (!isRecording.current) return;
 
-    const { isPlaying, currentStep, pattern } = useDrumStore.getState();
+    const { isPlaying, pattern } = useDrumStore.getState();
     if (!isPlaying) return;
 
     // Only record once per step (avoid flooding with intermediate values)
+    const currentStep = getDrumCurrentStep();
     if (currentStep === lastRecordedStep.current) return;
     lastRecordedStep.current = currentStep;
 

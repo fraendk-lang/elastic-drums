@@ -2,8 +2,8 @@
  * Bass Sequencer — Piano-roll with pages, presets, bassline agent, save/load
  */
 
-import { useCallback, useRef, useState, useEffect } from "react";
-import { useBassStore, BASS_PRESETS, BASSLINE_STRATEGIES, BASS_SIGNATURE_PRESET_NAMES } from "../store/bassStore";
+import { useCallback, useRef, useState, useEffect, useSyncExternalStore, memo } from "react";
+import { useBassStore, BASS_PRESETS, BASSLINE_STRATEGIES, BASS_SIGNATURE_PRESET_NAMES, bassCurrentStepStore } from "../store/bassStore";
 import { BASS_INSTRUMENTS, findInstrumentOption } from "../audio/SoundFontEngine";
 import { SCALES, ROOT_NOTES, scaleNote, type BassParams } from "../audio/BassEngine";
 import { useDrumStore } from "../store/drumStore";
@@ -39,9 +39,67 @@ function midiToName(midi: number): string {
   return NOTE_NAMES[midi % 12] + String(Math.floor(midi / 12) - 1);
 }
 
+// AutomationLane wrapper — subscribes to external step store
+const BassAutomationLaneWrapper = memo(function BassAutomationLaneWrapper(
+  props: Omit<React.ComponentProps<typeof AutomationLane>, "currentStep">,
+) {
+  const currentStep = useSyncExternalStore(bassCurrentStepStore.subscribe, bassCurrentStepStore.getSnapshot);
+  return <AutomationLane {...props} currentStep={currentStep} />;
+});
+
+// Velocity lane — subscribes to external step store for isCurrent highlight
+interface BassVelLaneProps {
+  steps: ReturnType<typeof useBassStore.getState>["steps"];
+  length: number;
+  pageOffset: number;
+  velocityLaneExpanded: boolean;
+  isPlaying: boolean;
+  onDraw: (e: React.MouseEvent<HTMLDivElement>, absStep: number) => void;
+}
+const BassVelocityLane = memo(function BassVelocityLane({
+  steps, length, pageOffset, velocityLaneExpanded, isPlaying, onDraw,
+}: BassVelLaneProps) {
+  const currentStep = useSyncExternalStore(bassCurrentStepStore.subscribe, bassCurrentStepStore.getSnapshot);
+  return (
+    <>
+      {Array.from({ length: 16 }, (_, i) => {
+        const absStep = pageOffset + i;
+        const step = steps[absStep]!;
+        const velocity = step.velocity ?? (step.accent ? 1 : 0.7);
+        const isCurrent = isPlaying && currentStep === absStep;
+        return (
+          <div
+            key={`vel-${i}`}
+            className={`relative flex-1 rounded-md border cursor-ns-resize transition-colors ${absStep >= length ? "opacity-25" : ""} ${isCurrent ? "border-[var(--ed-accent-bass)]/45 bg-[var(--ed-accent-bass)]/[0.06]" : "border-white/6 bg-white/[0.025] hover:bg-white/[0.045]"}`}
+            onMouseDown={(e) => onDraw(e, absStep)}
+            onMouseMove={(e) => { if (e.buttons === 1) onDraw(e, absStep); }}
+          >
+            {step.active && (
+              <div
+                className="absolute inset-x-[3px] bottom-[3px] rounded-sm shadow-[0_0_14px_rgba(16,185,129,0.16)]"
+                style={{
+                  height: `${Math.max(12, velocity * 100)}%`,
+                  background: step.accent
+                    ? "linear-gradient(180deg, rgba(248,113,113,0.9), rgba(16,185,129,0.7))"
+                    : "linear-gradient(180deg, rgba(110,231,183,0.9), rgba(16,185,129,0.45))",
+                }}
+              />
+            )}
+            {step.active && velocityLaneExpanded && (
+              <span className="pointer-events-none absolute left-1 top-1 text-[8px] font-black text-white/50">
+                {Math.round(velocity * 100)}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+});
+
 export function BassSequencer() {
   const {
-    steps, length, currentStep, selectedPage, rootNote, rootName, scaleName, params, presetIndex, strategyIndex, instrument,
+    steps, length, selectedPage, rootNote, rootName, scaleName, params, presetIndex, strategyIndex, instrument,
     automationData, automationParam,
     globalOctave,
     toggleStep, setStepNote, setStepVelocity, toggleAccent, toggleSlide, toggleTie, setGateLength, setStepOctave, cycleOctave,
@@ -50,6 +108,9 @@ export function BassSequencer() {
     loadPreset, loadBassPattern, setInstrument,
     setAutomationValue, setAutomationParam,
   } = useBassStore();
+
+  // currentStep from external store — does not trigger full BassSequencer re-render
+  const currentStep = useSyncExternalStore(bassCurrentStepStore.subscribe, bassCurrentStepStore.getSnapshot);
 
   const isPlaying = useDrumStore((s) => s.isPlaying);
   const dragRef = useRef<{ step: number; startY: number; startNote: number } | null>(null);
@@ -774,13 +835,12 @@ export function BassSequencer() {
           );
         })}
       </div>
-      <AutomationLane
+      <BassAutomationLaneWrapper
         params={BASS_AUTO_PARAMS}
         selectedParam={automationParam}
         values={automationData[automationParam] ?? []}
         length={length}
         pageOffset={pageOffset}
-        currentStep={currentStep}
         isPlaying={isPlaying}
         color="var(--ed-accent-bass)"
         onSelectParam={setAutomationParam}
@@ -823,39 +883,14 @@ export function BassSequencer() {
               <span>60</span>
               <span>20</span>
             </div>
-            {Array.from({ length: 16 }, (_, i) => {
-              const absStep = pageOffset + i;
-              const step = steps[absStep]!;
-              const velocity = step.velocity ?? (step.accent ? 1 : 0.7);
-              const isCurrent = isPlaying && currentStep === absStep;
-              return (
-                <div
-                  key={`vel-${i}`}
-                  className={`relative flex-1 rounded-md border cursor-ns-resize transition-colors ${absStep >= length ? "opacity-25" : ""} ${isCurrent ? "border-[var(--ed-accent-bass)]/45 bg-[var(--ed-accent-bass)]/[0.06]" : "border-white/6 bg-white/[0.025] hover:bg-white/[0.045]"}`}
-                  onMouseDown={(e) => handleVelocityDraw(e, absStep)}
-                  onMouseMove={(e) => {
-                    if (e.buttons === 1) handleVelocityDraw(e, absStep);
-                  }}
-                >
-                  {step.active && (
-                    <div
-                      className="absolute inset-x-[3px] bottom-[3px] rounded-sm shadow-[0_0_14px_rgba(16,185,129,0.16)]"
-                      style={{
-                        height: `${Math.max(12, velocity * 100)}%`,
-                        background: step.accent
-                          ? "linear-gradient(180deg, rgba(248,113,113,0.9), rgba(16,185,129,0.7))"
-                          : "linear-gradient(180deg, rgba(110,231,183,0.9), rgba(16,185,129,0.45))",
-                      }}
-                    />
-                  )}
-                  {step.active && velocityLaneExpanded && (
-                    <span className="pointer-events-none absolute left-1 top-1 text-[8px] font-black text-white/50">
-                      {Math.round(velocity * 100)}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+            <BassVelocityLane
+              steps={steps}
+              length={length}
+              pageOffset={pageOffset}
+              velocityLaneExpanded={velocityLaneExpanded}
+              isPlaying={isPlaying}
+              onDraw={handleVelocityDraw}
+            />
           </div>
           <div className="hidden sm:block w-32 shrink-0" />
         </div>

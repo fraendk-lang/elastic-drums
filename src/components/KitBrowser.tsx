@@ -148,7 +148,6 @@ export function KitBrowser({ isOpen, onClose }: KitBrowserProps) {
       useDrumStore.setState({
         pattern,
         bpm: Math.round((kit.bpmRange[0] + kit.bpmRange[1]) / 2),
-        currentStep: 0,
         currentPatternIndex: -1,
       });
     }

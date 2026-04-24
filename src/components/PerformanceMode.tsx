@@ -4,7 +4,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useDrumStore } from "../store/drumStore";
+import { useDrumStore, getDrumCurrentStep } from "../store/drumStore";
 import { useSceneStore } from "../store/sceneStore";
 import { audioEngine } from "../audio/AudioEngine";
 
@@ -25,7 +25,6 @@ export function PerformanceMode({ onClose }: PerformanceModeProps) {
   const isPlaying = useDrumStore((s) => s.isPlaying);
   const setBpm = useDrumStore((s) => s.setBpm);
   const togglePlay = useDrumStore((s) => s.togglePlay);
-  const currentStep = useDrumStore((s) => s.currentStep);
   const patternLength = useDrumStore((s) => s.pattern.length);
 
   const scenes = useSceneStore((s) => s.scenes);
@@ -84,8 +83,8 @@ export function PerformanceMode({ onClose }: PerformanceModeProps) {
     audioEngine.resume().then(() => togglePlay());
   }, [togglePlay]);
 
-  // Bar counter
-  const currentBar = Math.floor(currentStep / patternLength * (patternLength / 4)) + 1;
+  // Bar counter (non-reactive read — acceptable for cosmetic bar counter)
+  const currentBar = Math.floor(getDrumCurrentStep() / patternLength * (patternLength / 4)) + 1;
   const totalBars = patternLength / 4;
 
   return (

@@ -44,7 +44,6 @@ export function PatternBrowser({ isOpen, onClose }: PatternBrowserProps) {
     useDrumStore.setState({
       pattern: structuredClone(stored.pattern),
       currentPatternIndex: -1,
-      currentStep: 0,
     });
     onClose();
   }, [onClose]);
