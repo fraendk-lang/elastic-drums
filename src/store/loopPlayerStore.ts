@@ -24,7 +24,7 @@ import BpmWorkerCtor from "../audio/bpmAnalysisWorker?worker";
 import { create } from "zustand";
 import { loopPlayerEngine } from "../audio/LoopPlayerEngine";
 import { audioEngine } from "../audio/AudioEngine";
-import { useDrumStore, getDrumNextStepTime } from "./drumStore";
+import { useDrumStore, getDrumTransportStartTime } from "./drumStore";
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -125,22 +125,28 @@ function getBpmWorker(): Worker {
 // ─── Launch helpers ────────────────────────────────────────
 
 /**
- * Compute the AudioContext time for the next bar downbeat.
+ * Compute the AudioContext time for the next bar downbeat, perfectly locked
+ * to the drum transport grid.
+ *
+ * Strategy: use the absolute transport-start timestamp (beat 1 of bar 1) and
+ * compute bar boundaries mathematically — no dependency on React state or
+ * scheduler lookahead, so no drift.
+ *
  * Falls back to "now + 0.05" when transport is stopped.
  */
 function _nextBarTime(): number {
   const drum = useDrumStore.getState();
   if (!drum.isPlaying) return audioEngine.currentTime + 0.05;
 
-  const secondsPerStep = 60 / drum.bpm / 4;  // 1/16-note
-  const nextStep       = getDrumNextStepTime();
-  // currentStep was just triggered; the NEXT step is (currentStep + 1) % 16
-  const nextStepIdx    = (drum.currentStep + 1) % 16;
-  // Steps from nextStepIdx until the bar ends (step 0 of next bar)
-  const stepsToBar     = nextStepIdx === 0 ? 0 : (16 - nextStepIdx);
-  const barTime        = nextStep + stepsToBar * secondsPerStep;
-  // Safety: never schedule in the past
-  return Math.max(audioEngine.currentTime + 0.02, barTime);
+  const now          = audioEngine.currentTime;
+  const barDuration  = (60 / drum.bpm) * 4;      // 4 quarter-notes per bar
+  const startTime    = getDrumTransportStartTime();
+  const elapsed      = now - startTime;
+  const barsElapsed  = Math.floor(elapsed / barDuration);
+  const nextBar      = startTime + (barsElapsed + 1) * barDuration;
+
+  // Never schedule more than 2 bars ahead, and never in the past
+  return Math.max(now + 0.01, Math.min(now + barDuration * 2, nextBar));
 }
 
 function _launchSlot(idx: number, slot: LoopSlotState): void {

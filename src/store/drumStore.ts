@@ -356,12 +356,17 @@ const PRESET_PATTERNS: PatternData[] = [
 
 let schedulerTimer: ReturnType<typeof setInterval> | null = null;
 let nextStepTime = 0;
+let transportStartTime = 0; // AudioContext time of step 0, bar 1
 
 /** Returns the Web Audio timestamp of the next scheduled drum step (for sync). */
 export function getDrumNextStepTime(): number { return nextStepTime; }
 
+/** Returns the AudioContext time when the transport started (beat 1 of bar 1). */
+export function getDrumTransportStartTime(): number { return transportStartTime; }
+
 function startScheduler() {
   nextStepTime = audioEngine.currentTime + 0.05;
+  transportStartTime = nextStepTime; // lock bar grid to this absolute time
   cycleCount = 0;
   prevStepTriggered = new Array(12).fill(false);
 
