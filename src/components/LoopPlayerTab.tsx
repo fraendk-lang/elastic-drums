@@ -745,10 +745,12 @@ export function LoopPlayerTab() {
         </button>
       </div>
 
-      {/* 4 Slot cards */}
-      {[0, 1, 2, 3].map((idx) => (
-        <LoopSlot key={idx} slotIndex={idx} />
-      ))}
+      {/* 8 Slot cards — 2 columns on wide screens */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+        {Array.from({ length: 8 }, (_, idx) => (
+          <LoopSlot key={idx} slotIndex={idx} />
+        ))}
+      </div>
 
       {/* Hint */}
       <p className="text-[7px] text-white/15 text-center pt-1 pb-0.5">

@@ -216,7 +216,7 @@ const TAP_RESET_MS = 2500;
 // ─── Store ────────────────────────────────────────────────
 
 export const useLoopPlayerStore = create<LoopPlayerStore>((set, get) => ({
-  slots: Array.from({ length: 4 }, createDefaultSlot),
+  slots: Array.from({ length: 8 }, createDefaultSlot),
 
   // ── Load file ──────────────────────────────────────────
   setBuffer: (idx, buffer, fileName) => {
