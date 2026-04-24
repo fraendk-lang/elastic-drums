@@ -14,6 +14,27 @@ import { generateEuclidean, useDrumStore, getDrumNextStepTime } from "./drumStor
 import { syncScaleToOtherStores, registerScaleStore } from "./bassStore";
 import { generateArpNotes, DEFAULT_ARP_SETTINGS, type ArpSettings } from "../audio/Arpeggiator";
 
+// ─── Melody step external store ────────────────────────────
+// currentStep is intentionally NOT stored in Zustand. The scheduler updates a
+// module-level variable directly, so step changes never trigger Zustand
+// subscriber notifications or React re-renders in components that read other
+// melody state (params, steps, etc.).
+// UI components subscribe via useSyncExternalStore(melodyCurrentStepStore.…).
+let _melodyStep = 0;
+const _melodyStepListeners = new Set<() => void>();
+export const melodyCurrentStepStore = {
+  subscribe: (fn: () => void): (() => void) => {
+    _melodyStepListeners.add(fn);
+    return () => _melodyStepListeners.delete(fn);
+  },
+  getSnapshot: (): number => _melodyStep,
+};
+export function getMelodyCurrentStep(): number { return _melodyStep; }
+function setMelodyStep(n: number): void {
+  _melodyStep = n;
+  for (const fn of _melodyStepListeners) fn();
+}
+
 // ─── Humanize (micro-random variation for organic feel) ─────
 export interface HumanizeSettings {
   timing: number;    // 0-1, max ± ms = timing * 30ms
@@ -797,7 +818,7 @@ export type MelodyStepNoteValue = "1/4" | "1/8" | "1/16";
 interface MelodyStore {
   steps: MelodyStep[];
   length: number;
-  currentStep: number;
+  // currentStep is NOT in Zustand — use melodyCurrentStepStore / getMelodyCurrentStep()
   selectedPage: number;
   rootNote: number;
   rootName: string;
@@ -901,11 +922,13 @@ export function startMelodyScheduler() {
 
     while (nextMelodyStepTime < audioEngine.currentTime + 0.1) {
       // Single getState() call per loop iteration — avoids redundant store reads.
+      // currentStep comes from module variable (not Zustand) to avoid cascading re-renders.
       const {
-        steps, currentStep, length, rootNote, scaleName, automationData, globalOctave,
+        steps, length, rootNote, scaleName, automationData, globalOctave,
         liveTransposeOffset: melodyTranspose,
         instrument, arp, humanize, layerMode, layerVelocity,
       } = useMelodyStore.getState();
+      const currentStep = _melodyStep;
       const stepIndex = currentStep % length;
       const step = steps[stepIndex];
       const prevStep = stepIndex > 0 ? steps[stepIndex - 1] : steps[length - 1];
@@ -1010,7 +1033,7 @@ export function startMelodyScheduler() {
         }
       }
 
-      useMelodyStore.setState({ currentStep: (currentStep + 1) % length });
+      setMelodyStep((currentStep + 1) % length);
       nextMelodyStepTime += secondsPerStep;
     }
   }, 25);
@@ -1020,7 +1043,7 @@ export function stopMelodyScheduler() {
   if (melodyTimer !== null) { clearInterval(melodyTimer); melodyTimer = null; }
   const now = audioEngine.currentTime;
   if (now > 0) melodyEngine.releaseNote(now);
-  useMelodyStore.setState({ currentStep: 0 });
+  setMelodyStep(0);
 }
 
 // ─── Store ───────────────────────────────────────────────
@@ -1028,7 +1051,6 @@ export function stopMelodyScheduler() {
 export const useMelodyStore = create<MelodyStore>((set, get) => ({
   steps: createEmptySteps(),
   length: 16,
-  currentStep: 0,
   selectedPage: 0,
   rootNote: 48,
   rootName: "C",
@@ -1128,7 +1150,8 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
     melodyEngine.setParams({ [key]: value } as Partial<MelodyParams>);
 
     // Motion Recording: write automation on current step while playing
-    const { isPlaying, currentStep, length, automationData } = get();
+    const { isPlaying, length, automationData } = get();
+    const currentStep = _melodyStep;
     if (isPlaying && typeof value === "number") {
       const data = { ...automationData };
       if (!data[key]) data[key] = new Array(MELODY_MAX_CLIP_STEPS).fill(undefined);

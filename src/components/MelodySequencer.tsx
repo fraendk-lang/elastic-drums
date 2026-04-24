@@ -2,8 +2,8 @@
  * Melody Sequencer — Piano-roll with pages, presets, melody agent, CLR
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useMelodyStore, MELODY_PRESETS, MELODY_STRATEGIES, MELODY_SIGNATURE_PRESET_NAMES, LAYER_MODES } from "../store/melodyStore";
+import { useCallback, useEffect, useRef, useState, memo, useSyncExternalStore } from "react";
+import { useMelodyStore, MELODY_PRESETS, MELODY_STRATEGIES, MELODY_SIGNATURE_PRESET_NAMES, LAYER_MODES, melodyCurrentStepStore } from "../store/melodyStore";
 import { MELODY_INSTRUMENTS, findInstrumentOption } from "../audio/SoundFontEngine";
 import { SCALES, ROOT_NOTES, scaleNote } from "../audio/BassEngine";
 import { useDrumStore } from "../store/drumStore";
@@ -38,9 +38,181 @@ function midiToName(midi: number): string {
   return NOTE_NAMES[midi % 12] + String(Math.floor(midi / 12) - 1);
 }
 
+// ─── Memoized piano-roll grid ──────────────────────────────────────────────────
+// Does NOT receive currentStep — only re-renders when user edits steps/settings.
+// The playhead is handled by MelodyPlayheadOverlay below.
+interface PianoRollGridProps {
+  steps:          ReturnType<typeof useMelodyStore.getState>["steps"];
+  length:         number;
+  pageOffset:     number;
+  rootNote:       number;
+  scaleName:      string;
+  globalOctave:   number;
+  maxNote:        number;
+  selectedStep:   number | null;
+  durationDrag:   { sourceStep: number; endStep: number } | null;
+  onMouseDown:    (e: React.MouseEvent<HTMLDivElement>, absStep: number) => void;
+  onPointerDown:  (e: React.PointerEvent<HTMLDivElement>, absStep: number) => void;
+  onAccent:       (absStep: number) => void;
+  onCycleOctave:  (absStep: number) => void;
+  stepElRefs:     React.MutableRefObject<Map<number, HTMLDivElement>>;
+}
+
+const MelodyPianoRollGrid = memo(function MelodyPianoRollGrid({
+  steps, length, pageOffset, rootNote, scaleName, globalOctave, maxNote,
+  selectedStep, durationDrag, onMouseDown, onPointerDown, onAccent, onCycleOctave, stepElRefs,
+}: PianoRollGridProps) {
+  return (
+    <div className="flex gap-[1px] flex-1 min-w-0">
+      {Array.from({ length: 16 }, (_, i) => {
+        const absStep = pageOffset + i;
+        const step = steps[absStep]!;
+        const isActive = step.active && absStep < length;
+        const noteHeight = isActive ? Math.max(14, (step.note / maxNote) * 100) : 0;
+        const midi = isActive ? scaleNote(rootNote, scaleName, step.note, step.octave + globalOctave) : 0;
+        const prevStep = absStep > 0 ? steps[absStep - 1] : null;
+        const isTiedFromPrev = isActive && step.tie && prevStep?.active;
+        const isBeat = i % 4 === 0;
+        const beyondLength = absStep >= length;
+        const isInDragRange = durationDrag && absStep > durationDrag.sourceStep && absStep <= durationDrag.endStep;
+        const isSelected = selectedStep === absStep;
+        let noteLength = Math.max(1, step.gateLength ?? 1);
+        if (isActive && !isTiedFromPrev && (step.gateLength ?? 1) <= 1) {
+          for (let j = absStep + 1; j < length; j++) {
+            const next = steps[j]!;
+            if (!next.active || !next.tie) break;
+            noteLength += 1;
+          }
+        }
+        const visibleLength = Math.max(1, Math.min(noteLength, 16 - i, length - absStep));
+        return (
+          <div key={i}
+            ref={(el) => { if (el) stepElRefs.current.set(absStep, el); else stepElRefs.current.delete(absStep); }}
+            className={`flex-1 flex flex-col justify-end min-w-0 relative ${beyondLength ? "opacity-25" : ""} ${isSelected && isActive ? "ring-1 ring-[var(--ed-accent-melody)]/55 rounded-sm" : ""}`}
+            onMouseDown={(e) => { e.preventDefault(); onMouseDown(e, absStep); }}
+            onPointerDown={(e) => onPointerDown(e, absStep)}
+            onContextMenu={(e) => { e.preventDefault(); if (isActive) onAccent(absStep); }}
+            onAuxClick={(e) => { if (e.button === 1 && isActive) { e.preventDefault(); onCycleOctave(absStep); } }}>
+            {isBeat && <div className="absolute top-0 bottom-0 left-0 w-px bg-white/[0.04]" />}
+            {isActive && !isTiedFromPrev && visibleLength > 1 && (
+              <div className="absolute left-[2px] rounded-[6px] pointer-events-none z-0"
+                style={{
+                  bottom: 18,
+                  height: `max(16px, ${noteHeight}%)`,
+                  width: `calc(${visibleLength * 100}% + ${(visibleLength - 1)}px - 4px)`,
+                  background: "linear-gradient(90deg, rgba(244,114,182,0.55) 0%, rgba(244,114,182,0.32) 82%, rgba(244,114,182,0.16) 100%)",
+                  boxShadow: "0 0 0 1px rgba(244,114,182,0.24) inset, 0 0 12px rgba(244,114,182,0.12)",
+                }} />
+            )}
+            <div className={`w-full transition-all duration-75 flex flex-col items-center justify-end pb-0.5 select-none ${isActive ? "cursor-ns-resize" : "cursor-pointer rounded-sm"}`}
+              style={{
+                height: isActive ? `${noteHeight}%` : "100%", minHeight: isActive ? 20 : undefined,
+                background: isActive
+                  ? step.accent ? "linear-gradient(180deg, rgba(244,114,182,0.85), rgba(244,114,182,0.55))"
+                  : step.tie ? "linear-gradient(180deg, rgba(34,211,238,0.55), rgba(34,211,238,0.35))"
+                  : "linear-gradient(180deg, rgba(244,114,182,0.55), rgba(244,114,182,0.3))"
+                  : "rgba(255,255,255,0.025)",
+                borderLeft: step.slide && isActive ? "3px solid rgba(96,165,250,0.8)" : "none",
+                borderTopLeftRadius: isTiedFromPrev ? 0 : 3, borderTopRightRadius: 3, borderBottomLeftRadius: 0,
+                marginLeft: isTiedFromPrev ? -1 : 0,
+                boxShadow: isActive ? "inset 0 1px 0 rgba(255,255,255,0.05)" : "none",
+                overflow: isActive && !isTiedFromPrev && visibleLength > 1 ? "visible" : "hidden",
+              }}
+              onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.055)"; }}
+              onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.025)"; }}>
+              {isActive && <span className="text-[8px] font-bold font-mono text-white/90 leading-none drop-shadow-sm">{midiToName(midi)}</span>}
+              {isActive && !isTiedFromPrev && noteLength > 1 && (
+                <span className="absolute right-[8px] top-[3px] text-[7px] font-black text-black/55 leading-none pointer-events-none">{noteLength}</span>
+              )}
+              {isActive && !isTiedFromPrev && (
+                <div className="absolute right-0 top-0 bottom-0 w-[14px] cursor-e-resize rounded-r group/handle"
+                  style={{
+                    background: noteLength > 1
+                      ? "linear-gradient(90deg, transparent, rgba(251,146,60,0.4))"
+                      : "linear-gradient(90deg, transparent, rgba(255,255,255,0.12))",
+                  }}>
+                  <div className="absolute right-[2px] top-[20%] bottom-[20%] w-[2px] rounded-full bg-white/40 group-hover/handle:bg-white/70 transition-colors" />
+                </div>
+              )}
+              {isInDragRange && !isActive && (
+                <div className="absolute inset-0 rounded-sm" style={{ backgroundColor: "rgba(34,211,238,0.25)" }} />
+              )}
+            </div>
+            {/* Trail-dot spacer — dot rendered by MelodyPlayheadOverlay */}
+            <div className="mt-0.5" style={{ height: 6 }} />
+            <div className={`text-center text-[7px] font-mono ${isBeat ? "text-white/15" : "text-white/8"}`}>{absStep + 1}</div>
+            {isActive && (
+              <div className="flex justify-center gap-[2px] mt-[1px] min-h-[8px]">
+                {step.accent && <div className="w-2 h-2 rounded-full bg-red-400/80" />}
+                {step.slide && <div className="w-2 h-2 rounded-full bg-blue-400/80" />}
+                {step.tie && <div className="w-2 h-2 rounded-full bg-cyan-400/80" />}
+                {step.octave !== 0 && <span className="text-[7px] font-bold text-purple-400/80 leading-none">{step.octave > 0 ? "+1" : "-1"}</span>}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+});
+
+// ─── Playhead + trail overlay ──────────────────────────────────────────────────
+// Tiny component: subscribes to currentStep via external store (no Zustand),
+// renders 3 absolutely-positioned column markers (current + 2 trail).
+// The parent grid is memoized and never re-renders for step changes.
+interface PlayheadOverlayProps {
+  pageOffset: number;
+  length:     number;
+  isPlaying:  boolean;
+}
+
+const MelodyPlayheadOverlay = memo(function MelodyPlayheadOverlay({ pageOffset, length, isPlaying }: PlayheadOverlayProps) {
+  const currentStep = useSyncExternalStore(
+    melodyCurrentStepStore.subscribe,
+    melodyCurrentStepStore.getSnapshot,
+  );
+
+  if (!isPlaying) return null;
+
+  // Render current step + up to 2 trailing steps
+  return (
+    <>
+      {([0, 1, 2] as const).map((trailIdx) => {
+        const absStep = ((currentStep - trailIdx) % length + length) % length;
+        const relStep = absStep - pageOffset;
+        if (relStep < 0 || relStep >= 16) return null;
+        const w = 100 / 16;
+        return (
+          <div key={trailIdx} className="absolute inset-0 pointer-events-none" style={{ left: `${relStep * w}%`, width: `${w}%` }}>
+            {trailIdx === 0 ? (
+              <>
+                <div className="absolute inset-0 rounded-sm"
+                  style={{ background: "linear-gradient(180deg, rgba(244,114,182,0.14) 0%, rgba(244,114,182,0.04) 100%)" }} />
+                <div className="absolute top-0 left-0 right-0 h-[3px] rounded-full"
+                  style={{ background: "var(--ed-accent-melody)", boxShadow: "0 0 10px rgba(244,114,182,0.6), 0 0 3px rgba(244,114,182,0.8)" }} />
+              </>
+            ) : (
+              /* Trail dots */
+              <div className="absolute flex items-center justify-center" style={{ bottom: 16, left: 0, right: 0 }}>
+                <div style={{
+                  width:  trailIdx === 1 ? 4 : 3,
+                  height: trailIdx === 1 ? 4 : 3,
+                  borderRadius: "50%",
+                  backgroundColor: "var(--ed-accent-melody)",
+                  opacity: trailIdx === 1 ? 0.45 : 0.2,
+                }} />
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+});
+
 export function MelodySequencer() {
   const {
-    steps, length, currentStep, selectedPage, rootNote, rootName, scaleName, params, presetIndex, strategyIndex, instrument,
+    steps, length, selectedPage, rootNote, rootName, scaleName, params, presetIndex, strategyIndex, instrument,
     automationData, automationParam,
     globalOctave,
     toggleStep, setStepNote, setStepVelocity, toggleAccent, toggleSlide, toggleTie, setGateLength, setStepOctave, cycleOctave,
@@ -54,21 +226,17 @@ export function MelodySequencer() {
   } = useMelodyStore();
 
   const isPlaying = useDrumStore((s) => s.isPlaying);
+  // currentStep lives in an external store (not Zustand) so only this component and
+  // MelodyPlayheadOverlay re-render on each step — the heavy MelodyPianoRollGrid stays memoized.
+  const currentStep = useSyncExternalStore(
+    melodyCurrentStepStore.subscribe,
+    melodyCurrentStepStore.getSnapshot,
+  );
   const dragRef = useRef<{ step: number; startY: number; startNote: number } | null>(null);
   const [selectedStep, setSelectedStep] = useState<number | null>(null);
   const [durationDrag, setDurationDrag] = useState<{ sourceStep: number; endStep: number } | null>(null);
   const stepElRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [velocityLaneExpanded, setVelocityLaneExpanded] = useState(true);
-
-  // ── Playhead trail: computed inline — no useState/useEffect needed.
-  // trailDepth(absStep) → 0 = current step, 1 = 1 ago, 2 = 2 ago, -1 = hidden.
-  // Wraps correctly around sequence boundaries via modular arithmetic.
-  const trailDepth = isPlaying
-    ? (absStep: number) => {
-        const d = ((currentStep - absStep) % length + length) % length;
-        return d <= 2 ? d : -1;
-      }
-    : (_: number) => -1 as const;
 
   const pageOffset = selectedPage * 16;
   const totalPages = Math.max(1, Math.ceil(length / 16));
@@ -558,131 +726,19 @@ export function MelodySequencer() {
         <span className="hidden lg:inline text-[7px] text-white/12">click = select &middot; Shift + ↑/↓ = octave &middot; drag = pitch &middot; drag bright edge = note length &middot; rclick = accent &middot; shift = slide &middot; alt = legato tie</span>
       </div>
 
-      {/* Piano Roll */}
+      {/* Piano Roll — grid is memoized (no currentStep), overlay subscribes to external store */}
       <div className="flex gap-1.5 px-3 py-1.5 h-20 sm:h-28" onPointerMove={handleDurationDragMove} onPointerUp={handleDurationDragEnd}>
-      <div className="flex gap-[1px] flex-1 min-w-0">
-        {Array.from({ length: 16 }, (_, i) => {
-          const absStep = pageOffset + i;
-          const step = steps[absStep]!;
-          const isCurrent = isPlaying && currentStep === absStep;
-          const isActive = step.active && absStep < length;
-          const noteHeight = isActive ? Math.max(14, (step.note / maxNote) * 100) : 0;
-          const midi = isActive ? scaleNote(rootNote, scaleName, step.note, step.octave + globalOctave) : 0;
-          const prevStep = absStep > 0 ? steps[absStep - 1] : null;
-          const isTiedFromPrev = isActive && step.tie && prevStep?.active;
-          const isBeat = i % 4 === 0;
-          const beyondLength = absStep >= length;
-          const isInDragRange = durationDrag && absStep > durationDrag.sourceStep && absStep <= durationDrag.endStep;
-          const isSelected = selectedStep === absStep;
-          let noteLength = Math.max(1, step.gateLength ?? 1);
-          if (isActive && !isTiedFromPrev && (step.gateLength ?? 1) <= 1) {
-            for (let j = absStep + 1; j < length; j++) {
-              const next = steps[j]!;
-              if (!next.active || !next.tie) break;
-              noteLength += 1;
-            }
-          }
-          const visibleLength = Math.max(1, Math.min(noteLength, 16 - i, length - absStep));
-
-          return (
-            <div key={i}
-              ref={(el) => { if (el) stepElRefs.current.set(absStep, el); else stepElRefs.current.delete(absStep); }}
-              className={`flex-1 flex flex-col justify-end min-w-0 relative ${beyondLength ? "opacity-25" : ""} ${isSelected && isActive ? "ring-1 ring-[var(--ed-accent-melody)]/55 rounded-sm" : ""}`}
-              onMouseDown={(e) => { e.preventDefault(); handleMouseDown(e, absStep); }}
-              onPointerDown={(e) => handleDurationDragStart(e, absStep)}
-              onContextMenu={(e) => { e.preventDefault(); if (isActive) toggleAccent(absStep); }}
-              onAuxClick={(e) => { if (e.button === 1 && isActive) { e.preventDefault(); cycleOctave(absStep); } }}>
-              {isBeat && <div className="absolute top-0 bottom-0 left-0 w-px bg-white/[0.04]" />}
-              {isCurrent && (
-                <>
-                  {/* Full-column background glow */}
-                  <div className="absolute inset-0 pointer-events-none rounded-sm"
-                    style={{ background: "linear-gradient(180deg, rgba(244,114,182,0.12) 0%, rgba(244,114,182,0.04) 100%)" }} />
-                  {/* Top accent bar */}
-                  <div className="absolute top-0 left-0 right-0 h-[3px] rounded-full"
-                    style={{ background: "var(--ed-accent-melody)", boxShadow: "0 0 10px rgba(244,114,182,0.6), 0 0 3px rgba(244,114,182,0.8)" }} />
-                </>
-              )}
-              {isActive && !isTiedFromPrev && visibleLength > 1 && (
-                <div
-                  className="absolute left-[2px] rounded-[6px] pointer-events-none z-0"
-                  style={{
-                    bottom: 18,
-                    height: `max(16px, ${noteHeight}%)`,
-                    width: `calc(${visibleLength * 100}% + ${(visibleLength - 1)}px - 4px)`,
-                    background: "linear-gradient(90deg, rgba(244,114,182,0.55) 0%, rgba(244,114,182,0.32) 82%, rgba(244,114,182,0.16) 100%)",
-                    boxShadow: "0 0 0 1px rgba(244,114,182,0.24) inset, 0 0 12px rgba(244,114,182,0.12)",
-                  }}
-                />
-              )}
-              <div className={`w-full transition-all duration-75 flex flex-col items-center justify-end pb-0.5 select-none ${isActive ? "cursor-ns-resize" : "cursor-pointer rounded-sm"}`}
-                style={{
-                  height: isActive ? `${noteHeight}%` : "100%", minHeight: isActive ? 20 : undefined,
-                  background: isActive
-                    ? step.accent ? "linear-gradient(180deg, rgba(244,114,182,0.85), rgba(244,114,182,0.55))"
-                    : step.tie ? "linear-gradient(180deg, rgba(34,211,238,0.55), rgba(34,211,238,0.35))"
-                    : "linear-gradient(180deg, rgba(244,114,182,0.55), rgba(244,114,182,0.3))"
-                    : "rgba(255,255,255,0.025)",
-                  borderLeft: step.slide && isActive ? "3px solid rgba(96,165,250,0.8)" : "none",
-                  borderTopLeftRadius: isTiedFromPrev ? 0 : 3, borderTopRightRadius: 3, borderBottomLeftRadius: 0,
-                  marginLeft: isTiedFromPrev ? -1 : 0,
-                  boxShadow: isActive && isCurrent ? "0 0 10px rgba(244,114,182,0.25)" : isActive ? "inset 0 1px 0 rgba(255,255,255,0.05)" : "none",
-                  overflow: isActive && !isTiedFromPrev && visibleLength > 1 ? "visible" : "hidden",
-                }}
-                onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.055)"; }}
-                onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.025)"; }}>
-                {isActive && <span className="text-[8px] font-bold font-mono text-white/90 leading-none drop-shadow-sm">{midiToName(midi)}</span>}
-                {isActive && !isTiedFromPrev && noteLength > 1 && (
-                  <span className="absolute right-[8px] top-[3px] text-[7px] font-black text-black/55 leading-none pointer-events-none">
-                    {noteLength}
-                  </span>
-                )}
-                {isActive && !isTiedFromPrev && (
-                  <div className="absolute right-0 top-0 bottom-0 w-[14px] cursor-e-resize rounded-r group/handle"
-                    style={{
-                      background: noteLength > 1
-                        ? "linear-gradient(90deg, transparent, rgba(251,146,60,0.4))"
-                        : "linear-gradient(90deg, transparent, rgba(255,255,255,0.12))",
-                    }}>
-                    <div className="absolute right-[2px] top-[20%] bottom-[20%] w-[2px] rounded-full bg-white/40 group-hover/handle:bg-white/70 transition-colors" />
-                  </div>
-                )}
-                {isInDragRange && !isActive && (
-                  <div className="absolute inset-0 rounded-sm" style={{ backgroundColor: "rgba(34,211,238,0.25)" }} />
-                )}
-              </div>
-              {/* Playhead trail dot — depth computed inline, no useState */}
-              {(() => {
-                const trailIdx = trailDepth(absStep);
-                const trailOpacity = trailIdx === 0 ? 1 : trailIdx === 1 ? 0.5 : trailIdx === 2 ? 0.25 : 0;
-                return trailOpacity > 0 ? (
-                  <div
-                    className="mx-auto mt-0.5 rounded-full transition-all duration-75"
-                    style={{
-                      width: trailIdx === 0 ? 6 : trailIdx === 1 ? 4 : 3,
-                      height: trailIdx === 0 ? 6 : trailIdx === 1 ? 4 : 3,
-                      backgroundColor: "var(--ed-accent-melody)",
-                      opacity: trailOpacity,
-                      boxShadow: trailIdx === 0
-                        ? "0 0 8px var(--ed-accent-melody), 0 0 2px var(--ed-accent-melody)"
-                        : "none",
-                    }}
-                  />
-                ) : <div className="mt-0.5" style={{ height: 6 }} />;
-              })()}
-              <div className={`text-center text-[7px] font-mono ${isCurrent ? "text-[var(--ed-accent-melody)] font-bold" : isBeat ? "text-white/15" : "text-white/8"}`}>{absStep + 1}</div>
-              {isActive && (
-                <div className="flex justify-center gap-[2px] mt-[1px] min-h-[8px]">
-                  {step.accent && <div className="w-2 h-2 rounded-full bg-red-400/80" />}
-                  {step.slide && <div className="w-2 h-2 rounded-full bg-blue-400/80" />}
-                  {step.tie && <div className="w-2 h-2 rounded-full bg-cyan-400/80" />}
-                  {step.octave !== 0 && <span className="text-[7px] font-bold text-purple-400/80 leading-none">{step.octave > 0 ? "+1" : "-1"}</span>}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+        <div className="flex-1 min-w-0 relative">
+          <MelodyPianoRollGrid
+            steps={steps} length={length} pageOffset={pageOffset}
+            rootNote={rootNote} scaleName={scaleName} globalOctave={globalOctave}
+            maxNote={maxNote} selectedStep={selectedStep} durationDrag={durationDrag}
+            onMouseDown={handleMouseDown} onPointerDown={handleDurationDragStart}
+            onAccent={toggleAccent} onCycleOctave={cycleOctave}
+            stepElRefs={stepElRefs}
+          />
+          <MelodyPlayheadOverlay pageOffset={pageOffset} length={length} isPlaying={isPlaying} />
+        </div>
       </div>
 
       {/* Automation Lane — full-width, collapsible */}
