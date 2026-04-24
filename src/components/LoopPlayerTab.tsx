@@ -105,6 +105,42 @@ function drawWaveform(
     ctx.fillStyle = "rgba(0,0,0,0.45)";
     ctx.fillRect(lx1, 0, w - lx1, h);
   }
+
+  // ── Draggable loop handles ──────────────────────────────
+
+  // START handle — teal vertical line + downward triangle grip
+  ctx.fillStyle = `${TEAL}ee`;
+  ctx.fillRect(lx0 - 1.5, 0, 3, h);
+  // Grip triangle (pointing down)
+  ctx.fillStyle = TEAL;
+  ctx.beginPath();
+  ctx.moveTo(lx0 - 6, 0);
+  ctx.lineTo(lx0 + 6, 0);
+  ctx.lineTo(lx0, 11);
+  ctx.closePath();
+  ctx.fill();
+  // Small "S" indicator
+  ctx.fillStyle = "#000a";
+  ctx.font = "bold 6px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("S", lx0, 8.5);
+  ctx.textAlign = "left";
+
+  // END handle — white vertical line + downward triangle grip
+  const exEnd = loopEndSeconds > firstBeatOffset ? lx1 : w;
+  ctx.fillStyle = "rgba(255,255,255,0.60)";
+  ctx.fillRect(exEnd - 1.5, 0, 3, h);
+  ctx.beginPath();
+  ctx.moveTo(exEnd - 6, 0);
+  ctx.lineTo(exEnd + 6, 0);
+  ctx.lineTo(exEnd, 11);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#000a";
+  ctx.font = "bold 6px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("E", exEnd, 8.5);
+  ctx.textAlign = "left";
 }
 
 // ── Slot component ─────────────────────────────────────────────────────────────
@@ -114,25 +150,125 @@ interface LoopSlotProps {
 }
 
 const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
-  const slot            = useLoopPlayerStore((s) => s.slots[slotIndex]!);
-  const setBuffer       = useLoopPlayerStore((s) => s.setBuffer);
-  const setOriginalBpm  = useLoopPlayerStore((s) => s.setOriginalBpm);
-  const setVolume       = useLoopPlayerStore((s) => s.setVolume);
-  const togglePlay      = useLoopPlayerStore((s) => s.togglePlay);
-  const tapBpm          = useLoopPlayerStore((s) => s.tapBpm);
-  const globalBpm       = useDrumStore((s) => s.bpm);
-  const isTransportPlay = useDrumStore((s) => s.isPlaying);
+  const slot               = useLoopPlayerStore((s) => s.slots[slotIndex]!);
+  const setBuffer          = useLoopPlayerStore((s) => s.setBuffer);
+  const setOriginalBpm     = useLoopPlayerStore((s) => s.setOriginalBpm);
+  const setFirstBeatOffset = useLoopPlayerStore((s) => s.setFirstBeatOffset);
+  const setLoopEndSeconds  = useLoopPlayerStore((s) => s.setLoopEndSeconds);
+  const restartSlot        = useLoopPlayerStore((s) => s.restartSlot);
+  const setVolume          = useLoopPlayerStore((s) => s.setVolume);
+  const togglePlay         = useLoopPlayerStore((s) => s.togglePlay);
+  const tapBpm             = useLoopPlayerStore((s) => s.tapBpm);
+  const globalBpm          = useDrumStore((s) => s.bpm);
+  const isTransportPlay    = useDrumStore((s) => s.isPlaying);
 
-  const canvasRef  = useRef<HTMLCanvasElement>(null);
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [bpmInput,   setBpmInput]   = useState(String(slot.originalBpm));
+  const canvasRef   = useRef<HTMLCanvasElement>(null);
+  const waveContRef = useRef<HTMLDivElement>(null);
+  // Track which handle is being dragged: "start" | "end" | null
+  const dragHandleRef = useRef<"start" | "end" | null>(null);
+
+  const [isDragOver,    setIsDragOver]    = useState(false);
+  const [bpmInput,      setBpmInput]      = useState(String(slot.originalBpm));
+  const [canvasCursor,  setCanvasCursor]  = useState<"default" | "ew-resize">("default");
 
   // Sync BPM input when originalBpm changes externally (e.g. auto-detected)
   useEffect(() => {
     setBpmInput(String(slot.originalBpm));
   }, [slot.originalBpm]);
 
-  // Redraw waveform + beat grid whenever relevant state changes
+  // ── Canvas interaction helpers ────────────────────────────
+
+  /** Convert a clientX screen position to a buffer time (seconds). */
+  const xToTime = useCallback((clientX: number): number => {
+    const canvas = canvasRef.current;
+    if (!canvas || !slot.buffer) return 0;
+    const rect  = canvas.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    return ratio * slot.duration;
+  }, [slot.buffer, slot.duration]);
+
+  /** Snap a time value to the nearest beat (if BPM is known). */
+  const snapToBeat = useCallback((t: number): number => {
+    if (slot.originalBpm <= 0 || slot.analyzing) return t;
+    const beat = 60 / slot.originalBpm;
+    return Math.round(t / beat) * beat;
+  }, [slot.originalBpm, slot.analyzing]);
+
+  const handleCanvasPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!slot.buffer || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const relX = e.clientX - rect.left;
+    const w    = rect.width;
+    const HIT  = 14; // screen px hit-zone
+
+    const startX = (slot.firstBeatOffset / slot.duration) * w;
+    const endX   = slot.loopEndSeconds > slot.firstBeatOffset
+      ? (slot.loopEndSeconds / slot.duration) * w
+      : w;
+
+    // Priority: end handle (so you can always grab it even when start ≈ end)
+    if (Math.abs(relX - endX) < HIT) {
+      dragHandleRef.current = "end";
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } else if (Math.abs(relX - startX) < HIT) {
+      dragHandleRef.current = "start";
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+  }, [slot.buffer, slot.duration, slot.firstBeatOffset, slot.loopEndSeconds]);
+
+  const handleCanvasPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!slot.buffer || !canvasRef.current) return;
+
+    // Update cursor style based on proximity to handles
+    if (!dragHandleRef.current) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const relX = e.clientX - rect.left;
+      const w    = rect.width;
+      const HIT  = 14;
+      const startX = (slot.firstBeatOffset / slot.duration) * w;
+      const endX   = slot.loopEndSeconds > slot.firstBeatOffset
+        ? (slot.loopEndSeconds / slot.duration) * w
+        : w;
+      const near = Math.abs(relX - startX) < HIT || Math.abs(relX - endX) < HIT;
+      setCanvasCursor(near ? "ew-resize" : "default");
+      return;
+    }
+
+    // Active drag
+    const beat = slot.originalBpm > 0 ? 60 / slot.originalBpm : 0;
+    let t = xToTime(e.clientX);
+    t = snapToBeat(t);
+
+    if (dragHandleRef.current === "start") {
+      // Start must stay at least 1 beat before end
+      const maxStart = slot.loopEndSeconds > 0
+        ? slot.loopEndSeconds - (beat || 0.1)
+        : slot.duration * 0.95;
+      t = Math.max(0, Math.min(t, maxStart));
+      setFirstBeatOffset(slotIndex, t);
+    } else {
+      // End must stay at least 1 beat after start
+      const minEnd = slot.firstBeatOffset + (beat || 0.1);
+      t = Math.max(minEnd, Math.min(t, slot.duration));
+      setLoopEndSeconds(slotIndex, t);
+    }
+  }, [slot.buffer, slot.duration, slot.firstBeatOffset, slot.loopEndSeconds, slot.originalBpm,
+      slotIndex, xToTime, snapToBeat, setFirstBeatOffset, setLoopEndSeconds]);
+
+  const handleCanvasPointerUp = useCallback(() => {
+    if (dragHandleRef.current !== null) {
+      // Apply new loop points to the running source (restart at next bar boundary)
+      restartSlot(slotIndex);
+    }
+    dragHandleRef.current = null;
+    setCanvasCursor("default");
+  }, [slotIndex, restartSlot]);
+
+  const handleCanvasPointerLeave = useCallback(() => {
+    if (!dragHandleRef.current) setCanvasCursor("default");
+  }, []);
+
+  // ── Redraw waveform + beat grid whenever relevant state changes
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !slot.buffer) return;
@@ -283,6 +419,7 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
 
       {/* ── Row 2: Waveform ── */}
       <div
+        ref={waveContRef}
         className="relative rounded overflow-hidden"
         style={{
           height:     60,
@@ -296,7 +433,11 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
             width={900}
             height={60}
             className="w-full h-full"
-            style={{ imageRendering: "pixelated", display: "block" }}
+            style={{ imageRendering: "pixelated", display: "block", cursor: canvasCursor }}
+            onPointerDown={handleCanvasPointerDown}
+            onPointerMove={handleCanvasPointerMove}
+            onPointerUp={handleCanvasPointerUp}
+            onPointerLeave={handleCanvasPointerLeave}
           />
         ) : (
           <div
@@ -362,6 +503,40 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
             ? (slot.analyzing ? "ARMED" : isTransportPlay ? "STOP" : "STOP")
             : "PLAY"}
         </button>
+
+        {/* Divider */}
+        <div className="w-px h-5 bg-white/8 shrink-0" />
+
+        {/* Bar-length presets */}
+        {slot.buffer && !slot.analyzing && slot.originalBpm > 0 && (
+          <div className="flex items-center gap-1 shrink-0">
+            <span className="text-[6px] font-bold tracking-[0.1em] text-white/25">LOOP</span>
+            {([0.5, 1, 2, 4, 8] as const).map((bars) => {
+              const beat      = 60 / slot.originalBpm;
+              const regionEnd = slot.firstBeatOffset + bars * 4 * beat;
+              const isActive  = Math.abs(slot.loopEndSeconds - regionEnd) < beat * 0.5;
+              return (
+                <button
+                  key={bars}
+                  title={`Set loop to ${bars === 0.5 ? "½" : bars} bar${bars !== 1 ? "s" : ""}`}
+                  onClick={() => {
+                    const end = Math.min(regionEnd, slot.duration);
+                    setLoopEndSeconds(slotIndex, end);
+                    restartSlot(slotIndex);
+                  }}
+                  className="text-[7px] font-bold px-1.5 py-0.5 rounded transition-all"
+                  style={{
+                    background:  isActive ? `${TEAL}22` : "rgba(255,255,255,0.04)",
+                    color:       isActive ? TEAL        : "rgba(255,255,255,0.38)",
+                    border:      `1px solid ${isActive ? `${TEAL}40` : "rgba(255,255,255,0.08)"}`,
+                  }}
+                >
+                  {bars === 0.5 ? "½" : bars}B
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Divider */}
         <div className="w-px h-5 bg-white/8 shrink-0" />
@@ -564,7 +739,7 @@ export function LoopPlayerTab() {
 
       {/* Hint */}
       <p className="text-[7px] text-white/15 text-center pt-1 pb-0.5">
-        Drop WAV · MP3 → BPM auto-detected · Loops lock to bar grid · TAP to set BPM manually
+        Drop WAV · MP3 → BPM auto-detected · Drag S/E handles on waveform to set loop region · TAP to set BPM manually
       </p>
 
     </div>

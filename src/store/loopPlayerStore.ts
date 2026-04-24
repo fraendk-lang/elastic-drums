@@ -45,12 +45,15 @@ export interface LoopSlotState {
 
 interface LoopPlayerStore {
   slots: LoopSlotState[];
-  setBuffer     (idx: number, buffer: AudioBuffer, fileName: string): void;
-  setOriginalBpm(idx: number, bpm: number): void;
-  setVolume     (idx: number, volume: number): void;
-  togglePlay    (idx: number): void;
-  stopAll       (): void;
-  tapBpm        (idx: number): void;
+  setBuffer          (idx: number, buffer: AudioBuffer, fileName: string): void;
+  setOriginalBpm     (idx: number, bpm: number): void;
+  setFirstBeatOffset (idx: number, offset: number): void;
+  setLoopEndSeconds  (idx: number, end: number): void;
+  restartSlot        (idx: number): void;
+  setVolume          (idx: number, volume: number): void;
+  togglePlay         (idx: number): void;
+  stopAll            (): void;
+  tapBpm             (idx: number): void;
 }
 
 // ─── Defaults ─────────────────────────────────────────────
@@ -225,6 +228,32 @@ export const useLoopPlayerStore = create<LoopPlayerStore>((set, get) => ({
     });
     const globalBpm = useDrumStore.getState().bpm;
     loopPlayerEngine.updatePlaybackRate(idx, bpm, globalBpm);
+  },
+
+  // ── Manual loop region ─────────────────────────────────
+  setFirstBeatOffset: (idx, offset) => {
+    set((s) => {
+      const slots = [...s.slots];
+      slots[idx] = { ...slots[idx]!, firstBeatOffset: offset };
+      return { slots };
+    });
+  },
+
+  setLoopEndSeconds: (idx, end) => {
+    set((s) => {
+      const slots = [...s.slots];
+      slots[idx] = { ...slots[idx]!, loopEndSeconds: end };
+      return { slots };
+    });
+  },
+
+  // Restart a slot with its current (possibly updated) loop points.
+  // Called after the user finishes dragging a handle.
+  restartSlot: (idx) => {
+    const slot = get().slots[idx]!;
+    if (slot.playing && slot.buffer && !slot.analyzing) {
+      _launchSlot(idx, slot);
+    }
   },
 
   // ── Volume ─────────────────────────────────────────────
