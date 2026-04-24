@@ -728,8 +728,11 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
       stopScheduler();
       set({ isPlaying: false, currentStep: 0 });
     } else {
-      set({ isPlaying: true, currentStep: 0 });
+      // startScheduler() must run BEFORE set() — it sets transportStartTime synchronously.
+      // The loopPlayerStore subscriber fires inside set(), so it must see the correct
+      // transportStartTime already in place or loops always launch 1+ bars late.
       startScheduler();
+      set({ isPlaying: true, currentStep: 0 });
     }
   },
 

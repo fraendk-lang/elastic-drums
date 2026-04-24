@@ -174,11 +174,10 @@ function _nextBarTime(): number {
   const startTime   = getDrumTransportStartTime();
   const elapsed     = now - startTime;
 
-  // Guard: if we are still within the scheduler lookahead window of bar-1 start
-  // (elapsed < 0 means startTime is in the future; < 5% of a bar means we just
-  //  started and the Zustand subscriber fired a few ms after setState).
-  // In both cases lock directly to startTime instead of skipping to bar 2.
-  if (elapsed < barDuration * 0.05) {
+  // Guard: startTime is in the future (normal: scheduler lookahead sets transportStartTime
+  // *before* setState fires the subscriber, so elapsed is typically slightly negative).
+  // Also handle up to 1 full bar of latency for robustness.
+  if (elapsed < barDuration) {
     return Math.max(now + 0.005, startTime);
   }
 
