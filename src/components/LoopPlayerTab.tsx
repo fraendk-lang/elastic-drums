@@ -188,13 +188,13 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
     return ratio * slot.duration;
   }, [slot.buffer, slot.duration]);
 
-  /** Snap a time value to the nearest beat of the global (drum) grid.
-   *  This keeps handles aligned to the project bar grid regardless of
-   *  whatever BPM the auto-detector guessed for the file. */
-  const snapToBeat = useCallback((t: number): number => {
-    if (globalBpm <= 0) return t;
-    const beat = 60 / globalBpm;
-    return Math.round(t / beat) * beat;
+  /** Snap a time value to the nearest 1/16-note grid of the global (drum) BPM.
+   *  4× finer than a full-beat snap — still grid-aligned but much more precise.
+   *  Pass freeSnap=true (Alt key held) to bypass snap entirely. */
+  const snapToGrid = useCallback((t: number, freeSnap: boolean): number => {
+    if (freeSnap || globalBpm <= 0) return t;
+    const sixteenth = 60 / globalBpm / 4; // 1/16-note duration in seconds
+    return Math.round(t / sixteenth) * sixteenth;
   }, [globalBpm]);
 
   const handleCanvasPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -237,26 +237,25 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
       return;
     }
 
-    // Active drag
-    const beat = slot.originalBpm > 0 ? 60 / slot.originalBpm : 0;
+    // Active drag — Alt key = completely free, no snap
+    const freeSnap = e.altKey;
+    const minGap   = 0.05; // 50 ms minimum region width (free mode)
     let t = xToTime(e.clientX);
-    t = snapToBeat(t);
+    t = snapToGrid(t, freeSnap);
 
     if (dragHandleRef.current === "start") {
-      // Start must stay at least 1 beat before end
       const maxStart = slot.loopEndSeconds > 0
-        ? slot.loopEndSeconds - (beat || 0.1)
+        ? slot.loopEndSeconds - minGap
         : slot.duration * 0.95;
       t = Math.max(0, Math.min(t, maxStart));
       setFirstBeatOffset(slotIndex, t);
     } else {
-      // End must stay at least 1 beat after start
-      const minEnd = slot.firstBeatOffset + (beat || 0.1);
+      const minEnd = slot.firstBeatOffset + minGap;
       t = Math.max(minEnd, Math.min(t, slot.duration));
       setLoopEndSeconds(slotIndex, t);
     }
-  }, [slot.buffer, slot.duration, slot.firstBeatOffset, slot.loopEndSeconds, slot.originalBpm,
-      slotIndex, xToTime, snapToBeat, setFirstBeatOffset, setLoopEndSeconds]);
+  }, [slot.buffer, slot.duration, slot.firstBeatOffset, slot.loopEndSeconds,
+      slotIndex, xToTime, snapToGrid, setFirstBeatOffset, setLoopEndSeconds]);
 
   const handleCanvasPointerUp = useCallback(() => {
     if (dragHandleRef.current !== null) {
@@ -484,6 +483,74 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
           />
         )}
       </div>
+
+      {/* ── Row 2b: Start / End fine-tune inputs (only when a file is loaded) ── */}
+      {slot.buffer && (
+        <div className="flex items-center gap-2">
+          {/* START */}
+          <span className="text-[7px] font-bold tracking-[0.1em] shrink-0" style={{ color: `${TEAL}80` }}>S</span>
+          <input
+            type="number"
+            min={0}
+            max={slot.duration}
+            step={0.01}
+            value={slot.firstBeatOffset.toFixed(2)}
+            onChange={(e) => {
+              const v = parseFloat(e.target.value);
+              if (!isNaN(v)) {
+                const clamped = Math.max(0, Math.min(v, slot.loopEndSeconds > 0 ? slot.loopEndSeconds - 0.05 : slot.duration * 0.95));
+                setFirstBeatOffset(slotIndex, clamped);
+              }
+            }}
+            onBlur={() => restartSlot(slotIndex)}
+            onKeyDown={(e) => { if (e.key === "Enter") restartSlot(slotIndex); }}
+            className="w-16 text-center text-[9px] font-bold rounded px-1 py-0.5 tabular-nums"
+            style={{
+              background: "rgba(0,0,0,0.3)",
+              border: `1px solid ${TEAL}30`,
+              color: "rgba(255,255,255,0.75)",
+              outline: "none",
+            }}
+            title="Loop start (seconds)"
+          />
+          <span className="text-[6px] text-white/20 shrink-0">s</span>
+
+          <span className="w-px h-3 bg-white/10 shrink-0" />
+
+          {/* END */}
+          <span className="text-[7px] font-bold tracking-[0.1em] shrink-0" style={{ color: "rgba(255,255,255,0.45)" }}>E</span>
+          <input
+            type="number"
+            min={0}
+            max={slot.duration}
+            step={0.01}
+            value={(slot.loopEndSeconds > slot.firstBeatOffset ? slot.loopEndSeconds : slot.duration).toFixed(2)}
+            onChange={(e) => {
+              const v = parseFloat(e.target.value);
+              if (!isNaN(v)) {
+                const clamped = Math.max(slot.firstBeatOffset + 0.05, Math.min(v, slot.duration));
+                setLoopEndSeconds(slotIndex, clamped);
+              }
+            }}
+            onBlur={() => restartSlot(slotIndex)}
+            onKeyDown={(e) => { if (e.key === "Enter") restartSlot(slotIndex); }}
+            className="w-16 text-center text-[9px] font-bold rounded px-1 py-0.5 tabular-nums"
+            style={{
+              background: "rgba(0,0,0,0.3)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              color: "rgba(255,255,255,0.75)",
+              outline: "none",
+            }}
+            title="Loop end (seconds)"
+          />
+          <span className="text-[6px] text-white/20 shrink-0">s</span>
+
+          {/* Alt-drag hint */}
+          <span className="text-[6px] text-white/18 ml-1 hidden sm:block shrink-0">
+            Alt+drag = free
+          </span>
+        </div>
+      )}
 
       {/* ── Row 3: Controls ── */}
       <div className="flex items-center gap-3 flex-wrap">
@@ -754,7 +821,7 @@ export function LoopPlayerTab() {
 
       {/* Hint */}
       <p className="text-[7px] text-white/15 text-center pt-1 pb-0.5">
-        Drop WAV/MP3 → Drag S/E handles to mark region → click LOCK bar count (½B–8B) to tempo-lock to project BPM
+        Drop WAV/MP3 → Drag S/E handles (snaps to 1/16-note · hold Alt for free) → type exact seconds in S/E fields · LOCK to bar count
       </p>
 
     </div>
