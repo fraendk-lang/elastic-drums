@@ -797,9 +797,160 @@ export const FACTORY_KITS: DrumKit[] = [
       11: { steps: [5, 13], vel: [60, 55] },
     }},
   },
+
+  // ═══════════════════════════════════════════════════════
+  // ADDITIONAL GENRE KITS
+  // ═══════════════════════════════════════════════════════
+
+  {
+    id: "uk-garage", name: "UK Garage", category: "Garage",
+    tags: ["garage", "2step", "uk", "shuffled"], author: "Factory", bpmRange: [128, 140],
+    description: "Punchy mid-bass kick with crisp hats and tight clap",
+    voices: {
+      0: { tune: 58, decay: 180, snap: 65, drive: 30, sub: 50 },
+      1: { tune: 240, decay: 120, snap: 80, tone: 60, drive: 20 },
+      2: { decay: 90, tone: 1800, spread: 30, level: 105 },
+      3: { tune: 80, decay: 200 }, 4: { tune: 120, decay: 160 }, 5: { tune: 180, decay: 130 },
+      6: { tune: 350, decay: 35 }, 7: { tune: 350, decay: 280 },
+      8: { tune: 420, decay: 600 }, 9: { tune: 500, decay: 500 },
+      10: { tune: 400, decay: 60 }, 11: { tune: 500, decay: 40 },
+    },
+    pattern: { length: 16, swing: 60, tracks: {
+      0: { steps: [0, 5, 8, 13], vel: [127, 90, 120, 85] },
+      2: { steps: [4, 12], vel: [110, 100] },
+      6: { steps: [0, 2, 3, 6, 8, 10, 11, 14], vel: [100, 50, 70, 100, 50, 70, 100, 50] },
+      7: { steps: [4, 12] },
+    }},
+  },
+
+  {
+    id: "jungle-break", name: "Jungle Break", category: "DnB",
+    tags: ["jungle", "amen", "breaks", "170bpm"], author: "Factory", bpmRange: [160, 175],
+    description: "Classic Amen break energy — deep sub, noisy snare, choppy hats",
+    voices: {
+      0: { tune: 48, decay: 280, snap: 70, drive: 45, sub: 70, body: 60 },
+      1: { tune: 200, decay: 200, snap: 60, tone: 50, drive: 40 },
+      2: { decay: 150, tone: 1800, spread: 55, level: 110 },
+      3: { tune: 65, decay: 350 }, 4: { tune: 95, decay: 280 }, 5: { tune: 140, decay: 220 },
+      6: { tune: 360, decay: 28 }, 7: { tune: 360, decay: 220 },
+      8: { tune: 440, decay: 800 }, 9: { tune: 530, decay: 600 },
+      10: { tune: 300, decay: 80 }, 11: { tune: 220, decay: 120 },
+    },
+    pattern: { length: 16, swing: 52, tracks: {
+      0: { steps: [0, 6, 10], vel: [127, 85, 105] },
+      1: { steps: [3, 7, 11, 13], vel: [110, 75, 100, 65] },
+      6: { steps: [0,1,2,4,5,6,8,9,10,12,13,14], vel: [80,50,60,80,45,65,80,50,55,75,45,60] },
+      7: { steps: [2, 9], vel: [65, 55] },
+    }},
+  },
+
+  {
+    id: "minimal-techno-kit", name: "Minimal Techno", category: "909",
+    tags: ["minimal", "techno", "sparse"], author: "Factory", bpmRange: [128, 140],
+    description: "Sparse, hypnotic techno with long sub kick and almost-silent hats",
+    voices: {
+      0: { tune: 50, decay: 400, snap: 55, drive: 20, sub: 75 },
+      1: { tune: 180, decay: 150, snap: 75, tone: 55 },
+      2: { decay: 100, tone: 2000, spread: 25, level: 85 },
+      3: { tune: 72, decay: 300 }, 4: { tune: 100, decay: 240 }, 5: { tune: 145, decay: 180 },
+      6: { tune: 380, decay: 20 }, 7: { tune: 380, decay: 180 },
+      8: { tune: 460, decay: 500 }, 9: { tune: 560, decay: 700 },
+      10: { tune: 560, decay: 300 }, 11: { tune: 700, decay: 80 },
+    },
+    pattern: { length: 16, swing: 50, tracks: {
+      0: { steps: [0, 8], vel: [127, 100] },
+      1: { steps: [4, 12], vel: [110, 90] },
+      6: { steps: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15], vel: [90,50,50,50,90,50,50,50,90,50,50,50,90,50,50,50] },
+      8: { steps: [2, 14], vel: [70, 60] },
+    }},
+  },
+
+  {
+    id: "jazz-acoustic", name: "Jazz Acoustic", category: "Acoustic",
+    tags: ["jazz", "brush", "acoustic", "warm"], author: "Factory", bpmRange: [100, 180],
+    description: "Warm acoustic kit — brushed snare, jazz ride, warm toms",
+    voices: {
+      0: { tune: 58, decay: 220, snap: 40, body: 80, drive: 8, sub: 20 },
+      1: { tune: 185, decay: 300, snap: 30, tone: 40, body: 70 },
+      2: { decay: 120, tone: 1400, spread: 60, level: 80 },
+      3: { tune: 62, decay: 500 }, 4: { tune: 95, decay: 380 }, 5: { tune: 135, decay: 280 },
+      6: { tune: 290, decay: 60 }, 7: { tune: 290, decay: 400 },
+      8: { tune: 360, decay: 1200 }, 9: { tune: 440, decay: 900 },
+      10: { tune: 320, decay: 140 }, 11: { tune: 220, decay: 160 },
+    },
+    mix: {
+      0: { pan: 0, reverbSend: 0.10 },
+      1: { pan: 0, reverbSend: 0.20 },
+      3: { pan: -0.3, reverbSend: 0.15 }, 4: { pan: 0, reverbSend: 0.15 }, 5: { pan: 0.3, reverbSend: 0.15 },
+      9: { pan: 0.3, reverbSend: 0.20 },
+    },
+    masterFx: { reverbLevel: 0.30, saturation: 0.03, eqLow: 1, eqHigh: 1 },
+    pattern: { length: 16, swing: 58, tracks: {
+      0: { steps: [0, 8], vel: [100, 90] },
+      1: { steps: [4, 12], vel: [90, 85] },
+      9: { steps: [0, 2, 4, 6, 8, 10, 12, 14], vel: [70, 50, 65, 50, 70, 50, 65, 50] },
+    }},
+  },
+
+  {
+    id: "latin-cumbia", name: "Latin Cumbia", category: "World",
+    tags: ["latin", "cumbia", "conga", "timbale"], author: "Factory", bpmRange: [88, 105],
+    description: "Festive cumbia groove with congas, timbales and maracas",
+    voices: {
+      0: { tune: 55, decay: 200, snap: 60, drive: 25, sub: 45 },
+      1: { tune: 200, decay: 160, snap: 65, tone: 50 },
+      2: { decay: 110, tone: 1700, spread: 50, level: 100 },
+      3: { tune: 75, decay: 280 }, 4: { tune: 115, decay: 220 }, 5: { tune: 200, decay: 180 },
+      6: { tune: 330, decay: 40 }, 7: { tune: 330, decay: 250 },
+      8: { tune: 390, decay: 700 }, 9: { tune: 470, decay: 550 },
+      10: { tune: 350, decay: 100 }, 11: { tune: 600, decay: 50 },
+    },
+    mix: {
+      0: { pan: 0 },
+      3: { pan: -0.3, reverbSend: 0.10 }, 4: { pan: 0.3, reverbSend: 0.10 },
+      10: { pan: -0.4, reverbSend: 0.12 }, 11: { pan: 0.4, reverbSend: 0.10 },
+    },
+    masterFx: { reverbLevel: 0.25, eqMid: 1, eqHigh: 2 },
+    pattern: { length: 16, swing: 54, tracks: {
+      0: { steps: [0, 8], vel: [120, 100] },
+      1: { steps: [4, 12] },
+      3: { steps: [0, 3, 6, 10, 12], vel: [100, 70, 90, 75, 100] },
+      4: { steps: [2, 5, 8, 11, 14], vel: [80, 60, 85, 65, 80] },
+      6: { steps: [0, 2, 4, 6, 8, 10, 12, 14] },
+      11: { steps: [1, 3, 5, 7, 9, 11, 13, 15], vel: [60, 40, 55, 40, 60, 40, 55, 40] },
+    }},
+  },
+
+  {
+    id: "boom-bap", name: "Boom Bap", category: "Trap",
+    tags: ["boom-bap", "hip-hop", "fat", "vinyl"], author: "Factory", bpmRange: [80, 100],
+    description: "Boomy fat kick, snappy snare, classic hip-hop groove",
+    voices: {
+      0: { tune: 52, decay: 350, snap: 60, drive: 35, sub: 65, body: 55 },
+      1: { tune: 195, decay: 180, snap: 75, tone: 55, drive: 30 },
+      2: { decay: 130, tone: 1900, spread: 45, level: 105 },
+      3: { tune: 68, decay: 320 }, 4: { tune: 105, decay: 260 }, 5: { tune: 150, decay: 200 },
+      6: { tune: 340, decay: 45 }, 7: { tune: 340, decay: 320 },
+      8: { tune: 400, decay: 650 }, 9: { tune: 480, decay: 480 },
+      10: { tune: 200, decay: 500 }, 11: { tune: 350, decay: 70 },
+    },
+    mix: {
+      0: { pan: 0, reverbSend: 0.05 },
+      1: { pan: 0, reverbSend: 0.15 },
+      2: { pan: 0, reverbSend: 0.20 },
+      10: { pan: -0.3, reverbSend: 0.05 }, 11: { pan: 0.3 },
+    },
+    masterFx: { reverbLevel: 0.20, saturation: 0.12, eqLow: 3, eqHigh: 1 },
+    pattern: { length: 16, swing: 58, tracks: {
+      0: { steps: [0, 5, 10], vel: [127, 90, 110] },
+      1: { steps: [4, 12], vel: [120, 110] },
+      6: { steps: [0, 2, 4, 6, 8, 10, 12, 14], vel: [90, 50, 70, 50, 90, 50, 70, 50] },
+      7: { steps: [3, 11], vel: [65, 60] },
+    }},
+  },
 ];
 
 // Categories for the kit browser
 export const KIT_CATEGORIES = [
-  "All", "808", "909", "Trap", "DnB", "Electro", "World", "Ambient", "Retro", "Acoustic", "Cinematic",
+  "All", "808", "909", "Trap", "DnB", "Electro", "World", "Ambient", "Retro", "Acoustic", "Cinematic", "Garage",
 ];

@@ -120,6 +120,31 @@ export const BASS_PRESETS: BassPreset[] = [
   { name: "Saw Sweep",      params: bp({ waveform: "sawtooth", cutoff: 300, resonance: 14, envMod: 0.60, decay: 150, accent: 0.50, slideTime:  30, distortion: 0.35, volume: 0.60, subOsc: 0.25, filterModel: "ladder",            lfoEnabled: true, lfoTarget: "filter",  lfoShape: "sawtooth", lfoRate: 1.0, lfoDepth: 0.8, lfoSync: true,  lfoSyncNote: "1/2" }) },
   { name: "Pulse Width",    params: bp({ waveform: "square",   cutoff: 400, resonance: 10, envMod: 0.45, decay: 130, accent: 0.45, slideTime:  20, distortion: 0.25, volume: 0.65, subOsc: 0.35,                                    lfoEnabled: true, lfoTarget: "pitch",   lfoShape: "square",   lfoRate: 8.0, lfoDepth: 0.2, lfoSync: false }) },
   { name: "Deep Modulation",params: bp({ waveform: "square",   cutoff: 200, resonance:  5, envMod: 0.15, decay: 600, accent: 0.15, slideTime:  50, distortion: 0.05, volume: 0.75, subOsc: 0.80, filterModel: "ladder", subFilter: 48, lfoEnabled: true, lfoTarget: "filter",  lfoShape: "sine",     lfoRate: 0.5, lfoDepth: 0.4, lfoSync: true,  lfoSyncNote: "2" }) },
+
+  // ── UK Garage / Grime ──
+  { name: "UK Garage Roll",  params: bp({ waveform: "square",   cutoff: 480, resonance: 14, envMod: 0.55, decay: 140, accent: 0.45, slideTime: 35, distortion: 0.18, volume: 0.72, subOsc: 0.40, filterModel: "ladder", punch: 0.35, harmonics: 0.12 }) },
+  { name: "Grime Sub",       params: bp({ waveform: "square",   cutoff: 160, resonance:  2, envMod: 0.04, decay: 700, accent: 0.08, slideTime:  0, distortion: 0.02, volume: 0.88, subOsc: 1.00, filterModel: "ladder", punch: 0.05, subFilter: 35 }) },
+  { name: "2-Step Funk",     params: bp({ waveform: "sawtooth", cutoff: 420, resonance: 10, envMod: 0.45, decay: 120, accent: 0.42, slideTime: 25, distortion: 0.15, volume: 0.70, subOsc: 0.50, filterModel: "ladder", punch: 0.30, harmonics: 0.10 }) },
+  { name: "Garage Roller",   params: bp({ waveform: "square",   cutoff: 340, resonance:  8, envMod: 0.30, decay: 200, accent: 0.28, slideTime: 55, distortion: 0.10, volume: 0.75, subOsc: 0.65, filterModel: "ladder", punch: 0.22, harmonics: 0.08 }) },
+
+  // ── Jungle / DnB ──
+  { name: "Jungle Roller",   params: bp({ waveform: "square",   cutoff: 280, resonance:  5, envMod: 0.12, decay: 400, accent: 0.18, slideTime: 45, distortion: 0.08, volume: 0.82, subOsc: 0.80, filterModel: "ladder", punch: 0.20, subFilter: 48 }) },
+  { name: "Neurofunk Reese", params: bp({ waveform: "sawtooth", cutoff: 380, resonance: 18, envMod: 0.25, decay: 350, accent: 0.35, slideTime: 80, distortion: 0.55, volume: 0.65, subOsc: 0.55, filterModel: "ladder", lfoEnabled: true, lfoTarget: "filter", lfoShape: "sine", lfoRate: 0.6, lfoDepth: 0.35, lfoSync: true, lfoSyncNote: "1/2" }) },
+  { name: "Liquid DnB",      params: bp({ waveform: "sawtooth", cutoff: 360, resonance:  6, envMod: 0.22, decay: 280, accent: 0.25, slideTime: 60, distortion: 0.06, volume: 0.72, subOsc: 0.60, filterModel: "ladder", punch: 0.18, harmonics: 0.12 }) },
+
+  // ── Minimal / Techno ──
+  { name: "Minimal Click",   params: bp({ waveform: "square",   cutoff: 180, resonance:  1, envMod: 0.03, decay: 350, accent: 0.08, slideTime:  0, distortion: 0.00, volume: 0.90, subOsc: 0.95, filterModel: "ladder", punch: 0.05, subFilter: 40 }) },
+  { name: "Techno Drive",    params: bp({ waveform: "sawtooth", cutoff: 500, resonance: 16, envMod: 0.70, decay: 160, accent: 0.55, slideTime: 20, distortion: 0.45, volume: 0.62, subOsc: 0.20, filterModel: "ladder", punch: 0.40, harmonics: 0.20 }) },
+  { name: "Industrial Sub",  params: bp({ waveform: "square",   cutoff: 120, resonance:  2, envMod: 0.02, decay: 800, accent: 0.05, slideTime:  0, distortion: 0.15, volume: 0.88, subOsc: 1.00, filterModel: "ladder", subFilter: 30 }) },
+
+  // ── Boom Bap / Hip Hop ──
+  { name: "Boom Bap Low",    params: bp({ waveform: "square",   cutoff: 220, resonance:  3, envMod: 0.08, decay: 480, accent: 0.15, slideTime: 30, distortion: 0.06, volume: 0.80, subOsc: 0.85, filterModel: "ladder", punch: 0.18, subFilter: 50 }) },
+  { name: "Jazz Walk",       params: bp({ waveform: "sawtooth", cutoff: 600, resonance:  3, envMod: 0.10, decay: 250, accent: 0.20, slideTime: 70, distortion: 0.00, volume: 0.68, subOsc: 0.30, filterModel: "ladder", punch: 0.08, harmonics: 0.25 }) },
+  { name: "Upright Punch",   params: bp({ waveform: "sawtooth", cutoff: 520, resonance:  4, envMod: 0.15, decay: 180, accent: 0.30, slideTime: 35, distortion: 0.04, volume: 0.72, subOsc: 0.45, filterModel: "ladder", punch: 0.35, harmonics: 0.20 }) },
+
+  // ── Latin / Cumbia ──
+  { name: "Cumbia Bajo",     params: bp({ waveform: "sawtooth", cutoff: 460, resonance:  8, envMod: 0.35, decay: 200, accent: 0.32, slideTime: 40, distortion: 0.12, volume: 0.70, subOsc: 0.50, filterModel: "ladder", punch: 0.28, harmonics: 0.15 }) },
+  { name: "Salsa Walk",      params: bp({ waveform: "sawtooth", cutoff: 540, resonance:  5, envMod: 0.18, decay: 180, accent: 0.25, slideTime: 55, distortion: 0.05, volume: 0.68, subOsc: 0.35, filterModel: "ladder", punch: 0.20, harmonics: 0.18 }) },
 ];
 
 export const BASS_CORE_PRESETS = BASS_PRESETS.filter((preset) =>
