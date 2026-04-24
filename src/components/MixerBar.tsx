@@ -120,7 +120,7 @@ export function MixerBar() {
   }, [channels]);
 
   return (
-    <div className="relative flex flex-col bg-[#0e0e0e] border-t border-white/[0.07]">
+    <div className="relative flex flex-col shrink-0 bg-[#0e0e0e] border-t border-white/[0.07]">
       {/* Expanded panel — rendered above the strip */}
       {expandedChannel !== null && (
         <ExpandedPanel
