@@ -142,6 +142,16 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
   const [sendPopover, setSendPopover] = useState<{ ch: number; send: SendKey; rect: DOMRect } | null>(null);
   const [fxRackChannel, setFxRackChannel] = useState<{ index: number; label: string; color: string } | null>(null);
 
+  // ── Per-channel EQ / Comp / Drive (lifted state so inspector + EXT stay in sync) ──
+  const [selectedCh, setSelectedCh] = useState<number | null>(null);
+  const [chEQs,  setChEQs]  = useState(() => Array.from({ length: NUM_CHANNELS }, () => ({ lo: 0, mid: 0, hi: 0 })));
+  const [chEQOn, setChEQOn] = useState<boolean[]>(() => new Array(NUM_CHANNELS).fill(false));
+  const [chComps, setChComps] = useState(() =>
+    Array.from({ length: NUM_CHANNELS }, () => ({ threshold: -12, ratio: 4, attack: 10, release: 150 }))
+  );
+  const [chCompOn, setChCompOn] = useState<boolean[]>(() => new Array(NUM_CHANNELS).fill(false));
+  const [chDrives, setChDrives] = useState<number[]>(() => new Array(NUM_CHANNELS).fill(0));
+
   const rafRef = useRef<number>(0);
 
   // ── Meter loop ──────────────────────────────────────────
@@ -235,6 +245,46 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
     if (key === "c") audioEngine.setChannelChorusSend(ch, v / 100);
     if (key === "d") audioEngine.setChannelPhaserSend(ch, v / 100);
   }, []);
+
+  // ── Per-channel EQ handlers ──────────────────────────────
+  const handleChEQBand = (ch: number, band: "lo" | "mid" | "hi", v: number) => {
+    setChEQs((prev) => { const n = [...prev]; n[ch] = { ...n[ch]!, [band]: v }; return n; });
+    if (chEQOn[ch]) audioEngine.setChannelEQ(ch, band, v);
+  };
+  const handleChEQToggle = (ch: number) => {
+    const wasOn = chEQOn[ch]!;
+    const eq = chEQs[ch]!;
+    setChEQOn((prev) => { const n = [...prev]; n[ch] = !wasOn; return n; });
+    if (!wasOn) {
+      audioEngine.setChannelEQ(ch, "lo", eq.lo);
+      audioEngine.setChannelEQ(ch, "mid", eq.mid);
+      audioEngine.setChannelEQ(ch, "hi", eq.hi);
+    } else {
+      audioEngine.setChannelEQ(ch, "lo", 0);
+      audioEngine.setChannelEQ(ch, "mid", 0);
+      audioEngine.setChannelEQ(ch, "hi", 0);
+    }
+  };
+
+  // ── Per-channel Comp handlers ────────────────────────────
+  const handleChCompParam = (ch: number, updates: Partial<{ threshold: number; ratio: number; attack: number; release: number }>) => {
+    setChComps((prev) => { const n = [...prev]; n[ch] = { ...n[ch]!, ...updates }; return n; });
+    const comp = { ...chComps[ch]!, ...updates };
+    if (chCompOn[ch]) audioEngine.setChannelCompressor(ch, comp.threshold, comp.ratio, comp.attack / 1000, comp.release / 1000);
+  };
+  const handleChCompToggle = (ch: number) => {
+    const wasOn = chCompOn[ch]!;
+    const comp = chComps[ch]!;
+    setChCompOn((prev) => { const n = [...prev]; n[ch] = !wasOn; return n; });
+    if (!wasOn) audioEngine.setChannelCompressor(ch, comp.threshold, comp.ratio, comp.attack / 1000, comp.release / 1000);
+    else audioEngine.bypassChannelCompressor(ch);
+  };
+
+  // ── Per-channel Drive handler ─────────────────────────────
+  const handleChDrive = (ch: number, v: number) => {
+    setChDrives((prev) => { const n = [...prev]; n[ch] = v; return n; });
+    audioEngine.setChannelDrive(ch, v / 100);
+  };
 
   const toggleMute = useCallback((ch: number) => {
     setMuted((prev) => {
@@ -366,6 +416,8 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
                     );
                   }}
                   onOpenFxRack={() => setFxRackChannel({ index: chId, label: ch.label, color: ch.color })}
+                  isSelected={selectedCh === chId}
+                  onSelect={() => setSelectedCh((prev) => prev === chId ? null : chId)}
                 />
               );
             })}
@@ -431,6 +483,19 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
 
       {/* ── FX Bar ─────────────────────────────────────── */}
       <FxBar
+        selectedCh={selectedCh}
+        selectedMeta={selectedCh !== null ? CHANNELS[selectedCh] ?? null : null}
+        chEQ={selectedCh !== null ? chEQs[selectedCh] ?? { lo: 0, mid: 0, hi: 0 } : null}
+        chEQOn={selectedCh !== null ? chEQOn[selectedCh] ?? false : false}
+        chComp={selectedCh !== null ? chComps[selectedCh] ?? { threshold: -12, ratio: 4, attack: 10, release: 150 } : null}
+        chCompOn={selectedCh !== null ? chCompOn[selectedCh] ?? false : false}
+        chDrive={selectedCh !== null ? chDrives[selectedCh] ?? 0 : 0}
+        onChEQBand={(band, v) => selectedCh !== null && handleChEQBand(selectedCh, band, v)}
+        onChEQToggle={() => selectedCh !== null && handleChEQToggle(selectedCh)}
+        onChCompParam={(u) => selectedCh !== null && handleChCompParam(selectedCh, u)}
+        onChCompToggle={() => selectedCh !== null && handleChCompToggle(selectedCh)}
+        onChDrive={(v) => selectedCh !== null && handleChDrive(selectedCh, v)}
+        onDeselect={() => setSelectedCh(null)}
         eqLow={eqLow} eqMid={eqMid} eqHigh={eqHigh}
         reverbLevel={reverbLevel} reverbType={reverbType} reverbDamping={reverbDamping}
         delayFB={delayFB} delayLevel={delayLevel} delayDiv={delayDiv} delayType={delayType}
@@ -501,6 +566,8 @@ interface ChannelStripProps {
   onMute: () => void; onSolo: () => void;
   onDotClick: (send: SendKey, rect: DOMRect) => void;
   onOpenFxRack: () => void;
+  isSelected: boolean;
+  onSelect: () => void;
 }
 
 function ChannelStrip({
@@ -508,6 +575,7 @@ function ChannelStrip({
   sendA, sendB, sendC, sendD, panValue,
   isMuted, isSoloed, viewMode, sendsOnly, activeSendPop,
   onFader, onSend, onPan, onMute, onSolo, onDotClick, onOpenFxRack,
+  isSelected, onSelect,
 }: ChannelStripProps) {
   const faderDb = faderValue <= 5
     ? -Infinity
@@ -531,10 +599,15 @@ function ChannelStrip({
         borderColor: isSoloed ? color + "60" : isMuted ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.07)",
       }}
     >
-      {/* Name + badge */}
-      <div
-        className="text-center pt-2 pb-1.5 border-b border-white/[0.06]"
-        style={{ background: `linear-gradient(180deg,${color}18,${color}06)` }}
+      {/* Name + badge — click to select channel for inspector */}
+      <button
+        onClick={onSelect}
+        className="w-full text-center pt-2 pb-1.5 border-b border-white/[0.06] transition-colors"
+        style={{
+          background: isSelected
+            ? `linear-gradient(180deg,${color}30,${color}10)`
+            : `linear-gradient(180deg,${color}18,${color}06)`,
+        }}
       >
         <span
           className="block text-[9px] font-black tracking-[0.14em]"
@@ -544,11 +617,15 @@ function ChannelStrip({
         </span>
         <span
           className="inline-block mt-[2px] text-[5px] font-black tracking-[0.16em] px-1.5 py-[1px] rounded-full"
-          style={{ color, background: `${color}18` }}
+          style={{
+            color,
+            background: isSelected ? `${color}35` : `${color}18`,
+            outline: isSelected ? `1px solid ${color}50` : "none",
+          }}
         >
           {badge}
         </span>
-      </div>
+      </button>
 
       {/* Send dots — shown in CHANNELS tab (STD/EXT); hidden in SENDS tab (sliders take over) */}
       {viewMode !== "min" && !sendsOnly && (
@@ -988,6 +1065,21 @@ function ChannelCrossfaderButtons({ channelIndex }: { channelIndex: number }) {
 // ─── FX Bar ───────────────────────────────────────────────
 
 interface FxBarProps {
+  // Channel inspector
+  selectedCh: number | null;
+  selectedMeta: { label: string; color: string } | null;
+  chEQ: { lo: number; mid: number; hi: number } | null;
+  chEQOn: boolean;
+  chComp: { threshold: number; ratio: number; attack: number; release: number } | null;
+  chCompOn: boolean;
+  chDrive: number;
+  onChEQBand: (band: "lo" | "mid" | "hi", v: number) => void;
+  onChEQToggle: () => void;
+  onChCompParam: (u: Partial<{ threshold: number; ratio: number; attack: number; release: number }>) => void;
+  onChCompToggle: () => void;
+  onChDrive: (v: number) => void;
+  onDeselect: () => void;
+  // Global master
   eqLow: number; eqMid: number; eqHigh: number;
   reverbLevel: number; reverbType: string; reverbDamping: number;
   delayFB: number; delayLevel: number; delayDiv: string; delayType: string;
@@ -1002,6 +1094,8 @@ interface FxBarProps {
 }
 
 function FxBar({
+  selectedCh, selectedMeta, chEQ, chEQOn, chComp, chCompOn, chDrive,
+  onChEQBand, onChEQToggle, onChCompParam, onChCompToggle, onChDrive, onDeselect,
   eqLow, eqMid, eqHigh, reverbLevel, reverbType, reverbDamping,
   delayFB, delayLevel, delayDiv, delayType, saturation,
   pumpDepth, pumpRate, limiterOn, limiterThresh,
@@ -1013,7 +1107,62 @@ function FxBar({
     <div className="shrink-0 flex items-center gap-4 overflow-x-auto px-5 py-2.5 border-t border-white/[0.06] bg-[linear-gradient(180deg,rgba(12,14,20,0.99),rgba(8,10,16,0.99))]"
       style={{ scrollbarWidth: "none", minHeight: 52 }}>
 
-      {/* EQ */}
+      {/* ── Channel Inspector (shown when a channel is selected) ── */}
+      {selectedCh !== null && selectedMeta && chEQ && chComp && (
+        <>
+          {/* Channel label + close */}
+          <div className="flex flex-col items-center shrink-0 gap-0.5">
+            <span className="text-[8px] font-black tracking-[0.12em]" style={{ color: selectedMeta.color }}>
+              {selectedMeta.label}
+            </span>
+            <button onClick={onDeselect} className="text-[5px] text-white/20 hover:text-white/50 leading-none">✕ close</button>
+          </div>
+
+          <FxDiv />
+
+          {/* Per-channel EQ */}
+          <FxSection name="" color={selectedMeta.color}>
+            <ToggleBtn label="EQ" on={chEQOn} color={selectedMeta.color} onToggle={onChEQToggle} />
+            <FxSlider label="LO"  value={chEQ.lo + 12}  max={24} color={selectedMeta.color} suffix="dB" dimmed={!chEQOn}
+              onChange={(v) => onChEQBand("lo",  v - 12)} />
+            <FxSlider label="MID" value={chEQ.mid + 12} max={24} color={selectedMeta.color} suffix="dB" dimmed={!chEQOn}
+              onChange={(v) => onChEQBand("mid", v - 12)} />
+            <FxSlider label="HI"  value={chEQ.hi + 12}  max={24} color={selectedMeta.color} suffix="dB" dimmed={!chEQOn}
+              onChange={(v) => onChEQBand("hi",  v - 12)} />
+          </FxSection>
+
+          <FxDiv />
+
+          {/* Per-channel Comp */}
+          <FxSection name="" color={selectedMeta.color}>
+            <ToggleBtn label="CMP" on={chCompOn} color={selectedMeta.color} onToggle={onChCompToggle} />
+            <FxSlider label="THR" value={chComp.threshold + 40} max={40} color={selectedMeta.color}
+              suffix="dB" dimmed={!chCompOn}
+              onChange={(v) => onChCompParam({ threshold: v - 40 })} />
+            <FxSlider label="RAT" value={Math.round((chComp.ratio - 1) / 19 * 100)} max={100}
+              color={selectedMeta.color} suffix="" dimmed={!chCompOn}
+              onChange={(v) => onChCompParam({ ratio: 1 + (v / 100) * 19 })} />
+            <FxSlider label="ATK" value={chComp.attack} max={100} color={selectedMeta.color}
+              suffix="ms" dimmed={!chCompOn}
+              onChange={(v) => onChCompParam({ attack: v })} />
+            <FxSlider label="REL" value={Math.round(chComp.release / 10)} max={100}
+              color={selectedMeta.color} suffix="ms" dimmed={!chCompOn}
+              onChange={(v) => onChCompParam({ release: v * 10 })} />
+          </FxSection>
+
+          <FxDiv />
+
+          {/* Per-channel Drive */}
+          <FxSection name="" color={selectedMeta.color}>
+            <FxSlider label="DRV" value={chDrive} max={100} color={selectedMeta.color} onChange={onChDrive} />
+          </FxSection>
+
+          {/* Strong divider before global section */}
+          <div className="h-8 w-[2px] bg-white/[0.12] shrink-0 mx-1" />
+        </>
+      )}
+
+      {/* ── Master EQ ── */}
       <FxSection name="EQ" color="#22c55e">
         <FxSlider label="LO"  value={eqLow + 12}  max={24} color="#22c55e" suffix="" onChange={(v) => onEqLow(v - 12)} />
         <FxSlider label="MID" value={eqMid + 12}  max={24} color="#22c55e" suffix="" onChange={(v) => onEqMid(v - 12)} />
@@ -1110,21 +1259,42 @@ function FxDiv() {
   return <div className="h-6 w-px bg-white/[0.07] shrink-0" />;
 }
 
-function FxSlider({ label, value, max, color, suffix = "%", onChange }: {
-  label: string; value: number; max: number; color: string; suffix?: string; onChange: (v: number) => void;
+function FxSlider({ label, value, max, color, suffix = "%", dimmed, onChange }: {
+  label: string; value: number; max: number; color: string; suffix?: string;
+  dimmed?: boolean; onChange: (v: number) => void;
 }) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1" style={{ opacity: dimmed ? 0.35 : 1 }}>
       <span className="text-[7px] font-bold tracking-[0.1em] text-white/30 shrink-0">{label}</span>
       <input
         type="range" min={0} max={max} value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         className="w-14 h-[4px]" style={{ accentColor: color }}
+        disabled={dimmed}
       />
       <span className="text-[7px] font-mono text-white/40 w-8 shrink-0">
         {value}{suffix}
       </span>
     </div>
+  );
+}
+
+function ToggleBtn({ label, on, color, onToggle }: { label: string; on: boolean; color: string; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      className="text-[6px] font-black px-2 py-[3px] rounded border transition-all shrink-0"
+      style={on ? {
+        background: `${color}20`, borderColor: `${color}60`, color,
+        boxShadow: `0 0 6px ${color}30`,
+      } : {
+        background: "rgba(255,255,255,0.03)",
+        borderColor: "rgba(255,255,255,0.08)",
+        color: "rgba(255,255,255,0.25)",
+      }}
+    >
+      {label}
+    </button>
   );
 }
 

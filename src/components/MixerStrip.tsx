@@ -45,10 +45,23 @@ export function MixerStrip({ onOpenMixer }: MixerStripProps) {
     let raf = 0;
     let statsFrame = 0;
 
-    const levels = new Float32Array(15);
+    const levels = new Float32Array(16);
+    const _gateBuf = new Float32Array(256); // reuse to avoid GC pressure
 
     const draw = () => {
-      for (let i = 0; i < 15; i++) levels[i] = audioEngine.getChannelLevel(i);
+      for (let i = 0; i < 16; i++) {
+        // Noise-floor gate: if analyser has no real signal, return 0 immediately
+        // (avoids stale peak-hold values from meteringEngine showing on silent channels)
+        const an = audioEngine.getChannelAnalyser(i);
+        if (an) {
+          const buf = _gateBuf.length >= an.fftSize ? _gateBuf : new Float32Array(an.fftSize);
+          an.getFloatTimeDomainData(buf);
+          let pk = 0;
+          for (let s = 0; s < an.fftSize; s++) pk = Math.max(pk, Math.abs(buf[s]!));
+          if (pk < 1e-6) { levels[i] = 0; continue; }
+        }
+        levels[i] = audioEngine.getChannelLevel(i);
+      }
       const masterLvl = audioEngine.getMasterLevel();
 
       // ─── Channel meters canvas ───
@@ -56,7 +69,7 @@ export function MixerStrip({ onOpenMixer }: MixerStripProps) {
       const ch = channelCanvas.height;
       ctx.clearRect(0, 0, cw, ch);
 
-      const barCount = 15;
+      const barCount = 16;
       const gap = 3 * dpr;
       const barW = (cw - gap * (barCount - 1)) / barCount;
 
