@@ -71,9 +71,10 @@ const MODULE_DEFS: FxModuleDef[] = [
     name: "DELAY",
     color: "#3b82f6",
     params: [
-      { id: "division", label: "DIV", min: 0, max: 7, default: 4 }, // 0=1/32, 1=1/16T, 2=1/16, 3=1/8T, 4=1/8, 5=1/4T, 6=1/4, 7=1/2
-      { id: "feedback", label: "FB", min: 0, max: 100, default: 40 },
-      { id: "mix", label: "MIX", min: 0, max: 100, default: 30 },
+      { id: "division", label: "DIV",  min: 0, max: 7,   default: 4 }, // 0=1/32…7=1/2
+      { id: "feedback", label: "FB",   min: 0, max: 100, default: 40 },
+      { id: "mix",      label: "MIX",  min: 0, max: 100, default: 30 },
+      { id: "mode",     label: "MODE", min: 0, max: 2,   default: 0  }, // 0=clean 1=tape 2=analog
     ],
   },
   {
@@ -174,6 +175,10 @@ function applyFxParam(
       const filterFreq = 8000 - fb * 5000; // Darker with more feedback
       audioEngine.setDelayParams(time, fb, filterFreq);
       audioEngine.setDelayLevel(mix);
+      if (paramId === "mode") {
+        const modes = ["clean", "tape", "analog"] as const;
+        audioEngine.setDelayMode(modes[Math.round(value)] ?? "clean");
+      }
       break;
     }
 
@@ -279,6 +284,8 @@ function applyModuleToggle(
         const time = Math.min(2.0, (60 / bpm) * (DIVISIONS[divIdx] ?? 0.5));
         const fb = Math.min(0.88, (params.feedback ?? 40) / 100);
         audioEngine.setDelayParams(time, fb, 8000 - fb * 5000);
+        const modes = ["clean", "tape", "analog"] as const;
+        audioEngine.setDelayMode(modes[Math.round(params.mode ?? 0)] ?? "clean");
       }
       break;
     }

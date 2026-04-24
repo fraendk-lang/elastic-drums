@@ -58,6 +58,8 @@ export class SendFxManager {
   private delayPanner: StereoPannerNode | null = null;
   private delayTapeLfo: OscillatorNode | null = null;
   private delayTapeLfoGain: GainNode | null = null;
+  private delaySaturation: WaveShaperNode | null = null;
+  private delayMode: "clean" | "tape" | "analog" = "clean";
 
   // Delay state
   private delayType: "stereo" | "pingpong" | "tape" = "stereo";
@@ -215,10 +217,16 @@ export class SendFxManager {
     this.delayTapeLfoGain.connect(this.delayNode.delayTime);
     this.delayTapeLfo.start();
 
-    // Delay routing: bus → delay → filter → feedback → delay (loop)
-    //                                    → panner → delayGain → master
+    // Saturation node in signal path (starts as linear bypass = clean mode)
+    this.delaySaturation = ctx.createWaveShaper();
+    this.delaySaturation.curve = this.buildDelaySatCurve("clean");
+    this.delaySaturation.oversample = "2x";
+
+    // Delay routing: bus → delay → sat → filter → feedback → delay (loop)
+    //                                           → panner → delayGain → master
     this.sendBBus.connect(this.delayNode);
-    this.delayNode.connect(this.delayFilter);
+    this.delayNode.connect(this.delaySaturation);
+    this.delaySaturation.connect(this.delayFilter);
     this.delayFilter.connect(this.delayFeedback);
     this.delayFeedback.connect(this.delayNode); // Feedback loop
     this.delayFilter.connect(this.delayPanner);
@@ -522,6 +530,26 @@ export class SendFxManager {
     return buf;
   }
 
+  /** Build a soft-clip WaveShaper curve for delay saturation */
+  private buildDelaySatCurve(mode: "clean" | "tape" | "analog"): Float32Array<ArrayBuffer> {
+    const n = 2048;
+    const curve = new Float32Array(new ArrayBuffer(n * 4));
+    for (let i = 0; i < n; i++) {
+      const x = (i / (n - 1)) * 2 - 1; // -1 to +1
+      if (mode === "clean") {
+        curve[i] = x; // Linear = bypass
+      } else if (mode === "tape") {
+        // Warm asymmetric soft-clip (tape head saturation)
+        curve[i] = (2 / Math.PI) * Math.atan(x * 1.8) + x * 0.06;
+      } else {
+        // BBD-style: harder saturation, more even harmonics
+        const k = 3.2;
+        curve[i] = (x * (Math.abs(x) + k)) / (x * x + (k - 1) * Math.abs(x) + 1);
+      }
+    }
+    return curve;
+  }
+
   // ─── Send FX Controls ─────────────────────────────────
 
   /** Set per-channel reverb send amount (0..1) */
@@ -764,6 +792,27 @@ export class SendFxManager {
   /** Get current delay type */
   getDelayType(): string {
     return this.delayType;
+  }
+
+  /** Set delay character mode: clean (linear), tape (warm sat), analog (harder sat) */
+  setDelayMode(mode: "clean" | "tape" | "analog"): void {
+    this.delayMode = mode;
+    if (this.delaySaturation) {
+      this.delaySaturation.curve = this.buildDelaySatCurve(mode);
+    }
+    // Configure tape LFO per mode
+    if (this.delayTapeLfoGain) {
+      this.delayTapeLfoGain.gain.value = mode === "tape" ? 0.0018 : mode === "analog" ? 0.003 : 0;
+    }
+    // Filter cutoff per mode (tape=warm, analog=lo-fi, clean=bright)
+    if (this.delayFilter) {
+      this.delayFilter.frequency.value = mode === "tape" ? 2800 : mode === "analog" ? 2200 : 4000;
+    }
+  }
+
+  /** Get current delay mode */
+  getDelayMode(): string {
+    return this.delayMode;
   }
 
   /** Get current delay division */

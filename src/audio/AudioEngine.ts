@@ -361,6 +361,8 @@ export class AudioEngine {
   setDelayDivision(divName: string, bpm: number): void { sendFxManager.setDelayDivision(divName, bpm); }
   setDelayType(type: "stereo" | "pingpong" | "tape"): void { sendFxManager.setDelayType(type); }
   getDelayType(): string { return sendFxManager.getDelayType(); }
+  setDelayMode(mode: "clean" | "tape" | "analog"): void { sendFxManager.setDelayMode(mode); }
+  getDelayMode(): string { return sendFxManager.getDelayMode(); }
   getDelayDivision(): string { return sendFxManager.getDelayDivision(); }
 
   setChannelReverbSend(channel: number, amount: number): void { sendFxManager.setChannelReverbSend(channel, amount); }
