@@ -154,7 +154,7 @@ export class AudioEngine {
       // ─── SoundFont Engine setup ──────────────────────────
       soundFontEngine.init(this.ctx);
 
-      meteringEngine.reset(16);
+      meteringEngine.reset(32); // 0-15 channels, 20-26 group buses, 30-31 returns
 
       // Initialize shared AudioWorklet scheduler clock
       schedulerClock.init(this.ctx).catch((e) =>
@@ -416,16 +416,26 @@ export class AudioEngine {
     return meteringEngine.getMasterLevel(this.masterAnalyser);
   }
 
+  getGroupAnalyser(group: string): AnalyserNode | null {
+    return mixerRouter.getGroupAnalyser(group);
+  }
+
+  // Stable group→index map so meteringEngine slots don't collide
+  private static readonly GROUP_METER_IDX: Record<string, number> = {
+    drums: 20, hats: 21, perc: 22, bass: 23, chords: 24, melody: 25, sampler: 26,
+  };
+
   getGroupMeter(group: string): { rmsDb: number; peakDb: number; rmsLinear: number; peakLinear: number } {
     const analyser = mixerRouter.getGroupAnalyser(group);
     if (!analyser) return { rmsDb: -Infinity, peakDb: -Infinity, rmsLinear: 0, peakLinear: 0 };
-    return meteringEngine.getChannelMeter(100 + group.length, analyser);
+    const idx = AudioEngine.GROUP_METER_IDX[group] ?? (20 + Object.keys(AudioEngine.GROUP_METER_IDX).length);
+    return meteringEngine.getChannelMeter(idx, analyser);
   }
 
   getReturnMeter(type: "reverb" | "delay"): { rmsDb: number; peakDb: number; rmsLinear: number; peakLinear: number } {
     const analyser = sendFxManager.getReturnAnalyser(type);
     if (!analyser) return { rmsDb: -Infinity, peakDb: -Infinity, rmsLinear: 0, peakLinear: 0 };
-    return meteringEngine.getChannelMeter(type === "reverb" ? 201 : 202, analyser);
+    return meteringEngine.getChannelMeter(type === "reverb" ? 30 : 31, analyser);
   }
 
   getChannelSpectrum(channel: number): {

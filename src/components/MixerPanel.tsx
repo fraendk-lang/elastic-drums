@@ -46,12 +46,13 @@ const GROUPS = [
 ];
 
 const BUS_STRIPS = [
-  { id: "drums",  label: "DRM",  color: "#f59e0b" },
-  { id: "hats",   label: "TOP",  color: "#3b82f6" },
-  { id: "perc",   label: "PRC",  color: "#8b5cf6" },
-  { id: "bass",   label: "BSS",  color: "#10b981" },
-  { id: "chords", label: "CHD",  color: "#a78bfa" },
-  { id: "melody", label: "LED",  color: "#f472b6" },
+  { id: "drums",   label: "DRM",  color: "#f59e0b" },
+  { id: "hats",    label: "TOP",  color: "#3b82f6" },
+  { id: "perc",    label: "PRC",  color: "#8b5cf6" },
+  { id: "bass",    label: "BSS",  color: "#10b981" },
+  { id: "chords",  label: "CHD",  color: "#a78bfa" },
+  { id: "melody",  label: "LED",  color: "#f472b6" },
+  { id: "sampler", label: "SMP",  color: "#f97316" },
 ] as const;
 
 const RETURN_STRIPS = [
@@ -169,8 +170,17 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
           m.push({ rmsDb: d.rmsDb, peakDb: d.peakDb });
         }
         setMeters(m);
+        // Group meters — same noise-floor gate as channel meters
         setGroupMeters(Object.fromEntries(
           BUS_STRIPS.map((b) => {
+            const an = audioEngine.getGroupAnalyser(b.id);
+            if (an) {
+              const buf = new Float32Array(an.fftSize);
+              an.getFloatTimeDomainData(buf);
+              let pk = 0;
+              for (let s = 0; s < buf.length; s++) pk = Math.max(pk, Math.abs(buf[s]!));
+              if (pk < 1e-6) return [b.id, { rmsDb: -Infinity, peakDb: -Infinity }];
+            }
             const d = audioEngine.getGroupMeter(b.id);
             return [b.id, { rmsDb: d.rmsDb, peakDb: d.peakDb }];
           })
@@ -540,8 +550,8 @@ function ChannelStrip({
         </span>
       </div>
 
-      {/* Send dots — always shown except MIN */}
-      {viewMode !== "min" && (
+      {/* Send dots — shown in CHANNELS tab (STD/EXT); hidden in SENDS tab (sliders take over) */}
+      {viewMode !== "min" && !sendsOnly && (
         <div className="flex justify-center gap-[5px] py-[5px] border-b border-white/[0.05]">
           {SEND_META.map(({ key, color: c, label: lbl }) => {
             const val = sendValues[key];
@@ -770,10 +780,11 @@ function BusStrip({ label, color, meter, faderValue, onFader }: {
       </div>
       <div className="flex gap-[5px] px-[6px] py-2 flex-1 min-h-[100px]">
         <Meter rmsDb={meter.rmsDb} peakDb={meter.peakDb} color={color} width={10} />
-        <div className="flex-1 flex items-center justify-center">
+        <div className="flex-1 flex items-center justify-center" title="Double-click to reset">
           <input
             type="range" min={0} max={1000} value={faderValue}
             onChange={(e) => onFader(Number(e.target.value))}
+            onDoubleClick={() => onFader(750)}
             className="accent-white/70"
             style={{ writingMode: "vertical-lr", direction: "rtl", height: "100%", width: "20px", minHeight: 60 }}
           />
