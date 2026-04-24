@@ -10,10 +10,16 @@ let _sceneStoreRef: {
     nextScene: number | null;
     activeScene: number;
     launchQuantize: string;
-  }
+  };
+  setState: (partial: { nextScene?: number | null }) => void;
 } | null = null;
 export function setSceneStoreRef(ref: typeof _sceneStoreRef) { _sceneStoreRef = ref; }
 function getSceneStore() { return _sceneStoreRef; }
+
+// Guard: only one deferred scene load in flight at a time.
+// Without this the scheduler (20 ms ticks) would queue a loadScene every tick
+// until the setTimeout fires, causing the scene to load multiple times.
+let _sceneLoadPending = false;
 
 let _clipStoreRef: { getState: () => { resolveQueuedClips: () => void } } | null = null;
 export function setClipStoreRef(ref: typeof _clipStoreRef) { _clipStoreRef = ref; }
@@ -523,19 +529,24 @@ function startScheduler() {
           const newPos = songPosition + 1;
           const nextPos = newPos >= songChain.length ? 0 : newPos; // Loop
           useDrumStore.setState({ songPosition: nextPos, songRepeatCount: 0 });
-          // Load the next scene (all 4 sequencers)
+          // Load the next scene (all 4 sequencers) — deferred to avoid blocking scheduler
           const nextEntry = songChain[nextPos];
           if (nextEntry) {
             const sceneStoreRef = getSceneStore();
-            if (sceneStoreRef) sceneStoreRef.getState().loadScene(nextEntry.sceneIndex);
-            // Tempo automation
+            if (sceneStoreRef && !_sceneLoadPending) {
+              const sceneIdx = nextEntry.sceneIndex;
+              _sceneLoadPending = true;
+              setTimeout(() => {
+                sceneStoreRef.getState().loadScene(sceneIdx);
+                _sceneLoadPending = false;
+              }, 0);
+            }
+            // Tempo automation (can stay synchronous — just sets a number in state)
             if (nextEntry.tempoBpm !== undefined) {
               const targetBpm = Math.max(60, Math.min(200, nextEntry.tempoBpm));
               if (nextEntry.tempoRamp) {
-                // Ramp target stored — animation handled by tempo-ramp effect (see below)
                 useDrumStore.setState({ tempoRampTarget: targetBpm, tempoRampStartBpm: useDrumStore.getState().bpm });
               } else {
-                // Instant jump
                 useDrumStore.setState({ bpm: targetBpm, tempoRampTarget: null });
               }
             }
@@ -548,29 +559,45 @@ function startScheduler() {
         // Scene/Clip queue: resolve at quantized bar boundary
         const sceneStoreRef = getSceneStore();
         if (sceneStoreRef) {
-          const { nextScene, loadScene, launchQuantize, activeScene, scenes } = sceneStoreRef.getState();
+          const { nextScene, launchQuantize, activeScene, scenes } = sceneStoreRef.getState();
           const barInterval = launchQuantize === "4bar" ? 4 : launchQuantize === "2bar" ? 2 : 1;
           if (cycleCount % barInterval === 0) {
-            if (nextScene !== null) {
-              loadScene(nextScene);
-            } else {
+            if (nextScene !== null && !_sceneLoadPending) {
+              // Determine scene to load now, then defer to macrotask so the
+              // JSON-heavy loadScene() doesn't block this scheduler tick (audio gap).
+              // Clear nextScene immediately so the next scheduler tick doesn't re-fire.
+              const toLoad = nextScene;
+              sceneStoreRef.setState({ nextScene: null });
+              _sceneLoadPending = true;
+              setTimeout(() => {
+                sceneStoreRef.getState().loadScene(toLoad);
+                _sceneLoadPending = false;
+              }, 0);
+            } else if (nextScene === null && !_sceneLoadPending) {
               // Follow Actions: fire when no explicit queue is pending
               const activeSceneData = activeScene >= 0 ? scenes[activeScene] : null;
               const followAction = activeSceneData?.followAction ?? "none";
+              let followSlot: number | null = null;
               if (followAction === "next") {
-                // Advance to next filled slot (wraps around)
                 const filled = scenes.reduce<number[]>((acc, s, i) => (s ? [...acc, i] : acc), []);
                 if (filled.length > 0) {
                   const afterIdx = filled.findIndex((i) => i > activeScene);
-                  loadScene(afterIdx >= 0 ? filled[afterIdx]! : filled[0]!);
+                  followSlot = afterIdx >= 0 ? filled[afterIdx]! : filled[0]!;
                 }
               } else if (followAction === "random") {
                 const filled = scenes.reduce<number[]>((acc, s, i) => (s && i !== activeScene ? [...acc, i] : acc), []);
                 if (filled.length > 0) {
-                  loadScene(filled[Math.floor(Math.random() * filled.length)]!);
+                  followSlot = filled[Math.floor(Math.random() * filled.length)]!;
                 }
               }
-              // "none" / "loop" / undefined → no action, scene keeps looping
+              // "none" / "loop" / undefined → no action
+              if (followSlot !== null) {
+                _sceneLoadPending = true;
+                setTimeout(() => {
+                  sceneStoreRef.getState().loadScene(followSlot!);
+                  _sceneLoadPending = false;
+                }, 0);
+              }
             }
             // Resolve clip queue too (shared quantize)
             const clipRef = _clipStoreRef;

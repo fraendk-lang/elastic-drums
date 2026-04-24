@@ -78,8 +78,10 @@ interface SceneStore {
 
 // ─── Helpers ────────────────────────────────────────────
 
+// structuredClone is ~10x faster than JSON.parse/stringify for plain data objects.
+// Critical for scene load performance: melody has 256 steps, drum pattern has 12×64 steps.
 function deepClone<T>(obj: T): T {
-  return JSON.parse(JSON.stringify(obj));
+  return structuredClone(obj);
 }
 
 function normalizeBassRootMidi(rootName?: string, fallbackMidi?: number): number | undefined {
