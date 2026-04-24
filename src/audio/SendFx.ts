@@ -25,7 +25,8 @@ export const DELAY_DIVISIONS: Record<string, number> = {
 
 export const DELAY_DIVISION_NAMES = Object.keys(DELAY_DIVISIONS);
 
-export const REVERB_TYPES = ["room", "hall", "plate", "ambient"] as const;
+export const REVERB_TYPES = ["room", "hall", "plate", "spring"] as const;
+export type ReverbType = typeof REVERB_TYPES[number];
 
 export class SendFxManager {
   private ctx: AudioContext | null = null;
@@ -39,7 +40,7 @@ export class SendFxManager {
   private reverbPreDelay: DelayNode | null = null;
 
   // Reverb state
-  private reverbType: "room" | "hall" | "plate" | "ambient" = "hall";
+  private reverbType: ReverbType = "hall";
   private reverbSize = 2.5;
   private reverbDecayVal = 2.5;
 
@@ -610,12 +611,11 @@ export class SendFxManager {
   }
 
   /** Set reverb type — regenerates IR off-thread */
-  setReverbType(type: "room" | "hall" | "plate" | "ambient"): void {
+  setReverbType(type: ReverbType): void {
     if (!this.ctx || !this.reverbNode) return;
     this.reverbType = type;
-    // Adjust duration based on type
-    const durations: Record<string, number> = { room: 1.0, hall: 2.5, plate: 1.8, ambient: 4.0 };
-    const decays: Record<string, number> = { room: 1.5, hall: 2.5, plate: 2.0, ambient: 5.0 };
+    const durations: Record<string, number> = { room: 0.9, hall: 2.8, plate: 1.6, spring: 1.2 };
+    const decays: Record<string, number>    = { room: 1.4, hall: 2.8, plate: 1.8, spring: 1.2 };
     this.reverbSize = durations[type] ?? 2.0;
     this.reverbDecayVal = decays[type] ?? 2.5;
     this._scheduleReverbIR(this.ctx, this.reverbSize, this.reverbDecayVal, type);

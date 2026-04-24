@@ -347,7 +347,7 @@ export class AudioEngine {
 
   setReverbLevel(level: number): void { sendFxManager.setReverbLevel(level); }
   getReverbLevel(): number { return sendFxManager.getReverbLevel(); }
-  setReverbType(type: "room" | "hall" | "plate" | "ambient"): void { sendFxManager.setReverbType(type); }
+  setReverbType(type: import("./SendFx").ReverbType): void { sendFxManager.setReverbType(type); }
   getReverbType(): string { return sendFxManager.getReverbType(); }
   setReverbSize(size: number): void { sendFxManager.setReverbSize(size); }
   setReverbDecay(decay: number): void { sendFxManager.setReverbDecay(decay); }

@@ -61,8 +61,9 @@ const MODULE_DEFS: FxModuleDef[] = [
     name: "REVERB",
     color: "#8b5cf6",
     params: [
-      { id: "level", label: "LVL", min: 0, max: 100, default: 35 },
-      { id: "damping", label: "DMP", min: 0, max: 100, default: 60 },
+      { id: "level",   label: "LVL",  min: 0, max: 100, default: 35 },
+      { id: "damping", label: "DMP",  min: 0, max: 100, default: 60 },
+      { id: "type",    label: "TYPE", min: 0, max: 3,   default: 1  }, // 0=room 1=hall 2=plate 3=spring
     ],
   },
   {
@@ -153,6 +154,10 @@ function applyFxParam(
       }
       if (paramId === "damping") {
         audioEngine.setReverbDamping(500 + (value / 100) * 15500);
+      }
+      if (paramId === "type") {
+        const types = ["room", "hall", "plate", "spring"] as const;
+        audioEngine.setReverbType(types[Math.round(value)] ?? "hall");
       }
       break;
     }
@@ -250,7 +255,11 @@ function applyModuleToggle(
       } else {
         for (let ch = 0; ch < 15; ch++) audioEngine.setChannelReverbSend(ch, reverbSend);
       }
-      if (enabled) audioEngine.setReverbDamping(500 + ((params.damping ?? 60) / 100) * 15500);
+      if (enabled) {
+        audioEngine.setReverbDamping(500 + ((params.damping ?? 60) / 100) * 15500);
+        const types = ["room", "hall", "plate", "spring"] as const;
+        audioEngine.setReverbType(types[Math.round(params.type ?? 1)] ?? "hall");
+      }
       break;
     }
 
@@ -444,7 +453,7 @@ export function FxRack({ isOpen, onToggle }: FxRackProps) {
   const [modules, setModules] = useState<
     Record<string, FxModuleState>
   >({
-    reverb: { enabled: false, target: "master", params: { level: 35, damping: 60 } },
+    reverb: { enabled: false, target: "master", params: { level: 35, damping: 60, type: 1 } },
     delay: { enabled: false, target: "master", params: { division: 4, feedback: 40, mix: 30 } },
     filter: { enabled: false, target: "master", params: { cutoff: 80, resonance: 20 } },
     drive: { enabled: false, target: "master", params: { amount: 0, tone: 50 } },
