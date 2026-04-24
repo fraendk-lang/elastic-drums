@@ -64,7 +64,7 @@ export class AudioEngine {
 
       // ─── Master output chain ─────────────────────────────
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.value = 0.7; // Lower headroom to prevent digital clipping
+      this.masterGain.gain.value = 0.65; // Slightly lower headroom — balanced per-channel defaults reduce source levels
 
       this.masterAnalyser = this.ctx.createAnalyser();
       this.masterAnalyser.fftSize = 2048;
@@ -84,15 +84,15 @@ export class AudioEngine {
       this.masterEqHigh.type = "highshelf";
       this.masterEqHigh.frequency.value = 8000;
 
-      // Bus Compressor (gentle glue — not heavy squashing)
+      // Bus Compressor — tighter threshold catches unbalanced peaks from heavy kicks/bass
       this.masterCompressor = this.ctx.createDynamicsCompressor();
-      this.masterCompressor.threshold.value = -8;
-      this.masterCompressor.ratio.value = 2.5;
-      this.masterCompressor.attack.value = 0.02;
+      this.masterCompressor.threshold.value = -12;  // was -8: catches more dynamic range
+      this.masterCompressor.ratio.value = 3.0;       // was 2.5: slightly firmer glue
+      this.masterCompressor.attack.value = 0.015;    // was 0.02: faster to catch kick transients
       this.masterCompressor.release.value = 0.2;
-      this.masterCompressor.knee.value = 6;
+      this.masterCompressor.knee.value = 8;           // was 6: wider knee = more transparent
 
-      // Brick-wall Limiter
+      // Brick-wall Limiter — keep tight at -1 dB
       this.masterLimiter = this.ctx.createDynamicsCompressor();
       this.masterLimiter.threshold.value = -1;
       this.masterLimiter.ratio.value = 20;

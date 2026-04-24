@@ -24,8 +24,33 @@ export interface ChannelMixState {
   sendDly: number;     // 0-100
 }
 
-const defaultChannel = (): ChannelMixState => ({
-  fader: 750, muted: false, soloed: false,
+/**
+ * Balanced default faders per channel (0-1000, 750 = 0dB unity).
+ * Drums and bass sit louder in the mix by nature (high RMS, low-frequency
+ * energy perceived as louder) — pull them down ~2-4 dB from the start.
+ * Hats are bright and cut through even at lower levels.
+ *
+ * Channel map:
+ *   0-5  : drums  (kick at 0 is the biggest transient → 620)
+ *   6-9  : hats   (naturally bright → 580)
+ *   10-11: perc   (short transients → 630)
+ *   12   : bass   (sub energy → 630)
+ *   13   : chords (640 — often polyphonic = louder sum)
+ *   14   : melody/lead (660)
+ *   15   : sampler (700)
+ */
+const BALANCED_FADERS: readonly number[] = [
+  620, 640, 640, 640, 640, 640,  // 0-5: drums (ch0=kick loudest)
+  580, 580, 580, 580,             // 6-9: hats
+  630, 630,                       // 10-11: perc
+  630,                            // 12: bass
+  640,                            // 13: chords
+  660,                            // 14: melody/lead
+  700,                            // 15: sampler
+];
+
+const defaultChannel = (ch = 0): ChannelMixState => ({
+  fader: BALANCED_FADERS[ch] ?? 700, muted: false, soloed: false,
   pan: 0, eqLo: 0, eqMid: 0, eqHi: 0,
   sendRev: 0, sendDly: 0,
 });
@@ -44,7 +69,7 @@ interface MixerBarState {
 }
 
 export const useMixerBarStore = create<MixerBarState>((set) => ({
-  channels: Array.from({ length: NUM_MIXER_CHANNELS }, defaultChannel),
+  channels: Array.from({ length: NUM_MIXER_CHANNELS }, (_, i) => defaultChannel(i)),
   expandedChannel: null,
 
   setFader: (ch, val) =>
