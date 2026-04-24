@@ -191,12 +191,15 @@ export const useLoopPlayerStore = create<LoopPlayerStore>((set, get) => ({
     });
 
     // Fire off BPM analysis in worker
+    // IMPORTANT: copy the channel data before sending — transferring the original
+    // ArrayBuffer detaches it from the AudioBuffer, making the loop unplayable.
     const reqId = ++_bpmWorkerReqId;
     _pendingReqs.set(reqId, idx);
     const channelData = buffer.getChannelData(0);
+    const channelDataCopy = new Float32Array(channelData); // copy, don't detach
     getBpmWorker().postMessage(
-      { id: reqId, channelData, sampleRate: buffer.sampleRate },
-      [channelData.buffer],
+      { id: reqId, channelData: channelDataCopy, sampleRate: buffer.sampleRate },
+      [channelDataCopy.buffer],
     );
   },
 

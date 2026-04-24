@@ -21,16 +21,17 @@ const CHANNELS = [
   { id: 9, label: "RIDE", color: "#3b82f6" },
   { id: 10, label: "PRC 1", color: "#8b5cf6" },
   { id: 11, label: "PRC 2", color: "#8b5cf6" },
-  { id: 12, label: "BASS", color: "#10b981" },
-  { id: 13, label: "CHRD", color: "#a78bfa" },
-  { id: 14, label: "LEAD", color: "#f472b6" },
+  { id: 12, label: "BASS",  color: "#10b981" },
+  { id: 13, label: "CHRD",  color: "#a78bfa" },
+  { id: 14, label: "LEAD",  color: "#f472b6" },
+  { id: 15, label: "SAMPL", color: "#f97316" },
 ];
 
-const NUM_CHANNELS = CHANNELS.length; // 15
+const NUM_CHANNELS = CHANNELS.length; // 16
 const MIX_SECTIONS = [
-  { id: "drums", label: "DRUM BUS", accent: "var(--ed-accent-orange)", range: [0, 5] as const, hint: "KICK / SNARE / CLAP / TOMS" },
-  { id: "tops", label: "TOPS", accent: "var(--ed-accent-blue)", range: [6, 11] as const, hint: "HATS / CYM / RIDE / PERC" },
-  { id: "music", label: "MUSIC BUS", accent: "var(--ed-accent-green)", range: [12, 14] as const, hint: "BASS / CHORDS / LEAD" },
+  { id: "drums", label: "DRUM BUS", accent: "var(--ed-accent-orange)", range: [0, 5] as const,  hint: "KICK / SNARE / CLAP / TOMS" },
+  { id: "tops",  label: "TOPS",     accent: "var(--ed-accent-blue)",   range: [6, 11] as const, hint: "HATS / CYM / RIDE / PERC" },
+  { id: "music", label: "MUSIC BUS", accent: "var(--ed-accent-green)", range: [12, 15] as const, hint: "BASS / CHORDS / LEAD / SAMPLER" },
 ] as const;
 
 const BUS_STRIPS = [

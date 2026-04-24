@@ -32,6 +32,7 @@ const CHANNELS: { id: number; label: string; color: string }[] = [
   { id: 12, label: "BASS",  color: "#10b981" },
   { id: 13, label: "CHRD",  color: "#a78bfa" },
   { id: 14, label: "LEAD",  color: "#f472b6" },
+  { id: 15, label: "SAMPL", color: "#f97316" },
 ];
 
 // ── Peak meter per channel ────────────────────────────────────────────────────

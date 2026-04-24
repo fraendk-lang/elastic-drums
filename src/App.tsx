@@ -209,13 +209,14 @@ export function App() {
         const melodyCh = audioEngine.getChannelOutput(14);
         if (melodyOut && melodyCh) melodyOut.connect(melodyCh);
 
-        // Sampler → Master gain (no dedicated strip — shares master)
+        // Sampler → Ch 15 (dedicated mixer strip: EQ, sends, fader, meter)
         samplerEngine.init(ctx);
         const samplerOut = samplerEngine.getOutput();
-        const masterGain = audioEngine.getMasterGainNode();
-        if (samplerOut && masterGain) samplerOut.connect(masterGain);
+        const samplerCh  = audioEngine.getChannelOutput(15);
+        if (samplerOut && samplerCh) samplerOut.connect(samplerCh);
 
-        // Loop Player → Master gain
+        // Loop Player → Master gain (no dedicated channel — loops share master)
+        const masterGain = audioEngine.getMasterGainNode();
         loopPlayerEngine.init(ctx);
         const loopOut = loopPlayerEngine.getOutput();
         if (loopOut && masterGain) loopOut.connect(masterGain);

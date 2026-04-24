@@ -1,13 +1,13 @@
 // src/store/mixerBarStore.ts
 /**
  * Mixer Bar Store — persistent channel state for the permanent MixerBar.
- * 15 channels (0-11: drums, 12: bass, 13: chords, 14: lead).
+ * 16 channels (0-11: drums, 12: bass, 13: chords, 14: lead, 15: sampler).
  * State persists within the session (not in IndexedDB).
  */
 
 import { create } from "zustand";
 
-export const NUM_MIXER_CHANNELS = 15;
+export const NUM_MIXER_CHANNELS = 16;
 
 /** Fader position 0-1000 (750 = 0dB unity) */
 export type FaderPos = number;
