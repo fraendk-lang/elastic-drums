@@ -35,7 +35,7 @@ export const FX_CATALOG: FxMeta[] = [
     type: "ringmod",
     label: "RING",
     params: [
-      { id: "freq", label: "Freq", min: 20, max: 2000, default: 220, unit: "Hz" },
+      { id: "freq", label: "Freq", min: 1, max: 5000, default: 220, unit: "Hz" },
       { id: "mix", label: "Mix", min: 0, max: 1, default: 0.5 },
     ],
   },
@@ -43,8 +43,9 @@ export const FX_CATALOG: FxMeta[] = [
     type: "tremolo",
     label: "TREM",
     params: [
-      { id: "rate", label: "Rate", min: 0.1, max: 20, default: 4, unit: "Hz" },
-      { id: "depth", label: "Depth", min: 0, max: 1, default: 0.5 },
+      { id: "rate",  label: "Rate",  min: 0.1, max: 20, default: 4, unit: "Hz" },
+      { id: "depth", label: "Depth", min: 0,   max: 1,  default: 0.5 },
+      { id: "wave",  label: "Wave",  min: 0,   max: 2,  default: 0 }, // 0=sine 1=square 2=triangle
     ],
   },
   {
@@ -58,10 +59,10 @@ export const FX_CATALOG: FxMeta[] = [
     type: "autofilter",
     label: "AUTO",
     params: [
-      { id: "rate", label: "Rate", min: 0.05, max: 8, default: 0.5, unit: "Hz" },
-      { id: "center", label: "Freq", min: 100, max: 8000, default: 1000, unit: "Hz" },
-      { id: "depth", label: "Depth", min: 0, max: 1, default: 0.7 },
-      { id: "res", label: "Res", min: 0.5, max: 20, default: 4 },
+      { id: "rate",   label: "Rate",  min: 0.02, max: 12,   default: 0.5,  unit: "Hz" },
+      { id: "center", label: "Freq",  min: 80,   max: 9000, default: 1200, unit: "Hz" },
+      { id: "depth",  label: "Depth", min: 0,    max: 1,    default: 0.6 },
+      { id: "res",    label: "Res",   min: 0.5,  max: 20,   default: 5.5 },
     ],
   },
 ];
@@ -83,10 +84,16 @@ function uid(): string {
 // ─── Bitcrusher via waveshaper curve ────────────────────────────
 function applyBitcrushCurve(shaper: WaveShaperNode, bits: number): void {
   const steps = Math.max(2, Math.pow(2, Math.max(1, Math.floor(bits))));
-  const curve = new Float32Array(new ArrayBuffer(2048 * 4));
-  for (let i = 0; i < 2048; i++) {
-    const x = (i / 2047) * 2 - 1;
-    curve[i] = Math.round(x * steps) / steps;
+  const n = 4096;
+  const curve = new Float32Array(new ArrayBuffer(n * 4));
+  // Seeded PRNG for deterministic TPDF dither (same curve on re-render)
+  let seed = 0x5a3c;
+  const drand = () => { seed = (seed * 1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0xffffffff; };
+  const dither = 0.38 / steps; // Triangular dither amplitude
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    const d = (drand() - drand()) * dither; // TPDF: two uniform → triangular distribution
+    curve[i] = Math.max(-1, Math.min(1, Math.round((x + d) * steps) / steps));
   }
   shaper.curve = curve;
 }
@@ -200,7 +207,7 @@ function createTremolo(ctx: AudioContext): FxSlot {
   input.connect(vca);
   vca.connect(output);
 
-  const params = { rate: 4, depth: 0.5 };
+  const params = { rate: 4, depth: 0.5, wave: 0 };
   return {
     id: uid(),
     type: "tremolo",
@@ -210,6 +217,10 @@ function createTremolo(ctx: AudioContext): FxSlot {
       params[id as keyof typeof params] = v;
       if (id === "rate") lfo.frequency.value = v;
       if (id === "depth") depthGain.gain.value = v;
+      if (id === "wave") {
+        const types: OscillatorType[] = ["sine", "square", "triangle"];
+        lfo.type = types[Math.round(v)] ?? "sine";
+      }
     },
     dispose: () => {
       try { lfo.stop(); offset.stop(); } catch { /* */ }
@@ -289,7 +300,7 @@ function createAutofilter(ctx: AudioContext): FxSlot {
   lfo.type = "sine";
   lfo.frequency.value = 0.5;
   const depthGain = ctx.createGain();
-  depthGain.gain.value = 700; // ±700Hz sweep
+  depthGain.gain.value = Math.pow(0.6, 1.6) * 4000; // Default depth=0.6 exponential
   lfo.connect(depthGain);
   depthGain.connect(filter.frequency);
   lfo.start();
@@ -306,8 +317,15 @@ function createAutofilter(ctx: AudioContext): FxSlot {
     setParam: (id, v) => {
       params[id as keyof typeof params] = v;
       if (id === "rate") lfo.frequency.value = v;
-      if (id === "center") filter.frequency.value = v;
-      if (id === "depth") depthGain.gain.value = v * 1000;
+      if (id === "center") {
+        filter.frequency.value = v;
+        // Recompute depth scale relative to new center
+        depthGain.gain.value = Math.pow(params.depth, 1.6) * 4000;
+      }
+      if (id === "depth") {
+        // Exponential depth: subtle at low values, dramatic at high
+        depthGain.gain.value = Math.pow(v, 1.6) * 4000;
+      }
       if (id === "res") filter.Q.value = v;
     },
     dispose: () => {
