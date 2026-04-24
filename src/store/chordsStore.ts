@@ -18,6 +18,7 @@ import { audioEngine } from "../audio/AudioEngine";
 import { soundFontEngine } from "../audio/SoundFontEngine";
 import { generateEuclidean, useDrumStore, getDrumNextStepTime } from "./drumStore";
 import { syncScaleToOtherStores, registerScaleStore } from "./bassStore";
+import { WorkerTimer } from "../audio/WorkerTimer";
 
 export const CHORDS_MAX_CLIP_STEPS = 256;
 
@@ -414,15 +415,13 @@ function createEmptySteps(): ChordsStep[] {
 
 // ─── Chords Scheduler ───────────────────────────────────
 
-let chordsTimer: ReturnType<typeof setInterval> | null = null;
+const _chordsWorkerTimer = new WorkerTimer(20);
 let nextChordsStepTime = 0;
 
 export function startChordsScheduler() {
   const drumNextStep = getDrumNextStepTime();
   nextChordsStepTime = drumNextStep > audioEngine.currentTime ? drumNextStep : audioEngine.currentTime + 0.05;
-  if (chordsTimer !== null) clearInterval(chordsTimer);
-
-  chordsTimer = setInterval(() => {
+  _chordsWorkerTimer.start(() => {
     const drumState = useDrumStore.getState();
     if (!drumState.isPlaying) return;
 
@@ -440,6 +439,11 @@ export function startChordsScheduler() {
       }
       return span;
     };
+
+    // Clamp: prevent runaway catch-up loop after long GC pause or suspend
+    if (nextChordsStepTime < audioEngine.currentTime - 0.5) {
+      nextChordsStepTime = audioEngine.currentTime;
+    }
 
     while (nextChordsStepTime < audioEngine.currentTime + 0.1) {
       const { steps, length, rootNote, scaleName, automationData, globalOctave } = useChordsStore.getState();
@@ -504,11 +508,11 @@ export function startChordsScheduler() {
       setChordsStep((currentStep + 1) % length);
       nextChordsStepTime += secondsPerStep;
     }
-  }, 25);
+  });
 }
 
 export function stopChordsScheduler() {
-  if (chordsTimer !== null) { clearInterval(chordsTimer); chordsTimer = null; }
+  _chordsWorkerTimer.stop();
   const now = audioEngine.currentTime;
   if (now > 0) chordsEngine.releaseChord(now);
   setChordsStep(0);

@@ -13,6 +13,7 @@ import { soundFontEngine } from "../audio/SoundFontEngine";
 import { generateEuclidean, useDrumStore, getDrumNextStepTime } from "./drumStore";
 import { syncScaleToOtherStores, registerScaleStore } from "./bassStore";
 import { generateArpNotes, DEFAULT_ARP_SETTINGS, type ArpSettings } from "../audio/Arpeggiator";
+import { WorkerTimer } from "../audio/WorkerTimer";
 
 // ─── Melody step external store ────────────────────────────
 // currentStep is intentionally NOT stored in Zustand. The scheduler updates a
@@ -886,7 +887,7 @@ function createEmptySteps(): MelodyStep[] {
 
 // ─── Melody Scheduler ───────────────────────────────────
 
-let melodyTimer: ReturnType<typeof setInterval> | null = null;
+const _melodyWorkerTimer = new WorkerTimer(20);
 let nextMelodyStepTime = 0;
 
 export function startMelodyScheduler() {
@@ -897,9 +898,7 @@ export function startMelodyScheduler() {
   nextMelodyStepTime = drumNextStep > audioEngine.currentTime
     ? drumNextStep
     : audioEngine.currentTime + 0.05;
-  if (melodyTimer !== null) clearInterval(melodyTimer);
-
-  melodyTimer = setInterval(() => {
+  _melodyWorkerTimer.start(() => {
     const drumState = useDrumStore.getState();
     if (!drumState.isPlaying) return;
 
@@ -919,6 +918,11 @@ export function startMelodyScheduler() {
       }
       return span;
     };
+
+    // Clamp: prevent runaway catch-up loop after long GC pause or suspend
+    if (nextMelodyStepTime < audioEngine.currentTime - 0.5) {
+      nextMelodyStepTime = audioEngine.currentTime;
+    }
 
     while (nextMelodyStepTime < audioEngine.currentTime + 0.1) {
       // Single getState() call per loop iteration — avoids redundant store reads.
@@ -1036,11 +1040,11 @@ export function startMelodyScheduler() {
       setMelodyStep((currentStep + 1) % length);
       nextMelodyStepTime += secondsPerStep;
     }
-  }, 25);
+  });
 }
 
 export function stopMelodyScheduler() {
-  if (melodyTimer !== null) { clearInterval(melodyTimer); melodyTimer = null; }
+  _melodyWorkerTimer.stop();
   const now = audioEngine.currentTime;
   if (now > 0) melodyEngine.releaseNote(now);
   setMelodyStep(0);

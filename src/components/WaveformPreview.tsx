@@ -30,7 +30,18 @@ export const WaveformPreview = memo(function WaveformPreview({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const draw = () => {
+    // Preallocate once — avoids Float32Array allocation every frame (major GC source)
+    let meterData: Float32Array<ArrayBuffer> | null = null;
+    let lastDrawTime = 0;
+
+    const draw = (now: DOMHighResTimeStamp) => {
+      // Throttle to ~24fps — meter animation doesn't need 60fps
+      if (now - lastDrawTime < 42) {
+        rafRef.current = requestAnimationFrame(draw);
+        return;
+      }
+      lastDrawTime = now;
+
       const meter = audioEngine.getChannelMeter(voiceIndex);
       const analyser = audioEngine.getChannelAnalyser(voiceIndex);
 
@@ -48,18 +59,20 @@ export const WaveformPreview = memo(function WaveformPreview({
         return;
       }
 
-      // Get waveform data
-      const data = new Float32Array(analyser.fftSize);
-      analyser.getFloatTimeDomainData(data);
+      // Preallocate or reuse Float32Array
+      if (!meterData || meterData.length !== analyser.fftSize) {
+        meterData = new Float32Array(analyser.fftSize) as Float32Array<ArrayBuffer>;
+      }
+      analyser.getFloatTimeDomainData(meterData);
 
       // Draw waveform
       ctx.strokeStyle = color;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
 
-      const step = Math.max(1, Math.floor(data.length / width));
+      const step = Math.max(1, Math.floor(meterData.length / width));
       for (let i = 0; i < width; i++) {
-        const sample = data[i * step] ?? 0;
+        const sample = meterData[i * step] ?? 0;
         const y = (1 - sample) * height / 2;
         if (i === 0) ctx.moveTo(0, y);
         else ctx.lineTo(i, y);

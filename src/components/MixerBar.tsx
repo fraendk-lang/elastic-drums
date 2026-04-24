@@ -43,17 +43,30 @@ function useMeterData() {
   const rafRef = useRef(0);
 
   useEffect(() => {
-    const draw = () => {
+    let meterBuf: Float32Array<ArrayBuffer> | null = null;
+    let lastT = 0;
+
+    const draw = (now: DOMHighResTimeStamp) => {
+      // Throttle to ~20fps (VU meters don't need 60fps)
+      if (now - lastT < 50) {
+        rafRef.current = requestAnimationFrame(draw);
+        return;
+      }
+      lastT = now;
+
       for (let i = 0; i < NUM_MIXER_CHANNELS; i++) {
         const canvas = canvasRefs.current[i];
         if (!canvas) continue;
         const analyser = audioEngine.getChannelAnalyser(i);
         if (!analyser) continue;
 
-        const buf = new Float32Array(analyser.fftSize);
-        analyser.getFloatTimeDomainData(buf);
+        // Reuse buffer — avoids new Float32Array(2048) allocation every frame
+        if (!meterBuf || meterBuf.length < analyser.fftSize) {
+          meterBuf = new Float32Array(analyser.fftSize) as Float32Array<ArrayBuffer>;
+        }
+        analyser.getFloatTimeDomainData(meterBuf);
         let peak = 0;
-        for (let j = 0; j < buf.length; j++) peak = Math.max(peak, Math.abs(buf[j]!));
+        for (let j = 0; j < analyser.fftSize; j++) peak = Math.max(peak, Math.abs(meterBuf[j]!));
         const db = peak > 0 ? 20 * Math.log10(peak) : -Infinity;
         // Peak hold: decay 20dB/s
         peakRef.current[i] = Math.max(peakRef.current[i]! - 0.33, db);

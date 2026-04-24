@@ -10,6 +10,7 @@ import { bassEngine, scaleNote, SCALES, type BassStep, type BassParams, DEFAULT_
 import { audioEngine } from "../audio/AudioEngine";
 import { soundFontEngine } from "../audio/SoundFontEngine";
 import { generateEuclidean, useDrumStore, getDrumNextStepTime } from "./drumStore";
+import { WorkerTimer } from "../audio/WorkerTimer";
 
 export const BASS_MAX_CLIP_STEPS = 256;
 
@@ -466,15 +467,25 @@ function createEmptySteps(): BassStep[] {
 
 // ─── Bass Scheduler ──────────────────────────────────────
 
-let bassTimer: ReturnType<typeof setInterval> | null = null;
+function getLegacyTieLength(steps: BassStep[], startIndex: number, sequenceLength: number): number {
+  let span = 1;
+  for (let i = 1; i < sequenceLength; i++) {
+    const nextIdx = (startIndex + i) % sequenceLength;
+    const next = steps[nextIdx];
+    if (!next?.active || !next.tie) break;
+    span += 1;
+    if (nextIdx === startIndex) break;
+  }
+  return span;
+}
+
+const _bassWorkerTimer = new WorkerTimer(20);
 let nextBassStepTime = 0;
 
 export function startBassScheduler() {
   const drumNextStep = getDrumNextStepTime();
   nextBassStepTime = drumNextStep > audioEngine.currentTime ? drumNextStep : audioEngine.currentTime + 0.05;
-  if (bassTimer !== null) clearInterval(bassTimer);
-
-  bassTimer = setInterval(() => {
+  _bassWorkerTimer.start(() => {
     const drumState = useDrumStore.getState();
     if (!drumState.isPlaying) return;
 
@@ -482,17 +493,10 @@ export function startBassScheduler() {
     bassEngine.setBpm(bpm);
     const secondsPerStep = 60.0 / bpm / 4;
 
-    const getLegacyTieLength = (steps: BassStep[], startIndex: number, sequenceLength: number) => {
-      let span = 1;
-      for (let i = 1; i < sequenceLength; i++) {
-        const nextIdx = (startIndex + i) % sequenceLength;
-        const next = steps[nextIdx];
-        if (!next?.active || !next.tie) break;
-        span += 1;
-        if (nextIdx === startIndex) break;
-      }
-      return span;
-    };
+    // Clamp: prevent runaway catch-up loop after long GC pause or suspend
+    if (nextBassStepTime < audioEngine.currentTime - 0.5) {
+      nextBassStepTime = audioEngine.currentTime;
+    }
 
     while (nextBassStepTime < audioEngine.currentTime + 0.1) {
       const { steps, length, rootNote, scaleName, automationData, globalOctave } = useBassStore.getState();
@@ -561,11 +565,11 @@ export function startBassScheduler() {
       setBassStep((currentStep + 1) % length);
       nextBassStepTime += secondsPerStep;
     }
-  }, 25);
+  });
 }
 
 export function stopBassScheduler() {
-  if (bassTimer !== null) { clearInterval(bassTimer); bassTimer = null; }
+  _bassWorkerTimer.stop();
   const now = audioEngine.currentTime;
   if (now > 0) bassEngine.releaseNote(now);
   setBassStep(0);

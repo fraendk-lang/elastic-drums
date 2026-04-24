@@ -144,29 +144,33 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
   // Meter animation loop
   useEffect(() => {
     if (!isOpen) return;
-    const update = () => {
-      const m: MeterData[] = [];
-      for (let i = 0; i < NUM_CHANNELS; i++) {
-        const d = audioEngine.getChannelMeter(i);
-        m.push({ rmsDb: d.rmsDb, peakDb: d.peakDb });
+    let lastT = 0;
+    const update = (now: DOMHighResTimeStamp) => {
+      if (now - lastT >= 66) { // ~15fps — setState at 60fps causes 240 re-renders/sec
+        lastT = now;
+        const m: MeterData[] = [];
+        for (let i = 0; i < NUM_CHANNELS; i++) {
+          const d = audioEngine.getChannelMeter(i);
+          m.push({ rmsDb: d.rmsDb, peakDb: d.peakDb });
+        }
+        const nextGroupMeters = Object.fromEntries(
+          BUS_STRIPS.map((bus) => {
+            const meter = audioEngine.getGroupMeter(bus.id);
+            return [bus.id, { rmsDb: meter.rmsDb, peakDb: meter.peakDb }];
+          })
+        );
+        const nextReturnMeters = Object.fromEntries(
+          RETURN_STRIPS.map((bus) => {
+            const meter = audioEngine.getReturnMeter(bus.id);
+            return [bus.id, { rmsDb: meter.rmsDb, peakDb: meter.peakDb }];
+          })
+        );
+        const mm = audioEngine.getMasterMeter();
+        setMeters(m);
+        setGroupMeters(nextGroupMeters);
+        setReturnMeters(nextReturnMeters);
+        setMasterMeter({ rmsDb: mm.rmsDb, peakDb: mm.peakDb });
       }
-      const nextGroupMeters = Object.fromEntries(
-        BUS_STRIPS.map((bus) => {
-          const meter = audioEngine.getGroupMeter(bus.id);
-          return [bus.id, { rmsDb: meter.rmsDb, peakDb: meter.peakDb }];
-        })
-      );
-      const nextReturnMeters = Object.fromEntries(
-        RETURN_STRIPS.map((bus) => {
-          const meter = audioEngine.getReturnMeter(bus.id);
-          return [bus.id, { rmsDb: meter.rmsDb, peakDb: meter.peakDb }];
-        })
-      );
-      const mm = audioEngine.getMasterMeter();
-      setMeters(m);
-      setGroupMeters(nextGroupMeters);
-      setReturnMeters(nextReturnMeters);
-      setMasterMeter({ rmsDb: mm.rmsDb, peakDb: mm.peakDb });
       rafRef.current = requestAnimationFrame(update);
     };
     rafRef.current = requestAnimationFrame(update);

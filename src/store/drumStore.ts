@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { audioEngine, VOICE_PARAM_DEFS } from "../audio/AudioEngine";
 import { sampleManager } from "../audio/SampleManager";
+import { WorkerTimer } from "../audio/WorkerTimer";
 
 // Scene store reference — set lazily to avoid circular imports
 let _sceneStoreRef: {
@@ -20,6 +21,9 @@ function getSceneStore() { return _sceneStoreRef; }
 // Without this the scheduler (20 ms ticks) would queue a loadScene every tick
 // until the setTimeout fires, causing the scene to load multiple times.
 let _sceneLoadPending = false;
+
+// Preallocated to avoid new Array(12) allocation on every scheduler step
+const _trigState: boolean[] = new Array(12).fill(false);
 
 let _clipStoreRef: { getState: () => { resolveQueuedClips: () => void } } | null = null;
 export function setClipStoreRef(ref: typeof _clipStoreRef) { _clipStoreRef = ref; }
@@ -378,7 +382,7 @@ const PRESET_PATTERNS: PatternData[] = [
 // ─── Sequencer Scheduler ─────────────────────────────────
 // Look-ahead scheduler with swing support
 
-let schedulerTimer: ReturnType<typeof setInterval> | null = null;
+const _schedulerWorkerTimer = new WorkerTimer(20);
 let nextStepTime = 0;
 let transportStartTime = 0; // AudioContext time of step 0, bar 1
 
@@ -394,9 +398,7 @@ function startScheduler() {
   cycleCount = 0;
   prevStepTriggered = new Array(12).fill(false);
 
-  if (schedulerTimer !== null) clearInterval(schedulerTimer);
-
-  schedulerTimer = setInterval(() => {
+  _schedulerWorkerTimer.start(() => {
     const state = useDrumStore.getState();
     if (!state.isPlaying) return;
 
@@ -435,8 +437,8 @@ function startScheduler() {
         }
       }
 
-      // Track trigger state for conditional trigs
-      const currentTrigState: boolean[] = new Array(12).fill(false);
+      // Track trigger state for conditional trigs (reuse preallocated array)
+      _trigState.fill(false);
 
       // Check if any track is soloed — if so, only soloed tracks play
       const hasSolo = activePattern.tracks.some((t) => t?.solo);
@@ -471,7 +473,7 @@ function startScheduler() {
           if (Math.random() * 100 >= step.probability) continue;
         }
 
-        currentTrigState[track] = true;
+        _trigState[track] = true;
 
         // Apply P-Locks
         const locks = step.paramLocks;
@@ -521,7 +523,7 @@ function startScheduler() {
       }
 
       // Update prev-step state for PRE/!PRE conditions
-      prevStepTriggered = currentTrigState;
+      prevStepTriggered = [..._trigState];
 
       // Advance step
       const nextStep = (currentStep + 1) % activePattern.length;
@@ -629,14 +631,11 @@ function startScheduler() {
       if (nextStep === 0) useDrumStore.setState({ barCycle: cycleCount });
       nextStepTime += stepDuration;
     }
-  }, 20); // 20ms tick for tighter timing resolution
+  }); // WorkerTimer 20ms
 }
 
 function stopScheduler() {
-  if (schedulerTimer !== null) {
-    clearInterval(schedulerTimer);
-    schedulerTimer = null;
-  }
+  _schedulerWorkerTimer.stop();
   // Clear all active P-Lock timers to prevent memory leaks
   activePLockTimers.forEach(timerId => clearTimeout(timerId));
   activePLockTimers.clear();
