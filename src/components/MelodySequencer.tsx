@@ -3,7 +3,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState, memo, useSyncExternalStore } from "react";
-import { useMelodyStore, MELODY_PRESETS, MELODY_STRATEGIES, MELODY_SIGNATURE_PRESET_NAMES, LAYER_MODES, melodyCurrentStepStore } from "../store/melodyStore";
+import { useMelodyStore, MELODY_PRESETS, MELODY_STRATEGIES, MELODY_SIGNATURE_PRESET_NAMES, LAYER_MODES, melodyCurrentStepStore, getMelodyCurrentStep } from "../store/melodyStore";
 import { MELODY_INSTRUMENTS, findInstrumentOption } from "../audio/SoundFontEngine";
 import { SCALES, ROOT_NOTES, scaleNote } from "../audio/BassEngine";
 import { useDrumStore } from "../store/drumStore";
@@ -210,6 +210,102 @@ const MelodyPlayheadOverlay = memo(function MelodyPlayheadOverlay({ pageOffset, 
   );
 });
 
+// ─── AutomationLane wrapper ────────────────────────────────────────────────────
+// Subscribes to the external step store so only THIS component re-renders on
+// each tick, not the entire MelodySequencer.
+type AutomationLaneAllProps = React.ComponentProps<typeof AutomationLane>;
+
+const MelodyAutomationLaneWrapper = memo(function MelodyAutomationLaneWrapper(
+  props: Omit<AutomationLaneAllProps, "currentStep">,
+) {
+  const currentStep = useSyncExternalStore(
+    melodyCurrentStepStore.subscribe,
+    melodyCurrentStepStore.getSnapshot,
+  );
+  return <AutomationLane {...props} currentStep={currentStep} />;
+});
+
+// ─── Velocity lane ─────────────────────────────────────────────────────────────
+// Memoized; subscribes to external step store for isCurrent highlight.
+interface VelocityLaneProps {
+  steps:                ReturnType<typeof useMelodyStore.getState>["steps"];
+  length:               number;
+  pageOffset:           number;
+  velocityLaneExpanded: boolean;
+  isPlaying:            boolean;
+  onDraw:               (e: React.MouseEvent<HTMLDivElement>, absStep: number) => void;
+}
+const MelodyVelocityLane = memo(function MelodyVelocityLane({
+  steps, length, pageOffset, velocityLaneExpanded, isPlaying, onDraw,
+}: VelocityLaneProps) {
+  const currentStep = useSyncExternalStore(
+    melodyCurrentStepStore.subscribe,
+    melodyCurrentStepStore.getSnapshot,
+  );
+  return (
+    <>
+      {Array.from({ length: 16 }, (_, i) => {
+        const absStep = pageOffset + i;
+        const step    = steps[absStep]!;
+        const velocity = step.velocity ?? (step.accent ? 1 : 0.7);
+        const isCurrent = isPlaying && currentStep === absStep;
+        return (
+          <div
+            key={`vel-${i}`}
+            className={`relative flex-1 rounded-md border cursor-ns-resize transition-colors
+              ${absStep >= length ? "opacity-25" : ""}
+              ${isCurrent
+                ? "border-[var(--ed-accent-melody)]/45 bg-[var(--ed-accent-melody)]/[0.06]"
+                : "border-white/6 bg-white/[0.025] hover:bg-white/[0.045]"}`}
+            onMouseDown={(e) => onDraw(e, absStep)}
+            onMouseMove={(e) => { if (e.buttons === 1) onDraw(e, absStep); }}
+          >
+            {step.active && (
+              <div
+                className="absolute inset-x-[3px] bottom-[3px] rounded-sm shadow-[0_0_14px_rgba(244,114,182,0.16)]"
+                style={{
+                  height: `${Math.max(12, velocity * 100)}%`,
+                  background: step.accent
+                    ? "linear-gradient(180deg, rgba(248,113,113,0.9), rgba(244,114,182,0.7))"
+                    : "linear-gradient(180deg, rgba(251,207,232,0.9), rgba(244,114,182,0.45))",
+                }}
+              />
+            )}
+            {step.active && velocityLaneExpanded && (
+              <span className="pointer-events-none absolute left-1 top-1 text-[8px] font-black text-white/50">
+                {Math.round(velocity * 100)}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+});
+
+// ─── SonarKreis container ─────────────────────────────────────────────────────
+// Subscribes to external step store to derive current MIDI note.
+interface SonarContainerProps {
+  steps:        ReturnType<typeof useMelodyStore.getState>["steps"];
+  isPlaying:    boolean;
+  rootNote:     number;
+  scaleName:    string;
+  globalOctave: number;
+}
+const MelodySonarKreisContainer = memo(function MelodySonarKreisContainer({
+  steps, isPlaying, rootNote, scaleName, globalOctave,
+}: SonarContainerProps) {
+  const currentStep = useSyncExternalStore(
+    melodyCurrentStepStore.subscribe,
+    melodyCurrentStepStore.getSnapshot,
+  );
+  const currentActiveStep = isPlaying ? steps[currentStep] : null;
+  const currentMidi = currentActiveStep?.active
+    ? scaleNote(rootNote, scaleName, currentActiveStep.note, currentActiveStep.octave + globalOctave)
+    : null;
+  return <SonarKreis midi={currentMidi} isPlaying={isPlaying} active={currentMidi !== null} />;
+});
+
 export function MelodySequencer() {
   const {
     steps, length, selectedPage, rootNote, rootName, scaleName, params, presetIndex, strategyIndex, instrument,
@@ -226,12 +322,6 @@ export function MelodySequencer() {
   } = useMelodyStore();
 
   const isPlaying = useDrumStore((s) => s.isPlaying);
-  // currentStep lives in an external store (not Zustand) so only this component and
-  // MelodyPlayheadOverlay re-render on each step — the heavy MelodyPianoRollGrid stays memoized.
-  const currentStep = useSyncExternalStore(
-    melodyCurrentStepStore.subscribe,
-    melodyCurrentStepStore.getSnapshot,
-  );
   const dragRef = useRef<{ step: number; startY: number; startNote: number } | null>(null);
   const [selectedStep, setSelectedStep] = useState<number | null>(null);
   const [durationDrag, setDurationDrag] = useState<{ sourceStep: number; endStep: number } | null>(null);
@@ -344,12 +434,9 @@ export function MelodySequencer() {
 
   const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
   const maxNote = Math.max(7, scale.length + 3);
-
-  // Current midi note for Sonar Kreis — only set when a step is actively playing
-  const currentActiveStep = isPlaying ? steps[currentStep] : null;
-  const currentMidi = currentActiveStep?.active
-    ? scaleNote(rootNote, scaleName, currentActiveStep.note, currentActiveStep.octave + globalOctave)
-    : null;
+  // currentStep only needed for non-reactive reads (e.g. motion recording in setParam).
+  // Step-reactive UI is handled by the memo wrappers above.
+  void getMelodyCurrentStep; // keep import used; actual reads happen in wrappers
 
   return (
     <div className="border-t border-[var(--ed-accent-melody)]/15 bg-gradient-to-b from-[#0d0a0c] to-[#0a080a]">
@@ -742,13 +829,12 @@ export function MelodySequencer() {
       </div>
 
       {/* Automation Lane — full-width, collapsible */}
-      <AutomationLane
+      <MelodyAutomationLaneWrapper
         params={MELODY_AUTO_PARAMS}
         selectedParam={automationParam}
         values={automationData[automationParam] ?? []}
         length={length}
         pageOffset={pageOffset}
-        currentStep={currentStep}
         isPlaying={isPlaying}
         color="var(--ed-accent-melody)"
         onSelectParam={setAutomationParam}
@@ -791,46 +877,24 @@ export function MelodySequencer() {
               <span>60</span>
               <span>20</span>
             </div>
-            {Array.from({ length: 16 }, (_, i) => {
-              const absStep = pageOffset + i;
-              const step = steps[absStep]!;
-              const velocity = step.velocity ?? (step.accent ? 1 : 0.7);
-              const isCurrent = isPlaying && currentStep === absStep;
-              return (
-                <div
-                  key={`vel-${i}`}
-                  className={`relative flex-1 rounded-md border cursor-ns-resize transition-colors ${absStep >= length ? "opacity-25" : ""} ${isCurrent ? "border-[var(--ed-accent-melody)]/45 bg-[var(--ed-accent-melody)]/[0.06]" : "border-white/6 bg-white/[0.025] hover:bg-white/[0.045]"}`}
-                  onMouseDown={(e) => handleVelocityDraw(e, absStep)}
-                  onMouseMove={(e) => {
-                    if (e.buttons === 1) handleVelocityDraw(e, absStep);
-                  }}
-                >
-                  {step.active && (
-                    <div
-                      className="absolute inset-x-[3px] bottom-[3px] rounded-sm shadow-[0_0_14px_rgba(244,114,182,0.16)]"
-                      style={{
-                        height: `${Math.max(12, velocity * 100)}%`,
-                        background: step.accent
-                          ? "linear-gradient(180deg, rgba(248,113,113,0.9), rgba(244,114,182,0.7))"
-                          : "linear-gradient(180deg, rgba(251,207,232,0.9), rgba(244,114,182,0.45))",
-                      }}
-                    />
-                  )}
-                  {step.active && velocityLaneExpanded && (
-                    <span className="pointer-events-none absolute left-1 top-1 text-[8px] font-black text-white/50">
-                      {Math.round(velocity * 100)}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          {/* Sonar Kreis — lives here so it never touches the AutomationLane flex row */}
-          <div className="hidden sm:flex w-32 shrink-0 items-center justify-center">
-            <SonarKreis
-              midi={currentMidi}
+            {/* Velocity bars — step-reactive via external store subscription in MelodyVelocityLane */}
+            <MelodyVelocityLane
+              steps={steps}
+              length={length}
+              pageOffset={pageOffset}
+              velocityLaneExpanded={velocityLaneExpanded}
               isPlaying={isPlaying}
-              active={currentMidi !== null}
+              onDraw={handleVelocityDraw}
+            />
+          </div>
+          {/* Sonar Kreis — step-reactive via MelodySonarKreisContainer */}
+          <div className="hidden sm:flex w-32 shrink-0 items-center justify-center">
+            <MelodySonarKreisContainer
+              steps={steps}
+              isPlaying={isPlaying}
+              rootNote={rootNote}
+              scaleName={scaleName}
+              globalOctave={globalOctave}
             />
           </div>
         </div>
