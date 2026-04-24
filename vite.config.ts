@@ -23,13 +23,38 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
-        manualChunks: {
+        manualChunks(id) {
+          // ── Vendor splits ─────────────────────────────────────
           // React — stable, rarely changes, long-lived browser cache
-          "vendor-react": ["react", "react-dom"],
+          if (id.includes("node_modules/react") || id.includes("node_modules/react-dom")) {
+            return "vendor-react";
+          }
           // Zustand state library
-          "vendor-state": ["zustand"],
+          if (id.includes("node_modules/zustand")) {
+            return "vendor-state";
+          }
           // SoundFont player + MIDI parser — heavy, only needed once user loads soundfonts or MIDI
-          "vendor-audio": ["smplr", "@tonejs/midi"],
+          if (id.includes("node_modules/smplr") || id.includes("node_modules/@tonejs")) {
+            return "vendor-audio";
+          }
+
+          // ── App splits ────────────────────────────────────────
+          // Sample library catalog — 400KB, lazy-loaded via SampleBrowser
+          if (id.includes("SampleLibrary")) {
+            return "chunk-sample-library";
+          }
+          // Audio engines — large DSP modules, shared across all tabs
+          if (id.includes("/src/audio/")) {
+            return "chunk-audio";
+          }
+          // Zustand stores — separate from engines, change more often
+          if (id.includes("/src/store/")) {
+            return "chunk-stores";
+          }
+          // Factory kit data — static JSON-like data
+          if (id.includes("/src/kits/")) {
+            return "chunk-kits";
+          }
         },
       },
     },

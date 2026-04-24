@@ -336,9 +336,13 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
   const durSec   = (dur % 60).toFixed(1).padStart(4, "0");
   const durLabel = slot.buffer ? `${durMin}:${durSec}` : "";
 
-  // Number of bars in the loop region
-  const numBars = slot.loopEndSeconds > slot.firstBeatOffset && slot.originalBpm > 0
-    ? Math.round((slot.loopEndSeconds - slot.firstBeatOffset) / (60 / slot.originalBpm / 4) / 4)
+  // Number of bars in the loop region.
+  // loopDuration / (4 beats/bar × 60s/bpm-beat) = loopDuration × originalBpm / 240
+  const loopRegionDur = slot.loopEndSeconds > slot.firstBeatOffset
+    ? slot.loopEndSeconds - slot.firstBeatOffset
+    : slot.duration - slot.firstBeatOffset;
+  const numBars = loopRegionDur > 0.05 && slot.originalBpm > 0
+    ? Math.round((loopRegionDur * slot.originalBpm) / 240)
     : 0;
 
   return (
@@ -518,14 +522,16 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
           <div className="flex items-center gap-1 shrink-0">
             <span className="text-[6px] font-bold tracking-[0.1em] text-white/25">LOCK</span>
             {([0.5, 1, 2, 4, 8] as const).map((bars) => {
-              const barDur    = (60 / globalBpm) * 4;
-              const loopEnd   = slot.firstBeatOffset + bars * barDur;
-              // Active = current region matches this bar count at globalBpm within half a beat
-              const currentLoopEnd = slot.loopEndSeconds > slot.firstBeatOffset
-                ? slot.loopEndSeconds
-                : slot.duration;
-              const isActive = Math.abs(currentLoopEnd - loopEnd) < (60 / globalBpm) * 0.5
-                && Math.abs(slot.originalBpm - globalBpm) < 1;
+              // Active = this LOCK was the last one applied.
+              // setLoopRegion sets: originalBpm = bars × 240 / usableDuration
+              //                     loopEndSeconds = duration (full buffer)
+              const usableDuration = slot.duration - slot.firstBeatOffset;
+              const expectedBpm   = usableDuration > 0.1
+                ? (bars * 240) / usableDuration
+                : 0;
+              const isActive = expectedBpm > 0
+                && Math.abs(slot.originalBpm - expectedBpm) < 1
+                && Math.abs(slot.loopEndSeconds - slot.duration) < 0.05;
               return (
                 <button
                   key={bars}

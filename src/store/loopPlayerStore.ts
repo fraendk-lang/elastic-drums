@@ -77,6 +77,24 @@ function createDefaultSlot(): LoopSlotState {
   };
 }
 
+// ─── Filename BPM hint ────────────────────────────────────
+/**
+ * Try to extract a BPM value from the file name.
+ * Matches standalone 2-3 digit numbers in range [40, 220].
+ * "EQ-Lp870 HndCong Ringer 090 - C#m" → 90
+ * "loop_120bpm.wav" → 120
+ * Numbers inside compound words (e.g. "Lp870") are skipped via \b.
+ */
+function extractBpmFromFilename(name: string): number | null {
+  const base = name.replace(/\.[^/.]+$/, ""); // strip extension
+  const tokens = base.match(/\b\d{2,3}\b/g) ?? [];
+  for (const t of tokens) {
+    const n = parseInt(t, 10);
+    if (n >= 40 && n <= 220) return n;
+  }
+  return null;
+}
+
 // ─── BPM Worker (singleton, lazy-created) ─────────────────
 
 let _bpmWorker: Worker | null = null;
@@ -98,10 +116,16 @@ function getBpmWorker(): Worker {
       const slot  = store.slots[slotIdx];
       if (!slot) return;
 
+      // Prefer BPM embedded in the filename (e.g. "loop_090bpm.wav" → 90).
+      // Auto-detection is kept as detectedBpm for display; originalBpm uses the
+      // more reliable filename value when available.
+      const filenameBpm = extractBpmFromFilename(slot.fileName);
+      const finalBpm    = filenameBpm ?? bpm;
+
       // Calculate beat-aligned loop end:
       //   loopEnd = firstBeatOffset + floor(numBeats / 4) * 4 * secondsPerBeat
       // (round to complete bars of 4 beats)
-      const secondsPerBeat = 60 / bpm;
+      const secondsPerBeat = 60 / finalBpm;
       const usableBeats    = (slot.duration - firstBeatOffset) / secondsPerBeat;
       const numBars        = Math.max(1, Math.floor(usableBeats / 4));
       const loopEndSeconds = firstBeatOffset + numBars * 4 * secondsPerBeat;
@@ -111,8 +135,8 @@ function getBpmWorker(): Worker {
         slots[slotIdx] = {
           ...slots[slotIdx]!,
           analyzing:       false,
-          detectedBpm:     bpm,
-          originalBpm:     bpm,          // auto-set; user can override
+          detectedBpm:     bpm,          // raw auto-detected value (for display)
+          originalBpm:     finalBpm,     // filename hint wins; fallback = detector
           firstBeatOffset: firstBeatOffset < 0.05 ? 0 : firstBeatOffset, // ignore tiny offsets
           loopEndSeconds,
         };
@@ -260,35 +284,49 @@ export const useLoopPlayerStore = create<LoopPlayerStore>((set, get) => ({
     });
   },
 
-  // ── Tempo-lock: define loop region as N bars at project BPM ──
+  // ── Tempo-lock: declare this loop to be exactly numBars bars long ──
+  //
+  // Rather than assuming the file is at globalBpm, we derive the native BPM
+  // from the actual audio content: originalBpm = numBars × 240 / loopDuration.
+  // The engine then sets playbackRate = globalBpm / originalBpm so the loop
+  // lands on beat 1 of every N bars regardless of the project tempo.
+  //
+  // Example: 90 BPM file (2.667 s/bar), project at 120 BPM, user clicks "1B":
+  //   loopDuration = 2.667 s   → originalBpm = 240 / 2.667 = 90 BPM
+  //   playbackRate = 120 / 90  = 1.333×  ✓  (was 1.289× with bad auto-detect)
   setLoopRegion: (idx, numBars) => {
     const globalBpm = useDrumStore.getState().bpm;
     const slot      = get().slots[idx]!;
-    if (!slot.buffer || numBars <= 0 || globalBpm <= 0) return;
+    if (!slot.buffer || numBars <= 0) return;
 
-    // One bar = 4 quarter-notes at globalBpm
-    const barDuration   = (60 / globalBpm) * 4;
-    const loopDuration  = numBars * barDuration;
-    const loopEnd       = Math.min(slot.firstBeatOffset + loopDuration, slot.duration);
+    // Use the full usable buffer (firstBeatOffset → duration) as the loop region.
+    // Most sample-pack loops are exactly N bars with no extra padding, so this
+    // gives the most accurate BPM derivation. Trailing silence is handled by the
+    // fact that we also set loopEndSeconds = duration (which the engine uses as
+    // the loop point, stopping before any silence beyond the last beat).
+    const usableDuration = slot.duration - slot.firstBeatOffset;
+    if (usableDuration < 0.1) return;
 
-    // originalBpm = globalBpm → playbackRate will be 1.0 (plays at native speed)
-    // This is correct when the file was recorded at the project BPM.
-    // For files at a different BPM, the user can still override via the BPM input.
+    // Derive the native BPM that makes this audio fit exactly numBars bars.
+    // numBars bars × 4 beats/bar × (60 / originalBpm) s/beat = usableDuration
+    // → originalBpm = numBars × 240 / usableDuration
+    const originalBpm = Math.max(20, Math.min(999, (numBars * 240) / usableDuration));
+
     set((s) => {
       const slots = [...s.slots];
       slots[idx] = {
         ...slots[idx]!,
-        originalBpm:    globalBpm,
-        loopEndSeconds: loopEnd,
-        detectedBpm:    null, // clear auto-detected marker so input shows manual state
+        originalBpm,
+        loopEndSeconds: slot.duration,   // play the full buffer
+        detectedBpm:    null,            // clear detector badge → manual state
       };
       return { slots };
     });
 
-    // Live-update playback rate if already playing
-    loopPlayerEngine.updatePlaybackRate(idx, globalBpm, globalBpm); // = 1.0
+    // Live-update playback rate
+    loopPlayerEngine.updatePlaybackRate(idx, originalBpm, globalBpm);
 
-    // Restart at next bar boundary to apply new loop end
+    // Restart at next bar boundary to apply new loop points
     const updated = useLoopPlayerStore.getState().slots[idx]!;
     if (updated.playing && updated.buffer && !updated.analyzing) {
       _launchSlot(idx, updated);

@@ -1,11 +1,15 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, lazy, Suspense } from "react";
 import { useDrumStore } from "../store/drumStore";
 import { useOverlayStore } from "../store/overlayStore";
 import { useCustomKitStore } from "../store/customKitStore";
 import { sampleManager } from "../audio/SampleManager";
 import { WaveformPreview } from "./WaveformPreview";
-import { SampleBrowser } from "./SampleBrowser";
 import type { LibrarySample } from "../audio/SampleLibrary";
+
+// Lazy-load SampleBrowser (pulls in the 400KB sample catalog — only needed on demand)
+const SampleBrowser = lazy(() =>
+  import("./SampleBrowser").then((m) => ({ default: m.SampleBrowser }))
+);
 
 const VOICE_LABELS = [
   "KICK", "SNARE", "CLAP", "TOM LO",
@@ -287,14 +291,16 @@ export function PadGrid() {
         folder = stock library &middot; Shift-click = file import &middot; drop audio &middot; right-click to clear
       </p>
 
-      {/* Sample Browser Modal */}
-      <SampleBrowser
-        isOpen={overlay.isOpen("sampleBrowser") && browserVoiceIndex !== null}
-        voiceIndex={browserVoiceIndex ?? 0}
-        selectedSampleId={browserVoiceIndex !== null ? voiceSamples[browserVoiceIndex] ?? undefined : undefined}
-        onClose={() => overlay.closeOverlay("sampleBrowser")}
-        onSelect={handleSampleSelect}
-      />
+      {/* Sample Browser Modal — lazy-loaded so the 400KB catalog doesn't block initial render */}
+      <Suspense fallback={null}>
+        <SampleBrowser
+          isOpen={overlay.isOpen("sampleBrowser") && browserVoiceIndex !== null}
+          voiceIndex={browserVoiceIndex ?? 0}
+          selectedSampleId={browserVoiceIndex !== null ? voiceSamples[browserVoiceIndex] ?? undefined : undefined}
+          onClose={() => overlay.closeOverlay("sampleBrowser")}
+          onSelect={handleSampleSelect}
+        />
+      </Suspense>
     </div>
   );
 }
