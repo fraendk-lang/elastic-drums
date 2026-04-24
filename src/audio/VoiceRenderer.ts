@@ -306,6 +306,12 @@ export class VoiceRenderer {
     eqLow.connect(eqMidCut);
     eqMidCut.connect(master);
     master.connect(out);
+    // Schedule graph cleanup — prevents ghost node accumulation in audio graph.
+    // After decaySec the master gain is already at 0.001 (effectively silent).
+    // Disconnect is safe: it removes the dead subgraph from audio graph traversal.
+    setTimeout(() => {
+      try { master.disconnect(); } catch { /* already disconnected */ }
+    }, Math.max(200, (t - ctx.currentTime + decaySec + 0.5) * 1000));
 
     // Main body oscillator — sophisticated 3-stage pitch sweep
     const osc = ctx.createOscillator();
@@ -414,6 +420,10 @@ export class VoiceRenderer {
     master.gain.setValueAtTime(vol, t);
     master.gain.exponentialRampToValueAtTime(0.001, t + decaySec + 0.05);
     master.connect(out);
+    // Schedule graph cleanup — prevents ghost node accumulation in audio graph.
+    setTimeout(() => {
+      try { master.disconnect(); } catch { /* already disconnected */ }
+    }, Math.max(200, (t - ctx.currentTime + decaySec + 0.5) * 1000));
 
     // Body — three oscillators at 909 ratios (fundamental, 1.5x, 2.67x)
     const osc1 = ctx.createOscillator();
@@ -532,6 +542,10 @@ export class VoiceRenderer {
     master.gain.setValueAtTime(vol, t);
     master.gain.exponentialRampToValueAtTime(0.001, t + decaySec + 0.1);
     master.connect(out);
+    // Schedule graph cleanup — prevents ghost node accumulation in audio graph.
+    setTimeout(() => {
+      try { master.disconnect(); } catch { /* already disconnected */ }
+    }, Math.max(200, (t - ctx.currentTime + decaySec + 0.5) * 1000));
 
     // Dual bandpass for wider character
     const bpf = ctx.createBiquadFilter();
@@ -617,6 +631,10 @@ export class VoiceRenderer {
 
     warmth.connect(master);
     master.connect(out);
+    // Schedule graph cleanup — prevents ghost node accumulation in audio graph.
+    setTimeout(() => {
+      try { master.disconnect(); } catch { /* already disconnected */ }
+    }, Math.max(200, (t - ctx.currentTime + decaySec + 0.5) * 1000));
 
     // Main tone — deeper pitch sweep for more character
     const osc = ctx.createOscillator();
@@ -721,6 +739,10 @@ export class VoiceRenderer {
       master.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
     }
     master.connect(out);
+    // Schedule graph cleanup — prevents ghost node accumulation in audio graph.
+    setTimeout(() => {
+      try { master.disconnect(); } catch { /* already disconnected */ }
+    }, Math.max(200, (t - ctx.currentTime + decaySec + 0.5) * 1000));
 
     // 6th-order highpass (cascade 3 biquads) for steeper rolloff
     const hpf1 = ctx.createBiquadFilter();
@@ -825,6 +847,10 @@ export class VoiceRenderer {
     master.gain.exponentialRampToValueAtTime(vol * 0.20, t + 0.20);
     master.gain.exponentialRampToValueAtTime(0.001, t + decaySec);
     master.connect(out);
+    // Schedule graph cleanup — prevents ghost node accumulation in audio graph.
+    setTimeout(() => {
+      try { master.disconnect(); } catch { /* already disconnected */ }
+    }, Math.max(200, (t - ctx.currentTime + decaySec + 0.5) * 1000));
 
     // Highpass
     const hpf = ctx.createBiquadFilter();
@@ -926,6 +952,10 @@ export class VoiceRenderer {
     master.gain.setValueAtTime(vol, t);
     master.gain.exponentialRampToValueAtTime(0.001, t + decaySec + 0.02);
     master.connect(out);
+    // Schedule graph cleanup — prevents ghost node accumulation in audio graph.
+    setTimeout(() => {
+      try { master.disconnect(); } catch { /* already disconnected */ }
+    }, Math.max(200, (t - ctx.currentTime + decaySec + 0.5) * 1000));
 
     switch (type) {
       case 0: // ── CONGA: resonant body with formant filter for wood character

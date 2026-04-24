@@ -12,7 +12,7 @@ export class MixerRouter {
   private channelAnalysers: AnalyserNode[] = [];
   private channelFilters: BiquadFilterNode[] = [];
   private channelShapers: WaveShaperNode[] = [];
-  private channelPanners: PannerNode[] = [];
+  private channelPanners: StereoPannerNode[] = [];
   private channelEQs: { lo: BiquadFilterNode; mid: BiquadFilterNode; hi: BiquadFilterNode }[] = [];
   private channelCompressors: DynamicsCompressorNode[] = [];
   private channelFxChains: (FxChain | null)[] = [];
@@ -24,7 +24,7 @@ export class MixerRouter {
   private channelGroupAssignment: string[] = [];
 
   /** Create a channel strip: filter → shaper → EQ(lo→mid→hi) → compressor → gain → panner → analyser → destination */
-  createChannel(ctx: AudioContext, destination: GainNode): { filter: BiquadFilterNode; gain: GainNode; analyser: AnalyserNode; panner: PannerNode } {
+  createChannel(ctx: AudioContext, destination: GainNode): { filter: BiquadFilterNode; gain: GainNode; analyser: AnalyserNode; panner: StereoPannerNode } {
     // Insert filter (bypass by default: allpass)
     const filter = ctx.createBiquadFilter();
     filter.type = "allpass";
@@ -66,19 +66,14 @@ export class MixerRouter {
     const xfadeGain = ctx.createGain();
     xfadeGain.gain.value = 1.0; // bypass by default (assigned to "none")
 
-    // Channel panner (3D / HRTF capable)
-    const panner = ctx.createPanner();
-    panner.panningModel = "equalpower";
-    panner.distanceModel = "inverse";
-    panner.refDistance = 1;
-    panner.maxDistance = 10;
-    panner.positionX.value = 0;
-    panner.positionY.value = 0;
-    panner.positionZ.value = -1;
+    // Channel panner — StereoPannerNode is far cheaper than PannerNode
+    // (simple equal-power law vs. full 3D HRTF calculations)
+    const panner = ctx.createStereoPanner();
+    panner.pan.value = 0;
 
     // Analyser (meter)
     const analyser = ctx.createAnalyser();
-    analyser.fftSize = 4096;
+    analyser.fftSize = 256; // 256 samples sufficient for RMS level meters
     analyser.smoothingTimeConstant = 0.15;
 
     // FX Rack insert (empty by default, passes audio through)
@@ -273,23 +268,19 @@ export class MixerRouter {
   setChannelPan(channel: number, pan: number): void {
     const panner = this.channelPanners[channel];
     if (panner) {
-      // Map -1..+1 to X position (-5..+5) for spatial width
-      panner.positionX.value = Math.max(-1, Math.min(1, pan)) * 5;
+      panner.pan.value = Math.max(-1, Math.min(1, pan));
     }
   }
 
-  setChannelElevation(channel: number, elevation: number): void {
-    const panner = this.channelPanners[channel];
-    if (panner) panner.positionY.value = Math.max(-1, Math.min(1, elevation)) * 3;
+  setChannelElevation(_channel: number, _elevation: number): void {
+    // StereoPannerNode has no elevation — elevation is a no-op.
   }
 
   /** Binaural mode */
   setBinauralMode(enabled: boolean): void {
     this.binauralMode = enabled;
-    const model = enabled ? "HRTF" : "equalpower";
-    for (const panner of this.channelPanners) {
-      panner.panningModel = model as PanningModelType;
-    }
+    // StereoPannerNode does not support HRTF — binaural mode is a no-op for panning.
+    // Kept for API compatibility.
   }
 
   getBinauralMode(): boolean {
@@ -301,7 +292,7 @@ export class MixerRouter {
     const gain = ctx.createGain();
     gain.gain.value = 1.0;
     const analyser = ctx.createAnalyser();
-    analyser.fftSize = 4096;
+    analyser.fftSize = 256;
     analyser.smoothingTimeConstant = 0.15;
     gain.connect(analyser);
     analyser.connect(masterGain);
