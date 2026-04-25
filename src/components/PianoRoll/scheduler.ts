@@ -1,4 +1,4 @@
-import { useDrumStore, drumCurrentStepStore, getDrumCurrentStep } from "../../store/drumStore";
+import { useDrumStore, drumCurrentStepStore, getDrumCurrentStep, getDrumCurrentStepAudioTime } from "../../store/drumStore";
 import { audioEngine } from "../../audio/AudioEngine";
 import { bassEngine } from "../../audio/BassEngine";
 import { chordsEngine } from "../../audio/ChordsEngine";
@@ -109,7 +109,11 @@ function pianoRollTick(currentStep: number, bpm: number): void {
   }
 
   const absoluteStep = loopOffset + wrappedStep;
-  const t = audioEngine.currentTime + 0.01;
+  // Use the pre-scheduled drum step audio time so piano roll notes are
+  // sample-accurate with the drums (same lookahead, no 290ms drift).
+  // Fall back to currentTime+0.01 only if the audio time is stale (e.g. first tick).
+  const stepAudioTime = getDrumCurrentStepAudioTime();
+  const t = stepAudioTime > audioEngine.currentTime ? stepAudioTime : audioEngine.currentTime + 0.01;
   const secPerBeat = 60 / bpm;
 
   // ─── PHASE 1: Release notes that have ended ─────────────────────

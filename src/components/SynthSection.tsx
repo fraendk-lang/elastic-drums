@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { BassSequencer } from "./BassSequencer";
 import { ChordsSequencer } from "./ChordsSequencer";
 import { MelodySequencer } from "./MelodySequencer";
@@ -92,6 +92,17 @@ function findPresetIndex<T extends { name: string }>(presets: T[], name: string)
 export function SynthSection() {
   const [active, setActive] = useState<SynthTab>("bass");
   const overlay = useOverlayStore();
+
+  // Allow StockLibrary (and other components) to switch the active synth tab
+  // via a CustomEvent — avoids prop-drilling through the component tree.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const tab = (e as CustomEvent<{ tab: SynthTab }>).detail?.tab;
+      if (tab) setActive(tab);
+    };
+    window.addEventListener("synth-tab-switch", handler);
+    return () => window.removeEventListener("synth-tab-switch", handler);
+  }, []);
   const activeTab = TABS.find((tab) => tab.id === active) ?? TABS[0]!;
 
   const applyHouseMacro = (macro: HouseMacro) => {

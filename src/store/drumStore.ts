@@ -41,8 +41,16 @@ export const drumCurrentStepStore = {
   getSnapshot: (): number => _drumStep,
 };
 export function getDrumCurrentStep(): number { return _drumStep; }
-function setDrumStep(n: number): void {
+
+/** Audio-clock time (seconds) when the current drum step was scheduled to play.
+ *  Use this in the piano roll scheduler instead of audioEngine.currentTime
+ *  so that pitched notes are tight with the drums (same lookahead). */
+let _currentStepAudioTime = 0;
+export function getDrumCurrentStepAudioTime(): number { return _currentStepAudioTime; }
+
+function setDrumStep(n: number, audioTime: number): void {
   _drumStep = n;
+  _currentStepAudioTime = audioTime;
   for (const fn of _drumStepListeners) fn();
 }
 
@@ -628,7 +636,7 @@ function startScheduler() {
         }
       }
 
-      setDrumStep(nextStep);
+      setDrumStep(nextStep, nextStepTime);
       if (nextStep === 0) useDrumStore.setState({ barCycle: cycleCount });
       nextStepTime += stepDuration;
     }
@@ -768,14 +776,14 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     const wasPlaying = get().isPlaying;
     if (wasPlaying) {
       stopScheduler();
-      setDrumStep(0);
+      setDrumStep(0, 0);
       set({ isPlaying: false });
     } else {
       // startScheduler() must run BEFORE set() — it sets transportStartTime synchronously.
       // The loopPlayerStore subscriber fires inside set(), so it must see the correct
       // transportStartTime already in place or loops always launch 1+ bars late.
       startScheduler();
-      setDrumStep(0);
+      setDrumStep(0, 0);
       set({ isPlaying: true });
     }
   },
@@ -825,7 +833,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     activePLockTimers.clear();
 
     // Hot-swap pattern without stopping playback
-    setDrumStep(0);
+    setDrumStep(0, 0);
     set({
       pattern,
       currentPatternIndex: index,
@@ -849,7 +857,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   clearPattern: () => {
     const wasPlaying = get().isPlaying;
     if (wasPlaying) stopScheduler();
-    setDrumStep(0);
+    setDrumStep(0, 0);
     set({
       pattern: createEmptyPattern(),
       currentPatternIndex: -1,
@@ -867,7 +875,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     activePLockTimers.clear();
 
     // Reset drum pattern
-    setDrumStep(0);
+    setDrumStep(0, 0);
     set({
       pattern: createEmptyPattern(),
       currentPatternIndex: -1,
