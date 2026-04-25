@@ -259,13 +259,14 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
 
       // Duration: derive from drum pattern length (steps → bars at 16 steps/bar, min 1)
       const bars = Math.max(1, Math.ceil((scene.drumPattern.length ?? 16) / 16));
-      addToSongChain(newScene, bars);
+      // Use getState() to avoid stale closure — addToSongChain must NOT be in deps
+      useDrumStore.getState().addToSongChain(newScene, bars);
       lastRecScene.current = newScene;
       setRecCount(c => c + 1);
     });
 
     return () => unsub();
-  }, [isRecording, addToSongChain]);
+  }, [isRecording]); // addToSongChain intentionally omitted — using getState() above
 
   // ── Playhead position in px ──
   const playheadBarOffset = songChain
@@ -287,10 +288,11 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
       const scene = useSceneStore.getState().scenes[sceneIdx];
       const bars = scene ? Math.max(1, Math.ceil((scene.drumPattern.length ?? 16) / 16)) : 1;
       addToSongChain(sceneIdx, bars);
-      if (atIndex !== undefined) moveSongEntry(songChain.length, atIndex);
+      // Use fresh length from store — songChain in closure may be stale after addToSongChain
+      if (atIndex !== undefined) moveSongEntry(useDrumStore.getState().songChain.length - 1, atIndex);
       setDropIndex(null);
     }
-  }, [addToSongChain, moveSongEntry, songChain.length]);
+  }, [addToSongChain, moveSongEntry]);
 
   const handleEntryDrop = useCallback((e: React.DragEvent, toIndex: number) => {
     e.preventDefault();

@@ -150,11 +150,11 @@ export function onsetsToRegions(
   const regs: SliceRegion[] = [];
 
   for (let i = 0; i < pts.length; i++) {
-    const s = pts[i]!;
-    const e = i + 1 < pts.length ? pts[i + 1]! : endSec;
+    const s = Math.max(0, pts[i]!);
+    const e = Math.min(duration, i + 1 < pts.length ? pts[i + 1]! : endSec);
     regs.push({
-      startPoint: s / duration,
-      endPoint:   Math.min(1, e / duration),
+      startPoint: Math.min(1, Math.max(0, s / duration)),
+      endPoint:   Math.min(1, Math.max(0, e / duration)),
       startSec:   s,
       endSec:     e,
     });

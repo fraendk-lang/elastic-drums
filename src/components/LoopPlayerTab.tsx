@@ -175,6 +175,8 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
   const [canvasCursor,  setCanvasCursor]  = useState<"default" | "ew-resize">("default");
   const [sliceMode,     setSliceMode]     = useState<"auto" | "4" | "8" | "16">("8");
   const [slicing,       setSlicing]       = useState(false);
+  // Ref-based guard for synchronous double-click protection (React state batching is too slow)
+  const slicingRef = useRef(false);
   const sliceToPads = useSamplerStore((s) => s.sliceToPads);
 
   // Sync BPM input when originalBpm changes externally (e.g. auto-detected)
@@ -205,13 +207,15 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
   // ── Slice to Pads ─────────────────────────────────────────
   const handleSliceToPads = useCallback(async () => {
     const buf = slot.buffer;
-    if (!buf || slicing) return;
+    // slicingRef provides synchronous guard — React state batching is not fast enough
+    if (!buf || slicingRef.current) return;
 
     const regionStart = slot.firstBeatOffset;
     const regionEnd   = slot.loopEndSeconds > slot.firstBeatOffset
       ? slot.loopEndSeconds
       : buf.duration;
 
+    slicingRef.current = true;
     setSlicing(true);
     try {
       let onsets: number[];
@@ -231,9 +235,10 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
       const name = slot.fileName.replace(/\.[^.]+$/, "");
       sliceToPads(buf, regions, name);
     } finally {
+      slicingRef.current = false;
       setSlicing(false);
     }
-  }, [slot, sliceMode, slicing, sliceToPads]);
+  }, [slot, sliceMode, sliceToPads]);
 
   const handleCanvasPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!slot.buffer || !canvasRef.current) return;

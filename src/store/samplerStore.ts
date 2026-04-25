@@ -208,7 +208,10 @@ export const useSamplerStore = create<SamplerStore>((set) => ({
           fileName: `${baseName} [${i + 1}/${regions.length}]`,
           duration: buffer.duration,
           params: {
-            ...(pads[i]?.params ?? { ...DEFAULT_PAD_PARAMS }),
+            // Start from schema defaults, then overlay existing pad params, then slice overrides.
+            // This ensures new fields added to DEFAULT_PAD_PARAMS are always present.
+            ...DEFAULT_PAD_PARAMS,
+            ...(pads[i]?.params ?? {}),
             startPoint: r.startPoint,
             endPoint:   r.endPoint,
             playMode:   "oneshot" as const,

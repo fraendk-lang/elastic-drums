@@ -493,9 +493,11 @@ export class MelodyEngine {
   /** Release (note off) */
   releaseNote(time: number): void {
     if (!this.vca || !this.ctx) return;
-    // Clamp to 1 ms ahead to avoid cancelling already-applied envelope work
+    // Clamp to 1 ms ahead to avoid cancelling already-applied envelope work.
+    // cancelAndHoldAtTime preserves the current gain level before scheduling the
+    // release ramp, avoiding the jump-to-zero bug that cancelScheduledValues causes.
     const safeTime = Math.max(time, this.ctx.currentTime + 0.001);
-    this.vca.gain.cancelScheduledValues(safeTime);
+    this.vca.gain.cancelAndHoldAtTime(safeTime);
     // Use ampRelease param: time constant = release_ms / 3000 (reaches ~95% in release_ms)
     const releaseTau = Math.max(0.003, this.params.ampRelease / 3000);
     this.vca.gain.setTargetAtTime(0, safeTime, releaseTau);

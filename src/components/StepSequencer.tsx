@@ -568,7 +568,8 @@ export function StepSequencer() {
                 value={selectedTrack?.swing ?? pattern.swing}
                 onChange={(e) => {
                   const val = Number(e.target.value);
-                  useDrumStore.getState().setTrackSwing(selectedVoice, val === pattern.swing ? undefined : val);
+                  // Always set the numeric value — use the × button to reset to global
+                  useDrumStore.getState().setTrackSwing(selectedVoice, val);
                 }}
                 className="w-14 h-[3px]"
                 style={{ accentColor: selectedTrack?.swing !== undefined ? "#f59e0b" : "rgba(255,255,255,0.3)" }}
