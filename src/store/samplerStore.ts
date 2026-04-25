@@ -11,6 +11,7 @@ import { create } from "zustand";
 import { samplerEngine, DEFAULT_PAD_PARAMS, type SamplerPadParams } from "../audio/SamplerEngine";
 import { audioEngine } from "../audio/AudioEngine";
 import { useDrumStore, getDrumNextStepTime } from "./drumStore";
+import { type SliceRegion } from "../audio/SlicerEngine";
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -36,6 +37,9 @@ interface SamplerStore {
   setVelocity(padIndex: number, stepIndex: number, velocity: number): void;
   setPatternLength(length: number): void;
   clearPad(index: number): void;
+  /** Load a set of slices from one AudioBuffer onto pads 0…N-1.
+   *  Each slice gets the shared buffer with startPoint/endPoint trimmed. */
+  sliceToPads(buffer: AudioBuffer, regions: SliceRegion[], baseName: string): void;
 }
 
 // ─── Initial State Factories ──────────────────────────────
@@ -191,5 +195,26 @@ export const useSamplerStore = create<SamplerStore>((set) => ({
         i === index ? new Array(32).fill(0.8) as number[] : row,
       );
       return { pads, steps, velocities };
+    }),
+
+  sliceToPads: (buffer, regions, baseName) =>
+    set((s) => {
+      const pads = [...s.pads];
+      for (let i = 0; i < Math.min(regions.length, 16); i++) {
+        const r = regions[i]!;
+        pads[i] = {
+          ...pads[i]!,
+          buffer,
+          fileName: `${baseName} [${i + 1}/${regions.length}]`,
+          duration: buffer.duration,
+          params: {
+            ...(pads[i]?.params ?? { ...DEFAULT_PAD_PARAMS }),
+            startPoint: r.startPoint,
+            endPoint:   r.endPoint,
+            playMode:   "oneshot" as const,
+          },
+        };
+      }
+      return { pads, selectedPad: 0 };
     }),
 }));

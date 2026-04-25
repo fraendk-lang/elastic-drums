@@ -18,6 +18,8 @@
 import { useRef, useEffect, useCallback, useState, memo } from "react";
 import { useLoopPlayerStore } from "../store/loopPlayerStore";
 import { useDrumStore } from "../store/drumStore";
+import { useSamplerStore } from "../store/samplerStore";
+import { detectTransients, sliceEqual, onsetsToRegions } from "../audio/SlicerEngine";
 import { audioEngine } from "../audio/AudioEngine";
 
 // ── Theme ──────────────────────────────────────────────────────────────────────
@@ -171,6 +173,9 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
   const [isDragOver,    setIsDragOver]    = useState(false);
   const [bpmInput,      setBpmInput]      = useState(String(slot.originalBpm));
   const [canvasCursor,  setCanvasCursor]  = useState<"default" | "ew-resize">("default");
+  const [sliceMode,     setSliceMode]     = useState<"auto" | "4" | "8" | "16">("8");
+  const [slicing,       setSlicing]       = useState(false);
+  const sliceToPads = useSamplerStore((s) => s.sliceToPads);
 
   // Sync BPM input when originalBpm changes externally (e.g. auto-detected)
   useEffect(() => {
@@ -196,6 +201,39 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
     const sixteenth = 60 / globalBpm / 4; // 1/16-note duration in seconds
     return Math.round(t / sixteenth) * sixteenth;
   }, [globalBpm]);
+
+  // ── Slice to Pads ─────────────────────────────────────────
+  const handleSliceToPads = useCallback(async () => {
+    const buf = slot.buffer;
+    if (!buf || slicing) return;
+
+    const regionStart = slot.firstBeatOffset;
+    const regionEnd   = slot.loopEndSeconds > slot.firstBeatOffset
+      ? slot.loopEndSeconds
+      : buf.duration;
+
+    setSlicing(true);
+    try {
+      let onsets: number[];
+      if (sliceMode === "auto") {
+        // Run detection in a micro-task to avoid blocking the UI
+        onsets = await new Promise<number[]>(resolve =>
+          setTimeout(() => resolve(detectTransients(buf, 0.6, regionStart, regionEnd)), 0)
+        );
+        // Clamp to 16 pads: keep strongest-spaced onsets
+        if (onsets.length > 16) onsets = onsets.slice(0, 16);
+      } else {
+        const count = parseInt(sliceMode, 10);
+        onsets = sliceEqual(count, regionStart, regionEnd);
+      }
+
+      const regions = onsetsToRegions(onsets, buf.duration, regionEnd, 16);
+      const name = slot.fileName.replace(/\.[^.]+$/, "");
+      sliceToPads(buf, regions, name);
+    } finally {
+      setSlicing(false);
+    }
+  }, [slot, sliceMode, slicing, sliceToPads]);
 
   const handleCanvasPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!slot.buffer || !canvasRef.current) return;
@@ -683,6 +721,49 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
             TAP
           </button>
         </div>
+
+        {/* Divider */}
+        <div className="w-px h-5 bg-white/8 shrink-0" />
+
+        {/* Slice → Pads */}
+        {slot.buffer && (
+          <div className="flex items-center gap-1 shrink-0">
+            <span className="text-[6px] font-bold tracking-[0.1em] text-white/25">SLICE</span>
+            <select
+              value={sliceMode}
+              onChange={(e) => setSliceMode(e.target.value as typeof sliceMode)}
+              className="h-6 px-1 text-[8px] font-bold rounded transition-all"
+              style={{
+                background: "rgba(0,0,0,0.3)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                color: "rgba(255,255,255,0.6)",
+                outline: "none",
+              }}
+            >
+              <option value="auto">AUTO</option>
+              <option value="4">4</option>
+              <option value="8">8</option>
+              <option value="16">16</option>
+            </select>
+            <button
+              onClick={handleSliceToPads}
+              disabled={slicing}
+              title="Slice loop into pads — switches to Sampler tab"
+              className="text-[7px] font-black px-2 py-0.5 rounded transition-all shrink-0"
+              style={{
+                background: slicing ? "rgba(46,196,182,0.08)" : "rgba(46,196,182,0.12)",
+                color:      slicing ? `${TEAL}60`              : TEAL,
+                border:     `1px solid ${slicing ? `${TEAL}20` : `${TEAL}40`}`,
+                cursor:     slicing ? "wait" : "pointer",
+              }}
+            >
+              {slicing ? "…" : "→ PADS"}
+            </button>
+          </div>
+        )}
+
+        {/* Divider */}
+        <div className="w-px h-5 bg-white/8 shrink-0" />
 
         {/* Playback ratio badge */}
         <div
