@@ -480,13 +480,19 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
         </label>
       </div>
 
-      {/* ── Row 2: Compact waveform (only when loaded) ── */}
-      {slot.buffer && (
-        <div
-          ref={waveContRef}
-          className="relative rounded overflow-hidden"
-          style={{ height: 32, background: "rgba(0,0,0,0.35)", border: "1px solid rgba(255,255,255,0.04)" }}
-        >
+      {/* ── Row 2: Waveform / drop zone — always visible ── */}
+      <div
+        ref={waveContRef}
+        className="relative rounded overflow-hidden"
+        style={{
+          height: 32,
+          background: isDragOver ? `rgba(46,196,182,0.08)` : "rgba(0,0,0,0.35)",
+          border: isDragOver
+            ? `1px dashed ${TEAL}60`
+            : slot.buffer ? "1px solid rgba(255,255,255,0.05)" : "1px dashed rgba(255,255,255,0.08)",
+        }}
+      >
+        {slot.buffer ? (
           <canvas
             ref={canvasRef}
             width={900}
@@ -498,17 +504,24 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
             onPointerUp={handleCanvasPointerUp}
             onPointerLeave={handleCanvasPointerLeave}
           />
-          {slot.analyzing && (
-            <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.55)" }}>
-              <span className="text-[7px] font-bold tracking-[0.14em]" style={{ color: TEAL }}>ANALYZING BPM…</span>
-            </div>
-          )}
-          {isActive && (
-            <div className="absolute inset-0 pointer-events-none"
-              style={{ background: `linear-gradient(90deg, transparent, ${TEAL}10 50%, transparent)`, backgroundSize: "200% 100%", animation: "ed-shimmer 2.5s linear infinite" }} />
-          )}
-        </div>
-      )}
+        ) : (
+          <label className="absolute inset-0 flex items-center justify-center cursor-pointer">
+            <span className="text-[7px] font-bold tracking-[0.16em]" style={{ color: `${TEAL}28` }}>
+              DROP AUDIO HERE
+            </span>
+            <input type="file" accept="audio/*" className="hidden" onChange={handleFileInput} />
+          </label>
+        )}
+        {slot.analyzing && (
+          <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.55)" }}>
+            <span className="text-[7px] font-bold tracking-[0.14em]" style={{ color: TEAL }}>ANALYZING BPM…</span>
+          </div>
+        )}
+        {isActive && (
+          <div className="absolute inset-0 pointer-events-none"
+            style={{ background: `linear-gradient(90deg, transparent, ${TEAL}10 50%, transparent)`, backgroundSize: "200% 100%", animation: "ed-shimmer 2.5s linear infinite" }} />
+        )}
+      </div>
 
       {/* ── Row 3: BPM · LOCK · VOL · SLICE (only when loaded) ── */}
       {slot.buffer && (
