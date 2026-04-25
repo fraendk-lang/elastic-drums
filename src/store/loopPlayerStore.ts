@@ -25,6 +25,7 @@ import { create } from "zustand";
 import { loopPlayerEngine } from "../audio/LoopPlayerEngine";
 import { audioEngine } from "../audio/AudioEngine";
 import { useDrumStore, getDrumTransportStartTime } from "./drumStore";
+import { pitchShiftBuffer, type WarpMode } from "../audio/pitchShiftBuffer";
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -35,6 +36,10 @@ export interface LoopSlotState {
   originalBpm:      number;      // native BPM — editable by user / auto-detected
   volume:           number;      // 0–1
   playing:          boolean;     // user's armed / play intent
+  transpose:        number;      // semitone offset (integer, −24…+24)
+  warpMode:         WarpMode;    // 'repitch' | 'beats' | 'complex'
+  pitchedBuffer:    AudioBuffer | null; // SoundTouch-processed buffer (pitch shifted, same tempo)
+  pitching:         boolean;     // true while SoundTouch is processing
 
   // Beat-grid metadata (filled by auto-analysis)
   analyzing:        boolean;     // true while worker is running
@@ -55,6 +60,8 @@ interface LoopPlayerStore {
   setLoopRegion      (idx: number, numBars: number): void;
   restartSlot        (idx: number): void;
   setVolume          (idx: number, volume: number): void;
+  setTranspose       (idx: number, semitones: number): void;
+  setWarpMode       (idx: number, mode: WarpMode): void;
   togglePlay         (idx: number): void;
   stopAll            (): void;
   tapBpm             (idx: number): void;
@@ -70,6 +77,10 @@ function createDefaultSlot(): LoopSlotState {
     originalBpm:     120,
     volume:          0.8,
     playing:         false,
+    transpose:       0,
+    warpMode:        "beats",
+    pitchedBuffer:   null,
+    pitching:        false,
     analyzing:       false,
     detectedBpm:     null,
     firstBeatOffset: 0,
@@ -188,22 +199,36 @@ function _nextBarTime(): number {
   return Math.max(now + 0.01, Math.min(now + barDuration * 2, nextBar));
 }
 
+/** Compute pitchFactor for AudioBufferSourceNode.
+ *  RE-PITCH: vinyl (pitch via rate). BEATS/COMPLEX: 1.0 (pitch in buffer). */
+function _pitchFactor(slot: LoopSlotState): number {
+  return slot.warpMode === "repitch" ? Math.pow(2, slot.transpose / 12) : 1;
+}
+
 function _launchSlot(idx: number, slot: LoopSlotState): void {
   if (!slot.buffer) return;
-  const globalBpm   = useDrumStore.getState().bpm;
-  const startTime   = _nextBarTime();
-  const loopStart   = slot.firstBeatOffset;
-  const loopEnd     = slot.loopEndSeconds > loopStart ? slot.loopEndSeconds : undefined;
+  const globalBpm = useDrumStore.getState().bpm;
+  const startTime = _nextBarTime();
+
+  // RE-PITCH: play original buffer at rate that includes pitch factor
+  // BEATS/COMPLEX: play pitchedBuffer (offline-processed) at pure BPM rate
+  const playBuffer = (slot.warpMode !== "repitch" && slot.pitchedBuffer && slot.transpose !== 0)
+    ? slot.pitchedBuffer
+    : slot.buffer;
+
+  const loopStart = slot.firstBeatOffset;
+  const loopEnd   = slot.loopEndSeconds > loopStart ? slot.loopEndSeconds : undefined;
 
   loopPlayerEngine.startSlot(
     idx,
-    slot.buffer,
+    playBuffer,
     slot.originalBpm,
     globalBpm,
     slot.volume,
     startTime,
     loopStart,
     loopEnd,
+    _pitchFactor(slot),
   );
 }
 
@@ -263,7 +288,7 @@ export const useLoopPlayerStore = create<LoopPlayerStore>((set, get) => ({
       return { slots };
     });
     const globalBpm = useDrumStore.getState().bpm;
-    loopPlayerEngine.updatePlaybackRate(idx, bpm, globalBpm);
+    loopPlayerEngine.updatePlaybackRate(idx, bpm, globalBpm, _pitchFactor(get().slots[idx]!));
   },
 
   // ── Manual loop region ─────────────────────────────────
@@ -349,6 +374,121 @@ export const useLoopPlayerStore = create<LoopPlayerStore>((set, get) => ({
       return { slots };
     });
     loopPlayerEngine.setVolume(idx, volume);
+  },
+
+  // ── Transpose ──────────────────────────────────────────
+  // Offline pitch shifting via SoundTouch WSOLA (pitch only, tempo preserved).
+  // Steps: 1) update transpose value  2) run SoundTouch on original buffer
+  //        3) store pitchedBuffer     4) restart slot with new buffer
+  setTranspose: (idx, semitones) => {
+    const clamped = Math.max(-24, Math.min(24, Math.round(semitones)));
+    const slot    = useLoopPlayerStore.getState().slots[idx]!;
+    if (!slot.buffer) return;
+
+    // RE-PITCH: no offline processing — just update playback rate immediately
+    if (slot.warpMode === "repitch") {
+      set((s) => {
+        const slots = [...s.slots];
+        slots[idx] = { ...slots[idx]!, transpose: clamped };
+        return { slots };
+      });
+      const { bpm: globalBpm } = useDrumStore.getState();
+      loopPlayerEngine.updatePlaybackRate(idx, slot.originalBpm, globalBpm, Math.pow(2, clamped / 12));
+      return;
+    }
+
+    // Reset to 0: clear pitched buffer, use original
+    if (clamped === 0) {
+      set((s) => {
+        const slots = [...s.slots];
+        slots[idx] = { ...slots[idx]!, transpose: 0, pitchedBuffer: null, pitching: false };
+        return { slots };
+      });
+      const updated = useLoopPlayerStore.getState().slots[idx]!;
+      if (updated.playing && !updated.analyzing) _launchSlot(idx, updated);
+      return;
+    }
+
+    // BEATS/COMPLEX: offline pitch processing
+    set((s) => {
+      const slots = [...s.slots];
+      slots[idx] = { ...slots[idx]!, transpose: clamped, pitching: true };
+      return { slots };
+    });
+
+    pitchShiftBuffer(slot.buffer, clamped, slot.warpMode).then((pitched) => {
+      set((s) => {
+        const slots = [...s.slots];
+        slots[idx] = { ...slots[idx]!, pitchedBuffer: pitched, pitching: false };
+        return { slots };
+      });
+      const updated = useLoopPlayerStore.getState().slots[idx]!;
+      if (updated.playing && !updated.analyzing) _launchSlot(idx, updated);
+    }).catch(() => {
+      set((s) => {
+        const slots = [...s.slots];
+        slots[idx] = { ...slots[idx]!, pitching: false, pitchedBuffer: null };
+        return { slots };
+      });
+    });
+  },
+
+  setWarpMode: (idx, mode) => {
+    const slot = useLoopPlayerStore.getState().slots[idx]!;
+    if (!slot.buffer) {
+      set((s) => {
+        const slots = [...s.slots];
+        slots[idx] = { ...slots[idx]!, warpMode: mode };
+        return { slots };
+      });
+      return;
+    }
+
+    set((s) => {
+      const slots = [...s.slots];
+      slots[idx] = { ...slots[idx]!, warpMode: mode };
+      return { slots };
+    });
+
+    const updated = useLoopPlayerStore.getState().slots[idx]!;
+
+    if (mode === "repitch") {
+      // Clear offline buffer — pitch now via playbackRate
+      set((s) => {
+        const slots = [...s.slots];
+        slots[idx] = { ...slots[idx]!, pitchedBuffer: null, pitching: false };
+        return { slots };
+      });
+      const { bpm: globalBpm } = useDrumStore.getState();
+      loopPlayerEngine.updatePlaybackRate(
+        idx, updated.originalBpm, globalBpm, Math.pow(2, updated.transpose / 12),
+      );
+      return;
+    }
+
+    // BEATS or COMPLEX: if transpose ≠ 0, re-process with new algorithm
+    if (updated.transpose !== 0) {
+      set((s) => {
+        const slots = [...s.slots];
+        slots[idx] = { ...slots[idx]!, pitching: true };
+        return { slots };
+      });
+      pitchShiftBuffer(updated.buffer!, updated.transpose, mode).then((pitched) => {
+        set((s) => {
+          const slots = [...s.slots];
+          slots[idx] = { ...slots[idx]!, pitchedBuffer: pitched, pitching: false };
+          return { slots };
+        });
+        const final = useLoopPlayerStore.getState().slots[idx]!;
+        if (final.playing && !final.analyzing) _launchSlot(idx, final);
+      }).catch(() => {
+        set((s) => {
+          const slots = [...s.slots];
+          slots[idx] = { ...slots[idx]!, pitching: false };
+          return { slots };
+        });
+      });
+    }
   },
 
   // ── Play / Stop ────────────────────────────────────────
@@ -438,7 +578,7 @@ const _unsub = useDrumStore.subscribe((state, prev) => {
     // BPM changed → update playback rate of all active slots
     slots.forEach((slot, idx) => {
       if (slot.playing) {
-        loopPlayerEngine.updatePlaybackRate(idx, slot.originalBpm, globalBpm);
+        loopPlayerEngine.updatePlaybackRate(idx, slot.originalBpm, globalBpm, _pitchFactor(slot));
       }
     });
   }
