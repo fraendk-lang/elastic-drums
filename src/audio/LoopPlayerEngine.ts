@@ -49,6 +49,7 @@ export class LoopPlayerEngine {
     startTime: number,
     loopStartSeconds?: number,
     loopEndSeconds?: number,
+    pitchFactor = 1,
   ): void {
     if (!this.ctx || !this.output) return;
 
@@ -66,7 +67,7 @@ export class LoopPlayerEngine {
     source.loopStart = loopStart;
     source.loopEnd   = loopEnd > loopStart ? loopEnd : buffer.duration;
 
-    const rate = this._calcRate(originalBpm, globalBpm);
+    const rate = this._calcRate(originalBpm, globalBpm, pitchFactor);
     source.playbackRate.value = rate;
 
     const gain = ctx.createGain();
@@ -100,10 +101,10 @@ export class LoopPlayerEngine {
    * Live-update playback rate of a running slot (e.g. when global BPM changes).
    * No audio interruption — just adjusts speed.
    */
-  updatePlaybackRate(slotIdx: number, originalBpm: number, globalBpm: number): void {
+  updatePlaybackRate(slotIdx: number, originalBpm: number, globalBpm: number, pitchFactor = 1): void {
     const source = this.sources[slotIdx];
     if (!source || !this.ctx) return;
-    const rate = this._calcRate(originalBpm, globalBpm);
+    const rate = this._calcRate(originalBpm, globalBpm, pitchFactor);
     source.playbackRate.setValueAtTime(rate, this.ctx.currentTime);
   }
 
@@ -148,9 +149,17 @@ export class LoopPlayerEngine {
 
   // ── Private ──────────────────────────────────────────────
 
-  private _calcRate(originalBpm: number, globalBpm: number): number {
-    const raw = originalBpm > 0 ? globalBpm / originalBpm : 1;
-    return Math.max(0.1, Math.min(4, raw));
+  /**
+   * Compute AudioBufferSourceNode playbackRate.
+   *
+   * @param originalBpm  Native BPM of the audio file
+   * @param globalBpm    Current project BPM
+   * @param pitchFactor  1.0 for BEATS/COMPLEX (pitch handled offline),
+   *                     2^(semitones/12) for RE-PITCH (vinyl — changes both pitch & tempo)
+   */
+  private _calcRate(originalBpm: number, globalBpm: number, pitchFactor = 1): number {
+    const bpmRatio = originalBpm > 0 ? globalBpm / originalBpm : 1;
+    return Math.max(0.1, Math.min(8, bpmRatio * pitchFactor));
   }
 
   private _stopSlotInternal(slotIdx: number, time: number): void {
