@@ -54,7 +54,7 @@ export const DEFAULT_BASS_PARAMS: BassParams = {
   // sound harsh out of the box. Envelope + accent modulate UPWARDS (classic
   // 303 behavior) — starting bright/resonant/distorted leaves no headroom.
   cutoff: 280,
-  resonance: 3,
+  resonance: 0,
   envMod: 0.75,
   decay: 200,
   accent: 0.5,
