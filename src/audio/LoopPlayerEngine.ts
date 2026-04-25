@@ -47,7 +47,9 @@ export class LoopPlayerEngine {
     this.output = ctx.createGain();
     this.output.gain.value = 0.9;
     // Auto-wire to LOOPS mixer strip (channel 16)
-    this.output.connect(audioEngine.getChannelOutput(LOOP_CHANNEL));
+    const chOut = audioEngine.getChannelOutput(LOOP_CHANNEL);
+    console.log('[LoopPlayerEngine] init — channel output:', chOut, 'ctx state:', ctx.state);
+    this.output.connect(chOut);
   }
 
   /**
@@ -86,7 +88,8 @@ export class LoopPlayerEngine {
     loopEndSeconds?: number,
     pitchFactor = 1,
   ): void {
-    if (!this._ensureInit()) return;
+    console.log(`[LoopPlayerEngine] startSlot(${slotIdx}) — ctx:`, !!this.ctx, 'output:', !!this.output, 'buf dur:', buffer.duration.toFixed(2), 's');
+    if (!this._ensureInit()) { console.warn('[LoopPlayerEngine] _ensureInit() failed — aborting'); return; }
 
     // Always clean up any existing source first
     this._stopSlotInternal(slotIdx, startTime);

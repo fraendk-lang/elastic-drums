@@ -69,8 +69,8 @@ function useMeterData() {
         let peak = 0;
         for (let j = 0; j < analyser.fftSize; j++) peak = Math.max(peak, Math.abs(meterBuf[j]!));
         const db = peak > 0 ? 20 * Math.log10(peak) : -Infinity;
-        // Peak hold: decay ~40dB/s at 20fps (0.66 dB per frame × 20fps = ~13dB/s felt decay)
-        peakRef.current[i] = Math.max(peakRef.current[i]! - 0.66, db);
+        // Peak hold: 2 dB/frame × 20fps = ~40 dB/s decay (~1.5 s to floor)
+        peakRef.current[i] = Math.max(peakRef.current[i]! - 2.0, db);
 
         const ctx = canvas.getContext("2d");
         if (!ctx) continue;
