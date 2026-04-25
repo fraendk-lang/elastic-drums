@@ -759,8 +759,8 @@ export function PerformancePad({ isOpen, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col backdrop-blur-xl"
-      style={{ backgroundColor: "rgba(10, 8, 12, 0.98)" }}
+      className="fixed inset-0 z-50 flex flex-col"
+      style={{ backgroundColor: "#0a080c" }}
     >
       {/* Header */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--ed-border)] bg-[var(--ed-bg-secondary)]/80 px-5 py-2.5">
@@ -1020,7 +1020,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
       </div>
 
       {/* XY Pad */}
-      <div className="flex-1 flex items-stretch justify-stretch p-6 gap-4 min-h-0">
+      <div className="flex-1 flex items-stretch justify-stretch p-6 gap-4 min-h-0" style={{ background: "#0a080c" }}>
         {/* Y-axis label strip */}
         <div className="flex flex-col justify-between w-8 text-[8px] text-[var(--ed-text-muted)] font-mono text-right pr-1">
           <span>{activeYParam.label} MAX</span>

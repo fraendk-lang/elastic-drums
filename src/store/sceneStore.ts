@@ -179,13 +179,20 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     const scene = get().scenes[slot];
     if (!scene) return;
 
-    // Hard panic to ensure zero residual gain — releaseNote uses asymptotic
-    // setTargetAtTime which never reaches true zero, causing cumulative bleed
-    const now = audioEngine.getAudioContext()?.currentTime ?? 0;
-    bassEngine.panic(now);
-    chordsEngine.panic(now);
-    melodyEngine.panic(now);
-    // Also stop any SoundFont notes that may be sustaining
+    // ── Seamless scene transition strategy ───────────────────────────────────
+    // Do NOT panic before loading params. Panicking first causes a hard silence
+    // gap that the user hears as a "jump". Instead:
+    //   1. Apply all audio engine params FIRST (while notes are still decaying)
+    //   2. Stop SoundFont notes (they don't respond to step-sequencer release)
+    //   3. After params are applied, panic ONCE with a tiny schedule offset
+    //      so any residual gain ramps to zero cleanly without an audible click
+    //
+    // Step-sequenced bass/chords/melody notes are already in their natural
+    // release phase at the bar boundary — letting them finish sounds seamless.
+    const ctx = audioEngine.getAudioContext();
+    const now = ctx?.currentTime ?? 0;
+
+    // Stop SoundFont (sample-based) voices that don't follow ADSR release
     soundFontEngine.stopAll("bass");
     soundFontEngine.stopAll("chords");
     soundFontEngine.stopAll("melody");
@@ -209,16 +216,28 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
         }
       }
 
-      // Apply bass steps + params
+      // Apply all synth params BEFORE panic so the new state is locked in first.
+      // setParams restores output.gain from the stored volume — panic follows
+      // immediately after to silence residual sustain without audible clicks.
+      if (scene.bassParams) bassEngine.setParams(scene.bassParams);
+      if (scene.chordsParams) chordsEngine.setParams(scene.chordsParams);
+      if (scene.melodyParams) melodyEngine.setParams(scene.melodyParams);
+
+      // Single panic AFTER all params — 5 ms into the future so the WebAudio
+      // engine uses a smooth ramp-to-zero instead of an instantaneous value jump
+      // (instantaneous jumps alias as clicks at the speaker).
+      const cleanupAt = now + 0.005;
+      bassEngine.panic(cleanupAt);
+      chordsEngine.panic(cleanupAt);
+      melodyEngine.panic(cleanupAt);
+
+      // Apply bass steps + params to stores
       const bassUpdate: Record<string, unknown> = {
         steps: deepClone(scene.bassSteps),
         length: scene.bassLength,
         globalOctave: scene.bassGlobalOctave ?? 0,
       };
-      if (scene.bassParams) {
-        bassUpdate.params = deepClone(scene.bassParams);
-        bassEngine.setParams(scene.bassParams);
-      }
+      if (scene.bassParams) bassUpdate.params = deepClone(scene.bassParams);
       useBassStore.setState(bassUpdate);
 
       // Apply chords steps + params
@@ -227,10 +246,7 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
         length: scene.chordsLength,
         globalOctave: scene.chordsGlobalOctave ?? 0,
       };
-      if (scene.chordsParams) {
-        chordsUpdate.params = deepClone(scene.chordsParams);
-        chordsEngine.setParams(scene.chordsParams);
-      }
+      if (scene.chordsParams) chordsUpdate.params = deepClone(scene.chordsParams);
       useChordsStore.setState(chordsUpdate);
 
       // Apply melody steps + params
@@ -239,18 +255,8 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
         length: scene.melodyLength,
         globalOctave: scene.melodyGlobalOctave ?? 0,
       };
-      if (scene.melodyParams) {
-        melodyUpdate.params = deepClone(scene.melodyParams);
-        melodyEngine.setParams(scene.melodyParams);
-      }
+      if (scene.melodyParams) melodyUpdate.params = deepClone(scene.melodyParams);
       useMelodyStore.setState(melodyUpdate);
-
-      // Re-panic AFTER setParams — setParams restores output.gain.value from volume,
-      // which undoes the panic silence. Must re-silence after all params are applied.
-      const now2 = audioEngine.getAudioContext()?.currentTime ?? 0;
-      bassEngine.panic(now2);
-      chordsEngine.panic(now2);
-      melodyEngine.panic(now2);
 
       // Restore global key/scale — set DIRECTLY on each store to avoid sync ping-pong.
       // The sync mechanism (syncScaleToOtherStores) can cause octave drift when

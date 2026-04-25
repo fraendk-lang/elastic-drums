@@ -11,7 +11,7 @@
  *   updatePlaybackRate() applies the new rate without restarting the source
  */
 
-const SLOT_COUNT = 4;
+const SLOT_COUNT = 8;
 
 export class LoopPlayerEngine {
   private ctx: AudioContext | null = null;
@@ -60,15 +60,16 @@ export class LoopPlayerEngine {
 
     const loopStart = Math.max(0, loopStartSeconds ?? 0);
     const loopEnd   = Math.min(buffer.duration, loopEndSeconds ?? buffer.duration);
+    const effectiveLoopEnd = loopEnd > loopStart ? loopEnd : buffer.duration;
 
-    // Apply short fades at loop boundaries to prevent click artifacts on loop wrap
-    const fadedBuffer = this._applyLoopFade(buffer, loopStart, loopEnd);
+    // Apply short fades at effective loop boundaries to prevent click artifacts on wrap
+    const fadedBuffer = this._applyLoopFade(buffer, loopStart, effectiveLoopEnd);
 
     const source = ctx.createBufferSource();
     source.buffer    = fadedBuffer;
     source.loop      = true;
     source.loopStart = loopStart;
-    source.loopEnd   = loopEnd > loopStart ? loopEnd : fadedBuffer.duration;
+    source.loopEnd   = effectiveLoopEnd;
 
     const rate = this._calcRate(originalBpm, globalBpm, pitchFactor);
     source.playbackRate.value = rate;
@@ -214,7 +215,7 @@ export class LoopPlayerEngine {
       // Fade-out at loopEnd (1 → 0 over fadeFrames)
       for (let i = 0; i < fadeFrames; i++) {
         const fi = endFrame - 1 - i;
-        if (fi >= 0) dst[fi]! *= i / fadeFrames;
+        if (fi >= 0) dst[fi]! *= (fadeFrames - 1 - i) / fadeFrames;
       }
     }
     return copy;

@@ -130,21 +130,21 @@ export class AudioEngine {
       this.masterAnalyser.connect(this.ctx.destination);
 
       // ─── Mixer channels & bus groups ─────────────────────
-      for (const group of ["drums", "hats", "perc", "bass", "chords", "melody", "sampler"]) {
+      for (const group of ["drums", "hats", "perc", "bass", "chords", "melody", "sampler", "loops"]) {
         mixerRouter.createBusGroup(group, this.ctx, this.masterGain);
       }
 
-      for (let i = 0; i < 16; i++) {
+      for (let i = 0; i < 17; i++) {
         const ch = mixerRouter.createChannel(this.ctx, this.masterGain);
         this.channelGains.push(ch.gain);
         this.channelAnalysers.push(ch.analyser);
       }
 
-      const groups = ["drums", "drums", "drums", "drums", "drums", "drums", "hats", "hats", "hats", "hats", "perc", "perc", "bass", "chords", "melody", "sampler"];
+      const groups = ["drums", "drums", "drums", "drums", "drums", "drums", "hats", "hats", "hats", "hats", "perc", "perc", "bass", "chords", "melody", "sampler", "loops"];
       groups.forEach((g, i) => mixerRouter.setChannelGroup(i, g, this.masterGain!));
 
       // ─── Per-channel send FX ─────────────────────────────
-      for (let i = 0; i < 16; i++) {
+      for (let i = 0; i < 17; i++) {
         sendFxManager.createChannelSends(this.channelGains[i]!);
       }
 

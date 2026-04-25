@@ -381,11 +381,17 @@ function FxModuleCard({
   onTargetChange,
   onParamChange,
 }: FxModuleCardProps) {
+  // Adaptive knob size: shrink when there are many params to avoid overflow
+  const knobSize = def.params.length >= 4 ? 28 : def.params.length >= 3 ? 32 : 36;
+  const knobGap  = def.params.length >= 4 ? 4   : def.params.length >= 3 ? 6   : 8;
+  // Card width: fit knobs + gaps + horizontal padding (16px)
+  const cardWidth = Math.max(130, def.params.length * knobSize + (def.params.length - 1) * knobGap + 24);
+
   return (
     <div
       className="shrink-0 rounded-lg border p-2 flex flex-col items-center gap-1.5 transition-all"
       style={{
-        width: 130,
+        width: cardWidth,
         backgroundColor: enabled ? `${def.color}08` : "#111116",
         borderColor: enabled ? `${def.color}30` : "rgba(255,255,255,0.05)",
       }}
@@ -412,8 +418,8 @@ function FxModuleCard({
         ))}
       </div>
 
-      {/* Knobs row */}
-      <div className="flex gap-2">
+      {/* Knobs row — gap and size adapt to param count */}
+      <div className="flex" style={{ gap: knobGap }}>
         {def.params.map((paramDef) => (
           <Knob
             key={paramDef.id}
@@ -423,7 +429,7 @@ function FxModuleCard({
             defaultValue={paramDef.default}
             label={paramDef.label}
             color={enabled ? def.color : "rgba(255,255,255,0.2)"}
-            size={36}
+            size={knobSize}
             onChange={(v) => onParamChange(paramDef.id, v)}
           />
         ))}

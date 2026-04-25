@@ -30,6 +30,7 @@ function createEmptyLoopSlot(): LoopSlotState {
     warpMode:        "beats",
     pitchedBuffer:   null,
     pitching:        false,
+    pitchGeneration: 0,
     analyzing:       false,
     detectedBpm:     null,
     firstBeatOffset: 0,

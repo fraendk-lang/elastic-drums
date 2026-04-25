@@ -28,6 +28,7 @@ const MidiLearnPanel = lazy(() => import("./components/MidiLearnPanel").then((m)
 const MidiClockPanel = lazy(() => import("./components/MidiClockPanel").then((m) => ({ default: m.MidiClockPanel })));
 const UserGuide = lazy(() => import("./components/UserGuide").then((m) => ({ default: m.UserGuide })));
 const PerformancePad = lazy(() => import("./components/PerformancePad").then((m) => ({ default: m.PerformancePad })));
+const MelodyGenerator = lazy(() => import("./components/MelodyGenerator").then((m) => ({ default: m.MelodyGenerator })));
 import { getMidiClockMode, subscribeMidiClockMode } from "./store/midiClockMode";
 import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
@@ -215,11 +216,11 @@ export function App() {
         const samplerCh  = audioEngine.getChannelOutput(15);
         if (samplerOut && samplerCh) samplerOut.connect(samplerCh);
 
-        // Loop Player → Master gain (no dedicated channel — loops share master)
-        const masterGain = audioEngine.getMasterGainNode();
+        // Loop Player → Channel 16 (dedicated mixer strip: EQ, sends, fader, meter)
         loopPlayerEngine.init(ctx);
         const loopOut = loopPlayerEngine.getOutput();
-        if (loopOut && masterGain) loopOut.connect(masterGain);
+        const loopCh  = audioEngine.getChannelOutput(16);
+        if (loopOut && loopCh) loopOut.connect(loopCh);
       }
       setAudioReady(true);
 
@@ -521,6 +522,7 @@ export function App() {
         )}
         {overlay.isOpen("userGuide") && <UserGuide isOpen onClose={() => overlay.closeOverlay("userGuide")} />}
         {overlay.isOpen("performancePad") && <PerformancePad isOpen onClose={() => overlay.closeOverlay("performancePad")} />}
+        {overlay.isOpen("melodyGen") && <MelodyGenerator isOpen onClose={() => overlay.closeOverlay("melodyGen")} />}
       </Suspense>
       {sceneMiniOpen && <SceneMini onClose={() => setSceneMiniOpen(false)} />}
     </div>

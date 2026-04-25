@@ -40,6 +40,7 @@ export interface LoopSlotState {
   warpMode:         WarpMode;    // 'repitch' | 'beats' | 'complex'
   pitchedBuffer:    AudioBuffer | null; // SoundTouch-processed buffer (pitch shifted, same tempo)
   pitching:         boolean;     // true while SoundTouch is processing
+  pitchGeneration:  number;      // incremented on every async pitch operation; stale results are discarded
 
   // Beat-grid metadata (filled by auto-analysis)
   analyzing:        boolean;     // true while worker is running
@@ -81,6 +82,7 @@ function createDefaultSlot(): LoopSlotState {
     warpMode:        "beats",
     pitchedBuffer:   null,
     pitching:        false,
+    pitchGeneration: 0,
     analyzing:       false,
     detectedBpm:     null,
     firstBeatOffset: 0,
@@ -234,8 +236,8 @@ function _launchSlot(idx: number, slot: LoopSlotState): void {
 
 // ─── Tap-BPM state (per-slot) ─────────────────────────────
 
-const _tapTimes: (number[])[] = [[], [], [], []];
-const _tapTimers: (ReturnType<typeof setTimeout> | null)[] = [null, null, null, null];
+const _tapTimes: (number[])[] = [[], [], [], [], [], [], [], []];
+const _tapTimers: (ReturnType<typeof setTimeout> | null)[] = [null, null, null, null, null, null, null, null];
 const TAP_RESET_MS = 2500;
 
 // ─── Store ────────────────────────────────────────────────
@@ -410,13 +412,16 @@ export const useLoopPlayerStore = create<LoopPlayerStore>((set, get) => ({
     }
 
     // BEATS/COMPLEX: offline pitch processing
+    const gen = (useLoopPlayerStore.getState().slots[idx]!.pitchGeneration ?? 0) + 1;
     set((s) => {
       const slots = [...s.slots];
-      slots[idx] = { ...slots[idx]!, transpose: clamped, pitching: true };
+      slots[idx] = { ...slots[idx]!, transpose: clamped, pitching: true, pitchGeneration: gen };
       return { slots };
     });
 
     pitchShiftBuffer(slot.buffer, clamped, slot.warpMode).then((pitched) => {
+      // Discard stale results if a newer operation superseded this one
+      if (useLoopPlayerStore.getState().slots[idx]!.pitchGeneration !== gen) return;
       set((s) => {
         const slots = [...s.slots];
         slots[idx] = { ...slots[idx]!, pitchedBuffer: pitched, pitching: false };
@@ -425,6 +430,7 @@ export const useLoopPlayerStore = create<LoopPlayerStore>((set, get) => ({
       const updated = useLoopPlayerStore.getState().slots[idx]!;
       if (updated.playing && !updated.analyzing) _launchSlot(idx, updated);
     }).catch(() => {
+      if (useLoopPlayerStore.getState().slots[idx]!.pitchGeneration !== gen) return;
       set((s) => {
         const slots = [...s.slots];
         slots[idx] = { ...slots[idx]!, pitching: false, pitchedBuffer: null };
@@ -459,21 +465,29 @@ export const useLoopPlayerStore = create<LoopPlayerStore>((set, get) => ({
         slots[idx] = { ...slots[idx]!, pitchedBuffer: null, pitching: false };
         return { slots };
       });
-      const { bpm: globalBpm } = useDrumStore.getState();
-      loopPlayerEngine.updatePlaybackRate(
-        idx, updated.originalBpm, globalBpm, Math.pow(2, updated.transpose / 12),
-      );
+      // Restart slot with original buffer so pitch isn't doubled (buffer + rate)
+      const repitchSlot = useLoopPlayerStore.getState().slots[idx]!;
+      if (repitchSlot.playing && !repitchSlot.analyzing) {
+        _launchSlot(idx, repitchSlot);
+      } else {
+        const { bpm: globalBpm } = useDrumStore.getState();
+        loopPlayerEngine.updatePlaybackRate(
+          idx, repitchSlot.originalBpm, globalBpm, Math.pow(2, repitchSlot.transpose / 12),
+        );
+      }
       return;
     }
 
     // BEATS or COMPLEX: if transpose ≠ 0, re-process with new algorithm
     if (updated.transpose !== 0) {
+      const modeGen = (useLoopPlayerStore.getState().slots[idx]!.pitchGeneration ?? 0) + 1;
       set((s) => {
         const slots = [...s.slots];
-        slots[idx] = { ...slots[idx]!, pitching: true };
+        slots[idx] = { ...slots[idx]!, pitching: true, pitchGeneration: modeGen };
         return { slots };
       });
       pitchShiftBuffer(updated.buffer!, updated.transpose, mode).then((pitched) => {
+        if (useLoopPlayerStore.getState().slots[idx]!.pitchGeneration !== modeGen) return;
         set((s) => {
           const slots = [...s.slots];
           slots[idx] = { ...slots[idx]!, pitchedBuffer: pitched, pitching: false };
@@ -482,6 +496,7 @@ export const useLoopPlayerStore = create<LoopPlayerStore>((set, get) => ({
         const final = useLoopPlayerStore.getState().slots[idx]!;
         if (final.playing && !final.analyzing) _launchSlot(idx, final);
       }).catch(() => {
+        if (useLoopPlayerStore.getState().slots[idx]!.pitchGeneration !== modeGen) return;
         set((s) => {
           const slots = [...s.slots];
           slots[idx] = { ...slots[idx]!, pitching: false };

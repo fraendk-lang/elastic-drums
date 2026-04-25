@@ -141,6 +141,58 @@ function pianoRollTick(currentStep: number, bpm: number): void {
   }
 
   // ─── PHASE 2: Trigger notes that start on this step ─────────────
+
+  // Chord notes must be batched into a single triggerChord() call so all
+  // voices of the chord are heard simultaneously. Triggering one note at a
+  // time would replace the previous voice on each call, leaving only the
+  // last MIDI note audible.
+  const chordBatch = _pianoRollNotes.filter(note => {
+    if (note.track !== "chords") return false;
+    if (_activePlaybackNotes.has(note.id)) return false;
+    const s = Math.round(note.start * 4);
+    if (s !== absoluteStep) return false;
+    if (_loopRange.enabled) {
+      const loopStartStep = Math.round(_loopRange.start * 4);
+      const loopEndStep   = Math.round(_loopRange.end * 4);
+      if (s < loopStartStep || s >= loopEndStep) return false;
+    }
+    return true;
+  });
+
+  if (chordBatch.length > 0) {
+    const chordMidis = chordBatch.map(n => n.midi);
+    if (soundFontEngine.isLoaded("chords")) {
+      // SoundFont handles its own polyphony — play each note individually
+      chordBatch.forEach(note => {
+        const durSec = note.duration * secPerBeat;
+        soundFontEngine.playNote("chords", note.midi, t, note.velocity, durSec);
+      });
+    } else {
+      // Synth chord engine: one call with all MIDI notes at once
+      chordsEngine.triggerChord(chordMidis, t, false, false);
+    }
+
+    // Mark all chord notes active + individual safety-net timers
+    chordBatch.forEach(note => {
+      _activePlaybackNotes.add(note.id);
+      const durSec = note.duration * secPerBeat;
+      const prevTimer = _noteReleaseTimers.get(note.id);
+      if (prevTimer) clearTimeout(prevTimer);
+      const safetyMs = durSec * 1000 + 80;
+      const timer = setTimeout(() => {
+        _noteReleaseTimers.delete(note.id);
+        if (!_activePlaybackNotes.has(note.id)) return;
+        _activePlaybackNotes.delete(note.id);
+        // Only release the chord engine once the last chord note expires
+        const anyChordActive = _pianoRollNotes.some(
+          n => n.track === "chords" && _activePlaybackNotes.has(n.id)
+        );
+        if (!anyChordActive) chordsEngine.releaseChord(audioEngine.currentTime);
+      }, safetyMs);
+      _noteReleaseTimers.set(note.id, timer);
+    });
+  }
+
   for (const note of _pianoRollNotes) {
     const noteStartStep = Math.round(note.start * 4);
     const target = note.track;
@@ -153,6 +205,9 @@ function pianoRollTick(currentStep: number, bpm: number): void {
       const loopEndStep = Math.round(_loopRange.end * 4);
       if (noteStartStep < loopStartStep || noteStartStep >= loopEndStep) continue;
     }
+
+    // Chord notes were already handled in the batch above
+    if (target === "chords") continue;
 
     _activePlaybackNotes.add(note.id);
     const durSec = note.duration * secPerBeat;
@@ -169,13 +224,6 @@ function pianoRollTick(currentStep: number, bpm: number): void {
           soundFontEngine.playNote("bass", note.midi, t, note.velocity, durSec);
         } else {
           bassEngine.triggerNote(note.midi, t, false, false, false);
-        }
-        break;
-      case "chords":
-        if (soundFontEngine.isLoaded("chords")) {
-          soundFontEngine.playNote("chords", note.midi, t, note.velocity, durSec);
-        } else {
-          chordsEngine.triggerChord([note.midi], t, false, false);
         }
         break;
       case "melody":
@@ -196,7 +244,6 @@ function pianoRollTick(currentStep: number, bpm: number): void {
         _activePlaybackNotes.delete(note.id);
         const now = audioEngine.currentTime;
         if (target === "bass") bassEngine.releaseNote(now);
-        else if (target === "chords") chordsEngine.releaseChord(now);
         // Melody safety net: only fire when piano roll owns the engine path.
         else if (target === "melody" && !soundFontEngine.isLoaded("melody")) melodyEngine.releaseNote(now);
       }, safetyMs);
@@ -221,6 +268,12 @@ const _drumStepUnsub = drumCurrentStepStore.subscribe(() => {
     releaseAllActiveNotes();
     _lastPlaybackStep = -1;
     _pianoRollStepCounter = 0;
+    // Reset _prevDrumStep so the FIRST step after transport restart
+    // always fires a tick — regardless of which step the transport
+    // stopped on. Without this, if the transport restarts on the same
+    // step it stopped on, the subscription guard (step === _prevDrumStep)
+    // silently drops the tick and the piano roll starts one step late.
+    _prevDrumStep = -1;
   }
 });
 

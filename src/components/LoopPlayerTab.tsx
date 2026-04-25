@@ -487,7 +487,7 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
 
   // ── Derived display values ────────────────────────────────
   const ratio          = slot.originalBpm > 0 ? globalBpm / slot.originalBpm : 1;
-  const clampedRatio   = Math.max(0.1, Math.min(4, ratio));
+  const clampedRatio   = Math.max(0.1, Math.min(8, ratio));
   const pitchSemitones = Math.log2(clampedRatio) * 12;
   const ratioLabel     = clampedRatio.toFixed(2);
   const ratioOff       = Math.abs(clampedRatio - 1) > 0.015;

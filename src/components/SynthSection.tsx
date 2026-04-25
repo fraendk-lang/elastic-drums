@@ -6,6 +6,7 @@ import { SamplerTab } from "./SamplerTab";
 import { LoopPlayerTab } from "./LoopPlayerTab";
 import { StockLibrary } from "./StockLibrary";
 import { useOverlayStore } from "../store/overlayStore";
+import { STYLE_META } from "../audio/MelodyGeneratorEngine";
 import { useBassStore, BASS_PRESETS } from "../store/bassStore";
 import { useChordsStore, CHORDS_PRESETS } from "../store/chordsStore";
 import { useMelodyStore, MELODY_PRESETS } from "../store/melodyStore";
@@ -184,6 +185,19 @@ export function SynthSection() {
             title="Open Piano Roll Editor"
           >
             PIANO ROLL
+          </button>
+          <button
+            onClick={() => overlay.openOverlay("melodyGen")}
+            className="px-3 py-1.5 text-[9px] font-bold tracking-[0.15em] transition-all border-b-2 border-transparent hover:bg-white/[0.05]"
+            title="Open Melody Generator"
+            style={{
+              color: STYLE_META.harbourGlow.color + "99",
+              borderBottomColor: "transparent",
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = STYLE_META.harbourGlow.color; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = STYLE_META.harbourGlow.color + "99"; }}
+          >
+            GEN
           </button>
         </div>
       </div>

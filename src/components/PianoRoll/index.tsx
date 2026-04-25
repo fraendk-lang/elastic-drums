@@ -97,6 +97,8 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const [midiRecord, setMidiRecord] = useState(false);
   // Track held MIDI notes: midi → { startBeat, velocity, id }
   const heldMidiNotes = useRef<Map<number, { startBeat: number; velocity: number; id: string }>>(new Map());
+  // Draw-drag: tracks the note being actively drawn by pointer-down + drag
+  const drawDragNoteRef = useRef<{ id: string; startX: number } | null>(null);
 
   // ─── Sync initial persisted state into scheduler on mount ───
   useEffect(() => {
@@ -328,7 +330,9 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
 
   const pasteNotes = useCallback(() => {
     if (clipboard.length === 0) return;
-    const playheadBeat = currentStep * 0.25;
+    // Use the Piano Roll's own independent step counter so paste lands at the
+    // visible playhead position, not the (often stale) drum pattern step.
+    const playheadBeat = getPianoRollCurrentStep() / 4;
     const newNotes = clipboard.map((n) => ({
       ...n,
       id: uid(),
@@ -346,10 +350,30 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
       const hasSel = selectedNoteIds.size > 0;
 
+      // Escape: cancel in-progress draw / deselect all
+      if (e.key === "Escape") {
+        e.preventDefault();
+        if (drawDragNoteRef.current) {
+          const drawnId = drawDragNoteRef.current.id;
+          setNotes((prev) => prev.filter((n) => n.id !== drawnId));
+          drawDragNoteRef.current = null;
+        }
+        setSelectedNoteIds(new Set());
+        setRubberBand(null);
+        setDragMode("none");
+        dragStartRef.current = null;
+        return;
+      }
+
       if (e.ctrlKey || e.metaKey) {
         if (e.key === "a") {
           e.preventDefault();
           setSelectedNoteIds(new Set(notes.map((n) => n.id)));
+        } else if (e.key === "x") {
+          e.preventDefault();
+          copyNotes();
+          pushUndo();
+          removeNotes(selectedNoteIds);
         } else if (e.key === "c") {
           e.preventDefault();
           copyNotes();
@@ -473,6 +497,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     pushUndo,
     undo,
     redo,
+    loop,
     setLoop,
     gridRes,
     totalBeats,
@@ -517,7 +542,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     });
   }, [isOpen, target, rowForMidi]);
 
-  // ─── ZOOM ─────────────────────────────────────────────────────
+  // ─── ZOOM (anchors to cursor position) ───────────────────────
   const handleWheel = useCallback((e: React.WheelEvent) => {
     if (!gridRef.current) return;
     const isHorizontalZoom = e.ctrlKey;
@@ -526,11 +551,21 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     e.preventDefault();
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
     if (isHorizontalZoom) {
-      setCellW((prev) => Math.max(15, Math.min(200, prev * delta)));
+      // Zoom toward the cursor: keep the beat under the cursor stationary
+      const rect = gridRef.current.getBoundingClientRect();
+      const cursorX = e.clientX - rect.left;
+      const oldScrollLeft = gridRef.current.scrollLeft;
+      const cursorBeat = (oldScrollLeft + cursorX) / cellW;
+      const newCellW = Math.max(15, Math.min(200, cellW * delta));
+      const newScrollLeft = Math.max(0, cursorBeat * newCellW - cursorX);
+      setCellW(newCellW);
+      requestAnimationFrame(() => {
+        if (gridRef.current) gridRef.current.scrollLeft = newScrollLeft;
+      });
     } else {
       setRowHeight((prev) => Math.max(10, Math.min(40, prev * delta)));
     }
-  }, []);
+  }, [cellW]);
 
   // ─── GRID INTERACTIONS ────────────────────────────────────────
   const handleGridPointerDown = useCallback(
@@ -580,15 +615,34 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         /* no-op */
       }
 
-      // In SELECT mode, empty click always starts rubber band (no new notes)
-      // In DRAW mode, shift-click starts rubber band, otherwise create note on pointerUp
+      // In SELECT mode, empty click starts rubber band (no new notes)
+      // In DRAW mode, shift-click starts rubber band; otherwise create note immediately
       if (tool === "select" || e.shiftKey) {
         setRubberBand({ x0: x, y0: y, x1: x, y1: y });
       } else {
+        // DRAW mode: create note immediately at pointer-down for drag-to-draw
         setSelectedNoteIds(new Set());
+        pushUndo();
+        let finalMidi = midi;
+        if (scaleSnap) finalMidi = snapToScale(finalMidi, rootMidi, scaleName);
+        const startBeat = snap ? Math.round(rawBeat / gridRes) * gridRes : rawBeat;
+        const duration = lastDrawnDurationRef.current ?? Math.max(gridRes, 1);
+        const note: PianoRollNote = {
+          id: uid(),
+          midi: finalMidi,
+          start: Math.max(0, startBeat),
+          duration,
+          velocity: 0.8,
+          track: target,
+        };
+        setNotes((prev) => [...prev, note]);
+        setSelectedNoteIds(new Set([note.id]));
+        previewNote(finalMidi, 0.8, target);
+        drawDragNoteRef.current = { id: note.id, startX: x };
       }
     },
-    [notes, rowHeight, cellW, snap, gridRes, totalBeats, target, selectedNoteIds, tool, gridH, midiForRow],
+    [notes, rowHeight, cellW, snap, gridRes, totalBeats, target, selectedNoteIds, tool, gridH, midiForRow,
+     pushUndo, scaleSnap, rootMidi, scaleName, setNotes],
   );
 
   // ─── Hover info (lightweight mousemove, no state deps on notes) ──
@@ -611,11 +665,29 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
 
   const handleGridPointerMove = useCallback(
     (e: React.PointerEvent) => {
-      if (!rubberBand) return;
       const rect = gridRef.current?.getBoundingClientRect();
       if (!rect) return;
-
       const x = e.clientX - rect.left + gridRef.current!.scrollLeft;
+
+      // Draw-drag: extend duration of the note being drawn
+      if (drawDragNoteRef.current) {
+        const dx = x - drawDragNoteRef.current.startX;
+        if (dx > 0) {
+          const rawDur = dx / cellW;
+          const newDur = snap
+            ? Math.max(gridRes, Math.round(rawDur / gridRes) * gridRes)
+            : Math.max(gridRes, rawDur);
+          setNotes((prev) =>
+            prev.map((n) =>
+              n.id === drawDragNoteRef.current!.id ? { ...n, duration: newDur } : n,
+            ),
+          );
+        }
+        return;
+      }
+
+      if (!rubberBand) return;
+
       const y = Math.round(e.clientY - rect.top + gridRef.current!.scrollTop - RULER_HEIGHT);
 
       setRubberBand({ ...rubberBand, x1: x, y1: y });
@@ -638,28 +710,26 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
       }
       setSelectedNoteIds(selected);
     },
-    [rubberBand, notes, cellW, rowHeight, rowForMidi],
+    [rubberBand, notes, cellW, rowHeight, rowForMidi, gridRes, snap, setNotes],
   );
 
   const handleGridPointerUp = useCallback(
     (e: React.PointerEvent) => {
-      if (gridClickStartRef.current && !rubberBand && tool === "draw") {
-        const dx = Math.abs(e.clientX - gridClickStartRef.current.x);
-        const dy = Math.abs(e.clientY - gridClickStartRef.current.y);
-        if (dx < 3 && dy < 3) {
-          const rect = gridRef.current?.getBoundingClientRect();
-          if (rect) {
-            const x = e.clientX - rect.left + gridRef.current!.scrollLeft;
-            // Round to avoid sub-pixel off-by-one from fractional rectTop
-            const y = Math.round(e.clientY - rect.top + gridRef.current!.scrollTop - RULER_HEIGHT);
-            if (y >= 0 && y <= gridH) {
-              const row = Math.floor(y / rowHeight);
-              const midi = midiForRow(row);
-              const beat = x / cellW;
-              addNote(midi, beat);
-            }
-          }
-        }
+      // Complete draw-drag: record the final duration for next note inheritance
+      if (drawDragNoteRef.current) {
+        const drawnId = drawDragNoteRef.current.id;
+        setNotes((prev) => {
+          const drawn = prev.find((n) => n.id === drawnId);
+          if (drawn) lastDrawnDurationRef.current = drawn.duration;
+          return prev; // no state change — just reading current value
+        });
+        drawDragNoteRef.current = null;
+        gridClickStartRef.current = null;
+        try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* no-op */ }
+        setRubberBand(null);
+        setDragMode("none");
+        dragStartRef.current = null;
+        return;
       }
       setRubberBand(null);
       setDragMode("none");
@@ -671,7 +741,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         /* no-op */
       }
     },
-    [rubberBand, tool, rowHeight, cellW, addNote, gridH, midiForRow],
+    [rubberBand, setNotes],
   );
 
   // ─── Cut any step-sequencer-held melody note the moment the Piano Roll opens.
@@ -691,6 +761,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   useEffect(() => {
     if (!isOpen) return;
     const onWindowUp = () => {
+      drawDragNoteRef.current = null; // finalize any in-progress draw drag
       setRubberBand(null);
       setDragMode("none");
       dragStartRef.current = null;
@@ -736,7 +807,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
 
       let mode: "move" | "resize" | "velocity" = "move";
       if (relY > h - 5) mode = "velocity";
-      else if (relX > w - 6) mode = "resize";
+      else if (relX > w - 12) mode = "resize"; // 12px hotzone for easy resize grab
 
       if (e.altKey && mode === "move") {
         pushUndo();
@@ -876,13 +947,43 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     (e: React.MouseEvent, id: string) => {
       e.preventDefault();
       e.stopPropagation();
+      // In DRAW mode: right-click = quick erase (like a pencil eraser)
+      if (tool === "draw") {
+        pushUndo();
+        removeNotes(selectedNoteIds.has(id) ? selectedNoteIds : new Set([id]));
+        return;
+      }
       setContextMenu({ x: e.clientX, y: e.clientY, noteId: id });
       if (!selectedNoteIds.has(id)) setSelectedNoteIds(new Set([id]));
     },
-    [selectedNoteIds],
+    [selectedNoteIds, tool, pushUndo, removeNotes],
   );
 
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
+  // ─── Right-click on empty grid in draw mode = erase note at cursor
+  const handleGridContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      if (tool !== "draw") return;
+      e.preventDefault();
+      const rect = gridRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = e.clientX - rect.left + gridRef.current!.scrollLeft;
+      const y = Math.round(e.clientY - rect.top + gridRef.current!.scrollTop - RULER_HEIGHT);
+      if (y < 0 || y > gridH) return;
+      const row = Math.floor(y / rowHeight);
+      const midi = midiForRow(row);
+      const rawBeat = x / cellW;
+      const hit = notes.find(
+        (n) => n.track === target && n.midi === midi && rawBeat >= n.start && rawBeat < n.start + n.duration,
+      );
+      if (hit) {
+        pushUndo();
+        removeNotes(selectedNoteIds.has(hit.id) ? selectedNoteIds : new Set([hit.id]));
+      }
+    },
+    [tool, notes, target, rowHeight, cellW, gridH, midiForRow, pushUndo, removeNotes, selectedNoteIds],
+  );
 
   // ─── Double-click on grid = create note (works in both modes)
   const handleGridDoubleClick = useCallback(
@@ -1159,10 +1260,12 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         <div
           ref={gridRef}
           className="flex-1 overflow-auto relative"
+          style={{ background: "#0d0c10" }}
           onPointerDown={(e) => { closeContextMenu(); handleGridPointerDown(e); }}
           onPointerMove={handleGridPointerMove}
           onPointerUp={handleGridPointerUp}
           onDoubleClick={handleGridDoubleClick}
+          onContextMenu={handleGridContextMenu}
           onMouseMove={handleGridMouseMove}
           onMouseLeave={handleGridMouseLeave}
           onScroll={handleGridScroll}
@@ -1229,27 +1332,34 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
               );
             })}
 
-            {/* Vertical beat lines */}
-            {Array.from({ length: totalBeats * 4 + 1 }, (_, i) => {
-              const x = i * (cellW / 4);
-              const isBar = i % 16 === 0;
-              const isBeat = i % 4 === 0;
-              return (
-                <div
-                  key={`vl-${i}`}
-                  className="absolute top-0 bottom-0 pointer-events-none"
-                  style={{
-                    left: x,
-                    width: isBar ? 1.5 : 1,
-                    backgroundColor: isBar
-                      ? "rgba(255,255,255,0.25)"
-                      : isBeat
-                        ? "rgba(255,255,255,0.12)"
-                        : "rgba(255,255,255,0.04)",
-                  }}
-                />
-              );
-            })}
+            {/* Vertical beat lines — density adapts to snap resolution */}
+            {(() => {
+              // Show lines at the finer of (gridRes, 1/4 beat = 1/16 note)
+              const lineRes = Math.min(0.25, gridRes);
+              const stepsPerBeat = Math.round(1 / lineRes);
+              const stepsPerBar = 4 * stepsPerBeat;
+              const totalLines = totalBeats * stepsPerBeat;
+              return Array.from({ length: totalLines + 1 }, (_, i) => {
+                const x = (i / stepsPerBeat) * cellW;
+                const isBar = i % stepsPerBar === 0;
+                const isBeat = i % stepsPerBeat === 0;
+                return (
+                  <div
+                    key={`vl-${i}`}
+                    className="absolute top-0 bottom-0 pointer-events-none"
+                    style={{
+                      left: x,
+                      width: isBar ? 1.5 : 1,
+                      backgroundColor: isBar
+                        ? "rgba(255,255,255,0.25)"
+                        : isBeat
+                          ? "rgba(255,255,255,0.12)"
+                          : "rgba(255,255,255,0.04)",
+                    }}
+                  />
+                );
+              });
+            })()}
 
             {/* Loop shading: dim regions outside the loop when enabled */}
             {loop.enabled && (
@@ -1382,7 +1492,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                   />
 
                   <div
-                    className={`absolute right-0 top-0 bottom-0 w-2 cursor-col-resize rounded-r-[3px] transition-colors ${
+                    className={`absolute right-0 top-0 bottom-0 w-3 cursor-col-resize rounded-r-[3px] transition-colors ${
                       isSel ? "bg-white/25" : "opacity-0 hover:opacity-100 hover:bg-white/30"
                     }`}
                   />

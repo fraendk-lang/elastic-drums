@@ -35,6 +35,7 @@ const CHANNELS = [
   { id: 13, label: "CHRD",  color: "#a78bfa", badge: "SYN" },
   { id: 14, label: "LEAD",  color: "#f472b6", badge: "SYN" },
   { id: 15, label: "SAMPL", color: "#f97316", badge: "SMPL" },
+  { id: 16, label: "LOOPS", color: "#2EC4B6", badge: "LOOP" },
 ];
 
 const NUM_CHANNELS = CHANNELS.length;
@@ -42,7 +43,7 @@ const NUM_CHANNELS = CHANNELS.length;
 const GROUPS = [
   { id: "drums", label: "DRUMS", color: "#f59e0b", channels: [0, 1, 2, 3, 4, 5] },
   { id: "tops",  label: "TOPS",  color: "#3b82f6", channels: [6, 7, 8, 9, 10, 11] },
-  { id: "music", label: "MUSIC", color: "#10b981", channels: [12, 13, 14, 15] },
+  { id: "music", label: "MUSIC", color: "#10b981", channels: [12, 13, 14, 15, 16] },
 ];
 
 const BUS_STRIPS = [
@@ -53,6 +54,7 @@ const BUS_STRIPS = [
   { id: "chords",  label: "CHD",  color: "#a78bfa" },
   { id: "melody",  label: "LED",  color: "#f472b6" },
   { id: "sampler", label: "SMP",  color: "#f97316" },
+  { id: "loops",   label: "LPS",  color: "#2EC4B6" },
 ] as const;
 
 const RETURN_STRIPS = [
@@ -777,6 +779,8 @@ function SendPopover({ ch, send, value, rect, onChange }: {
       className="fixed z-[100] rounded-xl border border-white/10 bg-[#141620] shadow-[0_12px_40px_rgba(0,0,0,0.5)] p-3"
       style={{ top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 160), width: 148 }}
       onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="flex items-center justify-between mb-2">
         <span className="text-[7px] font-black tracking-[0.16em]" style={{ color: SEND_COLORS[send] }}>
