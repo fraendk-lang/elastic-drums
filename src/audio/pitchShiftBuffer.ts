@@ -21,21 +21,30 @@ const CHUNK_SIZE = 8192;
 async function soundTouchShift(buffer: AudioBuffer, semitones: number): Promise<AudioBuffer> {
   const { sampleRate, length } = buffer;
 
-  const st           = new SoundTouch(sampleRate);
-  st.pitchSemitones  = semitones;
-  st.tempo           = 1.0;
+  const st          = new SoundTouch();
+  st.pitchSemitones = semitones;
+  // tempo stays 1.0 (default) — WSOLA handles time-stretch internally
 
-  const src      = new WebAudioBufferSource(buffer);
-  const filter   = new SimpleFilter(src, st);
+  const src    = new WebAudioBufferSource(buffer);
+  const filter = new SimpleFilter(src, st);
 
-  const maxFrames   = length + CHUNK_SIZE * 4;
-  const interleaved = new Float32Array(maxFrames * 2);
-  let   totalFrames = 0;
+  // SoundTouch WSOLA needs several chunks to prime its internal analysis
+  // windows before it starts producing output. Allow up to 8 consecutive
+  // zero-frame returns before treating the stream as exhausted.
+  const maxFrames      = length + CHUNK_SIZE * 8;
+  const interleaved    = new Float32Array(maxFrames * 2);
+  let   totalFrames    = 0;
+  let   consecutiveZeros = 0;
+  const chunk          = new Float32Array(CHUNK_SIZE * 2);
 
   while (totalFrames < maxFrames) {
-    const chunk  = new Float32Array(CHUNK_SIZE * 2);
+    chunk.fill(0);
     const frames = filter.extract(chunk, CHUNK_SIZE);
-    if (frames === 0) break;
+    if (frames === 0) {
+      if (++consecutiveZeros > 8) break; // stream truly exhausted
+      continue;                          // let WSOLA keep priming
+    }
+    consecutiveZeros = 0;
     const needed = totalFrames * 2 + frames * 2;
     if (needed > interleaved.length) break;
     interleaved.set(chunk.subarray(0, frames * 2), totalFrames * 2);
