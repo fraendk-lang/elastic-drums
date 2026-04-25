@@ -1,17 +1,28 @@
 /**
- * Loop Player Engine — 4-slot tempo-synced audio loop player
+ * Loop Player Engine — 8-slot tempo-synced audio loop player
  *
  * Architecture per slot:
- *   source (loop=true) → gainNode → output
+ *   source (loop=true) → gainNode → output → MixerBar channel 16 → master
  *
  * Tempo sync:
  *   source.playbackRate = globalBpm / slotOriginalBpm
  *
  * Changing BPM while playing:
  *   updatePlaybackRate() applies the new rate without restarting the source
+ *
+ * HMR safety:
+ *   init() is idempotent for the same AudioContext and auto-connects to
+ *   mixer channel 16 (no explicit connect needed in App.tsx).
+ *   startSlot() lazy-inits if this.ctx is null (handles Vite HMR module
+ *   reload without page refresh).
  */
 
-const SLOT_COUNT = 8;
+// Import audioEngine lazily to avoid circular-dependency issues at module load
+// time — we call audioEngine.getAudioContext() only inside methods.
+import { audioEngine } from "./AudioEngine";
+
+const SLOT_COUNT    = 8;
+const LOOP_CHANNEL  = 16; // MixerBar channel index for the LOOPS strip
 
 export class LoopPlayerEngine {
   private ctx: AudioContext | null = null;
@@ -21,11 +32,35 @@ export class LoopPlayerEngine {
   private sources: (AudioBufferSourceNode | null)[] = new Array(SLOT_COUNT).fill(null);
   private gains:   (GainNode | null)[]              = new Array(SLOT_COUNT).fill(null);
 
+  /**
+   * Initialise the engine with an AudioContext.
+   * Idempotent: calling again with the same ctx is a no-op.
+   * Calling with a new ctx (after destroy/rebuild) re-connects from scratch.
+   * Auto-connects output → mixer channel LOOP_CHANNEL so App.tsx doesn't
+   * need a separate connect call.
+   */
   init(ctx: AudioContext): void {
-    this.ctx = ctx;
+    if (this.ctx === ctx) return;          // already up — same context, nothing to do
+    if (this.output) this.output.disconnect(); // clean up old connection if any
+
+    this.ctx    = ctx;
     this.output = ctx.createGain();
     this.output.gain.value = 0.9;
-    // Caller is responsible for connecting output to destination
+    // Auto-wire to LOOPS mixer strip (channel 16)
+    this.output.connect(audioEngine.getChannelOutput(LOOP_CHANNEL));
+  }
+
+  /**
+   * Lazy-init helper used inside every public playback method.
+   * Handles the Vite HMR case where a module reload creates a new singleton
+   * without re-running App.tsx startAudio (audioReady stays true via React
+   * Fast Refresh). Returns true if the engine is ready to use.
+   */
+  private _ensureInit(): boolean {
+    if (this.ctx && this.output) return true;
+    const ctx = audioEngine.getAudioContext();
+    if (ctx) this.init(ctx);
+    return !!(this.ctx && this.output);
   }
 
   /**
@@ -51,12 +86,13 @@ export class LoopPlayerEngine {
     loopEndSeconds?: number,
     pitchFactor = 1,
   ): void {
-    if (!this.ctx || !this.output) return;
+    if (!this._ensureInit()) return;
 
     // Always clean up any existing source first
     this._stopSlotInternal(slotIdx, startTime);
 
-    const ctx = this.ctx;
+    // _ensureInit() guarantees both ctx and output are non-null
+    const ctx = this.ctx!;
 
     const loopStart = Math.max(0, loopStartSeconds ?? 0);
     const loopEnd   = Math.min(buffer.duration, loopEndSeconds ?? buffer.duration);
@@ -78,7 +114,7 @@ export class LoopPlayerEngine {
     gain.gain.value = Math.max(0, Math.min(1, volume));
 
     source.connect(gain);
-    gain.connect(this.output);
+    gain.connect(this.output!);
 
     // Start reading from loopStart so playback begins on beat 1
     source.start(Math.max(ctx.currentTime, startTime), loopStart);
@@ -106,6 +142,7 @@ export class LoopPlayerEngine {
    * No audio interruption — just adjusts speed.
    */
   updatePlaybackRate(slotIdx: number, originalBpm: number, globalBpm: number, pitchFactor = 1): void {
+    if (!this._ensureInit()) return;
     const source = this.sources[slotIdx];
     if (!source || !this.ctx) return;
     const rate = this._calcRate(originalBpm, globalBpm, pitchFactor);
@@ -213,9 +250,12 @@ export class LoopPlayerEngine {
         if (fi < dst.length) dst[fi]! *= i / fadeFrames;
       }
       // Fade-out at loopEnd (1 → 0 over fadeFrames)
+      // fi counts DOWN from endFrame-1: the LAST sample (endFrame-1) gets
+      // multiplied by 0 (silent), so on loop-wrap both the last sample
+      // (silent) and the first sample (silent from fade-in) are at 0 → no click.
       for (let i = 0; i < fadeFrames; i++) {
         const fi = endFrame - 1 - i;
-        if (fi >= 0) dst[fi]! *= (fadeFrames - 1 - i) / fadeFrames;
+        if (fi >= 0) dst[fi]! *= i / fadeFrames;
       }
     }
     return copy;

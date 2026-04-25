@@ -217,10 +217,8 @@ export function App() {
         if (samplerOut && samplerCh) samplerOut.connect(samplerCh);
 
         // Loop Player → Channel 16 (dedicated mixer strip: EQ, sends, fader, meter)
+        // init() auto-connects output → channel 16 and is idempotent (safe to call again after HMR)
         loopPlayerEngine.init(ctx);
-        const loopOut = loopPlayerEngine.getOutput();
-        const loopCh  = audioEngine.getChannelOutput(16);
-        if (loopOut && loopCh) loopOut.connect(loopCh);
       }
       setAudioReady(true);
 
