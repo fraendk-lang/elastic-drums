@@ -14,6 +14,132 @@ const VOICE_LABELS = [
   "HH CL", "HH OP", "CYM", "RIDE", "PRC1", "PRC2",
 ];
 
+// ── Kit Fill — base patterns per voice (at density 1.0) ──────────────────────
+// Index matches VOICE_LABELS. rotation = step offset for musical placement.
+const KIT_FILL_BASE: { pulses: number; steps: number; rotation: number }[] = [
+  { pulses: 4, steps: 16, rotation: 0  }, // KICK  — four-on-floor
+  { pulses: 2, steps: 16, rotation: 4  }, // SNARE — beats 2 & 4
+  { pulses: 2, steps: 16, rotation: 4  }, // CLAP  — beats 2 & 4
+  { pulses: 1, steps: 16, rotation: 3  }, // TOM L — sparse
+  { pulses: 1, steps: 16, rotation: 7  }, // TOM M — sparse offset
+  { pulses: 1, steps: 16, rotation: 11 }, // TOM H — sparse offset
+  { pulses: 8, steps: 16, rotation: 0  }, // HH CL — 8th notes
+  { pulses: 2, steps: 16, rotation: 2  }, // HH OP — offbeats
+  { pulses: 1, steps: 16, rotation: 0  }, // CYM   — downbeat
+  { pulses: 4, steps: 16, rotation: 1  }, // RIDE  — slight offset
+  { pulses: 3, steps: 16, rotation: 2  }, // PRC1
+  { pulses: 3, steps: 16, rotation: 5  }, // PRC2
+];
+
+// ── Groove Styles — multi-voice presets ──────────────────────────────────────
+interface VoicePat { p: number; s: number; r: number }
+interface GrooveStyle {
+  name: string;
+  hint: string;
+  emoji: string;
+  voices: Partial<Record<number, VoicePat>>; // voice index → E(p,s,r)
+}
+
+const GROOVE_STYLES: GrooveStyle[] = [
+  {
+    name: "House",   emoji: "🏠", hint: "Four-on-floor, offbeat open HH, snare on 2&4",
+    voices: {
+      0: { p: 4, s: 16, r: 0  }, // KICK
+      1: { p: 2, s: 16, r: 4  }, // SNARE
+      2: { p: 2, s: 16, r: 4  }, // CLAP
+      6: { p: 8, s: 16, r: 0  }, // HH CL
+      7: { p: 4, s: 16, r: 2  }, // HH OP
+      9: { p: 4, s: 16, r: 1  }, // RIDE
+    },
+  },
+  {
+    name: "Techno",  emoji: "⚙️", hint: "Driving kick, 16th HH, sparse accents",
+    voices: {
+      0: { p: 4,  s: 16, r: 0 }, // KICK
+      1: { p: 2,  s: 16, r: 4 }, // SNARE
+      2: { p: 1,  s: 16, r: 4 }, // CLAP
+      6: { p: 16, s: 16, r: 0 }, // HH CL — 16th notes
+      7: { p: 3,  s: 16, r: 2 }, // HH OP
+      8: { p: 2,  s: 16, r: 0 }, // CYM
+      9: { p: 4,  s: 16, r: 1 }, // RIDE
+    },
+  },
+  {
+    name: "Trap",    emoji: "🔫", hint: "Sparse kick, hi-hat rolls, snare on 3",
+    voices: {
+      0: { p: 3,  s: 16, r: 0 }, // KICK — sparse
+      1: { p: 1,  s: 16, r: 8 }, // SNARE — beat 3
+      2: { p: 2,  s: 16, r: 4 }, // CLAP
+      6: { p: 16, s: 16, r: 0 }, // HH CL — every step
+      7: { p: 4,  s: 16, r: 3 }, // HH OP
+      9: { p: 8,  s: 16, r: 1 }, // RIDE
+     10: { p: 5,  s: 16, r: 2 }, // PRC1
+    },
+  },
+  {
+    name: "Afrobeat", emoji: "🌍", hint: "Cuban clave feel, layered percussion",
+    voices: {
+      0: { p: 3, s: 16, r: 0 }, // KICK — tresillo
+      1: { p: 2, s: 16, r: 3 }, // SNARE
+      2: { p: 5, s: 16, r: 1 }, // CLAP — cinquillo
+      3: { p: 3, s: 16, r: 2 }, // TOM L
+      4: { p: 5, s: 16, r: 4 }, // TOM M
+      6: { p: 7, s: 16, r: 0 }, // HH CL — Bulgarian-ish
+      7: { p: 3, s: 16, r: 4 }, // HH OP
+     10: { p: 5, s:  8, r: 0 }, // PRC1 — dense clave
+     11: { p: 3, s:  8, r: 1 }, // PRC2
+    },
+  },
+  {
+    name: "Jazz",    emoji: "🎷", hint: "Loose ride, brush snare, sparse kick",
+    voices: {
+      0: { p: 2, s: 16, r: 0 }, // KICK — sparse
+      1: { p: 3, s: 16, r: 2 }, // SNARE — brush feel
+      6: { p: 5, s: 16, r: 0 }, // HH CL — swing-like
+      7: { p: 2, s: 16, r: 6 }, // HH OP
+      8: { p: 2, s: 16, r: 8 }, // CYM
+      9: { p: 8, s: 16, r: 1 }, // RIDE — ride pattern
+    },
+  },
+  {
+    name: "Samba",   emoji: "🇧🇷", hint: "Layered surdo, tamborim, agogô feel",
+    voices: {
+      0: { p: 3, s: 16, r: 0 }, // KICK — surdo
+      1: { p: 5, s: 16, r: 1 }, // SNARE — caixa
+      2: { p: 3, s:  8, r: 0 }, // CLAP  — palma
+      3: { p: 5, s: 16, r: 2 }, // TOM L — surdo 2
+      4: { p: 3, s: 16, r: 4 }, // TOM M
+      6: { p: 8, s: 16, r: 0 }, // HH CL
+      7: { p: 2, s: 16, r: 3 }, // HH OP
+     10: { p: 5, s: 16, r: 3 }, // PRC1 — tamborim
+     11: { p: 7, s: 16, r: 2 }, // PRC2 — agogô
+    },
+  },
+  {
+    name: "DnB",     emoji: "⚡", hint: "Amen-inspired breakbeat, syncopated",
+    voices: {
+      0: { p: 3, s: 16, r: 0 }, // KICK
+      1: { p: 5, s: 16, r: 2 }, // SNARE — syncopated
+      2: { p: 2, s: 16, r: 5 }, // CLAP
+      6: { p: 13,s: 16, r: 0 }, // HH CL — busy
+      7: { p: 4, s: 16, r: 1 }, // HH OP
+      8: { p: 3, s: 16, r: 3 }, // CYM
+      9: { p: 5, s: 16, r: 2 }, // RIDE
+    },
+  },
+  {
+    name: "Reggae",  emoji: "🌿", hint: "One-drop kick, skank rhythm, sparse",
+    voices: {
+      0: { p: 2, s: 16, r: 8 }, // KICK — one drop (beat 3)
+      1: { p: 2, s: 16, r: 4 }, // SNARE
+      2: { p: 4, s: 16, r: 2 }, // CLAP — skank offbeats
+      6: { p: 4, s: 16, r: 0 }, // HH CL
+      7: { p: 4, s: 16, r: 2 }, // HH OP — upbeat skank
+      9: { p: 4, s: 16, r: 2 }, // RIDE
+    },
+  },
+];
+
 const NOTE_MODES = [
   { id: "root",       label: "Root" },
   { id: "ascending",  label: "Ascend" },
@@ -67,6 +193,8 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
   const [accentPulses, setAccentPulses] = useState(0);
   const [accentRotation, setAccentRotation] = useState(0);
   const [noteMode, setNoteMode] = useState("root");
+  const [kitDensity, setKitDensity] = useState(0.5);  // 0 = sparse … 1 = dense
+  const [activeStyle, setActiveStyle] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -133,6 +261,27 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
     setAccentPulses(0);
     setAccentRotation(0);
   }, []);
+
+  // ── Kit Fill: apply scaled base patterns to all 12 drum voices ──
+  const handleFillKit = useCallback(() => {
+    // density 0 → ~25 % of base pulses, density 1 → ~175 % (clamped to steps)
+    const scale = 0.25 + kitDensity * 1.5;
+    KIT_FILL_BASE.forEach((base, voiceIdx) => {
+      const scaled = Math.max(1, Math.min(base.steps, Math.round(base.pulses * scale)));
+      applyDrumEuclidean(voiceIdx, scaled, base.steps, base.rotation);
+    });
+    setActiveStyle(null);
+  }, [kitDensity, applyDrumEuclidean]);
+
+  // ── Groove Style: apply one style's voice map ──
+  const handleApplyStyle = useCallback((style: GrooveStyle) => {
+    // Apply defined voices; voices not in the map are left untouched
+    Object.entries(style.voices).forEach(([idxStr, pat]) => {
+      if (!pat) return;
+      applyDrumEuclidean(Number(idxStr), pat.p, pat.s, pat.r);
+    });
+    setActiveStyle(style.name);
+  }, [applyDrumEuclidean]);
 
   if (!isOpen) return null;
 
@@ -348,9 +497,93 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
           </div>
         )}
 
+        {/* ── Groove Styles (drums only) ── */}
+        <div className="mb-3 p-2.5 rounded-lg border border-[var(--ed-border-subtle)] bg-[var(--ed-bg-surface)]/40">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[9px] font-bold tracking-wider" style={{ color: "var(--ed-accent-orange)" }}>
+              GROOVE STYLES
+            </span>
+            <span className="text-[7px] text-[var(--ed-text-muted)]">Fills all drum voices at once</span>
+          </div>
+          <div className="grid grid-cols-4 gap-1 mb-2">
+            {GROOVE_STYLES.map((style) => {
+              const isActive = activeStyle === style.name;
+              return (
+                <button
+                  key={style.name}
+                  onClick={() => handleApplyStyle(style)}
+                  title={style.hint}
+                  className="flex flex-col items-center gap-0.5 py-1.5 px-1 rounded-lg transition-all border"
+                  style={{
+                    background:   isActive ? "color-mix(in srgb, var(--ed-accent-orange) 15%, transparent)" : "var(--ed-bg-surface)",
+                    borderColor:  isActive ? "color-mix(in srgb, var(--ed-accent-orange) 40%, transparent)" : "var(--ed-border-subtle)",
+                    color:        isActive ? "var(--ed-accent-orange)" : "var(--ed-text-secondary)",
+                  }}
+                >
+                  <span className="text-[11px] leading-none">{style.emoji}</span>
+                  <span className="text-[7px] font-bold tracking-wide">{style.name.toUpperCase()}</span>
+                </button>
+              );
+            })}
+          </div>
+          {activeStyle && (
+            <div className="text-[8px] text-center" style={{ color: "var(--ed-accent-orange)" }}>
+              ✓ {activeStyle} applied — tweak individual voices or hit RESET to clear
+            </div>
+          )}
+        </div>
+
+        {/* ── Kit Fill ── */}
+        <div className="mb-3 p-2.5 rounded-lg border border-[var(--ed-border-subtle)] bg-[var(--ed-bg-surface)]/40">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[9px] font-bold tracking-wider" style={{ color: "var(--ed-accent-orange)" }}>
+              KIT FILL
+            </span>
+            <span className="text-[7px] text-[var(--ed-text-muted)]">Scale all voices by density</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 flex-1">
+              <span className="text-[7px] font-bold text-[var(--ed-text-muted)] w-12">SPARSE</span>
+              <input
+                type="range" min={0} max={100} value={Math.round(kitDensity * 100)}
+                onChange={(e) => setKitDensity(Number(e.target.value) / 100)}
+                className="flex-1 h-1.5"
+                style={{ accentColor: "var(--ed-accent-orange)" }}
+              />
+              <span className="text-[7px] font-bold text-[var(--ed-text-muted)] w-12 text-right">DENSE</span>
+            </div>
+            <button
+              onClick={handleFillKit}
+              className="shrink-0 px-3 py-1.5 text-[9px] font-bold rounded-lg transition-all border"
+              style={{
+                background:   "color-mix(in srgb, var(--ed-accent-orange) 15%, transparent)",
+                borderColor:  "color-mix(in srgb, var(--ed-accent-orange) 35%, transparent)",
+                color:        "var(--ed-accent-orange)",
+              }}
+            >
+              FILL KIT
+            </button>
+          </div>
+          {/* Mini density preview — shows pulse counts */}
+          <div className="flex gap-0.5 mt-2 flex-wrap">
+            {KIT_FILL_BASE.map((base, i) => {
+              const scale  = 0.25 + kitDensity * 1.5;
+              const scaled = Math.max(1, Math.min(base.steps, Math.round(base.pulses * scale)));
+              return (
+                <div key={i} className="flex flex-col items-center gap-0.5 flex-1 min-w-[32px]">
+                  <div className="text-[5px] font-bold text-white/25">{VOICE_LABELS[i]}</div>
+                  <div className="text-[8px] font-bold tabular-nums" style={{ color: "var(--ed-accent-orange)" }}>
+                    {scaled}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Presets */}
         <div className="mb-3">
-          <div className="text-[8px] font-bold text-[var(--ed-text-muted)] tracking-wider mb-1">PRESETS</div>
+          <div className="text-[8px] font-bold text-[var(--ed-text-muted)] tracking-wider mb-1">SINGLE-VOICE PRESETS</div>
           <div className="flex gap-1 flex-wrap">
             {PRESETS.map((preset) => (
               <button
