@@ -208,7 +208,6 @@ function _pitchFactor(slot: LoopSlotState): number {
 }
 
 function _launchSlot(idx: number, slot: LoopSlotState): void {
-  console.log(`[LoopStore] _launchSlot(${idx}) — buffer:`, !!slot.buffer, 'warpMode:', slot.warpMode, 'transpose:', slot.transpose);
   if (!slot.buffer) return;
   const globalBpm = useDrumStore.getState().bpm;
   const startTime = _nextBarTime();
