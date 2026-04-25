@@ -184,6 +184,7 @@ export class LoopPlayerEngine {
 
   destroy(): void {
     this.stopAll();
+    if (this.output) this.output.disconnect();
     this.output = null;
     this.ctx    = null;
   }

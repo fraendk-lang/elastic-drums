@@ -240,10 +240,28 @@ const _tapTimes: (number[])[] = [[], [], [], [], [], [], [], []];
 const _tapTimers: (ReturnType<typeof setTimeout> | null)[] = [null, null, null, null, null, null, null, null];
 const TAP_RESET_MS = 2500;
 
+// ─── HMR slot-state recovery ───────────────────────────────────────────────
+// When Vite HMR reloads this module (triggered by LoopPlayerEngine.ts changes)
+// it re-evaluates the file and creates a FRESH Zustand store — all loaded
+// AudioBuffers are lost. React Fast Refresh keeps audioReady=true so
+// startAudio never re-runs; togglePlay would bail immediately with buffer=null.
+//
+// Fix: stash the current slot array in import.meta.hot.data before teardown
+// (dispose) and pick it up here on the next evaluation. AudioBuffer objects
+// are reference-stable across HMR reloads (they're tied to the AudioContext,
+// which the Fast Refresh runtime keeps alive).
+const _prevSlots = (import.meta.hot?.data?.slots as LoopSlotState[] | undefined)
+  ?.map((s): LoopSlotState => ({
+    ...s,
+    analyzing: false,  // BPM worker is gone after reload → reset flag
+    pitching:  false,  // in-flight SoundTouch job is gone → reset flag
+    playing:   false,  // audio nodes are gone after reload → mark stopped
+  }));
+
 // ─── Store ────────────────────────────────────────────────
 
 export const useLoopPlayerStore = create<LoopPlayerStore>((set, get) => ({
-  slots: Array.from({ length: 8 }, createDefaultSlot),
+  slots: _prevSlots ?? Array.from({ length: 8 }, createDefaultSlot),
 
   // ── Load file ──────────────────────────────────────────
   setBuffer: (idx, buffer, fileName) => {
@@ -605,5 +623,9 @@ if (import.meta.hot) {
     _unsub();
     _bpmWorker?.terminate();
     _bpmWorker = null;
+    // Stash slot state so the next module evaluation can restore AudioBuffers
+    import.meta.hot!.data.slots = useLoopPlayerStore.getState().slots;
+    // Disconnect old engine output node so it won't double-connect after reload
+    loopPlayerEngine.destroy();
   });
 }
