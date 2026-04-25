@@ -196,6 +196,8 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
   const setLoopRegion      = useLoopPlayerStore((s) => s.setLoopRegion);
   const restartSlot        = useLoopPlayerStore((s) => s.restartSlot);
   const setVolume          = useLoopPlayerStore((s) => s.setVolume);
+  const setTranspose       = useLoopPlayerStore((s) => s.setTranspose);
+  const setWarpMode        = useLoopPlayerStore((s) => s.setWarpMode);
   const togglePlay         = useLoopPlayerStore((s) => s.togglePlay);
   const tapBpm             = useLoopPlayerStore((s) => s.tapBpm);
   const globalBpm          = useDrumStore((s) => s.bpm);
@@ -708,6 +710,86 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
 
           <div className="w-px h-3.5 bg-white/8 shrink-0" />
 
+          {/* Warp Mode + Transpose */}
+          <div className="flex items-center gap-0.5 shrink-0">
+            {/* Mode selector */}
+            <span className="text-[6px] font-bold text-white/20 mr-0.5">WARP</span>
+            {(["repitch", "beats", "complex"] as const).map((m) => {
+              const labels: Record<string, string> = { repitch: "RE-PITCH", beats: "BEATS", complex: "COMPLEX" };
+              const isActive = slot.warpMode === m;
+              return (
+                <button
+                  key={m}
+                  onClick={() => setWarpMode(slotIndex, m)}
+                  disabled={slot.pitching}
+                  className="text-[6px] font-bold px-1.5 py-0.5 rounded transition-all"
+                  style={{
+                    background: isActive ? `rgba(46,196,182,0.20)` : "rgba(255,255,255,0.03)",
+                    color: isActive ? TEAL : "rgba(255,255,255,0.3)",
+                    border: `1px solid ${isActive ? `${TEAL}50` : "rgba(255,255,255,0.07)"}`,
+                  }}
+                  title={
+                    m === "repitch"
+                      ? "Re-Pitch: vinyl — pitch and tempo shift together (instant)"
+                      : m === "beats"
+                      ? "Beats: WSOLA — pitch without tempo change, best for drums"
+                      : "Complex: Phase Vocoder — pitch without tempo change, best for melodic loops"
+                  }
+                >
+                  {labels[m]}
+                </button>
+              );
+            })}
+
+            <div className="w-px h-3 bg-white/8 mx-0.5" />
+
+            {/* Transpose nudge buttons */}
+            <span className="text-[6px] font-bold text-white/20 mr-0.5">ST</span>
+            {slot.pitching ? (
+              <svg width="10" height="10" viewBox="0 0 10 10" style={{ animation: "spin 0.8s linear infinite" }}>
+                <circle cx="5" cy="5" r="4" stroke={`${TEAL}30`} strokeWidth="1.5" fill="none" />
+                <path d="M5 1A4 4 0 0 1 9 5" stroke={TEAL} strokeWidth="1.5" fill="none" strokeLinecap="round" />
+              </svg>
+            ) : (
+              <>
+                {([-12, -1, +1, +12] as const).map((delta) => (
+                  <button
+                    key={delta}
+                    onClick={() => setTranspose(slotIndex, slot.transpose + delta)}
+                    className="text-[7px] font-bold px-1 py-0.5 rounded transition-all"
+                    style={{
+                      background: "rgba(255,255,255,0.04)",
+                      color: "rgba(255,255,255,0.45)",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                    }}
+                    title={`${delta > 0 ? "+" : ""}${delta} semitone${Math.abs(delta) !== 1 ? "s" : ""}`}
+                  >
+                    {delta === 12 ? "+8ve" : delta === -12 ? "-8ve" : delta > 0 ? `+${delta}` : delta}
+                  </button>
+                ))}
+              </>
+            )}
+
+            {/* Value badge — click to reset */}
+            <button
+              onClick={() => !slot.pitching && setTranspose(slotIndex, 0)}
+              disabled={slot.pitching}
+              className="text-[7px] font-bold px-1.5 py-0.5 rounded tabular-nums transition-all"
+              style={{
+                background: slot.transpose !== 0 ? `rgba(46,196,182,0.18)` : "rgba(255,255,255,0.03)",
+                color: slot.transpose !== 0 ? TEAL : "rgba(255,255,255,0.18)",
+                border: `1px solid ${slot.transpose !== 0 ? `${TEAL}45` : "rgba(255,255,255,0.06)"}`,
+                minWidth: 30,
+                cursor: slot.transpose !== 0 && !slot.pitching ? "pointer" : "default",
+              }}
+              title={slot.transpose !== 0 ? "Click to reset pitch to 0" : "No pitch shift"}
+            >
+              {slot.transpose === 0 ? "0st" : `${slot.transpose > 0 ? "+" : ""}${slot.transpose}st`}
+            </button>
+          </div>
+
+          <div className="w-px h-3.5 bg-white/8 shrink-0" />
+
           {/* Slice → Pads — 2-step workflow */}
           {pendingSlices === null ? (
             // Step 1: configure + compute
@@ -770,6 +852,8 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
 export function LoopPlayerTab() {
   const globalBpm   = useDrumStore((s) => s.bpm);
   const isPlaying   = useDrumStore((s) => s.isPlaying);
+  const togglePlay  = useDrumStore((s) => s.togglePlay);
+  const setBpm      = useDrumStore((s) => s.setBpm);
   const stopAll     = useLoopPlayerStore((s) => s.stopAll);
   const slots       = useLoopPlayerStore((s) => s.slots);
 
@@ -777,28 +861,88 @@ export function LoopPlayerTab() {
   const activeCount = armedCount > 0 && isPlaying ? armedCount : 0;
   const anyAnalyzing = slots.some((s) => s.analyzing);
 
+  const [bpmEdit, setBpmEdit] = useState(String(globalBpm));
+  // Keep BPM input in sync when changed from other components
+  useEffect(() => { setBpmEdit(String(globalBpm)); }, [globalBpm]);
+  const commitBpm = () => {
+    const v = parseFloat(bpmEdit);
+    if (!isNaN(v) && v >= 30 && v <= 300) setBpm(v);
+    else setBpmEdit(String(globalBpm));
+  };
+
   return (
     <div className="flex flex-col gap-3 p-3">
 
-      {/* Header bar */}
-      <div className="flex items-center gap-3 px-0.5">
-        <span className="text-[8px] font-bold tracking-[0.18em] text-white/30">LOOP PLAYER</span>
+      {/* Transport bar */}
+      <div
+        className="flex items-center gap-2 px-3 py-2 rounded-lg"
+        style={{
+          background: isPlaying
+            ? `linear-gradient(90deg, ${TEAL}0a, ${TEAL}14, ${TEAL}0a)`
+            : "rgba(255,255,255,0.025)",
+          border: `1px solid ${isPlaying ? TEAL + "30" : "rgba(255,255,255,0.07)"}`,
+        }}
+      >
+        {/* PLAY / STOP */}
+        <button
+          onClick={togglePlay}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md font-black text-[9px] tracking-[0.14em] transition-all shrink-0"
+          style={isPlaying ? {
+            background: `${TEAL}22`,
+            color: TEAL,
+            border: `1px solid ${TEAL}55`,
+            boxShadow: `0 0 12px ${TEAL}30`,
+          } : {
+            background: "rgba(255,255,255,0.06)",
+            color: "rgba(255,255,255,0.65)",
+            border: "1px solid rgba(255,255,255,0.12)",
+          }}
+        >
+          <span style={{ fontSize: 10 }}>{isPlaying ? "■" : "▶"}</span>
+          {isPlaying ? "STOP" : "PLAY"}
+        </button>
 
-        {/* Transport dot + BPM */}
-        <div className="flex items-center gap-1.5">
-          <div
-            className="w-1.5 h-1.5 rounded-full transition-all"
+        {/* Animated dot */}
+        <div
+          className="w-2 h-2 rounded-full shrink-0 transition-all"
+          style={{
+            background: isPlaying ? TEAL : "rgba(255,255,255,0.1)",
+            boxShadow: isPlaying ? `0 0 8px ${TEAL}` : "none",
+            animation: isPlaying ? "pulse 1s ease-in-out infinite" : "none",
+          }}
+        />
+
+        {/* BPM input */}
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-[7px] font-bold text-white/30">BPM</span>
+          <input
+            type="number" min={30} max={300} step={1}
+            value={bpmEdit}
+            onChange={(e) => setBpmEdit(e.target.value)}
+            onBlur={commitBpm}
+            onKeyDown={(e) => { if (e.key === "Enter") commitBpm(); }}
+            className="w-12 text-center text-[11px] font-black rounded px-1 py-0.5 tabular-nums"
             style={{
-              background: isPlaying ? TEAL : "rgba(255,255,255,0.12)",
-              boxShadow:  isPlaying ? `0 0 6px ${TEAL}` : "none",
+              background: "rgba(0,0,0,0.35)",
+              border: `1px solid ${isPlaying ? TEAL + "35" : "rgba(255,255,255,0.1)"}`,
+              color: isPlaying ? TEAL : "rgba(255,255,255,0.85)",
+              outline: "none",
             }}
           />
-          <span
-            className="text-[8px] font-bold tabular-nums"
-            style={{ color: isPlaying ? `${TEAL}90` : "rgba(255,255,255,0.25)" }}
-          >
-            {globalBpm} BPM
-          </span>
+        </div>
+
+        {/* BPM nudge */}
+        <div className="flex gap-[2px] shrink-0">
+          {([-5, -1, +1, +5] as const).map((delta) => (
+            <button
+              key={delta}
+              onClick={() => setBpm(globalBpm + delta)}
+              className="text-[7px] font-bold px-1 py-0.5 rounded transition-colors"
+              style={{ color: "rgba(255,255,255,0.35)", border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.03)" }}
+            >
+              {delta > 0 ? `+${delta}` : delta}
+            </button>
+          ))}
         </div>
 
         {/* Active count */}
@@ -813,9 +957,7 @@ export function LoopPlayerTab() {
 
         {/* Quantized launch hint */}
         {isPlaying && armedCount > 0 && (
-          <span className="text-[7px] text-white/20 hidden sm:block">
-            ⊞ Launches on next bar
-          </span>
+          <span className="text-[7px] text-white/20 hidden sm:block">⊞ next bar</span>
         )}
 
         {/* Analyzing indicator */}
@@ -830,13 +972,16 @@ export function LoopPlayerTab() {
 
         <div className="flex-1" />
 
-        {/* Stop all */}
+        <span className="text-[7px] font-black tracking-[0.18em] text-white/20">LOOP PLAYER</span>
+
+        {/* Stop all loops */}
         <button
           onClick={stopAll}
-          className="text-[8px] font-bold px-2 py-0.5 rounded transition-all"
+          className="text-[8px] font-bold px-2 py-1 rounded transition-all shrink-0"
           style={{
-            color:  armedCount > 0 ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.2)",
-            border: `1px solid ${armedCount > 0 ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.06)"}`,
+            color:  armedCount > 0 ? "rgba(255,80,80,0.85)" : "rgba(255,255,255,0.2)",
+            border: `1px solid ${armedCount > 0 ? "rgba(255,80,80,0.25)" : "rgba(255,255,255,0.06)"}`,
+            background: armedCount > 0 ? "rgba(255,80,80,0.07)" : "transparent",
           }}
         >
           STOP ALL
