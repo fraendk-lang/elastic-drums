@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useDrumStore, setFillMode } from "../store/drumStore";
+import { resetAll } from "../utils/resetAll";
 import { useSceneStore } from "../store/sceneStore";
 import { downloadMidi } from "../utils/midiExport";
 import { sharePattern } from "../utils/patternShare";
@@ -40,7 +41,6 @@ export function Transport({
   const nextPreset = useDrumStore((s) => s.nextPreset);
   const prevPreset = useDrumStore((s) => s.prevPreset);
   const clearPattern = useDrumStore((s) => s.clearPattern);
-  const newSession = useDrumStore((s) => s.newSession);
   const launchQuantize = useSceneStore((s) => s.launchQuantize);
   const setLaunchQuantize = useSceneStore((s) => s.setLaunchQuantize);
 
@@ -208,18 +208,12 @@ export function Transport({
         </button>
         <button
           onClick={clearPattern}
-          aria-label="Clear pattern"
+          aria-label="Clear drum pattern"
           className="text-[7px] text-white/15 hover:text-red-400/60 transition-colors ml-0.5 font-bold tracking-wider"
         >
           CLR
         </button>
-        <button
-          onClick={newSession}
-          aria-label="New empty session"
-          className="text-[7px] text-white/15 hover:text-[var(--ed-accent-green)]/60 transition-colors ml-1 font-bold tracking-wider"
-        >
-          NEW
-        </button>
+        <ResetButton />
         <button
           onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true }))}
           aria-label="Undo"
@@ -617,6 +611,46 @@ function ExportMenu({ onSave, onMidiExport, onShare }: {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * ResetButton — one click to arm (shows "SURE?"), second click within 2s executes.
+ * Resets every sequencer, synth, sample and piano roll note.
+ */
+function ResetButton() {
+  const [armed, setArmed] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleClick = useCallback(() => {
+    if (!armed) {
+      // First click: arm the reset, auto-disarm after 2s
+      setArmed(true);
+      timer.current = setTimeout(() => setArmed(false), 2000);
+    } else {
+      // Second click: execute full reset
+      if (timer.current) clearTimeout(timer.current);
+      setArmed(false);
+      resetAll();
+    }
+  }, [armed]);
+
+  // Clean up timer on unmount
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  return (
+    <button
+      onClick={handleClick}
+      aria-label={armed ? "Click again to confirm full reset" : "Reset all — clears everything"}
+      title={armed ? "Click again to reset EVERYTHING" : "Reset all (drums, bass, chords, melody, sampler, loops, piano roll)"}
+      className={`text-[7px] font-bold tracking-wider transition-all ml-1 px-1 rounded ${
+        armed
+          ? "bg-red-500/20 text-red-400 border border-red-500/40 animate-pulse"
+          : "text-white/15 hover:text-red-400/60"
+      }`}
+    >
+      {armed ? "SURE?" : "RESET"}
+    </button>
   );
 }
 
