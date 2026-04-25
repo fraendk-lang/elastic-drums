@@ -4,6 +4,7 @@ import { ChordsSequencer } from "./ChordsSequencer";
 import { MelodySequencer } from "./MelodySequencer";
 import { SamplerTab } from "./SamplerTab";
 import { LoopPlayerTab } from "./LoopPlayerTab";
+import { StockLibrary } from "./StockLibrary";
 import { useOverlayStore } from "../store/overlayStore";
 import { useBassStore, BASS_PRESETS } from "../store/bassStore";
 import { useChordsStore, CHORDS_PRESETS } from "../store/chordsStore";
@@ -14,7 +15,7 @@ import { chordsEngine } from "../audio/ChordsEngine";
 import { melodyEngine } from "../audio/MelodyEngine";
 import { soundFontEngine } from "../audio/SoundFontEngine";
 
-type SynthTab = "bass" | "chords" | "melody" | "sampler" | "loops";
+type SynthTab = "bass" | "chords" | "melody" | "sampler" | "loops" | "library";
 
 const TABS: { id: SynthTab; label: string; color: string }[] = [
   { id: "bass",    label: "BASS",    color: "var(--ed-accent-bass)"   },
@@ -22,6 +23,7 @@ const TABS: { id: SynthTab; label: string; color: string }[] = [
   { id: "melody",  label: "MELODY",  color: "var(--ed-accent-melody)" },
   { id: "sampler", label: "SAMPLER", color: "#f59e0b"                 },
   { id: "loops",   label: "LOOPS",   color: "#2EC4B6"                 },
+  { id: "library", label: "LIBRARY", color: "#a78bfa"                 },
 ];
 
 interface HouseMacro {
@@ -225,8 +227,9 @@ export function SynthSection() {
       {active === "bass" && <BassSequencer />}
       {active === "chords" && <ChordsSequencer />}
       {active === "melody" && <MelodySequencer />}
-      {active === "sampler" && <SamplerTab />}
-      {active === "loops"   && <LoopPlayerTab />}
+      {active === "sampler"  && <SamplerTab />}
+      {active === "loops"    && <LoopPlayerTab />}
+      {active === "library"  && <StockLibrary />}
     </div>
   );
 }
