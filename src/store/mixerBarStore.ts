@@ -7,7 +7,7 @@
 
 import { create } from "zustand";
 
-export const NUM_MIXER_CHANNELS = 16;
+export const NUM_MIXER_CHANNELS = 17;
 
 /** Fader position 0-1000 (750 = 0dB unity) */
 export type FaderPos = number;
