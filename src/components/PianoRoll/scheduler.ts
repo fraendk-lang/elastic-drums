@@ -1,5 +1,4 @@
-import { useDrumStore } from "../../store/drumStore";
-import { useTransportStore } from "../../store/transportStore";
+import { useDrumStore, drumCurrentStepStore, getDrumCurrentStep } from "../../store/drumStore";
 import { audioEngine } from "../../audio/AudioEngine";
 import { bassEngine } from "../../audio/BassEngine";
 import { chordsEngine } from "../../audio/ChordsEngine";
@@ -202,22 +201,26 @@ function pianoRollTick(currentStep: number, bpm: number): void {
   }
 }
 
-// Subscribe to transport — runs globally, not tied to component lifecycle.
-const _transportUnsub = useTransportStore.subscribe((state, prev) => {
-  if (state.currentStep !== prev.currentStep) {
-    const bpm = useDrumStore.getState().bpm;
-    const isPlaying = useDrumStore.getState().isPlaying;
-    if (isPlaying) {
-      pianoRollTick(state.currentStep, bpm);
-    } else {
-      releaseAllActiveNotes();
-      _lastPlaybackStep = -1;
-      _pianoRollStepCounter = 0;
-    }
+// Subscribe directly to the drum step clock — the authoritative tick source.
+// useTransportStore.currentStep is never updated during playback;
+// drumCurrentStepStore fires on every setDrumStep() call in the drum scheduler.
+let _prevDrumStep = -1;
+const _drumStepUnsub = drumCurrentStepStore.subscribe(() => {
+  const step = getDrumCurrentStep();
+  if (step === _prevDrumStep) return;
+  _prevDrumStep = step;
+
+  const { bpm, isPlaying } = useDrumStore.getState();
+  if (isPlaying) {
+    pianoRollTick(step, bpm);
+  } else {
+    releaseAllActiveNotes();
+    _lastPlaybackStep = -1;
+    _pianoRollStepCounter = 0;
   }
 });
 
 // Clean up subscription if Vite HMR replaces this module
 if (import.meta.hot) {
-  import.meta.hot.dispose(() => _transportUnsub());
+  import.meta.hot.dispose(() => _drumStepUnsub());
 }

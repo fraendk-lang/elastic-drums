@@ -1,7 +1,6 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { useDrumStore } from "../../store/drumStore";
+import React, { useEffect, useRef, useState, useCallback, useMemo, useSyncExternalStore } from "react";
+import { useDrumStore, drumCurrentStepStore, getDrumCurrentStep } from "../../store/drumStore";
 import { useBassStore } from "../../store/bassStore";
-import { useTransportStore } from "../../store/transportStore";
 import {
   type PianoRollNote,
   type SoundTarget,
@@ -45,7 +44,8 @@ interface PianoRollProps {
 
 export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const bpm = useDrumStore((s) => s.bpm);
-  const currentStep = useTransportStore((s) => s.currentStep);
+  // Subscribe to the actual drum step clock (drumCurrentStepStore fires on every tick)
+  const currentStep = useSyncExternalStore(drumCurrentStepStore.subscribe, drumCurrentStepStore.getSnapshot);
   const rootNote = useBassStore((s) => s.rootNote);
   const scaleName = useBassStore((s) => s.scaleName);
 
@@ -221,7 +221,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
       const note = data[1]!;
       const vel = data[2] ?? 0;
 
-      const beat = useTransportStore.getState().currentStep * 0.25;
+      const beat = getDrumCurrentStep() * 0.25;
       const quantized = snap ? Math.round(beat / gridRes) * gridRes : beat;
 
       if (cmd === 0x90 && vel > 0) {
