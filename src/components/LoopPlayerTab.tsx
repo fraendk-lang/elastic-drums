@@ -33,6 +33,7 @@ function drawWaveform(
   firstBeatOffset: number,
   loopEndSeconds: number,
   bpm: number,
+  sliceMarkers?: number[], // optional slice preview markers (in seconds)
 ): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -143,6 +144,41 @@ function drawWaveform(
   ctx.textAlign = "center";
   ctx.fillText("E", exEnd, 8.5);
   ctx.textAlign = "left";
+
+  // ── Slice preview markers ──────────────────────────────────
+  if (sliceMarkers && sliceMarkers.length > 0) {
+    sliceMarkers.forEach((t, i) => {
+      const x = timeToX(t);
+      // Coloured line: first marker = teal (start), others = orange
+      const isFirst = i === 0;
+      ctx.strokeStyle = isFirst ? `${TEAL}aa` : "rgba(245,158,11,0.85)";
+      ctx.lineWidth   = isFirst ? 1.5 : 1.5;
+      ctx.setLineDash(isFirst ? [] : [3, 2]);
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Small triangle grip at top
+      ctx.fillStyle = isFirst ? TEAL : "#f59e0b";
+      ctx.beginPath();
+      ctx.moveTo(x - 5, 0);
+      ctx.lineTo(x + 5, 0);
+      ctx.lineTo(x, 8);
+      ctx.closePath();
+      ctx.fill();
+
+      // Slice number label (skip first)
+      if (!isFirst) {
+        ctx.fillStyle = "rgba(245,158,11,0.9)";
+        ctx.font = "bold 6px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(String(i + 1), x, h - 2);
+        ctx.textAlign = "left";
+      }
+    });
+  }
 }
 
 // ── Slot component ─────────────────────────────────────────────────────────────
@@ -172,11 +208,15 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
 
   const [isDragOver,    setIsDragOver]    = useState(false);
   const [bpmInput,      setBpmInput]      = useState(String(slot.originalBpm));
-  const [canvasCursor,  setCanvasCursor]  = useState<"default" | "ew-resize">("default");
-  const [sliceMode,     setSliceMode]     = useState<"auto" | "4" | "8" | "16">("8");
-  const [slicing,       setSlicing]       = useState(false);
+  const [canvasCursor,  setCanvasCursor]  = useState<"default" | "ew-resize" | "crosshair">("default");
+  const [sliceMode,      setSliceMode]      = useState<"auto" | "4" | "8" | "16">("8");
+  const [sliceSensitivity, setSliceSensitivity] = useState(0.55); // AUTO sensitivity 0-1
+  const [slicing,        setSlicing]        = useState(false);
   // Ref-based guard for synchronous double-click protection (React state batching is too slow)
   const slicingRef = useRef(false);
+  // Pending slice markers (onset times in seconds) — shown on waveform before committing to pads
+  const [pendingSlices, setPendingSlices] = useState<number[] | null>(null);
+  const dragSliceIdx = useRef<number | null>(null); // index into pendingSlices being dragged
   const sliceToPads = useSamplerStore((s) => s.sliceToPads);
 
   // Sync BPM input when originalBpm changes externally (e.g. auto-detected)
@@ -204,10 +244,9 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
     return Math.round(t / sixteenth) * sixteenth;
   }, [globalBpm]);
 
-  // ── Slice to Pads ─────────────────────────────────────────
-  const handleSliceToPads = useCallback(async () => {
+  // ── Slice workflow: Step 1 — compute markers ─────────────
+  const handleComputeSlices = useCallback(async () => {
     const buf = slot.buffer;
-    // slicingRef provides synchronous guard — React state batching is not fast enough
     if (!buf || slicingRef.current) return;
 
     const regionStart = slot.firstBeatOffset;
@@ -220,52 +259,128 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
     try {
       let onsets: number[];
       if (sliceMode === "auto") {
-        // Run detection in a micro-task to avoid blocking the UI
         onsets = await new Promise<number[]>(resolve =>
-          setTimeout(() => resolve(detectTransients(buf, 0.6, regionStart, regionEnd)), 0)
+          setTimeout(() => resolve(detectTransients(buf, sliceSensitivity, regionStart, regionEnd)), 0)
         );
-        // Clamp to 16 pads: keep strongest-spaced onsets
         if (onsets.length > 16) onsets = onsets.slice(0, 16);
       } else {
         const count = parseInt(sliceMode, 10);
         onsets = sliceEqual(count, regionStart, regionEnd);
       }
-
-      const regions = onsetsToRegions(onsets, buf.duration, regionEnd, 16);
-      const name = slot.fileName.replace(/\.[^.]+$/, "");
-      sliceToPads(buf, regions, name);
+      // Always include region start as first marker
+      if (!onsets.includes(regionStart)) onsets = [regionStart, ...onsets].sort((a, b) => a - b);
+      setPendingSlices(onsets);
     } finally {
       slicingRef.current = false;
       setSlicing(false);
     }
-  }, [slot, sliceMode, sliceToPads]);
+  }, [slot, sliceMode, sliceSensitivity]);
+
+  // ── Slice workflow: Step 2 — commit markers → pads ───────
+  const handleCommitSlices = useCallback(() => {
+    const buf = slot.buffer;
+    if (!buf || !pendingSlices || pendingSlices.length === 0) return;
+    const regionEnd = slot.loopEndSeconds > slot.firstBeatOffset
+      ? slot.loopEndSeconds
+      : buf.duration;
+    const regions = onsetsToRegions(pendingSlices, buf.duration, regionEnd, 16);
+    const name = slot.fileName.replace(/\.[^.]+$/, "");
+    sliceToPads(buf, regions, name);
+    setPendingSlices(null);
+  }, [slot, pendingSlices, sliceToPads]);
 
   const handleCanvasPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!slot.buffer || !canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
     const relX = e.clientX - rect.left;
     const w    = rect.width;
-    const HIT  = 14; // screen px hit-zone
+    const HIT  = 10; // screen px hit-zone
 
+    // ── Slice marker edit mode ───────────────────────────────
+    if (pendingSlices !== null) {
+      // Right-click removes nearest marker (but never the first/start marker)
+      if (e.button === 2) {
+        e.preventDefault();
+        const nearest = pendingSlices.reduce((best, t, i) => {
+          if (i === 0) return best; // protect first marker
+          const px = (t / slot.duration) * w;
+          return Math.abs(relX - px) < Math.abs(relX - (pendingSlices[best]! / slot.duration) * w) ? i : best;
+        }, 1);
+        const px = (pendingSlices[nearest]! / slot.duration) * w;
+        if (Math.abs(relX - px) < HIT * 2) {
+          setPendingSlices(prev => prev ? prev.filter((_, i) => i !== nearest) : prev);
+        }
+        return;
+      }
+
+      // Check if clicking near an existing marker to drag it
+      let hitIdx: number | null = null;
+      for (let i = 0; i < pendingSlices.length; i++) {
+        const px = (pendingSlices[i]! / slot.duration) * w;
+        if (Math.abs(relX - px) < HIT) {
+          hitIdx = i;
+          break;
+        }
+      }
+
+      if (hitIdx !== null) {
+        // Drag existing marker
+        dragSliceIdx.current = hitIdx;
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } else {
+        // Click on empty area → add new marker
+        const t = Math.max(0, Math.min(slot.duration, (relX / w) * slot.duration));
+        const newSlices = [...pendingSlices, t].sort((a, b) => a - b);
+        if (newSlices.length <= 16) setPendingSlices(newSlices);
+      }
+      return;
+    }
+
+    // ── Normal S/E handle mode ───────────────────────────────
     const startX = (slot.firstBeatOffset / slot.duration) * w;
     const endX   = slot.loopEndSeconds > slot.firstBeatOffset
       ? (slot.loopEndSeconds / slot.duration) * w
       : w;
 
-    // Priority: end handle (so you can always grab it even when start ≈ end)
-    if (Math.abs(relX - endX) < HIT) {
+    if (Math.abs(relX - endX) < HIT + 4) {
       dragHandleRef.current = "end";
       e.currentTarget.setPointerCapture(e.pointerId);
-    } else if (Math.abs(relX - startX) < HIT) {
+    } else if (Math.abs(relX - startX) < HIT + 4) {
       dragHandleRef.current = "start";
       e.currentTarget.setPointerCapture(e.pointerId);
     }
-  }, [slot.buffer, slot.duration, slot.firstBeatOffset, slot.loopEndSeconds]);
+  }, [slot.buffer, slot.duration, slot.firstBeatOffset, slot.loopEndSeconds, pendingSlices]);
 
   const handleCanvasPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!slot.buffer || !canvasRef.current) return;
 
-    // Update cursor style based on proximity to handles
+    // ── Slice marker drag ────────────────────────────────────
+    if (pendingSlices !== null) {
+      if (dragSliceIdx.current !== null) {
+        const idx = dragSliceIdx.current;
+        let t = xToTime(e.clientX);
+        // First marker: clamp to [0, second marker - 0.03]
+        // Others: clamp between neighbours
+        const prev = idx > 0 ? pendingSlices[idx - 1]! + 0.03 : 0;
+        const next = idx < pendingSlices.length - 1 ? pendingSlices[idx + 1]! - 0.03 : slot.duration;
+        t = Math.max(prev, Math.min(next, t));
+        setPendingSlices(prev => {
+          if (!prev) return prev;
+          const copy = [...prev];
+          copy[idx] = t;
+          return copy;
+        });
+      }
+      // Cursor: ew-resize near a marker, crosshair elsewhere
+      const rect = canvasRef.current.getBoundingClientRect();
+      const relX = e.clientX - rect.left;
+      const w    = rect.width;
+      const near = pendingSlices.some(t => Math.abs(relX - (t / slot.duration) * w) < 10);
+      setCanvasCursor(near ? "ew-resize" : "crosshair");
+      return;
+    }
+
+    // ── Normal S/E handle hover + drag ───────────────────────
     if (!dragHandleRef.current) {
       const rect = canvasRef.current.getBoundingClientRect();
       const relX = e.clientX - rect.left;
@@ -280,9 +395,8 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
       return;
     }
 
-    // Active drag — Alt key = completely free, no snap
     const freeSnap = e.altKey;
-    const minGap   = 0.05; // 50 ms minimum region width (free mode)
+    const minGap   = 0.05;
     let t = xToTime(e.clientX);
     t = snapToGrid(t, freeSnap);
 
@@ -298,22 +412,27 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
       setLoopEndSeconds(slotIndex, t);
     }
   }, [slot.buffer, slot.duration, slot.firstBeatOffset, slot.loopEndSeconds,
-      slotIndex, xToTime, snapToGrid, setFirstBeatOffset, setLoopEndSeconds]);
+      pendingSlices, slotIndex, xToTime, snapToGrid, setFirstBeatOffset, setLoopEndSeconds]);
 
   const handleCanvasPointerUp = useCallback(() => {
+    if (dragSliceIdx.current !== null) {
+      dragSliceIdx.current = null;
+      return;
+    }
     if (dragHandleRef.current !== null) {
-      // Apply new loop points to the running source (restart at next bar boundary)
       restartSlot(slotIndex);
     }
     dragHandleRef.current = null;
-    setCanvasCursor("default");
-  }, [slotIndex, restartSlot]);
+    setCanvasCursor(pendingSlices !== null ? "crosshair" : "default");
+  }, [slotIndex, restartSlot, pendingSlices]);
 
   const handleCanvasPointerLeave = useCallback(() => {
-    if (!dragHandleRef.current) setCanvasCursor("default");
-  }, []);
+    if (!dragHandleRef.current && dragSliceIdx.current === null) {
+      setCanvasCursor(pendingSlices !== null ? "crosshair" : "default");
+    }
+  }, [pendingSlices]);
 
-  // ── Redraw waveform + beat grid whenever relevant state changes
+  // ── Redraw waveform + beat grid + slice markers ──────────
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !slot.buffer) return;
@@ -323,8 +442,9 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
       slot.firstBeatOffset,
       slot.loopEndSeconds,
       slot.analyzing ? 0 : slot.originalBpm,
+      pendingSlices ?? undefined,
     );
-  }, [slot.buffer, slot.firstBeatOffset, slot.loopEndSeconds, slot.originalBpm, slot.analyzing]);
+  }, [slot.buffer, slot.firstBeatOffset, slot.loopEndSeconds, slot.originalBpm, slot.analyzing, pendingSlices]);
 
   // ── File loading ─────────────────────────────────────────
   const handleLoadFile = useCallback(async (file: File) => {
@@ -483,26 +603,29 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
       {/* ── Row 2: Waveform / drop zone — always visible ── */}
       <div
         ref={waveContRef}
-        className="relative rounded overflow-hidden"
+        className="relative rounded overflow-hidden transition-all"
         style={{
-          height: 32,
-          background: isDragOver ? `rgba(46,196,182,0.08)` : "rgba(0,0,0,0.35)",
+          height: pendingSlices !== null ? 52 : 32, // expand in slice-edit mode
+          background: isDragOver ? `rgba(46,196,182,0.08)` : pendingSlices !== null ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.35)",
           border: isDragOver
             ? `1px dashed ${TEAL}60`
-            : slot.buffer ? "1px solid rgba(255,255,255,0.05)" : "1px dashed rgba(255,255,255,0.08)",
+            : pendingSlices !== null
+              ? "1px solid rgba(245,158,11,0.25)"
+              : slot.buffer ? "1px solid rgba(255,255,255,0.05)" : "1px dashed rgba(255,255,255,0.08)",
         }}
       >
         {slot.buffer ? (
           <canvas
             ref={canvasRef}
             width={900}
-            height={32}
+            height={pendingSlices !== null ? 52 : 32}
             className="w-full h-full"
             style={{ imageRendering: "pixelated", display: "block", cursor: canvasCursor }}
             onPointerDown={handleCanvasPointerDown}
             onPointerMove={handleCanvasPointerMove}
             onPointerUp={handleCanvasPointerUp}
             onPointerLeave={handleCanvasPointerLeave}
+            onContextMenu={(e) => pendingSlices !== null && e.preventDefault()}
           />
         ) : (
           <label className="absolute inset-0 flex items-center justify-center cursor-pointer">
@@ -585,24 +708,56 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
 
           <div className="w-px h-3.5 bg-white/8 shrink-0" />
 
-          {/* Slice → Pads */}
-          <div className="flex items-center gap-0.5 shrink-0">
-            <span className="text-[6px] font-bold text-white/20">SLICE</span>
-            <select value={sliceMode} onChange={(e) => setSliceMode(e.target.value as typeof sliceMode)}
-              className="h-5 px-0.5 text-[7px] font-bold rounded"
-              style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.55)", outline: "none" }}>
-              <option value="auto">AUTO</option>
-              <option value="4">4</option>
-              <option value="8">8</option>
-              <option value="16">16</option>
-            </select>
-            <button onClick={handleSliceToPads} disabled={slicing}
-              className="text-[7px] font-black px-1.5 py-0.5 rounded transition-all shrink-0"
-              style={{ background: slicing ? `rgba(46,196,182,0.06)` : `rgba(46,196,182,0.12)`, color: slicing ? `${TEAL}50` : TEAL, border: `1px solid ${slicing ? `${TEAL}18` : `${TEAL}40`}`, cursor: slicing ? "wait" : "pointer" }}
-              title="Slice to sampler pads">
-              {slicing ? "…" : "→PADS"}
-            </button>
-          </div>
+          {/* Slice → Pads — 2-step workflow */}
+          {pendingSlices === null ? (
+            // Step 1: configure + compute
+            <div className="flex items-center gap-0.5 shrink-0">
+              <span className="text-[6px] font-bold text-white/20">SLICE</span>
+              <select value={sliceMode} onChange={(e) => setSliceMode(e.target.value as typeof sliceMode)}
+                className="h-5 px-0.5 text-[7px] font-bold rounded"
+                style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.55)", outline: "none" }}>
+                <option value="auto">AUTO</option>
+                <option value="4">4</option>
+                <option value="8">8</option>
+                <option value="16">16</option>
+              </select>
+              {sliceMode === "auto" && (
+                <input type="range" min={10} max={95} step={5}
+                  value={Math.round(sliceSensitivity * 100)}
+                  onChange={(e) => setSliceSensitivity(parseInt(e.target.value) / 100)}
+                  className="w-10 h-[3px]"
+                  style={{ accentColor: TEAL }}
+                  title={`Sensitivity: ${Math.round(sliceSensitivity * 100)}% (more → fewer slices)`}
+                />
+              )}
+              <button onClick={handleComputeSlices} disabled={slicing}
+                className="text-[7px] font-black px-1.5 py-0.5 rounded transition-all shrink-0"
+                style={{ background: slicing ? `rgba(46,196,182,0.06)` : `rgba(46,196,182,0.12)`, color: slicing ? `${TEAL}50` : TEAL, border: `1px solid ${slicing ? `${TEAL}18` : `${TEAL}40`}`, cursor: slicing ? "wait" : "pointer" }}
+                title="Compute slice markers — then edit on waveform">
+                {slicing ? "…" : "SLICE"}
+              </button>
+            </div>
+          ) : (
+            // Step 2: edit markers, then commit or cancel
+            <div className="flex items-center gap-0.5 shrink-0">
+              <span className="text-[6px] font-bold tracking-[0.1em]" style={{ color: "#f59e0b" }}>
+                {pendingSlices.length} SLICES
+              </span>
+              <span className="text-[6px] text-white/20 hidden sm:block">· drag · click=add · right-click=del</span>
+              <button onClick={handleCommitSlices}
+                className="text-[7px] font-black px-1.5 py-0.5 rounded transition-all"
+                style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.4)" }}
+                title="Send slices to Sampler pads">
+                →PADS
+              </button>
+              <button onClick={() => setPendingSlices(null)}
+                className="text-[7px] font-bold px-1 py-0.5 rounded transition-all"
+                style={{ color: "rgba(255,255,255,0.3)", border: "1px solid rgba(255,255,255,0.08)" }}
+                title="Cancel slicing">
+                ✕
+              </button>
+            </div>
+          )}
 
         </div>
       )}
