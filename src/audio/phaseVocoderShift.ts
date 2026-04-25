@@ -76,8 +76,12 @@ function pvShiftChannel(input: Float32Array, pitchFactor: number): Float32Array 
   const lastPhase  = new Float64Array(PV_FRAME);
   const synthPhase = new Float64Array(PV_FRAME);
 
-  const re = new Float64Array(PV_FRAME);
-  const im = new Float64Array(PV_FRAME);
+  const re       = new Float64Array(PV_FRAME);
+  const im       = new Float64Array(PV_FRAME);
+  const mag      = new Float64Array(PV_FRAME);
+  const trueFreq = new Float64Array(PV_FRAME);
+  const outRe    = new Float64Array(PV_FRAME);
+  const outIm    = new Float64Array(PV_FRAME);
 
   for (let frame = 0; frame < numFrames; frame++) {
     const inOff = frame * PV_HOP;
@@ -92,8 +96,6 @@ function pvShiftChannel(input: Float32Array, pitchFactor: number): Float32Array 
     fft(re, im);
 
     // 3. Compute magnitude and true frequency for each positive bin
-    const mag      = new Float64Array(PV_FRAME);
-    const trueFreq = new Float64Array(PV_FRAME);
     for (let k = 0; k < PV_FRAME / 2; k++) {
       mag[k]           = Math.sqrt(re[k]! * re[k]! + im[k]! * im[k]!);
       const phase      = Math.atan2(im[k]!, re[k]!);
@@ -107,8 +109,7 @@ function pvShiftChannel(input: Float32Array, pitchFactor: number): Float32Array 
 
     // 4. Pitch-shift: remap bins by pitchFactor
     //    Output bin k reads from source bin k/pitchFactor (linear interpolation)
-    const outRe = new Float64Array(PV_FRAME);
-    const outIm = new Float64Array(PV_FRAME);
+    outRe.fill(0); outIm.fill(0);
     for (let k = 0; k < PV_FRAME / 2; k++) {
       const srcBin = k / pitchFactor;
       const srcLo  = Math.floor(srcBin);
@@ -128,7 +129,7 @@ function pvShiftChannel(input: Float32Array, pitchFactor: number): Float32Array 
       outIm[k] = m * Math.sin(synthPhase[k]!);
 
       // Mirror for real output (conjugate symmetry)
-      if (k > 0 && PV_FRAME - k < PV_FRAME) {
+      if (k > 0 && k < PV_FRAME / 2) {
         outRe[PV_FRAME - k] = outRe[k]!;
         outIm[PV_FRAME - k] = -outIm[k]!;
       }
