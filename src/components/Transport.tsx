@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useDrumStore, setFillMode } from "../store/drumStore";
+import { useSceneStore } from "../store/sceneStore";
 import { downloadMidi } from "../utils/midiExport";
 import { sharePattern } from "../utils/patternShare";
 import { startSongRecording, stopSongRecording, isRecording, type ExportState } from "../utils/songExport";
@@ -40,6 +41,8 @@ export function Transport({
   const prevPreset = useDrumStore((s) => s.prevPreset);
   const clearPattern = useDrumStore((s) => s.clearPattern);
   const newSession = useDrumStore((s) => s.newSession);
+  const launchQuantize = useSceneStore((s) => s.launchQuantize);
+  const setLaunchQuantize = useSceneStore((s) => s.setLaunchQuantize);
 
   // Tap Tempo with visual feedback
   const [tapFlash, setTapFlash] = useState(false);
@@ -146,6 +149,25 @@ export function Transport({
           aria-label="Swing amount"
           className="w-10 h-[3px] accent-gray-500" />
         <span className="text-[9px] font-mono text-white/35 w-4 tabular-nums">{swing}</span>
+      </div>
+
+      {/* Launch Quantize */}
+      <div className="flex items-center gap-1 ml-0.5">
+        <span className="text-[7px] text-white/25 uppercase font-bold shrink-0">Q</span>
+        {(["immediate", "1bar", "2bar", "4bar"] as const).map((q) => (
+          <button
+            key={q}
+            onClick={() => setLaunchQuantize(q)}
+            title={q === "immediate" ? "Scene launches immediately" : `Scene launches at next ${q.replace("bar","")}‑bar boundary`}
+            className={`px-1 py-0.5 text-[7px] font-black rounded transition-all ${
+              launchQuantize === q
+                ? "bg-[var(--ed-accent-orange)]/22 text-[var(--ed-accent-orange)]"
+                : "text-white/20 hover:text-white/55"
+            }`}
+          >
+            {q === "immediate" ? "NOW" : q === "1bar" ? "1B" : q === "2bar" ? "2B" : "4B"}
+          </button>
+        ))}
       </div>
 
       {/* Length */}

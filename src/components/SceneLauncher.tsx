@@ -371,19 +371,20 @@ export function SceneLauncher({ isOpen, onClose }: SceneLauncherProps) {
           <span>Right-click = Menu</span>
           <span>Double-click = Rename</span>
           <span className="ml-auto" />
-          <div className="flex items-center gap-1">
-            <span className="text-[8px] font-bold text-white/30">Q:</span>
+          <div className="flex items-center gap-1 border border-white/8 rounded-lg px-2 py-1 bg-black/20">
+            <span className="text-[7px] font-black tracking-[0.16em] text-white/35 mr-0.5">LAUNCH</span>
             {(["immediate", "1bar", "2bar", "4bar"] as const).map((q) => (
               <button
                 key={q}
                 onClick={() => setLaunchQuantize(q)}
-                className={`px-1.5 py-0.5 text-[7px] font-bold rounded transition-colors ${
+                title={q === "immediate" ? "Launch immediately" : `Wait for next ${q.replace("bar","")}-bar boundary`}
+                className={`px-1.5 py-0.5 text-[7px] font-black rounded transition-all ${
                   launchQuantize === q
-                    ? "bg-[var(--ed-accent-orange)]/30 text-[var(--ed-accent-orange)]"
-                    : "text-white/30 hover:text-white/60"
+                    ? "bg-[var(--ed-accent-orange)]/25 text-[var(--ed-accent-orange)] border border-[var(--ed-accent-orange)]/40"
+                    : "text-white/30 hover:text-white/65 hover:bg-white/5 border border-transparent"
                 }`}
               >
-                {q === "immediate" ? "NOW" : q === "1bar" ? "1 BAR" : q === "2bar" ? "2 BAR" : "4 BAR"}
+                {q === "immediate" ? "NOW" : q === "1bar" ? "1B" : q === "2bar" ? "2B" : "4B"}
               </button>
             ))}
           </div>

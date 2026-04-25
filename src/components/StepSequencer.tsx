@@ -556,7 +556,39 @@ export function StepSequencer() {
             <span className="text-[8px] font-bold tracking-[0.12em] text-white/30">
               LEN {selectedTrack?.length ?? pattern.length}
             </span>
-            <span className={`text-[8px] font-bold tracking-[0.14em] ${isPlaying ? "text-[var(--ed-accent-green)]" : "text-white/30"}`}>
+
+            {/* Per-track swing — always visible for selected lane */}
+            <div className="flex items-center gap-1.5 ml-1">
+              <span className="text-[8px] font-black tracking-[0.14em]" style={{
+                color: (selectedTrack?.swing !== undefined) ? "rgba(245,158,11,0.85)" : "rgba(255,255,255,0.28)"
+              }}>SWG</span>
+              <input
+                type="range"
+                min={50} max={75}
+                value={selectedTrack?.swing ?? pattern.swing}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  useDrumStore.getState().setTrackSwing(selectedVoice, val === pattern.swing ? undefined : val);
+                }}
+                className="w-14 h-[3px]"
+                style={{ accentColor: selectedTrack?.swing !== undefined ? "#f59e0b" : "rgba(255,255,255,0.3)" }}
+                title={`Per-track swing: ${selectedTrack?.swing ?? "follows global"}`}
+              />
+              <span className="text-[8px] font-mono tabular-nums w-5" style={{
+                color: (selectedTrack?.swing !== undefined) ? "rgba(245,158,11,0.75)" : "rgba(255,255,255,0.22)"
+              }}>
+                {selectedTrack?.swing ?? "—"}
+              </span>
+              {selectedTrack?.swing !== undefined && (
+                <button
+                  onClick={() => useDrumStore.getState().setTrackSwing(selectedVoice, undefined)}
+                  className="text-[7px] text-white/20 hover:text-amber-400 transition-colors leading-none"
+                  title="Reset to global swing"
+                >×</button>
+              )}
+            </div>
+
+            <span className={`text-[8px] font-bold tracking-[0.14em] ml-auto ${isPlaying ? "text-[var(--ed-accent-green)]" : "text-white/30"}`}>
               {isPlaying ? `PLAYHEAD ${currentStep + 1}` : "STOPPED"}
             </span>
           </div>
