@@ -389,98 +389,108 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
 
   return (
     <div
-      className="flex flex-col gap-2 rounded-lg transition-all"
+      className="flex flex-col gap-1.5 rounded-lg transition-all"
       style={{
         background: isArmed
-          ? `color-mix(in srgb, ${TEAL} 7%, var(--ed-bg-surface))`
+          ? `color-mix(in srgb, ${TEAL} 6%, var(--ed-bg-surface))`
           : "var(--ed-bg-surface)",
         border: isArmed
           ? `1px solid ${TEAL}50`
           : isDragOver
             ? `1px dashed ${TEAL}50`
             : "1px solid var(--ed-border-subtle)",
-        boxShadow: isActive ? `0 0 18px ${TEAL}18` : "none",
-        padding: "10px 12px",
+        boxShadow: isActive ? `0 0 14px ${TEAL}14` : "none",
+        padding: "7px 9px",
       }}
       onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
       onDragLeave={() => setIsDragOver(false)}
       onDrop={handleDrop}
     >
-      {/* ── Row 1: Slot ID + filename + duration + LOAD ── */}
-      <div className="flex items-center gap-2 min-w-0">
-        {/* Slot badge */}
-        <div
-          className="w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold shrink-0 transition-all"
+      {/* ── Row 1: Badge · Play · Filename · Duration/Bars · LOAD ── */}
+      <div className="flex items-center gap-1.5 min-w-0">
+
+        {/* Slot badge + play button fused */}
+        <button
+          onClick={() => togglePlay(slotIndex)}
+          disabled={!slot.buffer}
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold shrink-0 transition-all"
           style={{
             background: isArmed ? TEAL : "rgba(255,255,255,0.06)",
-            color:      isArmed ? "#000" : "rgba(255,255,255,0.3)",
+            color:      isArmed ? "#000814" : slot.buffer ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.18)",
+            border:     `1px solid ${isArmed ? TEAL : "rgba(255,255,255,0.08)"}`,
+            boxShadow:  isActive ? `0 0 10px ${TEAL}80` : "none",
+            cursor:     slot.buffer ? "pointer" : "default",
+            minWidth:   "36px",
           }}
+          title={isArmed ? "Stop" : "Play"}
         >
-          {slotIndex + 1}
-        </div>
+          <span style={{ fontSize: 7 }}>{isArmed ? "■" : "▶"}</span>
+          <span>{slotIndex + 1}</span>
+        </button>
 
         {/* File name */}
         <span
           className="text-[9px] font-bold tracking-wide truncate flex-1 min-w-0"
-          style={{ color: slot.buffer ? "rgba(255,255,255,0.72)" : "rgba(255,255,255,0.2)" }}
+          style={{ color: slot.buffer ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.18)" }}
         >
           {slot.buffer
             ? slot.fileName.replace(/\.[^/.]+$/, "")
-            : "DROP LOOP HERE OR CLICK LOAD →"}
+            : isDragOver ? "DROP HERE…" : "DROP FILE OR LOAD →"}
         </span>
-
-        {/* Duration */}
-        {durLabel && (
-          <span className="text-[8px] font-bold tabular-nums shrink-0" style={{ color: `${TEAL}70` }}>
-            {durLabel}
-          </span>
-        )}
 
         {/* Bars badge */}
         {numBars > 0 && !slot.analyzing && (
-          <span
-            className="text-[7px] font-bold px-1.5 py-0.5 rounded shrink-0"
-            style={{
-              background: `rgba(46,196,182,0.10)`,
-              color:      `${TEAL}cc`,
-              border:     `1px solid ${TEAL}25`,
-            }}
-          >
-            {numBars} BAR{numBars !== 1 ? "S" : ""}
+          <span className="text-[7px] font-bold px-1 py-0.5 rounded shrink-0 tabular-nums"
+            style={{ background: `rgba(46,196,182,0.10)`, color: `${TEAL}cc`, border: `1px solid ${TEAL}20` }}>
+            {numBars}B
           </span>
         )}
 
-        {/* Load file */}
+        {/* Duration */}
+        {durLabel && !slot.analyzing && (
+          <span className="text-[7px] tabular-nums shrink-0" style={{ color: `${TEAL}60` }}>{durLabel}</span>
+        )}
+
+        {/* Analyzing spinner */}
+        {slot.analyzing && (
+          <svg width="10" height="10" viewBox="0 0 10 10" className="shrink-0" style={{ animation: "spin 0.9s linear infinite" }}>
+            <circle cx="5" cy="5" r="4" stroke={`${TEAL}30`} strokeWidth="1.5" fill="none" />
+            <path d="M5 1A4 4 0 0 1 9 5" stroke={TEAL} strokeWidth="1.5" fill="none" strokeLinecap="round" />
+          </svg>
+        )}
+
+        {/* Ratio */}
+        {slot.buffer && (
+          <span className="text-[7px] font-bold tabular-nums shrink-0"
+            style={{ color: ratioOff ? TEAL : "rgba(255,255,255,0.28)" }}
+            title={`Playback rate ×${ratioLabel}${Math.abs(pitchSemitones) >= 0.4 ? ` (${pitchSemitones > 0 ? "+" : ""}${pitchSemitones.toFixed(1)} st)` : ""}`}>
+            ×{ratioLabel}
+          </span>
+        )}
+
+        {/* Load */}
         <label
-          className="text-[8px] font-bold px-2 py-0.5 rounded cursor-pointer transition-all shrink-0"
-          style={{
-            color:      "rgba(255,255,255,0.35)",
-            border:     "1px solid rgba(255,255,255,0.09)",
-            background: "rgba(255,255,255,0.03)",
-          }}
+          className="text-[7px] font-bold px-1.5 py-0.5 rounded cursor-pointer shrink-0 transition-all"
+          style={{ color: "rgba(255,255,255,0.3)", border: "1px solid rgba(255,255,255,0.09)", background: "rgba(255,255,255,0.03)" }}
           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.65)"; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.35)"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.3)"; }}
         >
           LOAD
           <input type="file" accept="audio/*" className="hidden" onChange={handleFileInput} />
         </label>
       </div>
 
-      {/* ── Row 2: Waveform ── */}
-      <div
-        ref={waveContRef}
-        className="relative rounded overflow-hidden"
-        style={{
-          height:     60,
-          background: "rgba(0,0,0,0.35)",
-          border:     "1px solid rgba(255,255,255,0.04)",
-        }}
-      >
-        {slot.buffer ? (
+      {/* ── Row 2: Compact waveform (only when loaded) ── */}
+      {slot.buffer && (
+        <div
+          ref={waveContRef}
+          className="relative rounded overflow-hidden"
+          style={{ height: 32, background: "rgba(0,0,0,0.35)", border: "1px solid rgba(255,255,255,0.04)" }}
+        >
           <canvas
             ref={canvasRef}
             width={900}
-            height={60}
+            height={32}
             className="w-full h-full"
             style={{ imageRendering: "pixelated", display: "block", cursor: canvasCursor }}
             onPointerDown={handleCanvasPointerDown}
@@ -488,334 +498,101 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
             onPointerUp={handleCanvasPointerUp}
             onPointerLeave={handleCanvasPointerLeave}
           />
-        ) : (
-          <div
-            className="absolute inset-0 flex items-center justify-center text-[8px] font-bold tracking-[0.18em]"
-            style={{ color: `${TEAL}20` }}
-          >
-            WAVEFORM
-          </div>
-        )}
-
-        {/* Analyzing overlay */}
-        {slot.analyzing && (
-          <div
-            className="absolute inset-0 flex items-center justify-center gap-2"
-            style={{ background: "rgba(0,0,0,0.55)" }}
-          >
-            {/* Spinning ring */}
-            <svg width="14" height="14" viewBox="0 0 14 14" style={{ animation: "spin 0.9s linear infinite" }}>
-              <circle cx="7" cy="7" r="5.5" stroke={`${TEAL}30`} strokeWidth="2" fill="none" />
-              <path d="M 7 1.5 A 5.5 5.5 0 0 1 12.5 7" stroke={TEAL} strokeWidth="2" fill="none" strokeLinecap="round" />
-            </svg>
-            <span className="text-[8px] font-bold tracking-[0.14em]" style={{ color: TEAL }}>
-              ANALYZING BPM…
-            </span>
-          </div>
-        )}
-
-        {/* Active shimmer */}
-        {isActive && (
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={{
-              background:     `linear-gradient(90deg, transparent, ${TEAL}12 50%, transparent)`,
-              backgroundSize: "200% 100%",
-              animation:      "ed-shimmer 2.5s linear infinite",
-            }}
-          />
-        )}
-      </div>
-
-      {/* ── Row 2b: Start / End fine-tune inputs (only when a file is loaded) ── */}
-      {slot.buffer && (
-        <div className="flex items-center gap-2">
-          {/* START */}
-          <span className="text-[7px] font-bold tracking-[0.1em] shrink-0" style={{ color: `${TEAL}80` }}>S</span>
-          <input
-            type="number"
-            min={0}
-            max={slot.duration}
-            step={0.01}
-            value={slot.firstBeatOffset.toFixed(2)}
-            onChange={(e) => {
-              const v = parseFloat(e.target.value);
-              if (!isNaN(v)) {
-                const clamped = Math.max(0, Math.min(v, slot.loopEndSeconds > 0 ? slot.loopEndSeconds - 0.05 : slot.duration * 0.95));
-                setFirstBeatOffset(slotIndex, clamped);
-              }
-            }}
-            onBlur={() => restartSlot(slotIndex)}
-            onKeyDown={(e) => { if (e.key === "Enter") restartSlot(slotIndex); }}
-            className="w-16 text-center text-[9px] font-bold rounded px-1 py-0.5 tabular-nums"
-            style={{
-              background: "rgba(0,0,0,0.3)",
-              border: `1px solid ${TEAL}30`,
-              color: "rgba(255,255,255,0.75)",
-              outline: "none",
-            }}
-            title="Loop start (seconds)"
-          />
-          <span className="text-[6px] text-white/20 shrink-0">s</span>
-
-          <span className="w-px h-3 bg-white/10 shrink-0" />
-
-          {/* END */}
-          <span className="text-[7px] font-bold tracking-[0.1em] shrink-0" style={{ color: "rgba(255,255,255,0.45)" }}>E</span>
-          <input
-            type="number"
-            min={0}
-            max={slot.duration}
-            step={0.01}
-            value={(slot.loopEndSeconds > slot.firstBeatOffset ? slot.loopEndSeconds : slot.duration).toFixed(2)}
-            onChange={(e) => {
-              const v = parseFloat(e.target.value);
-              if (!isNaN(v)) {
-                const clamped = Math.max(slot.firstBeatOffset + 0.05, Math.min(v, slot.duration));
-                setLoopEndSeconds(slotIndex, clamped);
-              }
-            }}
-            onBlur={() => restartSlot(slotIndex)}
-            onKeyDown={(e) => { if (e.key === "Enter") restartSlot(slotIndex); }}
-            className="w-16 text-center text-[9px] font-bold rounded px-1 py-0.5 tabular-nums"
-            style={{
-              background: "rgba(0,0,0,0.3)",
-              border: "1px solid rgba(255,255,255,0.12)",
-              color: "rgba(255,255,255,0.75)",
-              outline: "none",
-            }}
-            title="Loop end (seconds)"
-          />
-          <span className="text-[6px] text-white/20 shrink-0">s</span>
-
-          {/* Alt-drag hint */}
-          <span className="text-[6px] text-white/18 ml-1 hidden sm:block shrink-0">
-            Alt+drag = free
-          </span>
+          {slot.analyzing && (
+            <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.55)" }}>
+              <span className="text-[7px] font-bold tracking-[0.14em]" style={{ color: TEAL }}>ANALYZING BPM…</span>
+            </div>
+          )}
+          {isActive && (
+            <div className="absolute inset-0 pointer-events-none"
+              style={{ background: `linear-gradient(90deg, transparent, ${TEAL}10 50%, transparent)`, backgroundSize: "200% 100%", animation: "ed-shimmer 2.5s linear infinite" }} />
+          )}
         </div>
       )}
 
-      {/* ── Row 3: Controls ── */}
-      <div className="flex items-center gap-3 flex-wrap">
+      {/* ── Row 3: BPM · LOCK · VOL · SLICE (only when loaded) ── */}
+      {slot.buffer && (
+        <div className="flex items-center gap-1.5 flex-wrap">
 
-        {/* Play / Stop */}
-        <button
-          onClick={() => togglePlay(slotIndex)}
-          disabled={!slot.buffer}
-          className="flex items-center gap-1.5 px-3 py-1 rounded text-[9px] font-bold tracking-[0.1em] transition-all shrink-0"
-          style={{
-            background: isArmed
-              ? TEAL
-              : slot.buffer ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.02)",
-            color: isArmed
-              ? "#000814"
-              : slot.buffer ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.18)",
-            border:    `1px solid ${isArmed ? TEAL : "rgba(255,255,255,0.08)"}`,
-            boxShadow: isActive ? `0 0 12px ${TEAL}70` : "none",
-            cursor:    slot.buffer ? "pointer" : "default",
-          }}
-        >
-          <span style={{ fontSize: 8 }}>{isArmed ? "■" : "▶"}</span>
-          {isArmed
-            ? (slot.analyzing ? "ARMED" : isTransportPlay ? "STOP" : "STOP")
-            : "PLAY"}
-        </button>
-
-        {/* Divider */}
-        <div className="w-px h-5 bg-white/8 shrink-0" />
-
-        {/* Bar-length tempo-lock presets
-            Clicking "2B" means: "this loop region = 2 bars at the project BPM".
-            Sets originalBpm = globalBpm so playbackRate = 1.0 (play at native speed).
-            This is independent of auto-BPM detection — always reliable. */}
-        {slot.buffer && !slot.analyzing && globalBpm > 0 && (
+          {/* BPM input */}
           <div className="flex items-center gap-1 shrink-0">
-            <span className="text-[6px] font-bold tracking-[0.1em] text-white/25">LOCK</span>
-            {([0.5, 1, 2, 4, 8] as const).map((bars) => {
-              // Active = this LOCK was the last one applied.
-              // setLoopRegion sets: originalBpm = bars × 240 / usableDuration
-              //                     loopEndSeconds = duration (full buffer)
-              const usableDuration = slot.duration - slot.firstBeatOffset;
-              const expectedBpm   = usableDuration > 0.1
-                ? (bars * 240) / usableDuration
-                : 0;
-              const isActive = expectedBpm > 0
-                && Math.abs(slot.originalBpm - expectedBpm) < 1
-                && Math.abs(slot.loopEndSeconds - slot.duration) < 0.05;
-              return (
-                <button
-                  key={bars}
-                  title={`Tempo-lock: this loop = ${bars === 0.5 ? "½" : bars} bar${bars !== 1 ? "s" : ""} at ${globalBpm} BPM`}
-                  onClick={() => setLoopRegion(slotIndex, bars)}
-                  className="text-[7px] font-bold px-1.5 py-0.5 rounded transition-all"
-                  style={{
-                    background:  isActive ? `${TEAL}22` : "rgba(255,255,255,0.04)",
-                    color:       isActive ? TEAL        : "rgba(255,255,255,0.38)",
-                    border:      `1px solid ${isActive ? `${TEAL}40` : "rgba(255,255,255,0.08)"}`,
-                  }}
-                >
-                  {bars === 0.5 ? "½" : bars}B
-                </button>
-              );
-            })}
+            <span className="text-[6px] font-bold tracking-[0.1em] text-white/25">BPM</span>
+            {slot.detectedBpm !== null && !slot.analyzing && (
+              <span className="text-[6px] font-bold px-0.5 rounded" style={{ background: `rgba(46,196,182,0.12)`, color: `${TEAL}bb` }} title="Auto-detected">A</span>
+            )}
+            <input
+              type="number" min={20} max={999} step={0.5}
+              value={bpmInput}
+              onChange={(e) => setBpmInput(e.target.value)}
+              onBlur={commitBpm}
+              onKeyDown={(e) => { if (e.key === "Enter") commitBpm(); }}
+              className="w-12 text-center text-[9px] font-bold rounded px-1 py-0.5 tabular-nums"
+              style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${slot.detectedBpm !== null && !slot.analyzing ? `${TEAL}30` : "rgba(255,255,255,0.1)"}`, color: "rgba(255,255,255,0.82)", outline: "none" }}
+            />
+            <button onClick={() => tapBpm(slotIndex)}
+              className="text-[6px] font-bold px-1 py-0.5 rounded shrink-0"
+              style={{ color: "rgba(255,255,255,0.4)", border: "1px solid rgba(255,255,255,0.09)", background: "rgba(255,255,255,0.03)" }}
+              title="Tap BPM">TAP</button>
           </div>
-        )}
 
-        {/* Divider */}
-        <div className="w-px h-5 bg-white/8 shrink-0" />
+          <div className="w-px h-3.5 bg-white/8 shrink-0" />
 
-        {/* FILE BPM section */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <span className="text-[7px] font-bold tracking-[0.12em] text-white/30">FILE BPM</span>
-
-          {/* Auto-detected badge */}
-          {slot.detectedBpm !== null && !slot.analyzing && (
-            <span
-              className="text-[7px] font-bold px-1 py-0.5 rounded"
-              style={{
-                background: `rgba(46,196,182,0.12)`,
-                color:      `${TEAL}bb`,
-                border:     `1px solid ${TEAL}20`,
-              }}
-              title="Auto-detected BPM"
-            >
-              AUTO
-            </span>
+          {/* LOCK presets */}
+          {globalBpm > 0 && !slot.analyzing && (
+            <div className="flex items-center gap-0.5 shrink-0">
+              <span className="text-[6px] font-bold text-white/20">LOCK</span>
+              {([0.5, 1, 2, 4, 8] as const).map((bars) => {
+                const usableDuration = slot.duration - slot.firstBeatOffset;
+                const expectedBpm   = usableDuration > 0.1 ? (bars * 240) / usableDuration : 0;
+                const isLocked = expectedBpm > 0 && Math.abs(slot.originalBpm - expectedBpm) < 1 && Math.abs(slot.loopEndSeconds - slot.duration) < 0.05;
+                return (
+                  <button key={bars} onClick={() => setLoopRegion(slotIndex, bars)}
+                    className="text-[6px] font-bold px-1 py-0.5 rounded transition-all"
+                    style={{ background: isLocked ? `${TEAL}22` : "rgba(255,255,255,0.04)", color: isLocked ? TEAL : "rgba(255,255,255,0.35)", border: `1px solid ${isLocked ? `${TEAL}40` : "rgba(255,255,255,0.07)"}` }}
+                    title={`Lock to ${bars === 0.5 ? "½" : bars} bar${bars !== 1 ? "s" : ""}`}>
+                    {bars === 0.5 ? "½" : bars}B
+                  </button>
+                );
+              })}
+            </div>
           )}
 
-          {/* BPM number input */}
-          <input
-            type="number"
-            min={20}
-            max={999}
-            step={0.5}
-            value={bpmInput}
-            onChange={(e) => setBpmInput(e.target.value)}
-            onBlur={commitBpm}
-            onKeyDown={(e) => { if (e.key === "Enter") commitBpm(); }}
-            className="w-14 text-center text-[10px] font-bold rounded px-1 py-0.5 tabular-nums"
-            style={{
-              background: "rgba(0,0,0,0.3)",
-              border:     `1px solid ${slot.detectedBpm !== null && !slot.analyzing ? `${TEAL}30` : "rgba(255,255,255,0.1)"}`,
-              color:      "rgba(255,255,255,0.82)",
-              outline:    "none",
-            }}
-          />
+          <div className="w-px h-3.5 bg-white/8 shrink-0" />
 
-          {/* Tap BPM button */}
-          <button
-            onClick={() => tapBpm(slotIndex)}
-            className="text-[7px] font-bold px-1.5 py-0.5 rounded transition-all shrink-0"
-            style={{
-              color:      "rgba(255,255,255,0.45)",
-              border:     "1px solid rgba(255,255,255,0.1)",
-              background: "rgba(255,255,255,0.04)",
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.color      = "rgba(255,255,255,0.8)";
-              (e.currentTarget as HTMLElement).style.background = `rgba(46,196,182,0.1)`;
-              (e.currentTarget as HTMLElement).style.borderColor = `${TEAL}40`;
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.color       = "rgba(255,255,255,0.45)";
-              (e.currentTarget as HTMLElement).style.background  = "rgba(255,255,255,0.04)";
-              (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.1)";
-            }}
-            title="Tap BPM (tap repeatedly to set tempo)"
-          >
-            TAP
-          </button>
-        </div>
+          {/* Volume */}
+          <div className="flex items-center gap-1 flex-1 min-w-[70px]">
+            <span className="text-[6px] font-bold text-white/25 shrink-0">VOL</span>
+            <input type="range" min={0} max={100} value={Math.round(slot.volume * 100)}
+              onChange={(e) => setVolume(slotIndex, parseInt(e.target.value) / 100)}
+              className="flex-1 h-[3px] min-w-0" style={{ accentColor: TEAL }} />
+            <span className="text-[7px] tabular-nums w-5 text-right shrink-0" style={{ color: "rgba(255,255,255,0.3)" }}>
+              {Math.round(slot.volume * 100)}
+            </span>
+          </div>
 
-        {/* Divider */}
-        <div className="w-px h-5 bg-white/8 shrink-0" />
+          <div className="w-px h-3.5 bg-white/8 shrink-0" />
 
-        {/* Slice → Pads */}
-        {slot.buffer && (
-          <div className="flex items-center gap-1 shrink-0">
-            <span className="text-[6px] font-bold tracking-[0.1em] text-white/25">SLICE</span>
-            <select
-              value={sliceMode}
-              onChange={(e) => setSliceMode(e.target.value as typeof sliceMode)}
-              className="h-6 px-1 text-[8px] font-bold rounded transition-all"
-              style={{
-                background: "rgba(0,0,0,0.3)",
-                border: "1px solid rgba(255,255,255,0.1)",
-                color: "rgba(255,255,255,0.6)",
-                outline: "none",
-              }}
-            >
+          {/* Slice → Pads */}
+          <div className="flex items-center gap-0.5 shrink-0">
+            <span className="text-[6px] font-bold text-white/20">SLICE</span>
+            <select value={sliceMode} onChange={(e) => setSliceMode(e.target.value as typeof sliceMode)}
+              className="h-5 px-0.5 text-[7px] font-bold rounded"
+              style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.55)", outline: "none" }}>
               <option value="auto">AUTO</option>
               <option value="4">4</option>
               <option value="8">8</option>
               <option value="16">16</option>
             </select>
-            <button
-              onClick={handleSliceToPads}
-              disabled={slicing}
-              title="Slice loop into pads — switches to Sampler tab"
-              className="text-[7px] font-black px-2 py-0.5 rounded transition-all shrink-0"
-              style={{
-                background: slicing ? "rgba(46,196,182,0.08)" : "rgba(46,196,182,0.12)",
-                color:      slicing ? `${TEAL}60`              : TEAL,
-                border:     `1px solid ${slicing ? `${TEAL}20` : `${TEAL}40`}`,
-                cursor:     slicing ? "wait" : "pointer",
-              }}
-            >
-              {slicing ? "…" : "→ PADS"}
+            <button onClick={handleSliceToPads} disabled={slicing}
+              className="text-[7px] font-black px-1.5 py-0.5 rounded transition-all shrink-0"
+              style={{ background: slicing ? `rgba(46,196,182,0.06)` : `rgba(46,196,182,0.12)`, color: slicing ? `${TEAL}50` : TEAL, border: `1px solid ${slicing ? `${TEAL}18` : `${TEAL}40`}`, cursor: slicing ? "wait" : "pointer" }}
+              title="Slice to sampler pads">
+              {slicing ? "…" : "→PADS"}
             </button>
           </div>
-        )}
 
-        {/* Divider */}
-        <div className="w-px h-5 bg-white/8 shrink-0" />
-
-        {/* Playback ratio badge */}
-        <div
-          className="flex items-center gap-1 px-2 py-0.5 rounded shrink-0"
-          style={{
-            background: "rgba(0,0,0,0.22)",
-            border:     "1px solid rgba(255,255,255,0.05)",
-          }}
-        >
-          <span className="text-[7px] text-white/25 font-bold">×</span>
-          <span
-            className="text-[10px] font-bold tabular-nums"
-            style={{ color: ratioOff ? TEAL : "rgba(255,255,255,0.55)" }}
-          >
-            {ratioLabel}
-          </span>
-          {Math.abs(pitchSemitones) >= 0.4 && (
-            <span className="text-[7px] font-bold tabular-nums" style={{ color: `${TEAL}70` }}>
-              {pitchSemitones > 0 ? "+" : ""}{pitchSemitones.toFixed(1)} st
-            </span>
-          )}
         </div>
-
-        {/* Divider */}
-        <div className="w-px h-5 bg-white/8 shrink-0" />
-
-        {/* Volume */}
-        <div className="flex items-center gap-1.5 flex-1 min-w-[100px]">
-          <span className="text-[7px] font-bold tracking-[0.1em] text-white/30 shrink-0">VOL</span>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={Math.round(slot.volume * 100)}
-            onChange={(e) => setVolume(slotIndex, parseInt(e.target.value) / 100)}
-            className="flex-1 h-1 min-w-0"
-            style={{ accentColor: TEAL }}
-          />
-          <span
-            className="text-[8px] font-bold tabular-nums shrink-0 w-6 text-right"
-            style={{ color: "rgba(255,255,255,0.35)" }}
-          >
-            {Math.round(slot.volume * 100)}
-          </span>
-        </div>
-
-      </div>
+      )}
     </div>
   );
 });
@@ -898,16 +675,16 @@ export function LoopPlayerTab() {
         </button>
       </div>
 
-      {/* 8 Slot cards — 2 columns on wide screens */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+      {/* 8 Slot cards — 2 columns, all visible at once */}
+      <div className="grid grid-cols-2 gap-2">
         {Array.from({ length: 8 }, (_, idx) => (
           <LoopSlot key={idx} slotIndex={idx} />
         ))}
       </div>
 
       {/* Hint */}
-      <p className="text-[7px] text-white/15 text-center pt-1 pb-0.5">
-        Drop WAV/MP3 → Drag S/E handles (snaps to 1/16-note · hold Alt for free) → type exact seconds in S/E fields · LOCK to bar count
+      <p className="text-[7px] text-white/15 text-center pb-0.5">
+        Drop WAV/MP3 on a slot · Drag S/E handles on waveform (Alt = free) · LOCK = set bar count · SLICE → PADS
       </p>
 
     </div>
