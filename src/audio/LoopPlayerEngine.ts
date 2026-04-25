@@ -61,11 +61,14 @@ export class LoopPlayerEngine {
     const loopStart = Math.max(0, loopStartSeconds ?? 0);
     const loopEnd   = Math.min(buffer.duration, loopEndSeconds ?? buffer.duration);
 
+    // Apply short fades at loop boundaries to prevent click artifacts on loop wrap
+    const fadedBuffer = this._applyLoopFade(buffer, loopStart, loopEnd);
+
     const source = ctx.createBufferSource();
-    source.buffer    = buffer;
+    source.buffer    = fadedBuffer;
     source.loop      = true;
     source.loopStart = loopStart;
-    source.loopEnd   = loopEnd > loopStart ? loopEnd : buffer.duration;
+    source.loopEnd   = loopEnd > loopStart ? loopEnd : fadedBuffer.duration;
 
     const rate = this._calcRate(originalBpm, globalBpm, pitchFactor);
     source.playbackRate.value = rate;
@@ -174,6 +177,47 @@ export class LoopPlayerEngine {
 
     this.sources[slotIdx] = null;
     this.gains[slotIdx]   = null;
+  }
+
+  /**
+   * Create a copy of `buffer` with short linear fades applied at the loop
+   * boundary points to eliminate click artifacts on `AudioBufferSourceNode.loop`.
+   *
+   * @param buffer       Source AudioBuffer
+   * @param loopStart    Loop start in seconds
+   * @param loopEnd      Loop end in seconds
+   * @param fadeSecs     Fade duration (default 3 ms)
+   */
+  private _applyLoopFade(
+    buffer: AudioBuffer,
+    loopStart: number,
+    loopEnd: number,
+    fadeSecs = 0.003,
+  ): AudioBuffer {
+    if (!this.ctx) return buffer;
+    const sr         = buffer.sampleRate;
+    const fadeFrames = Math.max(1, Math.round(fadeSecs * sr));
+    const startFrame = Math.round(loopStart * sr);
+    const endFrame   = Math.min(buffer.length, Math.round(loopEnd * sr));
+
+    const copy = this.ctx.createBuffer(buffer.numberOfChannels, buffer.length, sr);
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      const src = buffer.getChannelData(c);
+      const dst = copy.getChannelData(c);
+      dst.set(src); // copy all samples
+
+      // Fade-in at loopStart (0 → 1 over fadeFrames)
+      for (let i = 0; i < fadeFrames; i++) {
+        const fi = startFrame + i;
+        if (fi < dst.length) dst[fi]! *= i / fadeFrames;
+      }
+      // Fade-out at loopEnd (1 → 0 over fadeFrames)
+      for (let i = 0; i < fadeFrames; i++) {
+        const fi = endFrame - 1 - i;
+        if (fi >= 0) dst[fi]! *= i / fadeFrames;
+      }
+    }
+    return copy;
   }
 }
 

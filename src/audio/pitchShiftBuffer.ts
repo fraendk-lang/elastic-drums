@@ -22,7 +22,7 @@ async function soundTouchShift(buffer: AudioBuffer, semitones: number): Promise<
   const { sampleRate, length } = buffer;
 
   const st           = new SoundTouch(sampleRate);
-  st.pitchSemiTones  = semitones;
+  st.pitchSemitones  = semitones;
   st.tempo           = 1.0;
 
   const src      = new WebAudioBufferSource(buffer);
