@@ -43,3 +43,4 @@ samples/*
 *.asd
 dist-audio-fix/
 .superpowers/
+.superpowers/
