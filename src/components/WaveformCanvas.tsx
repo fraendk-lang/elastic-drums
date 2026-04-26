@@ -75,8 +75,11 @@ function drawCanvas(
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
-  const W = canvas.width;
-  const H = canvas.height;
+  // ctx.scale(dpr,dpr) was applied when the canvas was sized, so drawing
+  // coordinates must be in CSS pixels, not physical pixels.
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.width / dpr;
+  const H = canvas.height / dpr;
   const midY = H / 2;
 
   ctx.clearRect(0, 0, W, H);
