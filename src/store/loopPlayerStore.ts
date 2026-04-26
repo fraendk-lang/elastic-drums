@@ -51,6 +51,19 @@ export interface LoopSlotState {
   playStartedAt:    number | null;       // AudioContext currentTime when slot last started
 }
 
+/** Serialisable per-slot snapshot saved inside a Scene.
+ *  AudioBuffer and waveformPeaks are omitted — they are too large to
+ *  serialize and are already held in memory from the user's file load. */
+export interface LoopSceneState {
+  playing:         boolean;
+  volume:          number;
+  transpose:       number;
+  warpMode:        WarpMode;
+  originalBpm:     number;
+  firstBeatOffset: number;
+  loopEndSeconds:  number;
+}
+
 interface LoopPlayerStore {
   slots: LoopSlotState[];
   setBuffer          (idx: number, buffer: AudioBuffer, fileName: string): void;
@@ -67,6 +80,9 @@ interface LoopPlayerStore {
   setWarpMode       (idx: number, mode: WarpMode): void;
   togglePlay         (idx: number): void;
   stopAll            (): void;
+  /** Diff-based restore: only touches slots whose play state changes.
+   *  Slots playing in both scenes keep running uninterrupted. */
+  loadSceneSlots(targetSlots: LoopSceneState[]): void;
   tapBpm             (idx: number): void;
 }
 
@@ -582,6 +598,53 @@ export const useLoopPlayerStore = create<LoopPlayerStore>((set, get) => ({
       slots: s.slots.map((sl) => ({ ...sl, playing: false })),
     }));
     loopPlayerEngine.stopAll();
+  },
+
+  // ── Load scene slots ───────────────────────────────────
+  loadSceneSlots: (targetSlots) => {
+    const currentSlots = get().slots;
+    const globalBpm    = useDrumStore.getState().bpm;
+    const ctx          = audioEngine.getAudioContext();
+    const now          = ctx?.currentTime ?? 0;
+
+    const nextSlots = currentSlots.map((cur, i): LoopSlotState => {
+      const target = targetSlots[i];
+      if (!target) return cur;
+
+      const wasPlaying = cur.playing;
+      const willPlay   = target.playing;
+
+      // Always write the new non-destructive params to store state
+      const updated: LoopSlotState = {
+        ...cur,
+        volume:          target.volume,
+        transpose:       target.transpose,
+        warpMode:        target.warpMode,
+        originalBpm:     target.originalBpm,
+        firstBeatOffset: target.firstBeatOffset,
+        loopEndSeconds:  target.loopEndSeconds,
+        playing:         willPlay,
+      };
+
+      if (wasPlaying && willPlay) {
+        // Keep running — sync volume + playback rate only
+        loopPlayerEngine.setVolume(i, target.volume);
+        loopPlayerEngine.updatePlaybackRate(i, target.originalBpm, globalBpm, 1);
+      } else if (wasPlaying && !willPlay) {
+        // Stop now (called from bar-boundary context via scheduler setTimeout)
+        loopPlayerEngine.stopSlot(i, now);
+      } else if (!wasPlaying && willPlay) {
+        // Start — only if buffer is loaded; silently skip if not
+        if (cur.buffer) {
+          _launchSlot(i, updated);
+        }
+      }
+      // false → false: nothing to do
+
+      return updated;
+    });
+
+    set({ slots: nextSlots });
   },
 
   // ── Tap BPM ────────────────────────────────────────────
