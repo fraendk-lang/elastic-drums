@@ -775,6 +775,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   togglePlay: () => {
     const wasPlaying = get().isPlaying;
     if (wasPlaying) {
+      audioEngine.fadeDrumBus(0.04);   // 40ms fade to prevent hard click
       stopScheduler();
       setDrumStep(0, 0);
       set({ isPlaying: false });

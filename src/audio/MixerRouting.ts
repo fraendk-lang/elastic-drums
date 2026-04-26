@@ -333,6 +333,11 @@ export class MixerRouter {
     if (bus) bus.gain.gain.value = volume;
   }
 
+  /** Returns the GainNode for a bus group — used for programmatic ramps (e.g. fade-out on stop). */
+  getGroupGainNode(group: string): GainNode | null {
+    return this.groupBuses.get(group)?.gain ?? null;
+  }
+
   getGroupNames(): string[] {
     return Array.from(this.groupBuses.keys());
   }

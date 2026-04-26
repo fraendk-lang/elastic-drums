@@ -337,6 +337,28 @@ export class AudioEngine {
 
   createBusGroup(name: string): void { const ctx = this.getContext(); mixerRouter.createBusGroup(name, ctx, this.masterGain!); }
   setChannelGroup(channel: number, group: string): void { mixerRouter.setChannelGroup(channel, group, this.masterGain!); }
+
+  /**
+   * Fade the drums bus gain to 0 over `duration` seconds (default 40ms),
+   * then reset gain to 1 after 60ms extra time.
+   * Prevents hard click/cut when transport stops.
+   */
+  fadeDrumBus(duration = 0.04): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const gainNode = mixerRouter.getGroupGainNode("drums");
+    if (!gainNode) return;
+    const now = ctx.currentTime;
+    gainNode.gain.cancelScheduledValues(now);
+    gainNode.gain.setValueAtTime(gainNode.gain.value, now);
+    gainNode.gain.linearRampToValueAtTime(0, now + duration);
+    // Reset to 1 after fade completes
+    setTimeout(() => {
+      gainNode.gain.cancelScheduledValues(0);
+      gainNode.gain.value = 1;
+    }, (duration + 0.06) * 1000);
+  }
+
   getGroupLevel(group: string): number { return mixerRouter.getGroupLevel(group); }
   setGroupVolume(group: string, volume: number): void { mixerRouter.setGroupVolume(group, volume); }
   getGroupNames(): string[] { return mixerRouter.getGroupNames(); }
