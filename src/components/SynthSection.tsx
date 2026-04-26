@@ -10,6 +10,8 @@ import { STYLE_META } from "../audio/MelodyGeneratorEngine";
 import { useBassStore, BASS_PRESETS } from "../store/bassStore";
 import { useChordsStore, CHORDS_PRESETS } from "../store/chordsStore";
 import { useMelodyStore, MELODY_PRESETS } from "../store/melodyStore";
+import { useLoopPlayerStore } from "../store/loopPlayerStore";
+import { useDrumStore } from "../store/drumStore";
 import { audioEngine } from "../audio/AudioEngine";
 import { bassEngine } from "../audio/BassEngine";
 import { chordsEngine } from "../audio/ChordsEngine";
@@ -94,6 +96,26 @@ export function SynthSection() {
   const [active, setActive] = useState<SynthTab>("bass");
   const overlay = useOverlayStore();
 
+  // Tab badge: dim color underline when tab content is producing sound but not selected
+  const isTransportPlay = useDrumStore((s) => s.isPlaying);
+  const loopSlotPlaying = useLoopPlayerStore((s) => s.slots.some((slot) => slot.playing));
+
+  function getTabBadgeColor(tabId: SynthTab, isSelected: boolean): string | undefined {
+    if (isSelected) return undefined; // already shown at full opacity
+    switch (tabId) {
+      case "loops":
+        return loopSlotPlaying ? "#2EC4B6" : undefined;
+      case "bass":
+        return isTransportPlay ? "#10b981" : undefined;
+      case "chords":
+        return isTransportPlay ? "var(--ed-accent-chords)" : undefined;
+      case "melody":
+        return isTransportPlay ? "var(--ed-accent-melody)" : undefined;
+      default:
+        return undefined;
+    }
+  }
+
   // Allow StockLibrary (and other components) to switch the active synth tab
   // via a CustomEvent — avoids prop-drilling through the component tree.
   useEffect(() => {
@@ -162,7 +184,9 @@ export function SynthSection() {
                   : "text-white/20 hover:text-white/40 border-transparent"
               }`}
               style={{
-                borderBottomColor: isActive ? tab.color : "transparent",
+                borderBottomColor: isActive
+                  ? tab.color
+                  : (getTabBadgeColor(tab.id, false) ?? "transparent"),
                 textShadow: isActive ? `0 0 12px ${tab.color}40` : "none",
               }}
             >
