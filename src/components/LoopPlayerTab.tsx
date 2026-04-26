@@ -21,6 +21,7 @@ import { useDrumStore } from "../store/drumStore";
 import { useSamplerStore } from "../store/samplerStore";
 import { detectTransients, sliceEqual, onsetsToRegions } from "../audio/SlicerEngine";
 import { audioEngine } from "../audio/AudioEngine";
+import { WaveformCanvas } from "./WaveformCanvas";
 
 // ── Theme ──────────────────────────────────────────────────────────────────────
 const TEAL = "#2EC4B6";
@@ -178,6 +179,22 @@ function drawWaveform(
         ctx.textAlign = "left";
       }
     });
+  }
+}
+
+// Inject pulse keyframe once
+if (typeof document !== "undefined") {
+  const PULSE_STYLE_ID = "ed-loop-pulse-style";
+  if (!document.getElementById(PULSE_STYLE_ID)) {
+    const style = document.createElement("style");
+    style.id = PULSE_STYLE_ID;
+    style.textContent = `
+      @keyframes ed-loop-pulse {
+        0%, 100% { box-shadow: 0 0 0 1px #2EC4B620, 0 0 6px 1px #2EC4B610; }
+        50%       { box-shadow: 0 0 0 1px #2EC4B680, 0 0 12px 3px #2EC4B630; }
+      }
+    `;
+    document.head.appendChild(style);
   }
 }
 
@@ -521,7 +538,8 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
           : isDragOver
             ? `1px dashed ${TEAL}50`
             : "1px solid var(--ed-border-subtle)",
-        boxShadow: isActive ? `0 0 14px ${TEAL}14` : "none",
+        boxShadow: isActive ? undefined : "none",
+        animation: isActive ? "ed-loop-pulse 2s ease-in-out infinite" : "none",
         padding: "7px 9px",
       }}
       onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
@@ -602,51 +620,73 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
         </label>
       </div>
 
-      {/* ── Row 2: Waveform / drop zone — always visible ── */}
-      <div
-        ref={waveContRef}
-        className="relative rounded overflow-hidden transition-all"
-        style={{
-          height: pendingSlices !== null ? 52 : 32, // expand in slice-edit mode
-          background: isDragOver ? `rgba(46,196,182,0.08)` : pendingSlices !== null ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.35)",
-          border: isDragOver
-            ? `1px dashed ${TEAL}60`
-            : pendingSlices !== null
-              ? "1px solid rgba(245,158,11,0.25)"
-              : slot.buffer ? "1px solid rgba(255,255,255,0.05)" : "1px dashed rgba(255,255,255,0.08)",
-        }}
-      >
-        {slot.buffer ? (
-          <canvas
-            ref={canvasRef}
-            width={900}
-            height={pendingSlices !== null ? 52 : 32}
-            className="w-full h-full"
-            style={{ imageRendering: "pixelated", display: "block", cursor: canvasCursor }}
-            onPointerDown={handleCanvasPointerDown}
-            onPointerMove={handleCanvasPointerMove}
-            onPointerUp={handleCanvasPointerUp}
-            onPointerLeave={handleCanvasPointerLeave}
-            onContextMenu={(e) => pendingSlices !== null && e.preventDefault()}
-          />
-        ) : (
-          <label className="absolute inset-0 flex items-center justify-center cursor-pointer">
-            <span className="text-[7px] font-bold tracking-[0.16em]" style={{ color: `${TEAL}28` }}>
-              DROP AUDIO HERE
-            </span>
-            <input type="file" accept="audio/*" className="hidden" onChange={handleFileInput} />
-          </label>
-        )}
-        {slot.analyzing && (
-          <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.55)" }}>
-            <span className="text-[7px] font-bold tracking-[0.14em]" style={{ color: TEAL }}>ANALYZING BPM…</span>
-          </div>
-        )}
-        {isActive && (
-          <div className="absolute inset-0 pointer-events-none"
-            style={{ background: `linear-gradient(90deg, transparent, ${TEAL}10 50%, transparent)`, backgroundSize: "200% 100%", animation: "ed-shimmer 2.5s linear infinite" }} />
-        )}
-      </div>
+      {/* ── Row 2: Waveform / drop zone ── */}
+      {slot.waveformPeaks && pendingSlices === null ? (
+        <WaveformCanvas
+          peaks={slot.waveformPeaks}
+          loopStart={slot.duration > 0 ? slot.firstBeatOffset / slot.duration : 0}
+          loopEnd={
+            slot.loopEndSeconds > slot.firstBeatOffset && slot.duration > 0
+              ? slot.loopEndSeconds / slot.duration
+              : 1
+          }
+          playing={isActive}
+          playStartedAt={slot.playStartedAt}
+          loopDuration={
+            slot.loopEndSeconds > slot.firstBeatOffset
+              ? slot.loopEndSeconds - slot.firstBeatOffset
+              : slot.duration - slot.firstBeatOffset
+          }
+          onLoopStartChange={(pos) => setFirstBeatOffset(slotIndex, pos * slot.duration)}
+          onLoopEndChange={(pos) => setLoopEndSeconds(slotIndex, pos * slot.duration)}
+          onDragEnd={() => restartSlot(slotIndex)}
+        />
+      ) : (
+        <div
+          ref={waveContRef}
+          className="relative rounded overflow-hidden transition-all"
+          style={{
+            height: pendingSlices !== null ? 52 : 32,
+            background: isDragOver ? `rgba(46,196,182,0.08)` : pendingSlices !== null ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.35)",
+            border: isDragOver
+              ? `1px dashed ${TEAL}60`
+              : pendingSlices !== null
+                ? "1px solid rgba(245,158,11,0.25)"
+                : slot.buffer ? "1px solid rgba(255,255,255,0.05)" : "1px dashed rgba(255,255,255,0.08)",
+          }}
+        >
+          {slot.buffer ? (
+            <canvas
+              ref={canvasRef}
+              width={900}
+              height={pendingSlices !== null ? 52 : 32}
+              className="w-full h-full"
+              style={{ imageRendering: "pixelated", display: "block", cursor: canvasCursor }}
+              onPointerDown={handleCanvasPointerDown}
+              onPointerMove={handleCanvasPointerMove}
+              onPointerUp={handleCanvasPointerUp}
+              onPointerLeave={handleCanvasPointerLeave}
+              onContextMenu={(e) => pendingSlices !== null && e.preventDefault()}
+            />
+          ) : (
+            <label className="absolute inset-0 flex items-center justify-center cursor-pointer">
+              <span className="text-[7px] font-bold tracking-[0.16em]" style={{ color: `${TEAL}28` }}>
+                DROP AUDIO HERE
+              </span>
+              <input type="file" accept="audio/*" className="hidden" onChange={handleFileInput} />
+            </label>
+          )}
+          {slot.analyzing && (
+            <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.55)" }}>
+              <span className="text-[7px] font-bold tracking-[0.14em]" style={{ color: TEAL }}>ANALYZING BPM…</span>
+            </div>
+          )}
+          {isActive && (
+            <div className="absolute inset-0 pointer-events-none"
+              style={{ background: `linear-gradient(90deg, transparent, ${TEAL}10 50%, transparent)`, backgroundSize: "200% 100%", animation: "ed-shimmer 2.5s linear infinite" }} />
+          )}
+        </div>
+      )}
 
       {/* ── Row 3: BPM · LOCK · VOL · SLICE (only when loaded) ── */}
       {slot.buffer && (
