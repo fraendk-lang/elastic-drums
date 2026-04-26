@@ -28,6 +28,7 @@ export function getEntryLabel(entry: Pick<SongChainEntry, "sceneIndex" | "label"
 
 /** Returns a semi-transparent version of a hex color at given opacity 0–1 */
 export function hexAlpha(hex: string, alpha: number): string {
+  if (!hex || hex[0] !== "#") return `rgba(0,0,0,${alpha})`;
   // Expand shorthand #abc → #aabbcc
   const full = hex.length === 4
     ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`
