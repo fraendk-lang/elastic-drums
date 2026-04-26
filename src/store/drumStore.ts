@@ -87,6 +87,8 @@ export interface SongChainEntry {
   repeats: number;        // How many times to play (1-16)
   tempoBpm?: number;      // Optional: set tempo at this entry (60-200)
   tempoRamp?: boolean;    // When true, ramp to tempoBpm over entry duration instead of instant jump
+  color?: string;         // Hex colour override, e.g. "#a855f7" — undefined = auto from palette
+  label?: string;         // User-assigned name, e.g. "Drop" — undefined = "Scene N"
 }
 
 export type SongMode = "pattern" | "song";
