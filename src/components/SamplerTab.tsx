@@ -14,12 +14,20 @@ import {
   useCallback,
   useState,
   memo,
+  lazy,
+  Suspense,
 } from "react";
 import { useSamplerStore } from "../store/samplerStore";
+import { useDrumStore } from "../store/drumStore";
 import { samplerEngine } from "../audio/SamplerEngine";
 import { audioEngine } from "../audio/AudioEngine";
 import { Knob } from "./Knob";
 import type { SamplerPadParams } from "../audio/SamplerEngine";
+import type { LibrarySample } from "../audio/SampleLibrary";
+
+const SampleBrowser = lazy(() =>
+  import("./SampleBrowser").then((m) => ({ default: m.SampleBrowser }))
+);
 
 // ── Keyboard map: key → pad index (MPC-style bottom-up) ─────────────────────
 // Row 4 (pads 12-15): Z X C V
@@ -262,7 +270,7 @@ interface DetailPanelProps {
   padIndex: number;
 }
 
-function DetailPanel({ padIndex, onLoadFile }: DetailPanelProps & { onLoadFile: (file: File) => void }) {
+function DetailPanel({ padIndex, onLoadFile, onBrowse }: DetailPanelProps & { onLoadFile: (file: File) => void; onBrowse: () => void }) {
   const pad = useSamplerStore((s) => s.pads[padIndex]!);
   const setParam = useSamplerStore((s) => s.setParam);
   const clearPad = useSamplerStore((s) => s.clearPad);
@@ -363,6 +371,12 @@ function DetailPanel({ padIndex, onLoadFile }: DetailPanelProps & { onLoadFile: 
         >
           LOAD
         </label>
+        <button
+          onClick={onBrowse}
+          className="px-2 py-0.5 text-[7px] font-black tracking-[0.1em] rounded border transition-all border-white/[0.08] text-white/30 hover:text-white/60 hover:border-white/20 shrink-0"
+        >
+          LIB
+        </button>
         {buffer && (
           <button
             onClick={() => clearPad(padIndex)}
@@ -820,6 +834,23 @@ export function SamplerTab() {
   const steps = useSamplerStore((s) => s.steps);
   const selectPad = useSamplerStore((s) => s.selectPad);
   const setPadBuffer = useSamplerStore((s) => s.setPadBuffer);
+  const bpm = useDrumStore((s) => s.bpm);
+
+  // ── Note-Repeat state ──────────────────────────────────────
+  const [noteRepeatOn, setNoteRepeatOn] = useState(false);
+  const [noteRepeatRate, setNoteRepeatRate] = useState<4 | 8 | 16 | 32>(16);
+  const noteRepeatIntervals = useRef<Map<number, ReturnType<typeof setInterval>>>(new Map());
+
+  // Refs so keyboard closure always reads current values
+  const noteRepeatOnRef = useRef(noteRepeatOn);
+  const noteRepeatRateRef = useRef(noteRepeatRate);
+  const bpmRef = useRef(bpm);
+  useEffect(() => { noteRepeatOnRef.current = noteRepeatOn; }, [noteRepeatOn]);
+  useEffect(() => { noteRepeatRateRef.current = noteRepeatRate; }, [noteRepeatRate]);
+  useEffect(() => { bpmRef.current = bpm; }, [bpm]);
+
+  // ── Factory-Sample Browser state ───────────────────────────
+  const [samplerBrowserPad, setSamplerBrowserPad] = useState<number | null>(null);
 
   const handleLoadFile = useCallback(
     async (padIdx: number, file: File) => {
@@ -851,11 +882,32 @@ export function SamplerTab() {
     [selectPad],
   );
 
+  const handleSamplerLibrarySelect = useCallback(async (sample: LibrarySample | null) => {
+    if (samplerBrowserPad === null) return;
+    setSamplerBrowserPad(null); // close browser
+
+    if (!sample) return;
+
+    try {
+      await audioEngine.resume();
+      const ctx = audioEngine.getAudioContext();
+      if (!ctx) return;
+      const response = await fetch(sample.path);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const arrayBuffer = await response.arrayBuffer();
+      const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+      setPadBuffer(samplerBrowserPad, audioBuffer, sample.name);
+      selectPad(samplerBrowserPad);
+    } catch (err) {
+      console.warn("Failed to load library sample:", err);
+    }
+  }, [samplerBrowserPad, setPadBuffer, selectPad]);
+
   // ── Keyboard triggers ──────────────────────────────────────
   // Only active when Sampler tab is mounted. Ignored when user types in an input.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Skip if focus is on an input / textarea / select
+      if (e.repeat) return; // prevent OS key-repeat — we handle our own repeat
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -869,8 +921,23 @@ export function SamplerTab() {
 
       const ctx = audioEngine.getAudioContext();
       if (!ctx) return;
+
+      // Always trigger immediately
       samplerEngine.trigger(padIdx, pad.buffer, pad.params, 0.9, ctx.currentTime);
       selectPad(padIdx);
+
+      // Note-Repeat: start interval if ON
+      if (noteRepeatOnRef.current) {
+        const intervalMs = (60000 / bpmRef.current) * (4 / noteRepeatRateRef.current);
+        const intervalId = setInterval(() => {
+          const p = useSamplerStore.getState().pads[padIdx];
+          const c = audioEngine.getAudioContext();
+          if (p?.buffer && c) {
+            samplerEngine.trigger(padIdx, p.buffer, p.params, 0.9, c.currentTime);
+          }
+        }, intervalMs);
+        noteRepeatIntervals.current.set(padIdx, intervalId);
+      }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -879,6 +946,13 @@ export function SamplerTab() {
 
       const padIdx = SAMPLER_KEY_MAP[e.key.toLowerCase()];
       if (padIdx === undefined) return;
+
+      // Clear Note-Repeat interval
+      const intervalId = noteRepeatIntervals.current.get(padIdx);
+      if (intervalId !== undefined) {
+        clearInterval(intervalId);
+        noteRepeatIntervals.current.delete(padIdx);
+      }
 
       // Gate mode: release on key-up
       const pad = useSamplerStore.getState().pads[padIdx];
@@ -893,6 +967,9 @@ export function SamplerTab() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
+      // Clear all active Note-Repeat intervals
+      noteRepeatIntervals.current.forEach((id) => clearInterval(id));
+      noteRepeatIntervals.current.clear();
     };
   }, [selectPad]);
 
@@ -906,6 +983,38 @@ export function SamplerTab() {
           <div className="mb-1.5 flex items-center justify-between px-0.5">
             <span className="text-[7px] font-bold tracking-[0.12em] text-white/20">SAMPLER PADS</span>
             <span className="text-[7px] text-white/15">Z–V · A–F · Q–R · 1–4</span>
+          </div>
+          {/* Note-Repeat bar */}
+          <div className="mb-2 flex items-center gap-1.5">
+            <button
+              onClick={() => setNoteRepeatOn((v) => !v)}
+              className="px-2 py-0.5 text-[7px] font-black tracking-[0.1em] rounded border transition-all"
+              style={{
+                background:   noteRepeatOn ? "rgba(167,139,250,0.2)" : "transparent",
+                borderColor:  noteRepeatOn ? "rgba(167,139,250,0.5)" : "rgba(255,255,255,0.1)",
+                color:        noteRepeatOn ? "#a78bfa" : "rgba(255,255,255,0.3)",
+              }}
+            >
+              REPEAT
+            </button>
+            {(["1/4", "1/8", "1/16", "1/32"] as const).map((label, i) => {
+              const sub = [4, 8, 16, 32][i] as 4 | 8 | 16 | 32;
+              const active = noteRepeatOn && noteRepeatRate === sub;
+              return (
+                <button
+                  key={label}
+                  onClick={() => { setNoteRepeatRate(sub); setNoteRepeatOn(true); }}
+                  className="px-1.5 py-0.5 text-[7px] font-bold rounded border transition-all"
+                  style={{
+                    background:  active ? "rgba(167,139,250,0.15)" : "transparent",
+                    borderColor: active ? "rgba(167,139,250,0.4)" : "rgba(255,255,255,0.07)",
+                    color:       active ? "#a78bfa" : "rgba(255,255,255,0.2)",
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
           <div
             className="grid gap-1.5"
@@ -941,11 +1050,22 @@ export function SamplerTab() {
         <DetailPanel
           padIndex={selectedPad}
           onLoadFile={(file) => void handleLoadFile(selectedPad, file)}
+          onBrowse={() => setSamplerBrowserPad(selectedPad)}
         />
       </div>
 
       {/* Step Sequencer */}
       <StepSequencer />
+
+      {/* Factory-Sample Browser for Sampler Pads */}
+      <Suspense fallback={null}>
+        <SampleBrowser
+          isOpen={samplerBrowserPad !== null}
+          voiceIndex={15}
+          onClose={() => setSamplerBrowserPad(null)}
+          onSelect={(sample) => void handleSamplerLibrarySelect(sample)}
+        />
+      </Suspense>
     </div>
   );
 }
