@@ -54,4 +54,20 @@ describe("bassWaveformBars", () => {
     const high = [{ active: true, note: 84, octave: 0 }];
     expect(bassWaveformBars(high)[0]!).toBeGreaterThan(bassWaveformBars(low)[0]!);
   });
+
+  it("note=36 (C2) produces height of exactly 0.2", () => {
+    const steps = [{ active: true, note: 36, octave: 0 }];
+    expect(bassWaveformBars(steps)[0]).toBeCloseTo(0.2, 10);
+  });
+
+  it("note=84 (C6) produces height of exactly 1.0", () => {
+    const steps = [{ active: true, note: 84, octave: 0 }];
+    expect(bassWaveformBars(steps)[0]).toBeCloseTo(1.0, 10);
+  });
+
+  it("non-zero octave correctly shifts MIDI value", () => {
+    const withOctave    = [{ active: true, note: 24, octave: 1 }]; // MIDI 36
+    const withoutOctave = [{ active: true, note: 36, octave: 0 }]; // MIDI 36
+    expect(bassWaveformBars(withOctave)[0]).toBeCloseTo(bassWaveformBars(withoutOctave)[0]!, 10);
+  });
 });

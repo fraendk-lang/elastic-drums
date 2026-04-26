@@ -8,7 +8,7 @@
  * Always returns the same value for the same inputs.
  */
 function deterministicHeight(sceneIndex: number, stepIndex: number): number {
-  const seed = (sceneIndex * 100 + stepIndex) & 0x7fffffff;
+  const seed = ((sceneIndex * 2654435761) ^ (stepIndex * 2246822519)) & 0x7fffffff;
   // LCG constants from Numerical Recipes
   const val = (seed * 1664525 + 1013904223) & 0x7fffffff;
   return 0.3 + (val / 0x7fffffff) * 0.7; // 0.3 – 1.0
