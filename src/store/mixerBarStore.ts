@@ -24,6 +24,16 @@ export interface ChannelMixState {
   sendDly: number;     // 0-100
 }
 
+export const GROUP_BUS_IDS = [
+  "drums", "hats", "perc", "bass", "chords", "melody", "sampler", "loops",
+] as const;
+export type GroupBusId = typeof GROUP_BUS_IDS[number];
+
+export interface GroupBusState {
+  fader: number;   // 0-1000, 750 = unity (same scale as channel faders)
+  muted: boolean;
+}
+
 /**
  * Balanced default faders per channel (0-1000, 750 = 0dB unity).
  * Drums and bass sit louder in the mix by nature (high RMS, low-frequency
@@ -66,11 +76,17 @@ interface MixerBarState {
   setSendRev: (ch: number, val: number) => void;
   setSendDly: (ch: number, val: number) => void;
   setExpanded:(ch: number | null) => void;
+  groupBuses:    Record<GroupBusId, GroupBusState>;
+  setGroupFader: (group: GroupBusId, fader: number) => void;
+  setGroupMute:  (group: GroupBusId, muted: boolean) => void;
 }
 
 export const useMixerBarStore = create<MixerBarState>((set) => ({
   channels: Array.from({ length: NUM_MIXER_CHANNELS }, (_, i) => defaultChannel(i)),
   expandedChannel: null,
+  groupBuses: Object.fromEntries(
+    GROUP_BUS_IDS.map((id) => [id, { fader: 750, muted: false }])
+  ) as Record<GroupBusId, GroupBusState>,
 
   setFader: (ch, val) =>
     set((s) => { const c = [...s.channels]; c[ch] = { ...c[ch]!, fader: val }; return { channels: c }; }),
@@ -99,6 +115,16 @@ export const useMixerBarStore = create<MixerBarState>((set) => ({
     set((s) => { const c = [...s.channels]; c[ch] = { ...c[ch]!, sendDly: val }; return { channels: c }; }),
 
   setExpanded: (ch) => set({ expandedChannel: ch }),
+
+  setGroupFader: (group, fader) =>
+    set((s) => ({
+      groupBuses: { ...s.groupBuses, [group]: { ...s.groupBuses[group]!, fader } },
+    })),
+
+  setGroupMute: (group, muted) =>
+    set((s) => ({
+      groupBuses: { ...s.groupBuses, [group]: { ...s.groupBuses[group]!, muted } },
+    })),
 }));
 
 /** Logarithmic fader law: position (0..1000) → gain */
