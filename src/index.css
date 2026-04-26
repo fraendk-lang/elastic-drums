@@ -3,15 +3,15 @@
 :root {
   /* Elastic Drums Color Palette – Dark Theme with Warm Accents */
   /* Lifted slightly for MacBook/Retina readability */
-  --ed-bg-primary: #101014;
-  --ed-bg-secondary: #18181d;
-  --ed-bg-surface: #212128;
-  --ed-bg-elevated: #2a2a32;
-  --ed-border: #333340;
-  --ed-border-subtle: #262630;
+  --ed-bg-primary: #1c1c22;
+  --ed-bg-secondary: #242428;
+  --ed-bg-surface: #2c2c34;
+  --ed-bg-elevated: #36363e;
+  --ed-border: #484854;
+  --ed-border-subtle: #333340;
   --ed-text-primary: #ededf0;
-  --ed-text-secondary: #9494ac;
-  --ed-text-muted: #62627a;
+  --ed-text-secondary: #ababc0;
+  --ed-text-muted: #828294;
   --ed-accent-orange: #f59e0b;
   --ed-accent-amber: #d97706;
   --ed-accent-blue: #3b82f6;
