@@ -17,6 +17,7 @@ import { melodyEngine, type MelodyStep, type MelodyParams } from "../audio/Melod
 import { audioEngine } from "../audio/AudioEngine";
 import { soundFontEngine } from "../audio/SoundFontEngine";
 import { ROOT_NOTES } from "../audio/BassEngine";
+import { useLoopPlayerStore, type LoopSceneState } from "./loopPlayerStore";
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -43,6 +44,9 @@ export interface Scene {
   melodyGlobalOctave?: number;
   // Follow Action: what happens automatically after this scene's quantize cycle
   followAction?: FollowAction;
+  /** Loop Player slot states at the time this scene was recorded.
+   *  undefined = legacy scene recorded before this feature — loops are untouched. */
+  loopSlots?: LoopSceneState[];
 }
 
 export type LaunchQuantize = "immediate" | "1bar" | "2bar" | "4bar";
@@ -150,6 +154,15 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
       melodyLength: melody.length,
       melodyParams: deepClone(melody.params),
       drumVoiceParams,
+      loopSlots: useLoopPlayerStore.getState().slots.map((s): LoopSceneState => ({
+        playing:         s.playing,
+        volume:          s.volume,
+        transpose:       s.transpose,
+        warpMode:        s.warpMode,
+        originalBpm:     s.originalBpm,
+        firstBeatOffset: s.firstBeatOffset,
+        loopEndSeconds:  s.loopEndSeconds,
+      })),
       // Save global key/scale (from bass store as reference)
       rootNote: normalizeBassRootMidi(bass.rootName, bass.rootNote),
       rootName: bass.rootName,
@@ -285,6 +298,12 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
       }
 
       set({ activeScene: slot, nextScene: null });
+
+      // Restore loop player state — diff-based, bar-boundary synchronized.
+      // Legacy scenes (loopSlots undefined) are silently skipped.
+      if (scene.loopSlots && scene.loopSlots.length > 0) {
+        useLoopPlayerStore.getState().loadSceneSlots(scene.loopSlots);
+      }
     });
   },
 
