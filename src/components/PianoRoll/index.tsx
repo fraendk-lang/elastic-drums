@@ -1470,7 +1470,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                           : "grab",
                   }}
                 >
-                  {w > 14 && (
+                  {w > 20 && (
                     <div className="absolute left-1 right-2 top-0.5 flex items-center justify-between gap-1 pointer-events-none select-none">
                       <span className="truncate text-[8px] font-bold text-white/90 leading-none">
                         {midiNoteName(note.midi)}
