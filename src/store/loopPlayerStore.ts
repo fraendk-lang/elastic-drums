@@ -47,6 +47,8 @@ export interface LoopSlotState {
   detectedBpm:      number | null; // last auto-detected value (null = never analysed)
   firstBeatOffset:  number;      // seconds to beat 1 in the file
   loopEndSeconds:   number;      // beat-aligned loop end (0 = use full buffer)
+  waveformPeaks:    Float32Array | null; // 120 bars, normalized 0..1 amplitude
+  playStartedAt:    number | null;       // AudioContext currentTime when slot last started
 }
 
 interface LoopPlayerStore {
@@ -87,6 +89,8 @@ function createDefaultSlot(): LoopSlotState {
     detectedBpm:     null,
     firstBeatOffset: 0,
     loopEndSeconds:  0,
+    waveformPeaks:   null,
+    playStartedAt:   null,
   };
 }
 
@@ -106,6 +110,23 @@ function extractBpmFromFilename(name: string): number | null {
     if (n >= 40 && n <= 220) return n;
   }
   return null;
+}
+
+// ─── Waveform peak computation ─────────────────────────────
+function computePeaks(buffer: AudioBuffer, numBars = 120): Float32Array {
+  const peaks = new Float32Array(numBars);
+  const ch = buffer.getChannelData(0);
+  const samplesPerBar = Math.floor(ch.length / numBars);
+  for (let i = 0; i < numBars; i++) {
+    let peak = 0;
+    const start = i * samplesPerBar;
+    for (let j = 0; j < samplesPerBar; j++) {
+      const s = ch[start + j];
+      if (s !== undefined && Math.abs(s) > peak) peak = Math.abs(s);
+    }
+    peaks[i] = peak;
+  }
+  return peaks;
 }
 
 // ─── BPM Worker (singleton, lazy-created) ─────────────────
@@ -276,6 +297,7 @@ export const useLoopPlayerStore = create<LoopPlayerStore>((set, get) => ({
         detectedBpm:     null,
         firstBeatOffset: 0,
         loopEndSeconds:  0,
+        waveformPeaks:   computePeaks(buffer),
       };
       return { slots };
     });
@@ -541,7 +563,11 @@ export const useLoopPlayerStore = create<LoopPlayerStore>((set, get) => ({
       // Arm — if still analysing, launch will happen on worker callback
       set((s) => {
         const slots = [...s.slots];
-        slots[idx] = { ...slots[idx]!, playing: true };
+        slots[idx] = {
+          ...slots[idx]!,
+          playing: true,
+          playStartedAt: audioEngine.getAudioContext()?.currentTime ?? null,
+        };
         return { slots };
       });
       if (!slot.analyzing) {

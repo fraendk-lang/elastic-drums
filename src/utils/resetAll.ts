@@ -35,6 +35,8 @@ function createEmptyLoopSlot(): LoopSlotState {
     detectedBpm:     null,
     firstBeatOffset: 0,
     loopEndSeconds:  0,
+    waveformPeaks:   null,
+    playStartedAt:   null,
   };
 }
 
