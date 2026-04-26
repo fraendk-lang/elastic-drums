@@ -304,11 +304,16 @@ export function MelodyGenerator({ isOpen, onClose }: Props) {
   /**
    * Route the generated pattern to the correct sequencer store.
    * Bass → bassStore, Chords → chordsStore, Melody/Arp → melodyStore.
-   * Drums fall back to Piano Roll (too fine-grained for a step grid).
+   * Always also syncs notes to Piano Roll state so "→ Piano Roll" works instantly.
+   * Drums fall back to Piano Roll (step-grid conversion not feasible).
    */
   const loadToSequencer = useCallback((pattern: GeneratedPattern) => {
     const { notes, params: { bars, mode, role } } = pattern;
     const stepCount = bars * 16;
+
+    // Always keep Piano Roll state in sync so user can open it for fine-tuning
+    updatePersistedNotes(notes);
+    window.dispatchEvent(new CustomEvent("piano-roll-notes-imported"));
 
     if (role === "bass") {
       const steps = pianoRollNotesToBassSteps(notes, bars).slice(0, stepCount);
@@ -335,10 +340,10 @@ export function MelodyGenerator({ isOpen, onClose }: Props) {
       });
       window.dispatchEvent(new CustomEvent("synth-tab-switch", { detail: { tab: "melody" } }));
     } else {
-      // Drums: step-grid conversion not feasible — open Piano Roll for review
-      sendToPianoRoll(pattern, "replace");
+      // Drums: open Piano Roll directly for fine-tuning
+      overlay.openOverlay("pianoRoll");
     }
-  }, [sendToPianoRoll]);
+  }, [overlay]);
 
   const handleLoad = useCallback((p: GeneratedPattern) => {
     setCurrent(p);
@@ -557,25 +562,35 @@ export function MelodyGenerator({ isOpen, onClose }: Props) {
               </button>
             </div>
 
-            {/* Load to Sequencer / Piano Roll */}
+            {/* Load to Sequencer + Piano Roll */}
             {current && (
-              <div className="flex items-center gap-2 mt-2">
-                <button
-                  onClick={() => loadToSequencer(current)}
-                  className="flex-1 py-1.5 text-[8px] font-black tracking-[0.15em] rounded border border-white/20 bg-white/[0.06] hover:bg-white/[0.12] text-white/70 hover:text-white transition-colors"
-                >
-                  ↓ LOAD TO SEQUENCER
-                </button>
-                <button
-                  onClick={() => sendToPianoRoll(current, "replace")}
-                  className="px-2 py-1.5 text-[7px] font-bold rounded border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-white/35 hover:text-white/70 transition-colors"
-                  title="Open in Piano Roll for fine-tuning"
-                >
-                  → Piano Roll
-                </button>
-                <span className="text-[7px] text-white/20 shrink-0">
-                  {current.notes.length}n
-                </span>
+              <div className="flex flex-col gap-1.5 mt-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => loadToSequencer(current)}
+                    className="flex-1 py-1.5 text-[8px] font-black tracking-[0.15em] rounded border border-white/20 bg-white/[0.06] hover:bg-white/[0.12] text-white/70 hover:text-white transition-colors"
+                  >
+                    ↓ LOAD TO SEQUENCER
+                  </button>
+                  <span className="text-[7px] text-white/20 shrink-0">
+                    {current.notes.length} notes
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => sendToPianoRoll(current, "replace")}
+                    className="flex-1 py-1.5 text-[8px] font-bold tracking-[0.12em] rounded border border-white/15 bg-white/[0.04] hover:bg-white/[0.09] text-white/50 hover:text-white/80 transition-colors"
+                  >
+                    → OPEN IN PIANO ROLL
+                  </button>
+                  <button
+                    onClick={() => sendToPianoRoll(current, "add")}
+                    className="px-3 py-1.5 text-[8px] font-bold tracking-[0.1em] rounded border border-white/10 bg-white/[0.02] hover:bg-white/[0.07] text-white/35 hover:text-white/65 transition-colors"
+                    title="Add to existing Piano Roll notes"
+                  >
+                    + ADD
+                  </button>
+                </div>
               </div>
             )}
           </div>

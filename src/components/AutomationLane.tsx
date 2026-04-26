@@ -35,7 +35,7 @@ export function AutomationLane({
   params, selectedParam, values, length, pageOffset, currentStep, isPlaying,
   color, onSelectParam, onChange,
 }: AutomationLaneProps) {
-  const [collapsed, setCollapsed]   = useState(false);
+  const [collapsed, setCollapsed]   = useState(true);
   const [laneHeight, setLaneHeight] = useState(DEFAULT_H);
 
   const containerRef = useRef<HTMLDivElement>(null);
