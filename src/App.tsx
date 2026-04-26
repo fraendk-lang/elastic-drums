@@ -29,6 +29,7 @@ const MidiClockPanel = lazy(() => import("./components/MidiClockPanel").then((m)
 const UserGuide = lazy(() => import("./components/UserGuide").then((m) => ({ default: m.UserGuide })));
 const PerformancePad = lazy(() => import("./components/PerformancePad").then((m) => ({ default: m.PerformancePad })));
 const MelodyGenerator = lazy(() => import("./components/MelodyGenerator").then((m) => ({ default: m.MelodyGenerator })));
+import { ShortcutOverlay } from "./components/ShortcutOverlay";
 import { getMidiClockMode, subscribeMidiClockMode } from "./store/midiClockMode";
 import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
@@ -522,6 +523,7 @@ export function App() {
         {overlay.isOpen("performancePad") && <PerformancePad isOpen onClose={() => overlay.closeOverlay("performancePad")} />}
         {overlay.isOpen("melodyGen") && <MelodyGenerator isOpen onClose={() => overlay.closeOverlay("melodyGen")} />}
       </Suspense>
+      <ShortcutOverlay />
       {sceneMiniOpen && <SceneMini onClose={() => setSceneMiniOpen(false)} />}
     </div>
     </ErrorBoundary>

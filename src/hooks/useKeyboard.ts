@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useDrumStore } from "../store/drumStore";
 import { useSceneStore } from "../store/sceneStore";
+import { useOverlayStore } from "../store/overlayStore";
 
 /**
  * QWERTY → Pad mapping (2 rows × 4 + 4)
@@ -42,6 +43,7 @@ export function useKeyboard() {
   const loadPreset = useDrumStore((s) => s.loadPreset);
   const nextPreset = useDrumStore((s) => s.nextPreset);
   const prevPreset = useDrumStore((s) => s.prevPreset);
+  const toggleShortcutsOverlay = useOverlayStore((s) => s.toggle);
 
   useEffect(() => {
     const pressed = new Set<string>();
@@ -112,6 +114,13 @@ export function useKeyboard() {
         prevPreset();
         return;
       }
+
+      // ? → shortcut overlay
+      if (key === "?") {
+        e.preventDefault();
+        toggleShortcutsOverlay("shortcuts");
+        return;
+      }
     };
 
     const handleUp = (e: KeyboardEvent) => {
@@ -125,5 +134,5 @@ export function useKeyboard() {
       window.removeEventListener("keydown", handleDown);
       window.removeEventListener("keyup", handleUp);
     };
-  }, [triggerVoice, setSelectedVoice, togglePlay, loadPreset, nextPreset, prevPreset]);
+  }, [triggerVoice, setSelectedVoice, togglePlay, loadPreset, nextPreset, prevPreset, toggleShortcutsOverlay]);
 }
