@@ -61,6 +61,11 @@ export class AudioEngine {
       // Let the browser / OS choose the native output sample rate. Forcing 48 kHz
       // can cause extra resampling work and make Safari more fragile over time.
       this.ctx = new AudioContext({ latencyHint });
+      // Expose currentTime for RAF consumers (WaveformCanvas playhead)
+      Object.defineProperty(window, "__audioCtxCurrentTime", {
+        get: () => this.ctx?.currentTime ?? 0,
+        configurable: true,
+      });
       this.noiseBuffer = this.generateNoiseBuffer(this.ctx, 2.0);
 
       // ─── Master output chain ─────────────────────────────
