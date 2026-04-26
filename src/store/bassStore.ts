@@ -11,6 +11,7 @@ import { audioEngine } from "../audio/AudioEngine";
 import { soundFontEngine } from "../audio/SoundFontEngine";
 import { generateEuclidean, useDrumStore, getDrumNextStepTime } from "./drumStore";
 import { schedulerClock } from "../audio/SchedulerClock";
+import { generateArpNotes, DEFAULT_ARP_SETTINGS, type ArpSettings } from "../audio/Arpeggiator";
 
 export const BASS_MAX_CLIP_STEPS = 256;
 
@@ -451,6 +452,8 @@ interface BassStore {
    *  (used by XY Pad chord-follow — set on chord down, reset on chord up). */
   liveTransposeOffset: number;
   setLiveTransposeOffset: (semis: number) => void;
+  arp: ArpSettings;
+  setArp: <K extends keyof ArpSettings>(key: K, value: ArpSettings[K]) => void;
 
   toggleStep: (step: number) => void;
   setStepNote: (step: number, note: number) => void;
@@ -559,7 +562,7 @@ export function startBassScheduler() {
       }
 
       if (step?.active && !isContinuationTie) {
-        const { instrument, liveTransposeOffset } = useBassStore.getState();
+        const { instrument, liveTransposeOffset, arp } = useBassStore.getState();
         const midiNote = scaleNote(rootNote, scaleName, step.note, step.octave + globalOctave) + (liveTransposeOffset ?? 0);
         const explicitGateLength = Math.max(1, step.gateLength ?? 1);
         let sustainSteps = explicitGateLength;
@@ -569,10 +572,29 @@ export function startBassScheduler() {
           sustainSteps = getLegacyTieLength(steps, stepIndex, length);
         }
         const sustainDuration = secondsPerStep * sustainSteps;
+        const velocity = Math.max(0.2, Math.min(1, step.velocity ?? (step.accent ? 1.0 : 0.7)));
 
-        // Use soundfont if a non-synth instrument is selected
-        if (instrument !== "_synth_") {
-          const velocity = Math.max(0.2, Math.min(1, step.velocity ?? (step.accent ? 1.0 : 0.7)));
+        if (arp.mode !== "off") {
+          const arpNotes = generateArpNotes(
+            midiNote,
+            sustainDuration,
+            arp,
+            scaleName,
+            rootNote,
+            velocity,
+          );
+          if (instrument !== "_synth_") {
+            for (const a of arpNotes) {
+              soundFontEngine.playNote("bass", a.note, nextBassStepTime + a.offset, a.velocity, a.duration);
+            }
+          } else {
+            for (const a of arpNotes) {
+              bassEngine.triggerNote(a.note, nextBassStepTime + a.offset, step.accent, false, false, a.velocity);
+              bassEngine.releaseNote(nextBassStepTime + a.offset + a.duration);
+            }
+          }
+        } else if (instrument !== "_synth_") {
+          // Use soundfont if a non-synth instrument is selected
           const duration = Math.max(secondsPerStep * 1.2, sustainDuration * 0.98);
           soundFontEngine.playNote("bass", midiNote, nextBassStepTime, velocity, duration);
         } else {
@@ -621,6 +643,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
   strategyIndex: 0,
   isPlaying: false,
   instrument: "_synth_",
+  arp: { ...DEFAULT_ARP_SETTINGS },
 
   toggleStep: (step) => set((s) => {
     const newSteps = [...s.steps];
@@ -846,6 +869,8 @@ export const useBassStore = create<BassStore>((set, get) => ({
     });
     bassEngine.setParams(params);
   },
+
+  setArp: (key, value) => set((s) => ({ arp: { ...s.arp, [key]: value } })),
 }));
 
 // ─── Global Scale Sync ──────────────────────────────────

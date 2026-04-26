@@ -19,6 +19,7 @@ import { soundFontEngine } from "../audio/SoundFontEngine";
 import { generateEuclidean, useDrumStore, getDrumNextStepTime } from "./drumStore";
 import { syncScaleToOtherStores, registerScaleStore } from "./bassStore";
 import { schedulerClock } from "../audio/SchedulerClock";
+import { generateArpNotes, DEFAULT_ARP_SETTINGS, type ArpSettings } from "../audio/Arpeggiator";
 
 export const CHORDS_MAX_CLIP_STEPS = 256;
 
@@ -373,6 +374,8 @@ interface ChordsStore {
   automationParam: string;
   isPlaying: boolean;
   instrument: string;
+  arp: ArpSettings;
+  setArp: <K extends keyof ArpSettings>(key: K, value: ArpSettings[K]) => void;
 
   setAutomationValue: (param: string, step: number, value: number | undefined) => void;
   setAutomationParam: (param: string) => void;
@@ -488,11 +491,32 @@ export function startChordsScheduler() {
         const sustainSteps = explicitGateLength > 1 ? explicitGateLength : getLegacyTieLength(steps, stepIndex, length);
         const sustainDuration = secondsPerStep * sustainSteps;
 
-        const { instrument } = useChordsStore.getState();
+        const { instrument, arp } = useChordsStore.getState();
+        const velocity = Math.max(0.2, Math.min(1, step.velocity ?? (step.accent ? 1.0 : 0.7)));
 
-        // Use soundfont if a non-synth instrument is selected
-        if (instrument !== "_synth_") {
-          const velocity = Math.max(0.2, Math.min(1, step.velocity ?? (step.accent ? 1.0 : 0.7)));
+        if (arp.mode !== "off") {
+          // Arpeggiator: expand chord notes into sub-step sequence
+          const arpNotes = generateArpNotes(
+            midiNotes[0] ?? rootMidi,
+            sustainDuration,
+            arp,
+            scaleName,
+            rootMidi,
+            velocity,
+            midiNotes,
+          );
+          if (instrument !== "_synth_") {
+            for (const a of arpNotes) {
+              soundFontEngine.playNote("chords", a.note, nextChordsStepTime + a.offset, a.velocity, a.duration);
+            }
+          } else {
+            for (const a of arpNotes) {
+              chordsEngine.triggerChord([a.note], nextChordsStepTime + a.offset, step.accent, false, a.velocity);
+              chordsEngine.releaseChord(nextChordsStepTime + a.offset + a.duration);
+            }
+          }
+        } else if (instrument !== "_synth_") {
+          // Use soundfont if a non-synth instrument is selected
           const duration = Math.max(secondsPerStep * 1.5, sustainDuration * 0.98);
           soundFontEngine.playChord("chords", midiNotes, nextChordsStepTime, velocity, duration);
         } else {
@@ -537,6 +561,7 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
   automationParam: "cutoff",
   isPlaying: false,
   instrument: "_synth_",
+  arp: { ...DEFAULT_ARP_SETTINGS },
 
   toggleStep: (step) => set((s) => {
     const newSteps = [...s.steps];
@@ -769,6 +794,8 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
     });
     chordsEngine.setParams(params);
   },
+
+  setArp: (key, value) => set((s) => ({ arp: { ...s.arp, [key]: value } })),
 }));
 
 // Register for global scale sync

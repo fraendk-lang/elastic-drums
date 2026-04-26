@@ -115,6 +115,9 @@ export function ChordsSequencer() {
     setAutomationValue, setAutomationParam,
   } = useChordsStore();
 
+  const arp = useChordsStore((s) => s.arp);
+  const setArp = useChordsStore((s) => s.setArp);
+
   // currentStep from external store — does not trigger full ChordsSequencer re-render
   const currentStep = useSyncExternalStore(chordsCurrentStepStore.subscribe, chordsCurrentStepStore.getSnapshot);
 
@@ -415,6 +418,61 @@ export function ChordsSequencer() {
       ) : (
         <SoundFontKnobs channel={13} color={CHORDS_COLOR} />
       )}
+
+      {/* ── Arp strip ── */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1 border-b border-white/5 text-[7px] font-bold tracking-wider">
+        <span className="text-[var(--ed-accent-chords)]/70">ARP</span>
+        {(["off","up","down","updown","downup","converge","diverge","random","chord"] as const).map((m) => (
+          <button key={m} onClick={() => setArp("mode", m)}
+            className={`px-1.5 h-5 rounded transition-all ${
+              arp.mode === m
+                ? "bg-[var(--ed-accent-chords)]/25 text-[var(--ed-accent-chords)]"
+                : "text-white/25 hover:text-white/55"
+            }`}
+            title={`Arpeggiator: ${m}`}
+          >{m === "off" ? "—" : m.toUpperCase().slice(0,4)}</button>
+        ))}
+        {arp.mode !== "off" && (
+          <>
+            <span className="mx-0.5 text-white/15">|</span>
+            {(["1/4","1/8","1/8t","1/16","1/16t","1/32"] as const).map((r) => (
+              <button key={r} onClick={() => setArp("rate", r)}
+                className={`px-1 h-5 rounded transition-all ${arp.rate === r ? "bg-white/15 text-white/90" : "text-white/25 hover:text-white/55"}`}
+              >{r}</button>
+            ))}
+            <span className="mx-0.5 text-white/15">|</span>
+            {[1,2,3,4].map((o) => (
+              <button key={o} onClick={() => setArp("octaves", o)}
+                className={`w-5 h-5 rounded transition-all ${arp.octaves === o ? "bg-white/15 text-white/90" : "text-white/25 hover:text-white/55"}`}
+              >{o}</button>
+            ))}
+            <span className="mx-0.5 text-white/15">|</span>
+            {(["short","medium","long"] as const).map((g) => (
+              <button key={g} onClick={() => setArp("gate", g)}
+                className={`px-1 h-5 rounded transition-all ${arp.gate === g ? "bg-white/15 text-white/90" : "text-white/25 hover:text-white/55"}`}
+              >{g[0]!.toUpperCase()}</button>
+            ))}
+            <label className="flex items-center gap-1 text-white/40">
+              SW<input type="range" min={0} max={50} value={Math.round(arp.swing * 100)}
+                onChange={(e) => setArp("swing", Number(e.target.value) / 100)}
+                className="w-12 accent-[var(--ed-accent-chords)]" />
+              <span className="w-5 text-[6px] text-white/50 font-mono">{Math.round(arp.swing * 100)}</span>
+            </label>
+            <label className="flex items-center gap-1 text-white/40">
+              SKIP<input type="range" min={0} max={80} value={Math.round(arp.skipProb * 100)}
+                onChange={(e) => setArp("skipProb", Number(e.target.value) / 100)}
+                className="w-12 accent-[var(--ed-accent-chords)]" />
+              <span className="w-5 text-[6px] text-white/50 font-mono">{Math.round(arp.skipProb * 100)}</span>
+            </label>
+            <label className="flex items-center gap-1 text-white/40">
+              DECAY<input type="range" min={0} max={100} value={Math.round(arp.velDecay * 100)}
+                onChange={(e) => setArp("velDecay", Number(e.target.value) / 100)}
+                className="w-12 accent-[var(--ed-accent-chords)]" />
+              <span className="w-5 text-[6px] text-white/50 font-mono">{Math.round(arp.velDecay * 100)}</span>
+            </label>
+          </>
+        )}
+      </div>
 
       {/* Row 2: Pages + length */}
       <div className="flex items-center gap-2 px-3 py-1 border-b border-white/5">
