@@ -98,13 +98,20 @@ export class LoopPlayerEngine {
     const loopEnd   = Math.min(buffer.duration, loopEndSeconds ?? buffer.duration);
     const effectiveLoopEnd = loopEnd > loopStart ? loopEnd : buffer.duration;
 
-    // Apply short fades at effective loop boundaries to prevent click artifacts on wrap
-    const fadedBuffer = this._applyLoopFade(buffer, loopStart, effectiveLoopEnd);
+    // Apply short fades at effective loop boundaries to prevent click artifacts on wrap.
+    // The fade-IN is applied to the region BEFORE loopStart (not after it), so that
+    // on initial playback the source reads from loopStart at full amplitude (clean hit),
+    // while on every subsequent loop-wrap the wrap point lands at the pre-fade region
+    // (fade ramps 0→1 into loopStart → no click on wrap).
+    const { fadedBuffer, fadeSecs } = this._applyLoopFade(buffer, loopStart, effectiveLoopEnd);
+
+    // Wrap point: go back into the pre-fade region so the fade-in plays on every wrap
+    const wrapStart = Math.max(0, loopStart - fadeSecs);
 
     const source = ctx.createBufferSource();
     source.buffer    = fadedBuffer;
     source.loop      = true;
-    source.loopStart = loopStart;
+    source.loopStart = wrapStart;
     source.loopEnd   = effectiveLoopEnd;
 
     const rate = this._calcRate(originalBpm, globalBpm, pitchFactor);
@@ -222,18 +229,24 @@ export class LoopPlayerEngine {
    * Create a copy of `buffer` with short linear fades applied at the loop
    * boundary points to eliminate click artifacts on `AudioBufferSourceNode.loop`.
    *
-   * @param buffer       Source AudioBuffer
-   * @param loopStart    Loop start in seconds
-   * @param loopEnd      Loop end in seconds
-   * @param fadeSecs     Fade duration (default 3 ms)
+   * Fade strategy (ensures beat 1 hits at full amplitude on initial start):
+   *   • Fade-IN  applied to [loopStart - fadeSecs … loopStart):
+   *       → region BEFORE the beat. On initial `source.start(t, loopStart)` the
+   *         read begins at loopStart (full amplitude). On each subsequent loop-wrap
+   *         the source rewinds to wrapStart = loopStart - fadeSecs, hears the
+   *         0→1 ramp, and arrives at loopStart at full amplitude — no click.
+   *   • Fade-OUT applied to the last fadeSecs of the loop region (unchanged):
+   *       → end of loop ramps to silence so the wrap discontinuity is inaudible.
+   *
+   * @returns { fadedBuffer, fadeSecs } so callers can compute wrapStart.
    */
   private _applyLoopFade(
     buffer: AudioBuffer,
     loopStart: number,
     loopEnd: number,
     fadeSecs = 0.003,
-  ): AudioBuffer {
-    if (!this.ctx) return buffer;
+  ): { fadedBuffer: AudioBuffer; fadeSecs: number } {
+    if (!this.ctx) return { fadedBuffer: buffer, fadeSecs };
     const sr         = buffer.sampleRate;
     const fadeFrames = Math.max(1, Math.round(fadeSecs * sr));
     const startFrame = Math.round(loopStart * sr);
@@ -245,21 +258,26 @@ export class LoopPlayerEngine {
       const dst = copy.getChannelData(c);
       dst.set(src); // copy all samples
 
-      // Fade-in at loopStart (0 → 1 over fadeFrames)
+      // Fade-in ENDING at loopStart (0 → 1 over fadeFrames).
+      // Frames [startFrame - fadeFrames … startFrame - 1]: ramp 0 → ~1.
+      // Frame startFrame (= loopStart, beat 1): untouched → full amplitude.
+      // On initial source.start(t, loopStart) the reader begins at startFrame —
+      // the kick (or whatever is on beat 1) hits at 100% immediately.
       for (let i = 0; i < fadeFrames; i++) {
-        const fi = startFrame + i;
-        if (fi < dst.length) dst[fi]! *= i / fadeFrames;
+        const fi = startFrame - fadeFrames + i;
+        if (fi >= 0) dst[fi]! *= i / fadeFrames;
       }
-      // Fade-out at loopEnd (1 → 0 over fadeFrames)
+
+      // Fade-out at loopEnd (1 → 0 over fadeFrames).
       // fi counts DOWN from endFrame-1: the LAST sample (endFrame-1) gets
-      // multiplied by 0 (silent), so on loop-wrap both the last sample
-      // (silent) and the first sample (silent from fade-in) are at 0 → no click.
+      // multiplied by 0 (silent), so on loop-wrap the source rewinds to
+      // wrapStart (in the 0→1 ramp region) — fully click-free.
       for (let i = 0; i < fadeFrames; i++) {
         const fi = endFrame - 1 - i;
         if (fi >= 0) dst[fi]! *= i / fadeFrames;
       }
     }
-    return copy;
+    return { fadedBuffer: copy, fadeSecs };
   }
 }
 
