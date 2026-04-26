@@ -1195,7 +1195,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         <div
           ref={gridRef}
           className="flex-1 overflow-auto relative"
-          style={{ background: "#0d0c10" }}
+          style={{ background: "var(--ed-bg-primary)" }}
           onPointerDown={(e) => { closeContextMenu(); handleGridPointerDown(e); }}
           onPointerMove={handleGridPointerMove}
           onPointerUp={handleGridPointerUp}

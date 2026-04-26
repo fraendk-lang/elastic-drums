@@ -240,7 +240,7 @@ function GroupBusPanel({ groupCanvasRefs }: GroupBusPanelProps) {
                 />
 
                 <div className="relative" style={{ width: 8, height: 56 }}>
-                  <div className="absolute inset-0 rounded bg-[#111] border border-white/[0.06]" />
+                  <div className="absolute inset-0 rounded bg-[var(--ed-bg-primary)] border border-white/[0.06]" />
                   <div
                     className="absolute left-0 right-0 h-px bg-white/20"
                     style={{ top: `${(1 - 750 / 1000) * 100}%` }}
@@ -374,7 +374,7 @@ export function MixerBar() {
 
                 {/* Fader */}
                 <div className="relative" style={{ width: 8, height: 56 }}>
-                  <div className="absolute inset-0 rounded bg-[#111] border border-white/[0.06]" />
+                  <div className="absolute inset-0 rounded bg-[var(--ed-bg-primary)] border border-white/[0.06]" />
                   {/* Unity tick */}
                   <div
                     className="absolute left-0 right-0 h-px bg-white/20"
@@ -462,7 +462,7 @@ interface ExpandedPanelProps {
 
 function ExpandedPanel({ channel, color, label, onClose, onEQ, onPan, onSendRev, onSendDly }: ExpandedPanelProps) {
   return (
-    <div className="flex items-end gap-4 px-3 py-2 bg-[#111] border-b border-white/[0.06]">
+    <div className="flex items-end gap-4 px-3 py-2 bg-[var(--ed-bg-primary)] border-b border-white/[0.06]">
       {/* Label */}
       <div className="flex flex-col items-center gap-0.5 mr-1">
         <span className="text-[7px] font-black tracking-widest uppercase" style={{ color }}>{label}</span>

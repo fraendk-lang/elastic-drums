@@ -31,14 +31,14 @@ export const PianoRollKeys = forwardRef<HTMLDivElement, PianoRollKeysProps>(
     return (
       <div
         ref={ref}
-        className="shrink-0 overflow-y-hidden border-r border-[var(--ed-border)] bg-[#1a1816]"
+        className="shrink-0 overflow-y-hidden border-r border-[var(--ed-border)] bg-[var(--ed-bg-secondary)]"
         style={{ width: PIANO_WIDTH }}
       >
         {/* Spacer matching the ruler height so rows line up with the grid */}
         <div
           style={{
             height: RULER_HEIGHT,
-            backgroundColor: "#0d0d10",
+            backgroundColor: "var(--ed-bg-primary)",
             borderBottom: "1px solid rgba(255,255,255,0.2)",
           }}
         />

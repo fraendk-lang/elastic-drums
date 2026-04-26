@@ -132,7 +132,7 @@ export function PianoRollRuler({
       style={{
         height: RULER_HEIGHT,
         width: Math.max(gridW, 800),
-        backgroundColor: "#0d0d10",
+        backgroundColor: "var(--ed-bg-primary)",
         borderBottom: "1px solid rgba(255,255,255,0.22)",
         cursor: "crosshair",
       }}

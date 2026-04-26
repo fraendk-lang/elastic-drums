@@ -90,7 +90,7 @@ export function Transport({
   }, [handleTap]);
 
   return (
-    <header className="flex items-center h-11 px-3 border-b border-[var(--ed-border)]/70 bg-gradient-to-b from-[#111116] to-[#0d0d11] gap-1.5 relative z-20 overflow-x-auto overflow-y-hidden">
+    <header className="flex items-center h-11 px-3 border-b border-[var(--ed-border)]/70 bg-[var(--ed-bg-primary)] gap-1.5 relative z-20 overflow-x-auto overflow-y-hidden">
 
       {/* ── Brand ── */}
       <span className="text-[10px] font-black tracking-[0.25em] text-[var(--ed-accent-orange)] mr-1.5 hidden lg:block">

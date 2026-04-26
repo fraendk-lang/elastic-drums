@@ -85,7 +85,7 @@ function drawCanvas(
   ctx.clearRect(0, 0, W, H);
 
   // Background
-  ctx.fillStyle = "#111";
+  ctx.fillStyle = "#1c1c22";
   ctx.fillRect(0, 0, W, H);
 
   // Loop region tinted background

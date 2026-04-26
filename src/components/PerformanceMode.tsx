@@ -92,7 +92,7 @@ export function PerformanceMode({ onClose }: PerformanceModeProps) {
 
       {/* ─── HEADER ─── */}
       <div className="flex items-center justify-between px-5 py-2.5 border-b border-white/10"
-        style={{ background: "#111116" }}>
+        style={{ background: "var(--ed-bg-primary)" }}>
         <span className="text-[11px] font-extrabold tracking-[0.25em] text-[var(--ed-accent-orange)]">
           PERFORMANCE
         </span>
@@ -107,7 +107,7 @@ export function PerformanceMode({ onClose }: PerformanceModeProps) {
 
       {/* ─── TRANSPORT ─── */}
       <div className="flex items-center gap-5 px-5 py-3 border-b border-white/8"
-        style={{ background: "#0d0d12" }}>
+        style={{ background: "var(--ed-bg-secondary)" }}>
         {/* Play/Stop */}
         <button onClick={handlePlay}
           className="w-14 h-14 rounded-full border-2 flex items-center justify-center text-xl font-bold transition-all active:scale-90"
@@ -233,7 +233,7 @@ export function PerformanceMode({ onClose }: PerformanceModeProps) {
       </div>
 
       {/* ─── QUICK MIXER (live animated) ─── */}
-      <div className="px-5 py-3 border-t border-white/10" style={{ background: "#111116" }}>
+      <div className="px-5 py-3 border-t border-white/10" style={{ background: "var(--ed-bg-primary)" }}>
         <div className="flex gap-4">
           {GROUP_NAMES.map((group) => {
             const level = meters[group] ?? 0;

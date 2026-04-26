@@ -75,7 +75,7 @@ export function ShortcutOverlay() {
       onClick={() => close("shortcuts")}
     >
       <div
-        className="relative rounded-xl border border-white/10 bg-[#111] shadow-2xl"
+        className="relative rounded-xl border border-white/10 bg-[var(--ed-bg-surface)] shadow-2xl"
         style={{ width: "min(860px, 95vw)", maxHeight: "85vh", overflowY: "auto" }}
         onClick={(e) => e.stopPropagation()}
       >
