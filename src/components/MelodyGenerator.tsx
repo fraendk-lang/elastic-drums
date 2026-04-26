@@ -3,7 +3,8 @@
  *
  * Full-screen overlay that exposes the guided MIDI generation engine.
  * Produces style-specific patterns (HarbourGlow, Ambient, Deep House,
- * Electronica) and sends them directly to the Piano Roll.
+ * Electronica, Smooth Jazz) and routes them to the correct sequencer
+ * (Bass, Chords, Melody) or Piano Roll (Drums/Arp fine-tuning).
  */
 
 import { useState, useCallback, useMemo } from "react";
@@ -25,8 +26,86 @@ import {
   _persistedNotes,
   updatePersistedNotes,
 } from "./PianoRoll/persistedState";
+import type { PianoRollNote } from "./PianoRoll/types";
 import { useOverlayStore } from "../store/overlayStore";
 import { useDrumStore } from "../store/drumStore";
+import { useBassStore } from "../store/bassStore";
+import { useChordsStore } from "../store/chordsStore";
+import { useMelodyStore } from "../store/melodyStore";
+import { DEFAULT_BASS_PARAMS, type BassStep } from "../audio/BassEngine";
+import { DEFAULT_CHORDS_PARAMS, type ChordsStep } from "../audio/ChordsEngine";
+import { DEFAULT_MELODY_PARAMS, type MelodyStep } from "../audio/MelodyEngine";
+
+// ─── Step conversion helpers ─────────────────────────────────────────────────
+
+function pianoRollNotesToBassSteps(notes: PianoRollNote[], bars: number): BassStep[] {
+  const stepCount = bars * 16;
+  const grid: BassStep[] = Array.from({ length: stepCount }, () => ({
+    active: false, note: 0, octave: 0, accent: false, slide: false, tie: false,
+  }));
+  for (const n of notes.filter(n => n.track === "bass")) {
+    const i = Math.round(n.start * 4);
+    if (i >= 0 && i < stepCount) {
+      const gl = Math.max(1, Math.round(n.duration * 4));
+      grid[i] = {
+        active: true, note: n.midi, octave: 0,
+        accent: n.velocity > 0.85, velocity: n.velocity,
+        slide: false, tie: gl > 1, gateLength: gl,
+      };
+    }
+  }
+  return grid;
+}
+
+function pianoRollNotesToChordsSteps(
+  notes: PianoRollNote[], bars: number, mode: GenMode,
+): ChordsStep[] {
+  const stepCount = bars * 16;
+  const grid: ChordsStep[] = Array.from({ length: stepCount }, () => ({
+    active: false, note: 0, chordType: "min7" as const, octave: 0, accent: false, tie: false,
+  }));
+  const defaultChordType = (["major", "mixolydian"] as GenMode[]).includes(mode)
+    ? ("maj7" as const)
+    : ("min7" as const);
+  // Group by step index — lowest note becomes root
+  const groups = new Map<number, PianoRollNote[]>();
+  for (const n of notes.filter(n => n.track === "chords")) {
+    const i = Math.round(n.start * 4);
+    if (!groups.has(i)) groups.set(i, []);
+    groups.get(i)!.push(n);
+  }
+  for (const [i, stepNotes] of groups) {
+    if (i >= 0 && i < stepCount) {
+      const root = [...stepNotes].sort((a, b) => a.midi - b.midi)[0]!;
+      const gl = Math.max(1, Math.round(root.duration * 4));
+      grid[i] = {
+        active: true, note: root.midi, chordType: defaultChordType, octave: 0,
+        accent: root.velocity > 0.85, velocity: root.velocity,
+        tie: gl > 1, gateLength: gl,
+      };
+    }
+  }
+  return grid;
+}
+
+function pianoRollNotesToMelodySteps(notes: PianoRollNote[], bars: number): MelodyStep[] {
+  const stepCount = bars * 16;
+  const grid: MelodyStep[] = Array.from({ length: stepCount }, () => ({
+    active: false, note: 0, octave: 0, accent: false, slide: false, tie: false,
+  }));
+  for (const n of notes.filter(n => n.track === "melody")) {
+    const i = Math.round(n.start * 4);
+    if (i >= 0 && i < stepCount) {
+      const gl = Math.max(1, Math.round(n.duration * 4));
+      grid[i] = {
+        active: true, note: n.midi, octave: 0,
+        accent: n.velocity > 0.85, velocity: n.velocity,
+        slide: false, tie: gl > 1, gateLength: gl,
+      };
+    }
+  }
+  return grid;
+}
 
 interface Props {
   isOpen: boolean;
@@ -221,6 +300,45 @@ export function MelodyGenerator({ isOpen, onClose }: Props) {
     window.dispatchEvent(new CustomEvent("piano-roll-notes-imported"));
     overlay.openOverlay("pianoRoll");
   }, [overlay]);
+
+  /**
+   * Route the generated pattern to the correct sequencer store.
+   * Bass → bassStore, Chords → chordsStore, Melody/Arp → melodyStore.
+   * Drums fall back to Piano Roll (too fine-grained for a step grid).
+   */
+  const loadToSequencer = useCallback((pattern: GeneratedPattern) => {
+    const { notes, params: { bars, mode, role } } = pattern;
+    const stepCount = bars * 16;
+
+    if (role === "bass") {
+      const steps = pianoRollNotesToBassSteps(notes, bars).slice(0, stepCount);
+      useBassStore.getState().loadBassPattern({
+        steps, length: stepCount,
+        params: { ...DEFAULT_BASS_PARAMS },
+        rootNote: 0, rootName: "C", scaleName: "Chromatic",
+      });
+      window.dispatchEvent(new CustomEvent("synth-tab-switch", { detail: { tab: "bass" } }));
+    } else if (role === "chords") {
+      const steps = pianoRollNotesToChordsSteps(notes, bars, mode).slice(0, stepCount);
+      useChordsStore.getState().loadChordsPattern({
+        steps, length: stepCount,
+        params: { ...DEFAULT_CHORDS_PARAMS },
+        rootNote: 0, rootName: "C", scaleName: "Chromatic",
+      });
+      window.dispatchEvent(new CustomEvent("synth-tab-switch", { detail: { tab: "chords" } }));
+    } else if (role === "melody" || role === "arp") {
+      const steps = pianoRollNotesToMelodySteps(notes, bars).slice(0, stepCount);
+      useMelodyStore.getState().loadMelodyPattern({
+        steps, length: stepCount,
+        params: { ...DEFAULT_MELODY_PARAMS },
+        rootNote: 0, rootName: "C", scaleName: "Chromatic",
+      });
+      window.dispatchEvent(new CustomEvent("synth-tab-switch", { detail: { tab: "melody" } }));
+    } else {
+      // Drums: step-grid conversion not feasible — open Piano Roll for review
+      sendToPianoRoll(pattern, "replace");
+    }
+  }, [sendToPianoRoll]);
 
   const handleLoad = useCallback((p: GeneratedPattern) => {
     setCurrent(p);
@@ -439,24 +557,24 @@ export function MelodyGenerator({ isOpen, onClose }: Props) {
               </button>
             </div>
 
-            {/* Send to Piano Roll */}
+            {/* Load to Sequencer / Piano Roll */}
             {current && (
               <div className="flex items-center gap-2 mt-2">
-                <span className="text-[7px] text-white/30 font-bold tracking-wide">SEND TO PIANO ROLL:</span>
+                <button
+                  onClick={() => loadToSequencer(current)}
+                  className="flex-1 py-1.5 text-[8px] font-black tracking-[0.15em] rounded border border-white/20 bg-white/[0.06] hover:bg-white/[0.12] text-white/70 hover:text-white transition-colors"
+                >
+                  ↓ LOAD TO SEQUENCER
+                </button>
                 <button
                   onClick={() => sendToPianoRoll(current, "replace")}
-                  className="px-2 py-1 text-[7px] font-bold rounded border border-white/15 bg-white/5 hover:bg-white/10 text-white/55 hover:text-white transition-colors"
+                  className="px-2 py-1.5 text-[7px] font-bold rounded border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-white/35 hover:text-white/70 transition-colors"
+                  title="Open in Piano Roll for fine-tuning"
                 >
-                  REPLACE
+                  → Piano Roll
                 </button>
-                <button
-                  onClick={() => sendToPianoRoll(current, "add")}
-                  className="px-2 py-1 text-[7px] font-bold rounded border border-white/15 bg-white/5 hover:bg-white/10 text-white/55 hover:text-white transition-colors"
-                >
-                  ADD
-                </button>
-                <span className="text-[7px] text-white/20 ml-auto">
-                  {current.notes.length} notes · {current.params.bars} bars
+                <span className="text-[7px] text-white/20 shrink-0">
+                  {current.notes.length}n
                 </span>
               </div>
             )}
