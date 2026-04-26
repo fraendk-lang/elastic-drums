@@ -197,7 +197,9 @@ interface GroupBusPanelProps {
 }
 
 function GroupBusPanel({ groupCanvasRefs }: GroupBusPanelProps) {
-  const { groupBuses, setGroupFader, setGroupMute } = useMixerBarStore();
+  const groupBuses    = useMixerBarStore((s) => s.groupBuses);
+  const setGroupFader = useMixerBarStore((s) => s.setGroupFader);
+  const setGroupMute  = useMixerBarStore((s) => s.setGroupMute);
 
   useEffect(() => {
     GROUP_BUS_IDS.forEach((id) => {
@@ -255,7 +257,7 @@ function GroupBusPanel({ groupCanvasRefs }: GroupBusPanelProps) {
                   />
                   <div
                     className="absolute left-1/2 -translate-x-1/2 w-4 h-2 rounded-sm bg-[#3a3a3a] border border-white/20 pointer-events-none"
-                    style={{ top: `calc(${(1 - bus.fader / 1000) * 100}% - 4px)` }}
+                    style={{ top: `calc(${(1 - bus.fader / 1000)} * (100% - 8px))` }}
                   />
                 </div>
               </div>
