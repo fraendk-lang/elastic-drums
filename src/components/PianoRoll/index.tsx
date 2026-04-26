@@ -1470,13 +1470,13 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                           : "grab",
                   }}
                 >
-                  {w > 24 && (
+                  {w > 14 && (
                     <div className="absolute left-1 right-2 top-0.5 flex items-center justify-between gap-1 pointer-events-none select-none">
-                      <span className="truncate text-[6px] font-bold text-white/85 leading-none">
+                      <span className="truncate text-[8px] font-bold text-white/90 leading-none">
                         {midiNoteName(note.midi)}
                       </span>
                       {isSel && (
-                        <span className="rounded bg-black/40 px-1 py-[1px] text-[6px] font-black text-white/80">
+                        <span className="rounded bg-black/40 px-1 py-[1px] text-[8px] font-black text-white/85">
                           {Math.round(note.velocity * 100)}
                         </span>
                       )}

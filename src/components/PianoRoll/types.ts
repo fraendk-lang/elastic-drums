@@ -44,7 +44,7 @@ export const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A",
 
 export const PIANO_WIDTH = 68;
 export const DEFAULT_CELL_W = 90;
-export const DEFAULT_ROW_HEIGHT = 20;
+export const DEFAULT_ROW_HEIGHT = 30;
 export const RULER_HEIGHT = 24;
 export const VELOCITY_LANE_HEIGHT = 80;
 
