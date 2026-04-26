@@ -407,8 +407,9 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         return;
       }
 
-      if (e.key === "ArrowLeft" && hasSel) {
+      if (e.key === "ArrowLeft") {
         e.preventDefault();
+        if (!hasSel) return;
         const step = e.shiftKey ? 1 : gridRes;
         setNotes((prev) =>
           prev.map((n) =>
@@ -419,8 +420,9 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         );
         return;
       }
-      if (e.key === "ArrowRight" && hasSel) {
+      if (e.key === "ArrowRight") {
         e.preventDefault();
+        if (!hasSel) return;
         const step = e.shiftKey ? 1 : gridRes;
         setNotes((prev) =>
           prev.map((n) =>
@@ -434,8 +436,9 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         );
         return;
       }
-      if (e.key === "ArrowUp" && hasSel) {
+      if (e.key === "ArrowUp") {
         e.preventDefault();
+        if (!hasSel) return;
         const semitones = e.shiftKey ? 12 : 1;
         setNotes((prev) =>
           prev.map((n) => {
@@ -447,8 +450,9 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         );
         return;
       }
-      if (e.key === "ArrowDown" && hasSel) {
+      if (e.key === "ArrowDown") {
         e.preventDefault();
+        if (!hasSel) return;
         const semitones = e.shiftKey ? 12 : 1;
         setNotes((prev) =>
           prev.map((n) => {
