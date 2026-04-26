@@ -45,19 +45,21 @@ export interface ChordsParams {
 export const DEFAULT_CHORDS_PARAMS: ChordsParams = {
   waveform: "sawtooth",
   filterModel: "lpf",
-  cutoff: 1200,
-  resonance: 5,
-  envMod: 0.3,
-  attack: 20,
-  release: 300,
-  detune: 10,
-  distortion: 0.1,
+  // Open sawtooth pad — 3 kHz lets harmonics breathe. At 1200 Hz a sawtooth
+  // sounds almost like a sine and loses all its character.
+  cutoff: 3000,
+  resonance: 3,       // lowered from 5 — with open filter, less resonance needed
+  envMod: 0.25,
+  attack: 28,         // slightly softer pad attack (was 20ms)
+  release: 350,
+  detune: 14,         // thicker unison (was 10 cents)
+  distortion: 0.08,   // subtle warmth (was 0.1)
   volume: 0.5,
-  subOsc: 0.2,
+  subOsc: 0.12,       // less mud at bottom (was 0.2)
   filterType: "lowpass",
-  chorus: 0.3,
-  spread: 0.5,
-  brightness: 0.3,
+  chorus: 0.42,       // more movement = lushness (was 0.3)
+  spread: 0.6,        // wider stereo image (was 0.5)
+  brightness: 0.38,   // more air (was 0.3)
   synthType: "subtractive",
   wavetable: "harmonic",
 };
