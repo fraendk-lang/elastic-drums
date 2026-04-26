@@ -120,6 +120,8 @@ export function MixerBar() {
 
   const canvasRefs = useMeterData();
 
+  const anySoloed = channels.some((ch) => ch.soloed);
+
   // Apply fader + mute/solo to audioEngine whenever they change
   useEffect(() => {
     const soloed = new Set(channels.flatMap((ch, i) => ch.soloed ? [i] : []));
@@ -163,6 +165,10 @@ export function MixerBar() {
               className={`flex flex-col items-center gap-1 min-w-[46px] px-1 rounded transition-colors ${
                 isExpanded ? "bg-white/[0.04] ring-1 ring-white/10" : "hover:bg-white/[0.02]"
               }`}
+              style={{
+                opacity: anySoloed && !ch.soloed && !ch.muted ? 0.4 : 1,
+                transition: "opacity 0.15s",
+              }}
             >
               {/* Channel name — click to expand */}
               <button
@@ -186,6 +192,7 @@ export function MixerBar() {
                   width={4}
                   height={56}
                   className="rounded-sm"
+                  style={{ opacity: ch.muted ? 0.25 : 1, transition: "opacity 0.15s" }}
                 />
 
                 {/* Fader */}
