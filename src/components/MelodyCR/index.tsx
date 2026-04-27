@@ -60,16 +60,18 @@ export function MelodyCREditor() {
     () => ({ voice: "call" as const, beat: 0 }),
   );
 
-  const gridRef = useRef<HTMLDivElement>(null);
-  const [hoverCell, setHoverCell] = useState<{ pitch: number; beat: number } | null>(null);
-  const [gridCursor, setGridCursor] = useState("crosshair");
-  const [resizeDrag, setResizeDrag] = useState<{
+  type ResizeDrag = {
     id: string;
     voice: "call" | "response";
     startX: number;
     origDur: number;
     beatWidth: number;
-  } | null>(null);
+  };
+
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [hoverCell, setHoverCell] = useState<{ pitch: number; beat: number } | null>(null);
+  const [gridCursor, setGridCursor] = useState("crosshair");
+  const resizeDragRef = useRef<ResizeDrag | null>(null);
 
   const notes = activeVoice === "call" ? callNotes : responseNotes;
   const noteColor = activeVoice === "call" ? CALL_COLOR : RESP_COLOR;
@@ -134,13 +136,13 @@ export function MelodyCREditor() {
     if (hit.note && hit.isRightEdge) {
       // Start resize drag
       e.currentTarget.setPointerCapture(e.pointerId);
-      setResizeDrag({
+      resizeDragRef.current = {
         id: hit.note.id,
         voice: activeVoice,
         startX: e.clientX,
         origDur: hit.note.durationBeats,
         beatWidth: beatWidthRef.current,
-      });
+      };
       return;
     }
 
@@ -160,14 +162,15 @@ export function MelodyCREditor() {
   }, [activeVoice, totalBeats, hitTestNote, addCallNote, addResponseNote]);
 
   const handleGridPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (resizeDrag) {
-      const deltaPx = e.clientX - resizeDrag.startX;
-      const deltaBeat = deltaPx / resizeDrag.beatWidth;
-      const newDur = Math.max(0.25, Math.round((resizeDrag.origDur + deltaBeat) * 4) / 4);
-      if (resizeDrag.voice === "call") {
-        updateCallNote(resizeDrag.id, { durationBeats: newDur });
+    const drag = resizeDragRef.current;
+    if (drag) {
+      const deltaPx = e.clientX - drag.startX;
+      const deltaBeat = deltaPx / drag.beatWidth;
+      const newDur = Math.max(0.25, Math.round((drag.origDur + deltaBeat) * 4) / 4);
+      if (drag.voice === "call") {
+        updateCallNote(drag.id, { durationBeats: newDur });
       } else {
-        updateResponseNote(resizeDrag.id, { durationBeats: newDur });
+        updateResponseNote(drag.id, { durationBeats: newDur });
       }
       return;
     }
@@ -197,10 +200,13 @@ export function MelodyCREditor() {
       (n) => n.pitch === pitch && beat >= n.startBeat && beat < n.startBeat + n.durationBeats
     );
     setHoverCell(hasNote ? null : { pitch, beat });
-  }, [resizeDrag, updateCallNote, updateResponseNote]);
+  }, [updateCallNote, updateResponseNote]);
 
-  const handleGridPointerUp = useCallback(() => {
-    setResizeDrag(null);
+  const handleGridPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (resizeDragRef.current) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+      resizeDragRef.current = null;
+    }
   }, []);
 
   const handleGridContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -241,9 +247,10 @@ export function MelodyCREditor() {
 
   // ─── All display notes (real + ghost) ────────────────────────────────────
 
-  const allDisplayNotes: DisplayNote[] = ghostNote
-    ? [...notes, { ...ghostNote, _ghost: true }]
-    : notes;
+  const allDisplayNotes = useMemo<DisplayNote[]>(
+    () => ghostNote ? [...notes, { ...ghostNote, _ghost: true }] : notes,
+    [notes, ghostNote]
+  );
 
   // ─── Render ──────────────────────────────────────────────────────────────
 
@@ -302,7 +309,13 @@ export function MelodyCREditor() {
         onPointerDown={handleGridPointerDown}
         onPointerMove={handleGridPointerMove}
         onPointerUp={handleGridPointerUp}
-        onPointerLeave={() => { setHoverCell(null); if (resizeDrag) setResizeDrag(null); }}
+        onPointerLeave={(e) => {
+          setHoverCell(null);
+          if (resizeDragRef.current) {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+            resizeDragRef.current = null;
+          }
+        }}
         onContextMenu={handleGridContextMenu}
       >
         {/* Ruler */}
