@@ -108,4 +108,9 @@ describe("notesOnStep", () => {
     const found = notesOnStep(notes, 8, 8);
     expect(found).toHaveLength(0);
   });
+  it("ignores notes with startBeat >= totalBeats (out-of-range after barLength change)", () => {
+    const outOfRange = [{ id: "x", startBeat: 9, durationBeats: 1, pitch: 60 }];
+    const found = notesOnStep(outOfRange, 4, 8); // beat 9 would wrap to beat 1 (step 4) without guard
+    expect(found).toHaveLength(0);
+  });
 });

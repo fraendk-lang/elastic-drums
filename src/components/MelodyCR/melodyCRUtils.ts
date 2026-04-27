@@ -41,6 +41,7 @@ export function notesOnStep(
 ): typeof notes {
   const totalSteps = totalBeats * 4;
   return notes.filter((n) => {
+    if (n.startBeat < 0 || n.startBeat >= totalBeats) return false;
     const noteStep = Math.round(n.startBeat * 4) % totalSteps;
     return noteStep === localStep % totalSteps;
   });
