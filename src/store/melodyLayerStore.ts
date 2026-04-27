@@ -55,6 +55,7 @@ interface MelodyLayerState {
   updateNote: (layerId: string, noteId: string, patch: Partial<MelodyLayerNote>) => void;
   setSynth: (layerId: string, patch: Partial<LayerSynth>) => void;
   setSynthFull: (layerId: string, synth: LayerSynth) => void;
+  clearNotes: (layerId: string) => void;
 }
 
 const initialLayer = makeLayer(0);
@@ -117,5 +118,9 @@ export const useMelodyLayerStore = create<MelodyLayerState>((set) => ({
 
   setSynthFull: (layerId, synth) => set((s) => ({
     layers: s.layers.map((l) => l.id === layerId ? { ...l, synth: { ...synth } } : l),
+  })),
+
+  clearNotes: (layerId) => set((s) => ({
+    layers: s.layers.map((l) => l.id === layerId ? { ...l, notes: [] } : l),
   })),
 }));
