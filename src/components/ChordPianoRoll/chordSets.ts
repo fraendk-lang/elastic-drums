@@ -11,8 +11,11 @@ export type ChordSetId =
   | "deep-house"
   | "custom";
 
+/** Scale degree within a diatonic scale (0 = root, 6 = leading tone). */
+export type ScaleDegree = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
 /** For each scale degree (0–6): semitone offsets from the chord root pitch. */
-export type ChordSetVoicing = Record<number, number[]>;
+export type ChordSetVoicing = Record<ScaleDegree, number[]>;
 
 export interface ChordSetDef {
   id: ChordSetId;
@@ -98,7 +101,7 @@ export const CHORD_SETS: Record<ChordSetId, ChordSetDef> = {
     description: "1+m3+m7 · 1+M3+M7 · 1+M3+m7 — jazz minimal",
     voicings: {
       0: [0, 3, 10],   // 1+m3+m7
-      1: [0, 3, 10],   // 1+m3+m7
+      1: [0, 3, 10],   // 1+m3+m7 (same as i — minor shell on supertonic)
       2: [0, 4, 11],   // 1+M3+M7
       3: [0, 3, 10],   // 1+m3+m7
       4: [0, 4, 10],   // 1+M3+m7 (dominant shell)
@@ -137,7 +140,7 @@ export const CHORD_SETS: Record<ChordSetId, ChordSetDef> = {
   "custom": {
     id: "custom",
     label: "Custom",
-    description: "Frei konfigurierbar",
+    description: "Freely configurable",
     voicings: {
       0: [0, 3, 7, 10, 14],   // default: Neo Soul 7ths
       1: [0, 3, 6, 10, 14],

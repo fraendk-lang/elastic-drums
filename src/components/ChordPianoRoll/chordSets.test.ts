@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { CHORD_SETS, CHORD_SET_IDS } from "./chordSets";
+import { CHORD_SETS, CHORD_SET_IDS, type ScaleDegree } from "./chordSets";
 
 describe("ChordSets", () => {
   it("has exactly 9 chord sets", () => {
@@ -10,9 +10,10 @@ describe("ChordSets", () => {
     for (const id of CHORD_SET_IDS) {
       const { voicings } = CHORD_SETS[id];
       for (let deg = 0; deg <= 6; deg++) {
-        expect(voicings[deg], `${id} degree ${deg}`).toBeDefined();
-        expect(voicings[deg]!.length, `${id} degree ${deg} has notes`).toBeGreaterThan(0);
-        expect(voicings[deg]![0], `${id} degree ${deg} starts at 0`).toBe(0);
+        const d = deg as ScaleDegree;
+        expect(voicings[d], `${id} degree ${deg}`).toBeDefined();
+        expect(voicings[d].length, `${id} degree ${deg} has notes`).toBeGreaterThan(0);
+        expect(voicings[d][0], `${id} degree ${deg} starts at 0`).toBe(0);
       }
     }
   });
@@ -23,13 +24,13 @@ describe("ChordSets", () => {
 
   it("Pop Triads all degrees have exactly 3 notes", () => {
     for (let deg = 0; deg <= 6; deg++) {
-      expect(CHORD_SETS["pop-triads"].voicings[deg]).toHaveLength(3);
+      expect(CHORD_SETS["pop-triads"].voicings[deg as ScaleDegree]).toHaveLength(3);
     }
   });
 
   it("Power Chords all 7 degrees use [0, 7, 12]", () => {
     for (let deg = 0; deg <= 6; deg++) {
-      expect(CHORD_SETS["power-chords"].voicings[deg]).toEqual([0, 7, 12]);
+      expect(CHORD_SETS["power-chords"].voicings[deg as ScaleDegree]).toEqual([0, 7, 12]);
     }
   });
 
@@ -49,7 +50,7 @@ describe("ChordSets", () => {
     const root = 48;
     for (const id of CHORD_SET_IDS) {
       for (let deg = 0; deg <= 6; deg++) {
-        for (const offset of CHORD_SETS[id].voicings[deg]!) {
+        for (const offset of CHORD_SETS[id].voicings[deg as ScaleDegree]) {
           expect(root + offset, `${id} deg ${deg} offset ${offset}`).toBeGreaterThanOrEqual(0);
           expect(root + offset, `${id} deg ${deg} offset ${offset}`).toBeLessThanOrEqual(127);
         }
