@@ -352,8 +352,8 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
         cr.clearResponseNotes();
         for (const n of deepClone(scene.melodyCR.callNotes)) cr.addCallNote(n);
         for (const n of deepClone(scene.melodyCR.responseNotes)) cr.addResponseNote(n);
-        cr.setCallSynth(deepClone(scene.melodyCR.callSynth));
-        cr.setResponseSynth(deepClone(scene.melodyCR.responseSynth));
+        cr.setCallSynthFull(deepClone(scene.melodyCR.callSynth));
+        cr.setResponseSynthFull(deepClone(scene.melodyCR.responseSynth));
       }
     });
   },

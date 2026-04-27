@@ -43,6 +43,8 @@ interface MelodyCRState {
   updateResponseNote: (id: string, patch: Partial<MelodyCRNote>) => void;
   setCallSynth: (patch: Partial<SynthSettings>) => void;
   setResponseSynth: (patch: Partial<SynthSettings>) => void;
+  setCallSynthFull: (s: SynthSettings) => void;
+  setResponseSynthFull: (s: SynthSettings) => void;
   clearCallNotes: () => void;
   clearResponseNotes: () => void;
   setRootNote: (n: number) => void;
@@ -73,6 +75,8 @@ export const useMelodyCRStore = create<MelodyCRState>((set) => ({
   })),
   setCallSynth: (patch) => set((s) => ({ callSynth: { ...s.callSynth, ...patch } })),
   setResponseSynth: (patch) => set((s) => ({ responseSynth: { ...s.responseSynth, ...patch } })),
+  setCallSynthFull: (s) => set({ callSynth: { ...s } }),
+  setResponseSynthFull: (s) => set({ responseSynth: { ...s } }),
   clearCallNotes: () => set({ callNotes: [] }),
   clearResponseNotes: () => set({ responseNotes: [] }),
   setRootNote: (n) => set({ rootNote: n }),
