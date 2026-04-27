@@ -46,7 +46,6 @@ function tick(currentStep: number, bpm: number): void {
   const { notes, chordsSource, totalBeats } = useChordPianoStore.getState();
 
   if (chordsSource === "grid" || notes.length === 0) {
-    _lastStep = currentStep;
     return;
   }
 
@@ -75,15 +74,17 @@ function tick(currentStep: number, bpm: number): void {
   const secPerBeat = 60 / bpm;
 
   // Release groups that have ended
-  for (const n of notes) {
-    if (!_activeGroups.has(n.chordGroup)) continue;
-    const endStep = Math.round((n.startBeat + n.durationBeats) * 4);
-    const startStep = Math.round(n.startBeat * 4) % totalSteps;
-    if (wrappedStep >= endStep % totalSteps && wrappedStep !== startStep) {
-      _activeGroups.delete(n.chordGroup);
-      const timer = _releaseTimers.get(n.chordGroup);
-      if (timer) { clearTimeout(timer); _releaseTimers.delete(n.chordGroup); }
-      chordsEngine.releaseChord(t);
+  if (_activeGroups.size > 0) {
+    for (const n of notes) {
+      if (!_activeGroups.has(n.chordGroup)) continue;
+      const endStep = Math.round((n.startBeat + n.durationBeats) * 4);
+      const startStep = Math.round(n.startBeat * 4) % totalSteps;
+      if (wrappedStep >= endStep % totalSteps && wrappedStep !== startStep) {
+        _activeGroups.delete(n.chordGroup);
+        const timer = _releaseTimers.get(n.chordGroup);
+        if (timer) { clearTimeout(timer); _releaseTimers.delete(n.chordGroup); }
+        chordsEngine.releaseChord(t);
+      }
     }
   }
 
@@ -134,6 +135,20 @@ const _unsubDrum = drumCurrentStepStore.subscribe(() => {
   }
 });
 
+// Reset active notes when totalBeats changes mid-playback
+let _prevTotalBeats = useChordPianoStore.getState().totalBeats;
+const _unsubBeats = useChordPianoStore.subscribe((state) => {
+  if (state.totalBeats !== _prevTotalBeats) {
+    _prevTotalBeats = state.totalBeats;
+    releaseAll();
+    _stepCounter = 0;
+    _lastStep = -1;
+  }
+});
+
 if (import.meta.hot) {
-  import.meta.hot.dispose(() => _unsubDrum());
+  import.meta.hot.dispose(() => {
+    _unsubDrum();
+    _unsubBeats();
+  });
 }
