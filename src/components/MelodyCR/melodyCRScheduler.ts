@@ -4,8 +4,7 @@
 // callCREngine (= melodyEngine) and responseCREngine.
 // Import once (side-effect import) from MelodyCREditor to activate.
 
-import { drumCurrentStepStore, getDrumCurrentStepAudioTime } from "../../store/drumStore";
-import { useDrumStore } from "../../store/drumStore";
+import { drumCurrentStepStore, getDrumCurrentStepAudioTime, useDrumStore } from "../../store/drumStore";
 import { useMelodyCRStore } from "../../store/melodyCRStore";
 import { callCREngine, responseCREngine } from "../../audio/melodyCREngines";
 import { MELODY_PRESETS } from "../../store/melodyStore";
@@ -23,8 +22,7 @@ let _stepCounter = 0;
 
 // External beat store — drives playhead in MelodyCREditor
 const _beatListeners = new Set<() => void>();
-let _currentVoice: "call" | "response" = "call";
-let _currentLocalBeat = 0;
+let _snapshot: { voice: "call" | "response"; beat: number } = { voice: "call", beat: 0 };
 
 export const melodyCRCurrentBeatStore = {
   subscribe(listener: () => void): () => void {
@@ -32,7 +30,7 @@ export const melodyCRCurrentBeatStore = {
     return () => _beatListeners.delete(listener);
   },
   getSnapshot(): { voice: "call" | "response"; beat: number } {
-    return { voice: _currentVoice, beat: _currentLocalBeat };
+    return _snapshot;
   },
 };
 
@@ -76,8 +74,7 @@ function tick(currentStep: number, bpm: number): void {
   const totalBeats = barLength * 4;
 
   // Update playhead store
-  _currentVoice = voice;
-  _currentLocalBeat = localBeat;
+  _snapshot = { voice, beat: localBeat };
   for (const fn of _beatListeners) fn();
 
   // Determine engine + notes + effective synth
@@ -117,16 +114,22 @@ const _unsubDrum = drumCurrentStepStore.subscribe(() => {
   } else {
     _lastStep = -1;
     _stepCounter = 0;
-    _currentLocalBeat = 0;
+    _snapshot = { voice: "call", beat: 0 };
     for (const fn of _beatListeners) fn();
   }
 });
 
-// Reset step counter when barLength changes mid-playback
+// Reset step counter when barLength or enabled changes mid-playback
 let _prevBarLength = useMelodyCRStore.getState().barLength;
+let _prevEnabled = useMelodyCRStore.getState().enabled;
 const _unsubStore = useMelodyCRStore.subscribe((state) => {
   if (state.barLength !== _prevBarLength) {
     _prevBarLength = state.barLength;
+    _stepCounter = 0;
+    _lastStep = -1;
+  }
+  if (state.enabled !== _prevEnabled) {
+    _prevEnabled = state.enabled;
     _stepCounter = 0;
     _lastStep = -1;
   }
