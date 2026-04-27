@@ -10,8 +10,8 @@ import { useDrumStore } from "../store/drumStore";
 import { Knob } from "./Knob";
 import { SoundFontKnobs } from "./SoundFontKnobs";
 import { AutomationLane, type AutomationParam } from "./AutomationLane";
-import { useMelodyCRStore } from "../store/melodyCRStore";
-import { MelodyCREditor } from "./MelodyCR";
+import { useMelodyLayerStore } from "../store/melodyLayerStore";
+import { MelodyLayersEditor } from "./MelodyLayers";
 
 const MELODY_AUTO_PARAMS: AutomationParam[] = [
   { id: "cutoff", label: "CUT", min: 200, max: 8000 },
@@ -324,8 +324,8 @@ export function MelodySequencer() {
   } = useMelodyStore();
 
   const isPlaying = useDrumStore((s) => s.isPlaying);
-  const crEnabled = useMelodyCRStore((s) => s.enabled);
-  const setCREnabled = useMelodyCRStore((s) => s.setEnabled);
+  const layersEnabled = useMelodyLayerStore((s) => s.enabled);
+  const setLayersEnabled = useMelodyLayerStore((s) => s.setEnabled);
   const dragRef = useRef<{ step: number; startY: number; startNote: number } | null>(null);
   const [selectedStep, setSelectedStep] = useState<number | null>(null);
   const [durationDrag, setDurationDrag] = useState<{ sourceStep: number; endStep: number } | null>(null);
@@ -596,18 +596,18 @@ export function MelodySequencer() {
           <button onClick={clearSteps} className="h-6 px-2 text-[7px] font-bold text-white/25 hover:text-red-400/70 hover:bg-white/5 rounded-md transition-all">CLR</button>
         </div>
 
-        {/* C&R Toggle */}
+        {/* Layers Toggle */}
         <button
-          onClick={() => setCREnabled(!crEnabled)}
+          onClick={() => setLayersEnabled(!layersEnabled)}
           className="ml-auto px-2.5 py-1 text-[8px] font-black tracking-[0.15em] rounded border transition-all"
           style={{
-            background: crEnabled ? "#a855f720" : "transparent",
-            borderColor: crEnabled ? "#a855f760" : "#2a2d38",
-            color: crEnabled ? "#a855f7" : "#555",
+            background: layersEnabled ? "#a855f720" : "transparent",
+            borderColor: layersEnabled ? "#a855f760" : "#2a2d38",
+            color: layersEnabled ? "#a855f7" : "#555",
           }}
-          title="Toggle Call & Response mode"
+          title="Toggle Melody Layers"
         >
-          C&R {crEnabled ? "ON" : "OFF"}
+          LAYERS {layersEnabled ? "ON" : "OFF"}
         </button>
       </div>
 
@@ -838,8 +838,8 @@ export function MelodySequencer() {
         <span className="hidden lg:inline text-[7px] text-white/12">click = select &middot; Shift + ↑/↓ = octave &middot; drag = pitch &middot; drag bright edge = note length &middot; rclick = accent &middot; shift = slide &middot; alt = legato tie</span>
       </div>
 
-      {crEnabled ? (
-        <MelodyCREditor />
+      {layersEnabled ? (
+        <MelodyLayersEditor />
       ) : (
         <>
           {/* Piano Roll — grid is memoized (no currentStep), overlay subscribes to external store */}

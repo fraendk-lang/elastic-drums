@@ -37,7 +37,7 @@ import { getMidiClockMode, subscribeMidiClockMode } from "./store/midiClockMode"
 import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
 import { melodyEngine } from "./audio/MelodyEngine";
-import { responseCREngine } from "./audio/melodyCREngines";
+import { melodyLayerEngines } from "./audio/melodyLayerEngines";
 import { samplerEngine } from "./audio/SamplerEngine";
 import { loopPlayerEngine } from "./audio/LoopPlayerEngine";
 import { useBassStore, startBassScheduler, stopBassScheduler } from "./store/bassStore";
@@ -215,10 +215,15 @@ export function App() {
         const melodyCh = audioEngine.getChannelOutput(14);
         if (melodyOut && melodyCh) melodyOut.connect(melodyCh);
 
-        // Melody C&R Response → also Channel 14 (shares melody mixer strip)
-        responseCREngine.init(ctx);
-        const responseCROut = responseCREngine.getOutput();
-        if (responseCROut && melodyCh) responseCROut.connect(melodyCh);
+        // Melody Layer engines 1–3 → also Channel 14 (shares melody mixer strip)
+        for (let i = 1; i <= 3; i++) {
+          const layerEngine = melodyLayerEngines[i];
+          if (layerEngine) {
+            layerEngine.init(ctx);
+            const layerOut = layerEngine.getOutput();
+            if (layerOut && melodyCh) layerOut.connect(melodyCh);
+          }
+        }
 
         // Sampler → Ch 15 (dedicated mixer strip: EQ, sends, fader, meter)
         samplerEngine.init(ctx);
