@@ -20,6 +20,7 @@ import { generateEuclidean, useDrumStore, getDrumNextStepTime } from "./drumStor
 import { syncScaleToOtherStores, registerScaleStore } from "./bassStore";
 import { schedulerClock } from "../audio/SchedulerClock";
 import { generateArpNotes, DEFAULT_ARP_SETTINGS, type ArpSettings } from "../audio/Arpeggiator";
+import { useChordPianoStore } from "./chordPianoStore";
 
 export const CHORDS_MAX_CLIP_STEPS = 256;
 
@@ -453,6 +454,15 @@ export function startChordsScheduler() {
       const { steps, length, rootNote, scaleName, automationData, globalOctave } = useChordsStore.getState();
       const currentStep = _chordsStep;
       const stepIndex = currentStep % length;
+
+      // Skip step-grid playback when ChordPianoRoll is the active source
+      const { chordsSource } = useChordPianoStore.getState();
+      if (chordsSource === "piano") {
+        setChordsStep((currentStep + 1) % length);
+        nextChordsStepTime += secondsPerStep;
+        continue;
+      }
+
       const step = steps[stepIndex];
       const prevStep = stepIndex > 0 ? steps[stepIndex - 1] : steps[length - 1];
 
