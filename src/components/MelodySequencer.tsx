@@ -10,6 +10,8 @@ import { useDrumStore } from "../store/drumStore";
 import { Knob } from "./Knob";
 import { SoundFontKnobs } from "./SoundFontKnobs";
 import { AutomationLane, type AutomationParam } from "./AutomationLane";
+import { useMelodyCRStore } from "../store/melodyCRStore";
+import { MelodyCREditor } from "./MelodyCR";
 
 const MELODY_AUTO_PARAMS: AutomationParam[] = [
   { id: "cutoff", label: "CUT", min: 200, max: 8000 },
@@ -322,6 +324,8 @@ export function MelodySequencer() {
   } = useMelodyStore();
 
   const isPlaying = useDrumStore((s) => s.isPlaying);
+  const crEnabled = useMelodyCRStore((s) => s.enabled);
+  const setCREnabled = useMelodyCRStore((s) => s.setEnabled);
   const dragRef = useRef<{ step: number; startY: number; startNote: number } | null>(null);
   const [selectedStep, setSelectedStep] = useState<number | null>(null);
   const [durationDrag, setDurationDrag] = useState<{ sourceStep: number; endStep: number } | null>(null);
@@ -591,6 +595,20 @@ export function MelodySequencer() {
         <div className="flex items-center gap-[2px] relative">
           <button onClick={clearSteps} className="h-6 px-2 text-[7px] font-bold text-white/25 hover:text-red-400/70 hover:bg-white/5 rounded-md transition-all">CLR</button>
         </div>
+
+        {/* C&R Toggle */}
+        <button
+          onClick={() => setCREnabled(!crEnabled)}
+          className="ml-auto px-2.5 py-1 text-[8px] font-black tracking-[0.15em] rounded border transition-all"
+          style={{
+            background: crEnabled ? "#a855f720" : "transparent",
+            borderColor: crEnabled ? "#a855f760" : "#2a2d38",
+            color: crEnabled ? "#a855f7" : "#555",
+          }}
+          title="Toggle Call & Response mode"
+        >
+          C&R {crEnabled ? "ON" : "OFF"}
+        </button>
       </div>
 
       {/* Compact Knobs Row — show synth or Soundfont knobs based on instrument */}
@@ -820,92 +838,98 @@ export function MelodySequencer() {
         <span className="hidden lg:inline text-[7px] text-white/12">click = select &middot; Shift + ↑/↓ = octave &middot; drag = pitch &middot; drag bright edge = note length &middot; rclick = accent &middot; shift = slide &middot; alt = legato tie</span>
       </div>
 
-      {/* Piano Roll — grid is memoized (no currentStep), overlay subscribes to external store */}
-      <div className="flex gap-1.5 px-3 py-1.5 h-20 sm:h-28" onPointerMove={handleDurationDragMove} onPointerUp={handleDurationDragEnd}>
-        <div className="flex-1 min-w-0 relative">
-          <MelodyPianoRollGrid
-            steps={steps} length={length} pageOffset={pageOffset}
-            rootNote={rootNote} scaleName={scaleName} globalOctave={globalOctave}
-            maxNote={maxNote} selectedStep={selectedStep} durationDrag={durationDrag}
-            onMouseDown={handleMouseDown} onPointerDown={handleDurationDragStart}
-            onAccent={toggleAccent} onCycleOctave={cycleOctave}
-            stepElRefs={stepElRefs}
+      {crEnabled ? (
+        <MelodyCREditor />
+      ) : (
+        <>
+          {/* Piano Roll — grid is memoized (no currentStep), overlay subscribes to external store */}
+          <div className="flex gap-1.5 px-3 py-1.5 h-20 sm:h-28" onPointerMove={handleDurationDragMove} onPointerUp={handleDurationDragEnd}>
+            <div className="flex-1 min-w-0 relative">
+              <MelodyPianoRollGrid
+                steps={steps} length={length} pageOffset={pageOffset}
+                rootNote={rootNote} scaleName={scaleName} globalOctave={globalOctave}
+                maxNote={maxNote} selectedStep={selectedStep} durationDrag={durationDrag}
+                onMouseDown={handleMouseDown} onPointerDown={handleDurationDragStart}
+                onAccent={toggleAccent} onCycleOctave={cycleOctave}
+                stepElRefs={stepElRefs}
+              />
+              <MelodyPlayheadOverlay pageOffset={pageOffset} length={length} isPlaying={isPlaying} />
+            </div>
+          </div>
+
+          {/* Automation Lane — full-width, collapsible */}
+          <MelodyAutomationLaneWrapper
+            params={MELODY_AUTO_PARAMS}
+            selectedParam={automationParam}
+            values={automationData[automationParam] ?? []}
+            length={length}
+            pageOffset={pageOffset}
+            isPlaying={isPlaying}
+            color="var(--ed-accent-melody)"
+            onSelectParam={setAutomationParam}
+            onChange={(step, value) => setAutomationValue(automationParam, step, value)}
           />
-          <MelodyPlayheadOverlay pageOffset={pageOffset} length={length} isPlaying={isPlaying} />
-        </div>
-      </div>
 
-      {/* Automation Lane — full-width, collapsible */}
-      <MelodyAutomationLaneWrapper
-        params={MELODY_AUTO_PARAMS}
-        selectedParam={automationParam}
-        values={automationData[automationParam] ?? []}
-        length={length}
-        pageOffset={pageOffset}
-        isPlaying={isPlaying}
-        color="var(--ed-accent-melody)"
-        onSelectParam={setAutomationParam}
-        onChange={(step, value) => setAutomationValue(automationParam, step, value)}
-      />
-
-      <div className="px-3 pb-2">
-        <div className="mb-1 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-[8px] font-black tracking-[0.16em] text-[var(--ed-accent-melody)]">VELOCITY LANE</span>
-            <span className="text-[7px] text-white/22">draw dynamics without zoom</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[7px] text-white/25">drag bars</span>
-            <button
-              onClick={() => setVelocityLaneExpanded((prev) => !prev)}
-              className={`h-5 rounded-full border px-2 text-[7px] font-bold tracking-[0.14em] transition-colors ${
-                velocityLaneExpanded
-                  ? "border-[var(--ed-accent-melody)]/30 bg-[var(--ed-accent-melody)]/12 text-[var(--ed-accent-melody)]"
-                  : "border-white/8 bg-white/[0.03] text-white/45 hover:text-white/70"
-              }`}
-            >
-              {velocityLaneExpanded ? "COMPACT" : "LARGE"}
-            </button>
-          </div>
-        </div>
-        <div className="flex gap-1.5">
-          <div className={`relative flex flex-1 min-w-0 gap-[1px] rounded-lg border border-white/6 bg-black/20 px-1.5 pb-1.5 pt-4 ${velocityLaneExpanded ? "h-24" : "h-14"}`}>
-            <div className="pointer-events-none absolute inset-x-1.5 top-4 bottom-1.5">
-              {[0.2, 0.6, 1].map((mark) => (
-                <div
-                  key={mark}
-                  className="absolute inset-x-0 border-t border-dashed border-white/8"
-                  style={{ bottom: `${mark * 100}%` }}
+          <div className="px-3 pb-2">
+            <div className="mb-1 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-[8px] font-black tracking-[0.16em] text-[var(--ed-accent-melody)]">VELOCITY LANE</span>
+                <span className="text-[7px] text-white/22">draw dynamics without zoom</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[7px] text-white/25">drag bars</span>
+                <button
+                  onClick={() => setVelocityLaneExpanded((prev) => !prev)}
+                  className={`h-5 rounded-full border px-2 text-[7px] font-bold tracking-[0.14em] transition-colors ${
+                    velocityLaneExpanded
+                      ? "border-[var(--ed-accent-melody)]/30 bg-[var(--ed-accent-melody)]/12 text-[var(--ed-accent-melody)]"
+                      : "border-white/8 bg-white/[0.03] text-white/45 hover:text-white/70"
+                  }`}
+                >
+                  {velocityLaneExpanded ? "COMPACT" : "LARGE"}
+                </button>
+              </div>
+            </div>
+            <div className="flex gap-1.5">
+              <div className={`relative flex flex-1 min-w-0 gap-[1px] rounded-lg border border-white/6 bg-black/20 px-1.5 pb-1.5 pt-4 ${velocityLaneExpanded ? "h-24" : "h-14"}`}>
+                <div className="pointer-events-none absolute inset-x-1.5 top-4 bottom-1.5">
+                  {[0.2, 0.6, 1].map((mark) => (
+                    <div
+                      key={mark}
+                      className="absolute inset-x-0 border-t border-dashed border-white/8"
+                      style={{ bottom: `${mark * 100}%` }}
+                    />
+                  ))}
+                </div>
+                <div className="pointer-events-none absolute left-1.5 top-1 flex items-center gap-3 text-[7px] font-bold tracking-[0.12em] text-white/20">
+                  <span>100</span>
+                  <span>60</span>
+                  <span>20</span>
+                </div>
+                {/* Velocity bars — step-reactive via external store subscription in MelodyVelocityLane */}
+                <MelodyVelocityLane
+                  steps={steps}
+                  length={length}
+                  pageOffset={pageOffset}
+                  velocityLaneExpanded={velocityLaneExpanded}
+                  isPlaying={isPlaying}
+                  onDraw={handleVelocityDraw}
                 />
-              ))}
+              </div>
+              {/* Sonar Kreis — step-reactive via MelodySonarKreisContainer */}
+              <div className="hidden sm:flex w-32 shrink-0 items-center justify-center">
+                <MelodySonarKreisContainer
+                  steps={steps}
+                  isPlaying={isPlaying}
+                  rootNote={rootNote}
+                  scaleName={scaleName}
+                  globalOctave={globalOctave}
+                />
+              </div>
             </div>
-            <div className="pointer-events-none absolute left-1.5 top-1 flex items-center gap-3 text-[7px] font-bold tracking-[0.12em] text-white/20">
-              <span>100</span>
-              <span>60</span>
-              <span>20</span>
-            </div>
-            {/* Velocity bars — step-reactive via external store subscription in MelodyVelocityLane */}
-            <MelodyVelocityLane
-              steps={steps}
-              length={length}
-              pageOffset={pageOffset}
-              velocityLaneExpanded={velocityLaneExpanded}
-              isPlaying={isPlaying}
-              onDraw={handleVelocityDraw}
-            />
           </div>
-          {/* Sonar Kreis — step-reactive via MelodySonarKreisContainer */}
-          <div className="hidden sm:flex w-32 shrink-0 items-center justify-center">
-            <MelodySonarKreisContainer
-              steps={steps}
-              isPlaying={isPlaying}
-              rootNote={rootNote}
-              scaleName={scaleName}
-              globalOctave={globalOctave}
-            />
-          </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }

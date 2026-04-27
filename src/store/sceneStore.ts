@@ -19,6 +19,7 @@ import { soundFontEngine } from "../audio/SoundFontEngine";
 import { ROOT_NOTES } from "../audio/BassEngine";
 import { useLoopPlayerStore, type LoopSceneState } from "./loopPlayerStore";
 import { useChordPianoStore, type ChordNote } from "./chordPianoStore";
+import { useMelodyCRStore, type MelodyCRNote, type SynthSettings } from "./melodyCRStore";
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -51,6 +52,17 @@ export interface Scene {
   /** ChordPianoRoll notes for this scene.
    *  undefined = legacy scene recorded before this feature — notes are untouched on load. */
   chordPianoNotes?: ChordNote[];
+  /** Melody C&R state for this scene.
+   *  undefined = legacy scene recorded before this feature — C&R is untouched on load. */
+  melodyCR?: {
+    enabled: boolean;
+    barLength: 1 | 2 | 4;
+    callNotes: MelodyCRNote[];
+    responseNotes: MelodyCRNote[];
+    callSynth: SynthSettings;
+    responseSynth: SynthSettings;
+    rootNote: number;
+  };
 }
 
 export type LaunchQuantize = "immediate" | "1bar" | "2bar" | "4bar";
@@ -145,6 +157,8 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
       drumVoiceParams.push(deepClone(audioEngine.getVoiceParams(i)));
     }
 
+    const crState = useMelodyCRStore.getState();
+
     const scene: Scene = {
       name: `Scene ${slot + 1}`,
       drumPattern: deepClone(drum.pattern),
@@ -168,6 +182,15 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
         loopEndSeconds:  s.loopEndSeconds,
       })),
       chordPianoNotes: deepClone(useChordPianoStore.getState().notes),
+      melodyCR: {
+        enabled: crState.enabled,
+        barLength: crState.barLength,
+        callNotes: deepClone(crState.callNotes),
+        responseNotes: deepClone(crState.responseNotes),
+        callSynth: deepClone(crState.callSynth),
+        responseSynth: deepClone(crState.responseSynth),
+        rootNote: crState.rootNote,
+      },
       // Save global key/scale (from bass store as reference)
       rootNote: normalizeBassRootMidi(bass.rootName, bass.rootNote),
       rootName: bass.rootName,
@@ -317,6 +340,20 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
         if (scene.chordPianoNotes.length > 0) {
           chordPianoState.addNotes(deepClone(scene.chordPianoNotes));
         }
+      }
+
+      // Restore Melody C&R state — legacy scenes (undefined) are silently skipped
+      if (scene.melodyCR !== undefined) {
+        const cr = useMelodyCRStore.getState();
+        cr.setEnabled(scene.melodyCR.enabled);
+        cr.setBarLength(scene.melodyCR.barLength);
+        cr.setRootNote(scene.melodyCR.rootNote);
+        cr.clearCallNotes();
+        cr.clearResponseNotes();
+        for (const n of deepClone(scene.melodyCR.callNotes)) cr.addCallNote(n);
+        for (const n of deepClone(scene.melodyCR.responseNotes)) cr.addResponseNote(n);
+        cr.setCallSynth(deepClone(scene.melodyCR.callSynth));
+        cr.setResponseSynth(deepClone(scene.melodyCR.responseSynth));
       }
     });
   },
