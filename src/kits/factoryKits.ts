@@ -948,9 +948,133 @@ export const FACTORY_KITS: DrumKit[] = [
       7: { steps: [3, 11], vel: [65, 60] },
     }},
   },
+
+  // ── Footwork ──────────────────────────────────────────────────────────────────
+  {
+    id: "footwork-juke", name: "Footwork Juke", category: "Footwork",
+    tags: ["footwork", "juke", "chicago", "160bpm", "percussive"], author: "Factory", bpmRange: [155, 165],
+    description: "Chicago footwork kick battery, rapid hi-hat rolls, juke stutter",
+    voices: {
+      0: { tune: 55, decay: 80,  snap: 85, drive: 40, sub: 45, body: 50 },
+      1: { tune: 220, decay: 60, snap: 90, tone: 70,  drive: 25 },
+      2: { decay: 60, tone: 2400, spread: 20, level: 90 },
+      6: { tune: 380, decay: 22 }, 7: { tune: 360, decay: 65 },
+      11: { tune: 320, decay: 35 },
+    },
+    mix: {
+      0: { pan: 0, reverbSend: 0.02 },
+      1: { pan: 0, reverbSend: 0.05 },
+      6: { pan: -0.2, reverbSend: 0.03 },
+    },
+    masterFx: { reverbLevel: 0.08, saturation: 0.18, eqLow: 2, eqHigh: 2 },
+    pattern: { length: 16, swing: 50, tracks: {
+      0: { steps: [0, 2, 4, 5, 8, 10, 12, 13], vel: [127, 90, 115, 75, 120, 85, 110, 70] },
+      1: { steps: [4, 12], vel: [110, 105] },
+      6: { steps: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15], vel: [80,40,60,40,80,40,60,40,80,40,60,40,80,40,60,40] },
+    }},
+  },
+
+  {
+    id: "footwork-ghetto", name: "Ghetto House", category: "Footwork",
+    tags: ["footwork", "ghetto-house", "chicago", "percussive"], author: "Factory", bpmRange: [130, 145],
+    description: "Punchy ghetto house kicks, Roland claps, driving open hats",
+    voices: {
+      0: { tune: 50, decay: 100, snap: 80, drive: 50, sub: 55, body: 60 },
+      1: { tune: 200, decay: 80,  snap: 70, tone: 60,  drive: 20 },
+      2: { decay: 80,  tone: 2200, spread: 25, level: 100 },
+      6: { tune: 360, decay: 20 }, 7: { tune: 350, decay: 80 },
+    },
+    mix: {
+      0: { pan: 0, reverbSend: 0.03 },
+      1: { pan: 0, reverbSend: 0.08 },
+    },
+    masterFx: { reverbLevel: 0.10, saturation: 0.15, eqLow: 3, eqHigh: 1 },
+    pattern: { length: 16, swing: 53, tracks: {
+      0: { steps: [0, 3, 6, 8, 11, 14], vel: [127, 80, 100, 115, 75, 95] },
+      1: { steps: [4, 12], vel: [115, 110] },
+      6: { steps: [2, 6, 10, 14], vel: [85, 75, 85, 70] },
+      7: { steps: [0, 8], vel: [70, 65] },
+    }},
+  },
+
+  // ── Jersey Club / Baltimore Club ───────────────────────────────────────────────
+  {
+    id: "jersey-club", name: "Jersey Club", category: "Club",
+    tags: ["jersey-club", "club", "baltimore", "east-coast"], author: "Factory", bpmRange: [130, 145],
+    description: "Jersey Club three-kick pattern, tight claps, club hi-hat grid",
+    voices: {
+      0: { tune: 55, decay: 120, snap: 80, drive: 45, sub: 60, body: 55 },
+      1: { tune: 210, decay: 90,  snap: 80, tone: 65,  drive: 22 },
+      2: { decay: 90,  tone: 2100, spread: 30, level: 105 },
+      6: { tune: 370, decay: 18 }, 7: { tune: 355, decay: 90 },
+    },
+    mix: {
+      0: { pan: 0,   reverbSend: 0.02 },
+      1: { pan: 0,   reverbSend: 0.07 },
+      6: { pan: 0.1, reverbSend: 0.02 },
+    },
+    masterFx: { reverbLevel: 0.10, saturation: 0.14, eqLow: 2, eqHigh: 2 },
+    pattern: { length: 16, swing: 50, tracks: {
+      0: { steps: [0, 2, 4, 8, 10, 12], vel: [127, 85, 100, 120, 80, 95] },
+      1: { steps: [4, 12], vel: [115, 110] },
+      2: { steps: [2, 6, 10, 14], vel: [90, 75, 88, 72] },
+      6: { steps: [0,2,4,6,8,10,12,14], vel: [75,45,65,40,75,45,65,40] },
+    }},
+  },
+
+  // ── Grime ─────────────────────────────────────────────────────────────────────
+  {
+    id: "grime-140", name: "Grime 140", category: "Grime",
+    tags: ["grime", "uk", "140bpm", "dark", "aggressive"], author: "Factory", bpmRange: [136, 142],
+    description: "Dark UK Grime at 140 BPM — syncopated kick, snappy snare, eski clicks",
+    voices: {
+      0: { tune: 52, decay: 150, snap: 75, drive: 55, sub: 70, body: 50 },
+      1: { tune: 200, decay: 80,  snap: 85, tone: 50,  drive: 30 },
+      2: { decay: 70,  tone: 2600, spread: 15, level: 85 },
+      6: { tune: 400, decay: 14 }, 7: { tune: 380, decay: 55 },
+      11: { tune: 850, decay: 40 },
+    },
+    mix: {
+      0: { pan: 0,    reverbSend: 0.04 },
+      1: { pan: -0.1, reverbSend: 0.10 },
+      11: { pan: 0.3, reverbSend: 0.08 },
+    },
+    masterFx: { reverbLevel: 0.15, saturation: 0.20, eqLow: 1, eqHigh: 3 },
+    pattern: { length: 16, swing: 50, tracks: {
+      0: { steps: [0, 5, 10, 13], vel: [127, 85, 110, 75] },
+      1: { steps: [4, 12], vel: [115, 105] },
+      6: { steps: [2, 6, 10, 14], vel: [70, 55, 68, 52] },
+      11: { steps: [3, 7, 11, 15], vel: [80, 65, 78, 60] },
+    }},
+  },
+
+  {
+    id: "grime-dark", name: "Grime Dark", category: "Grime",
+    tags: ["grime", "uk", "dark", "cinematic"], author: "Factory", bpmRange: [130, 145],
+    description: "Cinematic dark grime — booming subs, rattling snares, eerie atmosphere",
+    voices: {
+      0: { tune: 48, decay: 200, snap: 65, drive: 60, sub: 80, body: 45 },
+      1: { tune: 185, decay: 100, snap: 80, tone: 45,  drive: 35 },
+      2: { decay: 110, tone: 2800, spread: 20, level: 80 },
+      6: { tune: 420, decay: 16 }, 7: { tune: 400, decay: 70 },
+      8: { tune: 480, decay: 1200 },
+    },
+    mix: {
+      0: { pan: 0, reverbSend: 0.05 },
+      1: { pan: 0, reverbSend: 0.15 },
+      8: { pan: 0, reverbSend: 0.35 },
+    },
+    masterFx: { reverbLevel: 0.25, saturation: 0.22, eqLow: 2, eqHigh: 2 },
+    pattern: { length: 16, swing: 52, tracks: {
+      0: { steps: [0, 6, 10], vel: [127, 90, 108] },
+      1: { steps: [4, 12], vel: [118, 110] },
+      6: { steps: [3, 7, 11, 15], vel: [65, 50, 62, 48] },
+      8: { steps: [0], vel: [55] },
+    }},
+  },
 ];
 
 // Categories for the kit browser
 export const KIT_CATEGORIES = [
-  "All", "808", "909", "Trap", "DnB", "Electro", "World", "Ambient", "Retro", "Acoustic", "Cinematic", "Garage",
+  "All", "808", "909", "Trap", "DnB", "Electro", "World", "Ambient", "Retro", "Acoustic", "Cinematic", "Garage", "Footwork", "Club", "Grime",
 ];

@@ -146,6 +146,13 @@ export const BASS_PRESETS: BassPreset[] = [
   // ── Latin / Cumbia ──
   { name: "Cumbia Bajo",     params: bp({ waveform: "sawtooth", cutoff: 460, resonance:  8, envMod: 0.35, decay: 200, accent: 0.32, slideTime: 40, distortion: 0.12, volume: 0.70, subOsc: 0.50, filterModel: "ladder", punch: 0.28, harmonics: 0.15 }) },
   { name: "Salsa Walk",      params: bp({ waveform: "sawtooth", cutoff: 540, resonance:  5, envMod: 0.18, decay: 180, accent: 0.25, slideTime: 55, distortion: 0.05, volume: 0.68, subOsc: 0.35, filterModel: "ladder", punch: 0.20, harmonics: 0.18 }) },
+
+  // ── Footwork / Club ──
+  { name: "Footwork Punch",   params: bp({ waveform: "square",   cutoff: 180, resonance:  2, envMod: 0.05, decay:  90, accent: 0.25, slideTime:  0, distortion: 0.10, volume: 0.88, subOsc: 0.90, filterModel: "ladder", punch: 0.35, subFilter: 42 }) },
+  { name: "Jersey Thump",     params: bp({ waveform: "square",   cutoff: 200, resonance:  3, envMod: 0.08, decay: 110, accent: 0.30, slideTime:  5, distortion: 0.12, volume: 0.85, subOsc: 0.85, filterModel: "ladder", punch: 0.40, harmonics: 0.05, subFilter: 45 }) },
+  { name: "Club Sub Hit",     params: bp({ waveform: "square",   cutoff: 170, resonance:  1, envMod: 0.03, decay: 130, accent: 0.10, slideTime:  0, distortion: 0.05, volume: 0.90, subOsc: 0.95, filterModel: "ladder", punch: 0.20, subFilter: 38 }) },
+  { name: "Grime Dark Sub",   params: bp({ waveform: "square",   cutoff: 140, resonance:  1, envMod: 0.02, decay: 750, accent: 0.06, slideTime:  0, distortion: 0.08, volume: 0.90, subOsc: 1.00, filterModel: "ladder", punch: 0.08, subFilter: 32 }) },
+  { name: "Grime Stab",       params: bp({ waveform: "sawtooth", cutoff: 520, resonance: 16, envMod: 0.72, decay:  85, accent: 0.65, slideTime: 15, distortion: 0.55, volume: 0.58, subOsc: 0.15, filterModel: "ladder", punch: 0.45, harmonics: 0.22 }) },
 ];
 
 export const BASS_CORE_PRESETS = BASS_PRESETS.filter((preset) =>
