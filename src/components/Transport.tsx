@@ -94,9 +94,9 @@ export function Transport({
 
       {/* ── Brand ── */}
       <span className="text-[10px] font-black tracking-[0.25em] text-[var(--ed-accent-orange)] mr-1.5 hidden lg:block">
-        ELASTIC GROOVE
+        ELASTIC DRUM
       </span>
-      <span className="text-[10px] font-black tracking-[0.25em] text-[var(--ed-accent-orange)] mr-1 lg:hidden">EG</span>
+      <span className="text-[10px] font-black tracking-[0.25em] text-[var(--ed-accent-orange)] mr-1 lg:hidden">ED</span>
 
       <Sep />
 
