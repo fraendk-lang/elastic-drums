@@ -274,7 +274,11 @@ export function SynthSection() {
 
       {/* Active sequencer */}
       {active === "bass" && <BassSequencer />}
-      {active === "chords" && <ChordsSequencer />}
+      {active === "chords" && (
+        <ChordsSequencer
+          onOpenPianoRoll={() => overlay.openOverlay("chordPianoRoll")}
+        />
+      )}
       {active === "melody" && <MelodySequencer />}
       {active === "sampler"  && <SamplerTab />}
       {active === "loops"    && <LoopPlayerTab />}

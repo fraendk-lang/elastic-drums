@@ -103,7 +103,7 @@ const ChordsVelocityLane = memo(function ChordsVelocityLane({
   );
 });
 
-export function ChordsSequencer() {
+export function ChordsSequencer({ onOpenPianoRoll }: { onOpenPianoRoll?: () => void } = {}) {
   const {
     steps, length, selectedPage, rootNote, rootName, scaleName, params, presetIndex, strategyIndex, instrument,
     automationData, automationParam,
@@ -400,6 +400,15 @@ export function ChordsSequencer() {
           <button className="h-6 px-2 text-[7px] font-bold text-white/15 rounded-md transition-all cursor-default">SAVE</button>
           <button className="h-6 px-2 text-[7px] font-bold text-white/15 rounded-md transition-all cursor-default">LOAD</button>
           <button onClick={clearSteps} className="h-6 px-2 text-[7px] font-bold text-white/25 hover:text-red-400/70 hover:bg-white/5 rounded-md transition-all">CLR</button>
+          {onOpenPianoRoll && (
+            <button
+              onClick={onOpenPianoRoll}
+              className="h-6 px-2.5 text-[7px] font-bold text-[var(--ed-accent-chords)]/60 hover:text-[var(--ed-accent-chords)] hover:bg-[var(--ed-accent-chords)]/10 border border-[var(--ed-accent-chords)]/20 hover:border-[var(--ed-accent-chords)]/50 rounded-md transition-all"
+              title="Open Chord Piano Roll"
+            >
+              🎹 PIANO ROLL ↗
+            </button>
+          )}
         </div>
       </div>
 

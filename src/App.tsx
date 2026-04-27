@@ -20,6 +20,9 @@ const FxPanel = lazy(() => import("./components/FxPanel").then((m) => ({ default
 const KitBrowser = lazy(() => import("./components/KitBrowser").then((m) => ({ default: m.KitBrowser })));
 const MidiPlayerPanel = lazy(() => import("./components/MidiPlayerPanel").then((m) => ({ default: m.MidiPlayerPanel })));
 const PianoRoll = lazy(() => import("./components/PianoRoll").then((m) => ({ default: m.PianoRoll })));
+const ChordPianoRoll = lazy(() =>
+  import("./components/ChordPianoRoll").then((m) => ({ default: m.ChordPianoRoll }))
+);
 const ClipLauncher = lazy(() => import("./components/ClipLauncher").then((m) => ({ default: m.ClipLauncher })));
 const ArrangementView = lazy(() => import("./components/ArrangementView").then((m) => ({ default: m.ArrangementView })));
 const ModMatrixEditor = lazy(() => import("./components/ModMatrixEditor").then((m) => ({ default: m.ModMatrixEditor })));
@@ -506,6 +509,9 @@ export function App() {
           />
         )}
         {overlay.isOpen("pianoRoll") && <PianoRoll isOpen onClose={() => overlay.closeOverlay("pianoRoll")} />}
+        {overlay.isOpen("chordPianoRoll") && (
+          <ChordPianoRoll isOpen onClose={() => overlay.closeOverlay("chordPianoRoll")} />
+        )}
         {overlay.isOpen("clipLauncher") && <ClipLauncher isOpen onClose={() => overlay.closeOverlay("clipLauncher")} />}
         {overlay.isOpen("arrangement") && <ArrangementView isOpen onClose={() => overlay.closeOverlay("arrangement")} />}
         {overlay.isOpen("modMatrix") && <ModMatrixEditor isOpen onClose={() => overlay.closeOverlay("modMatrix")} />}
