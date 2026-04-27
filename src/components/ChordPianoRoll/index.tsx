@@ -64,7 +64,7 @@ const PianoKey = memo(function PianoKey({
       style={{
         height: ROW_H,
         background: isRootNote
-          ? "rgba(167,139,250,0.15)"
+          ? "rgba(249,115,22,0.18)"
           : isScaleNote
           ? "rgba(168,85,247,0.07)"
           : isBlack
@@ -78,7 +78,7 @@ const PianoKey = memo(function PianoKey({
         </span>
       )}
       {isRootNote && !isC && (
-        <span className="text-[7px] font-mono text-[var(--ed-accent-chords)]/60 leading-none">
+        <span className="text-[7px] font-mono text-orange-400/60 leading-none">
           {NOTE_NAMES[pitch % 12]}
         </span>
       )}
@@ -365,7 +365,7 @@ export function ChordPianoRoll({ isOpen, onClose }: ChordPianoRollProps) {
             {CHORD_SETS[id].label}
           </button>
         ))}
-        <span className="ml-2 text-[7px] text-white/20 shrink-0 hidden sm:inline">
+        <span className="ml-2 text-[7px] text-white/20 shrink-0">
           {CHORD_SETS[activeChordSet].description}
         </span>
       </div>
