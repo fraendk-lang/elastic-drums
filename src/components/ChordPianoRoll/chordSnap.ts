@@ -39,7 +39,7 @@ export function pitchToScaleDegreeAndRoot(
 
   // Find nearest scale interval
   let bestIdx = 0;
-  let bestDist = 13;
+  let bestDist = 13; // > max possible chromatic distance (12), guarantees first iteration always updates
   for (let i = 0; i < scale.length; i++) {
     const interval = scale[i] ?? 0;
     // Wrap-around distance (accounts for distance across the C–B boundary)
@@ -53,8 +53,11 @@ export function pitchToScaleDegreeAndRoot(
     }
   }
 
-  // Clamp to valid ScaleDegree (0–6) for 7-note scales; for shorter scales, wrap
-  const degree = (bestIdx % 7) as ScaleDegree;
+  // Clamp to valid ScaleDegree (0–6). For scales with >7 notes (e.g. Chromatic=12,
+  // Diminished=8), cap at 6 rather than wrapping — modular wrap would produce
+  // incorrect chord-function assignments (e.g. degree 11%7=4 would apply dominant
+  // voicing to a leading-tone click).
+  const degree = Math.min(bestIdx, 6) as ScaleDegree;
   const chordRootPitch = rootNote + octave * 12 + (scale[bestIdx] ?? 0);
   return { degree, chordRootPitch };
 }

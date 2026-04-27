@@ -87,4 +87,19 @@ describe("chordSnap", () => {
       expect(n.velocity).toBeLessThanOrEqual(127);
     }
   });
+
+  it("clamps pitch to 0 when root is very low and voicing would go negative", () => {
+    // Root = 0 (C-1), pop-triads voicing = [0, 3, 7] → all pitches ≥ 0
+    const notes = chordSnap(0, 0, "Minor", "pop-triads", 0, 1, 90);
+    for (const n of notes) {
+      expect(n.pitch).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("clamps negative velocity to 0", () => {
+    const notes = chordSnap(48, 48, "Minor", "pop-triads", 0, 1, -10);
+    for (const n of notes) {
+      expect(n.velocity).toBe(0);
+    }
+  });
 });
