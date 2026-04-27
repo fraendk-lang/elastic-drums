@@ -2,18 +2,9 @@
 
 import { SCALES } from "../../audio/BassEngine";
 import { CHORD_SETS, type ChordSetId, type ScaleDegree } from "./chordSets";
+import type { ChordNote } from "../../store/chordPianoStore";
 
 const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"] as const;
-
-/** Minimal shape — will be replaced by import from chordPianoStore once Task 3 is done. */
-interface ChordNote {
-  id: string;
-  pitch: number;
-  startBeat: number;
-  durationBeats: number;
-  velocity: number;
-  chordGroup: string;
-}
 
 /**
  * Find the scale degree and chord-root pitch for a given clicked pitch.
