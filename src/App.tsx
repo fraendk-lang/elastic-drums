@@ -37,6 +37,7 @@ import { getMidiClockMode, subscribeMidiClockMode } from "./store/midiClockMode"
 import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
 import { melodyEngine } from "./audio/MelodyEngine";
+import { responseCREngine } from "./audio/melodyCREngines";
 import { samplerEngine } from "./audio/SamplerEngine";
 import { loopPlayerEngine } from "./audio/LoopPlayerEngine";
 import { useBassStore, startBassScheduler, stopBassScheduler } from "./store/bassStore";
@@ -213,6 +214,11 @@ export function App() {
         const melodyOut = melodyEngine.getOutput();
         const melodyCh = audioEngine.getChannelOutput(14);
         if (melodyOut && melodyCh) melodyOut.connect(melodyCh);
+
+        // Melody C&R Response → also Channel 14 (shares melody mixer strip)
+        responseCREngine.init(ctx);
+        const responseCROut = responseCREngine.getOutput();
+        if (responseCROut && melodyCh) responseCROut.connect(melodyCh);
 
         // Sampler → Ch 15 (dedicated mixer strip: EQ, sends, fader, meter)
         samplerEngine.init(ctx);
