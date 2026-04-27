@@ -1,7 +1,7 @@
 // src/components/ChordPianoRoll/index.tsx
 
 import {
-  useCallback, useEffect, useRef, useState, useSyncExternalStore, memo,
+  useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, memo,
 } from "react";
 import { useChordPianoStore } from "../../store/chordPianoStore";
 import { useChordsStore } from "../../store/chordsStore";
@@ -107,6 +107,7 @@ export function ChordPianoRoll({ isOpen, onClose }: ChordPianoRollProps) {
   const currentStep = useSyncExternalStore(
     drumCurrentStepStore.subscribe,
     getDrumCurrentStep,
+    () => 0,
   );
   const totalSteps = Math.round(totalBeats * 4);
   const playheadBeat = (currentStep % totalSteps) / 4;
@@ -245,14 +246,25 @@ export function ChordPianoRoll({ isOpen, onClose }: ChordPianoRollProps) {
   );
 
   // ── Ghost preview note computation ──────────────────────────────────────────
-  const ghostNotes: ChordNote[] = hoverCell && snapEnabled
-    ? chordSnap(
-        hoverCell.pitch, rootNote, scaleName, activeChordSet,
-        hoverCell.beat, snapResolution, 90,
-      )
-    : hoverCell && !snapEnabled
-    ? [{ id: "ghost", pitch: hoverCell.pitch, startBeat: hoverCell.beat, durationBeats: snapResolution, velocity: 90, chordGroup: "ghost" }]
-    : [];
+  const ghostNotes: ChordNote[] = useMemo(() => {
+    if (!hoverCell) return [];
+    if (!snapEnabled) {
+      return [{
+        id: "ghost-0",
+        pitch: hoverCell.pitch,
+        startBeat: hoverCell.beat,
+        durationBeats: snapResolution,
+        velocity: 90,
+        chordGroup: "ghost",
+      }];
+    }
+    // Use chordSnap but replace UUIDs with stable preview IDs
+    const snapped = chordSnap(
+      hoverCell.pitch, rootNote, scaleName, activeChordSet,
+      hoverCell.beat, snapResolution, 90,
+    );
+    return snapped.map((n, i) => ({ ...n, id: `ghost-${i}` }));
+  }, [hoverCell, snapEnabled, snapResolution, rootNote, scaleName, activeChordSet]);
 
   if (!isOpen) return null;
 
@@ -271,7 +283,7 @@ export function ChordPianoRoll({ isOpen, onClose }: ChordPianoRollProps) {
           CHORDS
         </span>
         <span className="text-[8px] text-white/30 font-mono shrink-0">
-          {NOTE_NAMES[rootNote % 12]} · {scaleName}
+          {NOTE_NAMES[((rootNote % 12) + 12) % 12]} · {scaleName}
         </span>
 
         <div className="w-px h-4 bg-white/8" />
@@ -540,7 +552,7 @@ export function ChordPianoRoll({ isOpen, onClose }: ChordPianoRollProps) {
                   className="inline-flex items-center h-5 px-1.5 rounded text-[7px] font-bold font-mono"
                   style={{ background: `${color}22`, border: `1px solid ${color}55`, color }}
                 >
-                  {NOTE_NAMES[n.pitch % 12]}{Math.floor(n.pitch / 12) - 1}
+                  {NOTE_NAMES[((n.pitch % 12) + 12) % 12]}{Math.floor(n.pitch / 12) - 1}
                 </span>
               ))}
             </div>
