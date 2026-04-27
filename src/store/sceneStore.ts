@@ -18,6 +18,7 @@ import { audioEngine } from "../audio/AudioEngine";
 import { soundFontEngine } from "../audio/SoundFontEngine";
 import { ROOT_NOTES } from "../audio/BassEngine";
 import { useLoopPlayerStore, type LoopSceneState } from "./loopPlayerStore";
+import { useChordPianoStore, type ChordNote } from "./chordPianoStore";
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -47,6 +48,9 @@ export interface Scene {
   /** Loop Player slot states at the time this scene was recorded.
    *  undefined = legacy scene recorded before this feature — loops are untouched. */
   loopSlots?: LoopSceneState[];
+  /** ChordPianoRoll notes for this scene.
+   *  undefined = legacy scene recorded before this feature — notes are untouched on load. */
+  chordPianoNotes?: ChordNote[];
 }
 
 export type LaunchQuantize = "immediate" | "1bar" | "2bar" | "4bar";
@@ -163,6 +167,7 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
         firstBeatOffset: s.firstBeatOffset,
         loopEndSeconds:  s.loopEndSeconds,
       })),
+      chordPianoNotes: deepClone(useChordPianoStore.getState().notes),
       // Save global key/scale (from bass store as reference)
       rootNote: normalizeBassRootMidi(bass.rootName, bass.rootNote),
       rootName: bass.rootName,
@@ -303,6 +308,15 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
       // Legacy scenes (loopSlots undefined) are silently skipped.
       if (scene.loopSlots && scene.loopSlots.length > 0) {
         useLoopPlayerStore.getState().loadSceneSlots(scene.loopSlots);
+      }
+
+      // Restore ChordPianoRoll notes — legacy scenes (undefined) are silently skipped
+      if (scene.chordPianoNotes !== undefined) {
+        const chordPianoState = useChordPianoStore.getState();
+        chordPianoState.clear();
+        if (scene.chordPianoNotes.length > 0) {
+          chordPianoState.addNotes(deepClone(scene.chordPianoNotes));
+        }
       }
     });
   },
