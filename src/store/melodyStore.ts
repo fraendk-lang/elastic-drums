@@ -14,6 +14,7 @@ import { generateEuclidean, useDrumStore, getDrumNextStepTime } from "./drumStor
 import { syncScaleToOtherStores, registerScaleStore } from "./bassStore";
 import { generateArpNotes, DEFAULT_ARP_SETTINGS, type ArpSettings } from "../audio/Arpeggiator";
 import { schedulerClock } from "../audio/SchedulerClock";
+import { useMelodyCRStore } from "./melodyCRStore";
 
 // ─── Melody step external store ────────────────────────────
 // currentStep is intentionally NOT stored in Zustand. The scheduler updates a
@@ -935,6 +936,14 @@ export function startMelodyScheduler() {
       } = useMelodyStore.getState();
       const currentStep = _melodyStep;
       const stepIndex = currentStep % length;
+
+      // Skip step-grid playback when Melody C&R mode is active
+      if (useMelodyCRStore.getState().enabled) {
+        setMelodyStep((currentStep + 1) % length);
+        nextMelodyStepTime += secondsPerStep;
+        continue;
+      }
+
       const step = steps[stepIndex];
       const prevStep = stepIndex > 0 ? steps[stepIndex - 1] : steps[length - 1];
 
