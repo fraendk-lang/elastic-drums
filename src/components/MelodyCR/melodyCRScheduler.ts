@@ -36,7 +36,12 @@ export const melodyCRCurrentBeatStore = {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Apply SynthSettings to a MelodyEngine instance. */
+/** Apply SynthSettings to a MelodyEngine instance.
+ *
+ * cutoff (0–1) modulates the preset's own cutoff rather than replacing it:
+ *   0.5 = preset native, <0.5 = darker, >0.5 = brighter
+ * This keeps presets sounding as intended while still giving the user control.
+ */
 function applySynth(
   engine: typeof callCREngine,
   presetIndex: number,
@@ -44,8 +49,10 @@ function applySynth(
 ): void {
   const preset = MELODY_PRESETS[presetIndex];
   if (preset) {
-    // Map cutoff 0–1 to 200–12000 Hz
-    const cutoffHz = 200 + cutoff * 11800;
+    const presetCutoff = (preset.params as { cutoff?: number }).cutoff ?? 2000;
+    // Scale: 0.5 = native, 0 = 1/4 of native, 1 = 4× native (clamped to 100–18000 Hz)
+    const scale = cutoff <= 0.5 ? cutoff * 2 : 1 + (cutoff - 0.5) * 6;
+    const cutoffHz = Math.max(100, Math.min(18000, presetCutoff * scale));
     engine.setParams({ ...preset.params, cutoff: cutoffHz });
   }
 }

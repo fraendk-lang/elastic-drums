@@ -105,7 +105,9 @@ export function MelodyCREditor() {
     if (!gridRef.current) return null;
     const rect = gridRef.current.getBoundingClientRect();
     const x = clientX - rect.left - PIANO_W;
-    const y = clientY - rect.top - RULER_H;
+    // scrollTop accounts for vertical scroll — ruler is sticky so viewport offset
+    // doesn't shift, but note DOM positions are relative to the scrollable content.
+    const y = clientY - rect.top - RULER_H + gridRef.current.scrollTop;
     if (x < 0 || y < 0) return null;
 
     const rowIdx = Math.floor(y / ROW_H);
@@ -179,7 +181,7 @@ export function MelodyCREditor() {
     if (!gridRef.current) return;
     const rect = gridRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left - PIANO_W;
-    const y = e.clientY - rect.top - RULER_H;
+    const y = e.clientY - rect.top - RULER_H + gridRef.current.scrollTop;
     if (x < 0 || y < 0) { setHoverCell(null); setGridCursor("crosshair"); return; }
     const rowIdx = Math.floor(y / ROW_H);
     if (rowIdx < 0 || rowIdx >= ROWS) { setHoverCell(null); setGridCursor("crosshair"); return; }
