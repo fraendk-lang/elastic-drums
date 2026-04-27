@@ -6,8 +6,8 @@
  * Keyboard: D dup · Del delete · ⌘C copy · ⌘V paste · ←→ move · −/+ resize · C colour · F2 rename
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useDrumStore, type SongChainEntry } from "../store/drumStore";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useDrumStore, type SongChainEntry, drumCurrentStepStore } from "../store/drumStore";
 import { useSceneStore, type Scene } from "../store/sceneStore";
 import {
   SCENE_COLORS, LOOP_COLOR, getEntryColor, getEntryLabel, hexAlpha,
@@ -709,15 +709,31 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
   const [showColorPicker, setShowColorPicker] = useState<number | null>(null);
   const [isRecording, setIsRecording]         = useState(false);
   const [recCount, setRecCount]               = useState(0);
+  const [loopStart, setLoopStart]             = useState<number | null>(null);
+  const [loopEnd, setLoopEnd]                 = useState<number | null>(null);
+  const loopDragRef = useRef<{ handle: "start" | "end"; startX: number; startBar: number } | null>(null);
+
+  // sub-bar playhead precision via external step store
+  const currentDrumStep = useSyncExternalStore(
+    drumCurrentStepStore.subscribe,
+    drumCurrentStepStore.getSnapshot,
+  );
 
   const resizingRef    = useRef<{ index: number; startX: number; startRepeats: number } | null>(null);
   const lastRecScene   = useRef<number>(-1);
   const timelineRef    = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
-  const totalBars         = Math.max(songChain.reduce((s, e) => s + e.repeats, 0), 32);
+  const totalBars     = Math.max(songChain.reduce((s, e) => s + e.repeats, 0), 32);
+  const activeEntry   = songChain[songPosition];
+  const stepsPerBar   = 16; // 1 bar = 16 steps in 4/4
+  const stepFraction  = activeEntry
+    ? (currentDrumStep % stepsPerBar) / stepsPerBar
+    : 0;
   const playheadBarOffset =
-    songChain.slice(0, songPosition).reduce((sum, e) => sum + e.repeats, 0) + songRepeatCount;
+    songChain.slice(0, songPosition).reduce((sum, e) => sum + e.repeats, 0)
+    + songRepeatCount
+    + stepFraction;
   const playheadPx = playheadBarOffset * barPx;
 
   // Ctrl/Cmd+scroll zoom
@@ -764,23 +780,41 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
     if (renamingIndex !== null) renameInputRef.current?.focus();
   }, [renamingIndex]);
 
-  // Global pointer events for edge-resize
+  // Global pointer events for edge-resize + loop-brace drag
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
+      // Clip resize
       const r = resizingRef.current;
-      if (!r) return;
-      const delta = Math.round((e.clientX - r.startX) / barPx);
-      const next  = Math.max(MIN_REPEATS, Math.min(MAX_REPEATS, r.startRepeats + delta));
-      updateSongEntryRepeats(r.index, next);
+      if (r) {
+        const rawDelta = (e.clientX - r.startX) / barPx;
+        const snap     = e.shiftKey ? 4 : 1;
+        const delta    = Math.round(rawDelta / snap) * snap;
+        const next     = Math.max(MIN_REPEATS, Math.min(MAX_REPEATS, r.startRepeats + delta));
+        updateSongEntryRepeats(r.index, next);
+      }
+      // Loop-brace drag
+      const ld = loopDragRef.current;
+      if (ld) {
+        const barDelta = Math.round((e.clientX - ld.startX) / barPx);
+        const newBar   = Math.max(0, Math.min(totalBars, ld.startBar + barDelta));
+        if (ld.handle === "start") {
+          setLoopStart(Math.min(newBar, (loopEnd ?? totalBars) - 1));
+        } else {
+          setLoopEnd(Math.max(newBar, (loopStart ?? 0) + 1));
+        }
+      }
     };
-    const onUp = () => { resizingRef.current = null; };
+    const onUp = () => {
+      resizingRef.current = null;
+      loopDragRef.current = null;
+    };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     return () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [barPx, updateSongEntryRepeats]);
+  }, [barPx, totalBars, loopStart, loopEnd, updateSongEntryRepeats]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -885,11 +919,23 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
         setRenamingIndex(primary);
         return;
       }
+
+      // L — toggle loop brace (set to full range or clear)
+      if ((e.key === "l" || e.key === "L") && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        if (loopStart !== null) {
+          setLoopStart(null); setLoopEnd(null);
+        } else {
+          setLoopStart(0);
+          setLoopEnd(Math.max(songChain.reduce((s, en) => s + en.repeats, 0), 4));
+        }
+        return;
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isOpen, selected, clipboard, renamingIndex, contextMenu,
-      removeFromSongChain, updateSongEntryRepeats, moveSongEntry]);
+  }, [isOpen, selected, clipboard, renamingIndex, contextMenu, loopStart, loopEnd,
+      removeFromSongChain, updateSongEntryRepeats, moveSongEntry, songChain]);
 
   // Selection helper
   const selectEntry = useCallback((index: number, multi: boolean) => {
@@ -1026,22 +1072,106 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
 
             {/* Ruler */}
             <div
-              className="sticky top-0 z-20 flex border-b border-white/8 bg-[rgba(8,9,13,0.95)] select-none"
+              className="sticky top-0 z-20 relative border-b border-white/8 bg-[rgba(8,9,13,0.95)] select-none overflow-hidden"
               style={{ height: RULER_H, minWidth: totalBars * barPx }}
               onDragOver={e => e.preventDefault()}
               onDrop={e => handleSceneDrop(e)}
+              onPointerDown={(e) => {
+                // Click on ruler (not a handle) sets loop start and begins range drag
+                if ((e.target as HTMLElement).dataset.loopHandle) return;
+                const rect = e.currentTarget.getBoundingClientRect();
+                const bar  = Math.floor((e.clientX - rect.left) / barPx);
+                setLoopStart(bar);
+                setLoopEnd(bar + 1);
+                loopDragRef.current = { handle: "end", startX: e.clientX, startBar: bar + 1 };
+              }}
             >
-              {Array.from({ length: totalBars }, (_, i) => (
+              {/* Bar tick marks */}
+              <div className="absolute inset-0 flex pointer-events-none">
+                {Array.from({ length: totalBars }, (_, i) => (
+                  <div
+                    key={i}
+                    className="border-r border-white/5 flex items-center shrink-0"
+                    style={{ width: barPx, minWidth: barPx }}
+                  >
+                    {i % 4 === 0 && (
+                      <span className="text-[7px] font-mono text-white/25 pl-0.5">{i + 1}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Loop-brace region */}
+              {loopStart !== null && loopEnd !== null && (
+                <>
+                  <div
+                    className="absolute top-0 pointer-events-none"
+                    style={{
+                      left:   loopStart * barPx,
+                      width:  (loopEnd - loopStart) * barPx,
+                      height: RULER_H,
+                      backgroundColor: "rgba(34,211,238,0.12)",
+                      borderTop: "2px solid rgba(34,211,238,0.55)",
+                    }}
+                  />
+                  {/* Start handle */}
+                  <div
+                    data-loop-handle="start"
+                    className="absolute top-0 cursor-ew-resize z-10"
+                    style={{
+                      left:   loopStart * barPx - 3,
+                      width:  6,
+                      height: RULER_H,
+                      backgroundColor: "rgba(34,211,238,0.7)",
+                      borderRadius: "2px",
+                    }}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      loopDragRef.current = { handle: "start", startX: e.clientX, startBar: loopStart };
+                      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                    }}
+                  />
+                  {/* End handle */}
+                  <div
+                    data-loop-handle="end"
+                    className="absolute top-0 cursor-ew-resize z-10"
+                    style={{
+                      left:   loopEnd * barPx - 3,
+                      width:  6,
+                      height: RULER_H,
+                      backgroundColor: "rgba(34,211,238,0.7)",
+                      borderRadius: "2px",
+                    }}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      loopDragRef.current = { handle: "end", startX: e.clientX, startBar: loopEnd };
+                      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                    }}
+                  />
+                  {/* Loop label */}
+                  <div
+                    className="absolute top-0.5 pointer-events-none text-[6px] font-black tracking-wider"
+                    style={{ left: loopStart * barPx + 6, color: "rgba(34,211,238,0.7)" }}
+                  >
+                    {loopStart + 1}–{loopEnd}
+                  </div>
+                </>
+              )}
+
+              {/* Playhead triangle on ruler */}
+              {songMode === "song" && songChain.length > 0 && (
                 <div
-                  key={i}
-                  className="border-r border-white/5 flex items-center shrink-0"
-                  style={{ width: barPx, minWidth: barPx }}
+                  className="absolute top-0 pointer-events-none z-20"
+                  style={{ left: playheadPx - 4, top: 2 }}
                 >
-                  {i % 4 === 0 && (
-                    <span className="text-[7px] font-mono text-white/25 pl-0.5">{i + 1}</span>
-                  )}
+                  <div style={{
+                    width: 0, height: 0,
+                    borderLeft:  "4px solid transparent",
+                    borderRight: "4px solid transparent",
+                    borderTop:   "5px solid rgba(255,255,255,0.8)",
+                  }} />
                 </div>
-              ))}
+              )}
             </div>
 
             {/* Track content */}
@@ -1160,6 +1290,21 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                   onDrop={(e, i) => handleEntryDrop(e, i)}
                 />
               </div>
+
+              {/* Loop-brace overlay on track area */}
+              {loopStart !== null && loopEnd !== null && (
+                <div
+                  className="absolute top-0 pointer-events-none z-10"
+                  style={{
+                    left:   loopStart * barPx,
+                    width:  (loopEnd - loopStart) * barPx,
+                    height: TRACKS.length * TRACK_H + LOOP_H,
+                    backgroundColor: "rgba(34,211,238,0.04)",
+                    borderLeft:  "1px solid rgba(34,211,238,0.25)",
+                    borderRight: "1px solid rgba(34,211,238,0.25)",
+                  }}
+                />
+              )}
 
               {/* Playhead */}
               {songMode === "song" && songChain.length > 0 && (
