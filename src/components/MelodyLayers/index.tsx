@@ -173,6 +173,11 @@ export function MelodyLayersEditor() {
     if (!hit.note && e.button === 0) {
       const snappedBeat = Math.round(hit.beat * 4) / 4;
       if (snappedBeat < 0 || snappedBeat >= totalBeatsRef.current) return;
+      // Guard: don't add if any existing note covers this beat+pitch
+      const collision = notesRef.current.some(
+        (n) => n.pitch === hit.pitch && snappedBeat >= n.startBeat && snappedBeat < n.startBeat + n.durationBeats
+      );
+      if (collision) return;
       const newNote: MelodyLayerNote = {
         id: crypto.randomUUID(),
         pitch: hit.pitch,
@@ -197,7 +202,7 @@ export function MelodyLayersEditor() {
     if (move) {
       const dx = e.clientX - move.startX;
       const dy = e.clientY - move.startY;
-      if (!move.hasMoved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+      if (!move.hasMoved && Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
       move.hasMoved = true;
       setGridCursor("grabbing");
       const newStartBeat = Math.max(0, Math.min(
