@@ -267,6 +267,53 @@ kbd {
   transform: translateY(0);
 }
 
+/* ─── Overlay panel enter animation ──────────────────────────────
+   Targets all fixed full-screen overlays (MixerPanel, FxPanel, etc.)
+   via compound Tailwind class selector — no per-component changes needed. */
+@keyframes ed-overlay-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .fixed.inset-0.z-50 {
+    animation: ed-overlay-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+/* ─── Playing pulse: thin colored line at bottom of Transport ─────
+   Added via js: document.body.classList.toggle('ed-playing', isPlaying) */
+@keyframes ed-play-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+body.ed-playing header::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1.5px;
+  background: var(--ed-accent-orange);
+  animation: ed-play-pulse 1s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* ─── FxRack: subtle glow breathe on active modules ──────────────
+   Applied via inline style on the ON button (handled in FxRack.tsx) */
+@keyframes ed-fx-active-breathe {
+  0%, 100% { box-shadow: 0 0 6px currentColor; }
+  50%       { box-shadow: 0 0 12px currentColor, 0 0 4px currentColor; }
+}
+.ed-fx-on {
+  animation: ed-fx-active-breathe 2.5s ease-in-out infinite;
+}
+
 /* Splash shimmer effect */
 @keyframes ed-shimmer {
   0% { background-position: -200% 0; }

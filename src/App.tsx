@@ -83,6 +83,12 @@ export function App() {
   useEffect(() => subscribeMidiClockMode(() => setMidiClockModeState(getMidiClockMode())), []);
   const bpm = useDrumStore((s) => s.bpm);
   const isPlaying = useDrumStore((s) => s.isPlaying);
+
+  // Sync body class for the CSS playing-pulse indicator on the Transport
+  useEffect(() => {
+    document.body.classList.toggle("ed-playing", isPlaying);
+    return () => document.body.classList.remove("ed-playing");
+  }, [isPlaying]);
   const setBpm = useDrumStore((s) => s.setBpm);
   const togglePlay = useDrumStore((s) => s.togglePlay);
   const midiClock = useMidiClock({

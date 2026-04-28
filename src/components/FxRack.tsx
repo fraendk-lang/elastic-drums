@@ -487,11 +487,11 @@ function FxModuleCard({
       {/* On/Off toggle */}
       <button
         onClick={onToggle}
-        className="w-full py-1 rounded text-[7px] font-bold tracking-wider transition-all"
+        className={`w-full py-1 rounded text-[7px] font-bold tracking-wider transition-all ${enabled ? "ed-fx-on" : ""}`}
         style={{
-          backgroundColor: enabled ? `${def.color}25` : "rgba(255,255,255,0.03)",
+          backgroundColor: enabled ? `${def.color}22` : "rgba(255,255,255,0.03)",
           color: enabled ? def.color : "rgba(255,255,255,0.15)",
-          border: `1px solid ${enabled ? `${def.color}40` : "rgba(255,255,255,0.05)"}`,
+          border: `1px solid ${enabled ? `${def.color}50` : "rgba(255,255,255,0.05)"}`,
         }}
       >
         {enabled ? "ON" : "OFF"}
