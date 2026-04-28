@@ -1,5 +1,7 @@
 // src/store/melodyLayerStore.ts
 import { create } from "zustand";
+import { generateEuclidean } from "./drumStore";
+import { SCALES } from "../audio/BassEngine";
 
 export const LAYER_COLORS = ["#f472b6", "#22c55e", "#a78bfa", "#f97316"] as const;
 
@@ -81,6 +83,16 @@ interface MelodyLayerState {
   setSynth: (layerId: string, patch: Partial<LayerSynth>) => void;
   setSynthFull: (layerId: string, synth: LayerSynth) => void;
   clearNotes: (layerId: string) => void;
+  applyLayerEuclidean: (
+    pulses: number,
+    eucSteps: number,
+    rotation: number,
+    noteMode: string,
+    scaleName: string,
+    rootNote: number,
+    accentPulses?: number,
+    accentRotation?: number,
+  ) => void;
 }
 
 // Start with 2 layers so polymeter is immediately audible:
@@ -155,4 +167,67 @@ export const useMelodyLayerStore = create<MelodyLayerState>((set) => ({
   clearNotes: (layerId) => set((s) => ({
     layers: s.layers.map((l) => l.id === layerId ? { ...l, notes: [] } : l),
   })),
+
+  applyLayerEuclidean: (pulses, eucSteps, rotation, noteMode, scaleName, rootNote, accentPulses = 0, accentRotation = 0) =>
+    set((s) => {
+      const layer = s.layers.find((l) => l.id === s.activeLayerId);
+      if (!layer) return s;
+
+      const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
+      const rhythm = generateEuclidean(pulses, eucSteps, rotation);
+      const accent = accentPulses > 0 ? generateEuclidean(accentPulses, eucSteps, accentRotation) : null;
+
+      const totalBeats = layer.barLength * 4;
+      // Beat position per euclidean slot, snapped to 1/16 grid
+      const beatsPerSlot = totalBeats / eucSteps;
+      // Note duration fills the slot but snaps to 1/4 beat minimum
+      const durationBeats = Math.max(0.25, Math.round(beatsPerSlot * 4) / 4);
+
+      // Root MIDI: C4=60, offset by rootNote semitones, in octave 4 (center of 48–84 range)
+      const rootMidi = 60 + rootNote;
+      const scaleLen = scale.length;
+      let walkCursor = 0;
+      let noteIndex = 0;
+
+      const notes: MelodyLayerNote[] = [];
+
+      for (let i = 0; i < eucSteps; i++) {
+        if (!rhythm[i % rhythm.length]) continue;
+
+        // Pitch: scale degree from noteMode
+        let interval = 0;
+        if (noteMode === "ascending") {
+          interval = scale[noteIndex % scaleLen] ?? 0;
+        } else if (noteMode === "random") {
+          interval = scale[Math.floor(Math.random() * scaleLen)] ?? 0;
+        } else if (noteMode === "walk") {
+          const dir = Math.random() < 0.5 ? -1 : 1;
+          walkCursor = Math.max(0, Math.min(scaleLen - 1, walkCursor + dir));
+          interval = scale[walkCursor] ?? 0;
+        } else if (noteMode === "alternate") {
+          interval = scale[(noteIndex % 2 === 0) ? 0 : Math.min(4, scaleLen - 1)] ?? 0;
+        } else if (noteMode === "pentatonic") {
+          const pent = [0, 2, 4, 2].filter((d) => d < scaleLen);
+          interval = scale[pent[noteIndex % pent.length] ?? 0] ?? 0;
+        }
+        // else "root" → interval stays 0
+
+        noteIndex++;
+
+        // Clamp pitch to MIDI 48–84 (C3–C6), shift by octaves if needed
+        let pitch = rootMidi + interval;
+        while (pitch > 84) pitch -= 12;
+        while (pitch < 48) pitch += 12;
+
+        const startBeat = Math.round(i * beatsPerSlot * 4) / 4;
+        const isAccent = accent ? (accent[i % accent.length] ?? false) : false;
+        void isAccent; // accent info available for future velocity support
+
+        notes.push({ id: crypto.randomUUID(), startBeat, durationBeats, pitch });
+      }
+
+      return {
+        layers: s.layers.map((l) => l.id === s.activeLayerId ? { ...l, notes } : l),
+      };
+    }),
 }));

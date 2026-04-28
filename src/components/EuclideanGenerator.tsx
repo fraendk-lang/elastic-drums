@@ -8,6 +8,7 @@ import { useDrumStore, generateEuclidean } from "../store/drumStore";
 import { useBassStore } from "../store/bassStore";
 import { useChordsStore } from "../store/chordsStore";
 import { useMelodyStore } from "../store/melodyStore";
+import { useMelodyLayerStore, LAYER_COLORS } from "../store/melodyLayerStore";
 
 const VOICE_LABELS = [
   "KICK", "SNARE", "CLAP", "TOM L", "TOM M", "TOM H",
@@ -149,13 +150,14 @@ const NOTE_MODES = [
   { id: "random",     label: "Random" },
 ];
 
-type Target = "drums" | "bass" | "chords" | "melody";
+type Target = "drums" | "bass" | "chords" | "melody" | "layers";
 
 const TARGETS: { id: Target; label: string; color: string }[] = [
-  { id: "drums", label: "DRUMS", color: "var(--ed-accent-orange)" },
-  { id: "bass", label: "BASS", color: "var(--ed-accent-bass)" },
+  { id: "drums",  label: "DRUMS",  color: "var(--ed-accent-orange)" },
+  { id: "bass",   label: "BASS",   color: "var(--ed-accent-bass)" },
   { id: "chords", label: "CHORDS", color: "var(--ed-accent-chords)" },
   { id: "melody", label: "MELODY", color: "var(--ed-accent-melody)" },
+  { id: "layers", label: "LAYERS", color: "#a78bfa" },
 ];
 
 // Presets including world-music rhythms
@@ -184,7 +186,10 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
   const { selectedVoice, applyEuclidean: applyDrumEuclidean } = useDrumStore();
   const { applyEuclidean: applyBassEuclidean } = useBassStore();
   const { applyEuclidean: applyChordsEuclidean } = useChordsStore();
-  const { applyEuclidean: applyMelodyEuclidean } = useMelodyStore();
+  const { applyEuclidean: applyMelodyEuclidean, scaleName: melodyScale, rootNote: melodyRoot } = useMelodyStore();
+  const { applyLayerEuclidean, layers, activeLayerId } = useMelodyLayerStore();
+  const activeLayer = layers.find((l) => l.id === activeLayerId);
+  const activeLayerColor = activeLayer ? LAYER_COLORS[activeLayer.colorIndex] : "#a78bfa";
 
   const [target, setTarget] = useState<Target>("drums");
   const [pulses, setPulses] = useState(4);
@@ -209,7 +214,11 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
     [accentPulses, steps, accentRotation],
   );
 
-  const activeTarget = TARGETS.find((t) => t.id === target)!;
+  // For LAYERS target, reflect the active layer's color in the UI
+  const targetsWithLayerColor = TARGETS.map((t) =>
+    t.id === "layers" ? { ...t, color: activeLayerColor } : t
+  );
+  const activeTarget = targetsWithLayerColor.find((t) => t.id === target)!;
   const accentColor = activeTarget.color;
   const isSynth = target !== "drums";
 
@@ -227,10 +236,14 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
       case "melody":
         applyMelodyEuclidean(pulses, steps, rotation, noteMode, accentPulses, accentRotation);
         break;
+      case "layers":
+        applyLayerEuclidean(pulses, steps, rotation, noteMode, melodyScale, melodyRoot, accentPulses, accentRotation);
+        break;
     }
     onClose();
   }, [target, selectedVoice, pulses, steps, rotation, accentPulses, accentRotation, noteMode,
-      applyDrumEuclidean, applyBassEuclidean, applyChordsEuclidean, applyMelodyEuclidean, onClose]);
+      applyDrumEuclidean, applyBassEuclidean, applyChordsEuclidean, applyMelodyEuclidean,
+      applyLayerEuclidean, melodyScale, melodyRoot, onClose]);
 
   const mutate = useCallback(() => {
     // Random lightweight mutation: rotate, +/- pulse, nudge accent
@@ -316,7 +329,7 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
 
         {/* Target toggle */}
         <div className="flex gap-1 mb-4">
-          {TARGETS.map((t) => (
+          {targetsWithLayerColor.map((t) => (
             <button
               key={t.id}
               onClick={() => setTarget(t.id)}
@@ -340,6 +353,32 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
         {!isSynth ? (
           <div className="text-[10px] text-[var(--ed-text-secondary)] mb-3">
             Apply to: <span className="font-bold" style={{ color: accentColor }}>{VOICE_LABELS[selectedVoice]}</span>
+          </div>
+        ) : target === "layers" ? (
+          <div className="mb-3">
+            <div className="text-[10px] text-[var(--ed-text-secondary)] mb-2">
+              Active layer: <span className="font-bold" style={{ color: activeLayerColor }}>
+                L{(layers.findIndex(l => l.id === activeLayerId) + 1)} · {activeLayer?.barLength ?? 2} bars
+              </span>
+              <span className="ml-2 opacity-60">· Scale: {melodyScale}</span>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] text-[var(--ed-text-secondary)]">Note mode:</span>
+              <div className="flex gap-1 flex-wrap">
+                {NOTE_MODES.map((m) => (
+                  <button key={m.id} onClick={() => setNoteMode(m.id)}
+                    className="px-2 py-0.5 text-[9px] font-medium rounded-md transition-all"
+                    style={{
+                      backgroundColor: noteMode === m.id
+                        ? `color-mix(in srgb, ${activeLayerColor} 18%, transparent)`
+                        : "var(--ed-bg-surface)",
+                      color: noteMode === m.id ? activeLayerColor : "var(--ed-text-muted)",
+                    }}>
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         ) : (
           <div className="flex items-center gap-2 mb-3 flex-wrap">
