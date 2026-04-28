@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useMelodyLayerStore, type MelodyLayerNote, LAYER_COLORS } from "../../store/melodyLayerStore";
 import { useDrumStore } from "../../store/drumStore";
 import { MELODY_PRESETS } from "../../store/melodyStore";
-import { melodyLayerEngines } from "../../audio/melodyLayerEngines";
 import { melodyLayerBeatStore } from "./melodyLayerScheduler";
 
 // Activate scheduler via side-effect import
@@ -375,9 +374,7 @@ export function MelodyLayersEditor() {
 
   const applyPreset = useCallback((index: number) => {
     setSynth(activeLayerIdRef.current, { presetIndex: index });
-    const engine = melodyLayerEngines[activeLayerIdxRef.current + 1];
-    const preset = MELODY_PRESETS[index];
-    if (engine && preset) engine.setParams(preset.params);
+    // Engine will be updated on next scheduler tick via applyLayerSynth
   }, [setSynth]);
 
   // ─── Render ──────────────────────────────────────────────────────────────────
@@ -675,52 +672,85 @@ export function MelodyLayersEditor() {
 
       {/* ── Synth panel ── */}
       <div
-        className="px-3 py-2 border-t border-white/5 flex flex-wrap items-center gap-x-4 gap-y-1.5"
+        className="px-3 pt-2 pb-2 border-t border-white/5 flex flex-col gap-2"
         style={{ background: "#0d0f14" }}
       >
-        {/* Preset */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-[7px] text-white/30 tracking-[0.1em]">PRESET</span>
-          <select
-            value={activeLayer.synth.presetIndex}
-            onChange={(e) => applyPreset(Number(e.target.value))}
-            className="text-[8px] bg-black/40 border border-white/8 rounded px-1 py-0.5 text-white/60"
-          >
-            {MELODY_PRESETS.map((p, i) => (
-              <option key={i} value={i}>{p.name}</option>
+        {/* Row 1: Preset + Octave */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[7px] text-white/30 tracking-[0.1em]">PRESET</span>
+            <select
+              value={activeLayer.synth.presetIndex}
+              onChange={(e) => applyPreset(Number(e.target.value))}
+              className="text-[8px] bg-black/40 border border-white/8 rounded px-1 py-0.5 text-white/60"
+            >
+              {MELODY_PRESETS.map((p, i) => (
+                <option key={i} value={i}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-[7px] text-white/30 tracking-[0.1em]">OCT</span>
+            {([-2, -1, 0, 1, 2] as const).map((o) => (
+              <button
+                key={o}
+                onClick={() => setSynth(activeLayer.id, { octaveOffset: o })}
+                className="w-5 h-5 text-[7px] font-black rounded border transition-all"
+                style={{
+                  background: activeLayer.synth.octaveOffset === o ? `${layerColor}20` : "transparent",
+                  borderColor: activeLayer.synth.octaveOffset === o ? `${layerColor}60` : "#2a2d38",
+                  color: activeLayer.synth.octaveOffset === o ? layerColor : "#555",
+                }}
+              >
+                {o > 0 ? `+${o}` : o}
+              </button>
             ))}
-          </select>
+          </div>
         </div>
 
-        {/* Octave offset */}
-        <div className="flex items-center gap-1">
-          <span className="text-[7px] text-white/30 tracking-[0.1em]">OCT</span>
-          {([-2, -1, 0, 1, 2] as const).map((o) => (
-            <button
-              key={o}
-              onClick={() => setSynth(activeLayer.id, { octaveOffset: o })}
-              className="w-5 h-5 text-[7px] font-black rounded border transition-all"
-              style={{
-                background: activeLayer.synth.octaveOffset === o ? `${layerColor}20` : "transparent",
-                borderColor: activeLayer.synth.octaveOffset === o ? `${layerColor}60` : "#2a2d38",
-                color: activeLayer.synth.octaveOffset === o ? layerColor : "#555",
-              }}
-            >
-              {o > 0 ? `+${o}` : o}
-            </button>
+        {/* Row 2: Filter */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="text-[7px] text-white/20 tracking-[0.1em] w-10">FILTER</span>
+          {([
+            { label: "CUT",  key: "cutoff",      min: 0,   max: 1,    step: 0.01 },
+            { label: "RES",  key: "resonance",   min: 0,   max: 1,    step: 0.01 },
+            { label: "ENV",  key: "envMod",      min: 0,   max: 1,    step: 0.01 },
+            { label: "DEC",  key: "filterDecay", min: 50,  max: 800,  step: 1    },
+          ] as const).map(({ label, key, min, max, step }) => (
+            <div key={key} className="flex items-center gap-1">
+              <span className="text-[7px] text-white/25 w-5 text-right">{label}</span>
+              <input
+                type="range" min={min} max={max} step={step}
+                value={activeLayer.synth[key]}
+                onChange={(e) => setSynth(activeLayer.id, { [key]: Number(e.target.value) })}
+                className="w-16 h-1"
+                style={{ accentColor: layerColor }}
+              />
+            </div>
           ))}
         </div>
 
-        {/* Cutoff slider */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-[7px] text-white/30 tracking-[0.1em]">CUTOFF</span>
-          <input
-            type="range" min={0} max={1} step={0.01}
-            value={activeLayer.synth.cutoff}
-            onChange={(e) => setSynth(activeLayer.id, { cutoff: Number(e.target.value) })}
-            className="w-20 h-1 accent-current"
-            style={{ accentColor: layerColor }}
-          />
+        {/* Row 3: Amp ADSR + Distortion */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="text-[7px] text-white/20 tracking-[0.1em] w-10">AMP</span>
+          {([
+            { label: "ATK", key: "attack",     min: 1,   max: 500,  step: 1    },
+            { label: "DEC", key: "decay",      min: 1,   max: 500,  step: 1    },
+            { label: "SUS", key: "sustain",    min: 0,   max: 1,    step: 0.01 },
+            { label: "REL", key: "release",    min: 1,   max: 2000, step: 1    },
+            { label: "DIST", key: "distortion", min: 0,  max: 1,    step: 0.01 },
+          ] as const).map(({ label, key, min, max, step }) => (
+            <div key={key} className="flex items-center gap-1">
+              <span className="text-[7px] text-white/25 w-5 text-right">{label}</span>
+              <input
+                type="range" min={min} max={max} step={step}
+                value={activeLayer.synth[key]}
+                onChange={(e) => setSynth(activeLayer.id, { [key]: Number(e.target.value) })}
+                className="w-16 h-1"
+                style={{ accentColor: layerColor }}
+              />
+            </div>
+          ))}
         </div>
       </div>
     </div>

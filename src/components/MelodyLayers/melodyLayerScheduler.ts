@@ -39,21 +39,32 @@ export const melodyLayerBeatStore = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Apply synth settings to a MelodyEngine.
- * Modulates the preset's native cutoff proportionally:
- *   0.5 = preset native, 0 = 1/4 of native, 1 = 4× native (clamped 100–18000 Hz)
+ * Apply all LayerSynth settings to a MelodyEngine.
+ * Uses the preset as a base, then overrides with user params.
+ * Cutoff is modulated proportionally from the preset's native value:
+ *   0.5 = native, 0 = 1/4 of native, 1 = 4× native (clamped 100–18000 Hz)
  */
 function applyLayerSynth(
   engine: typeof melodyLayerEngines[0],
-  presetIndex: number,
-  cutoff: number
+  synth: import("../../store/melodyLayerStore").LayerSynth
 ): void {
-  const preset = MELODY_PRESETS[presetIndex];
+  const preset = MELODY_PRESETS[synth.presetIndex];
   if (!preset) return;
   const presetCutoff = (preset.params as { cutoff?: number }).cutoff ?? 2000;
-  const scale = cutoff <= 0.5 ? cutoff * 2 : 1 + (cutoff - 0.5) * 6;
+  const scale = synth.cutoff <= 0.5 ? synth.cutoff * 2 : 1 + (synth.cutoff - 0.5) * 6;
   const cutoffHz = Math.max(100, Math.min(18000, presetCutoff * scale));
-  engine.setParams({ ...preset.params, cutoff: cutoffHz });
+  engine.setParams({
+    ...preset.params,
+    cutoff: cutoffHz,
+    resonance: synth.resonance * 30,        // 0–1 → 0–30
+    envMod: synth.envMod,
+    decay: synth.filterDecay,
+    ampAttack: synth.attack,
+    ampDecay: synth.decay,
+    ampSustain: synth.sustain,
+    ampRelease: synth.release,
+    distortion: synth.distortion,
+  });
 }
 
 /**
@@ -113,7 +124,7 @@ function tick(currentDrumStep: number, bpm: number): void {
 
     // Apply synth at start of each loop
     if (localStep === 0) {
-      applyLayerSynth(engine, layer.synth.presetIndex, layer.synth.cutoff);
+      applyLayerSynth(engine, layer.synth);
     }
 
     if (shouldPlay && layer.notes.length > 0) {

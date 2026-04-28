@@ -13,7 +13,18 @@ export interface MelodyLayerNote {
 export interface LayerSynth {
   presetIndex: number;   // index into MELODY_PRESETS
   octaveOffset: number;  // -2 to +2
+  // Filter
   cutoff: number;        // 0–1 (modulates preset's native cutoff proportionally)
+  resonance: number;     // 0–1 (maps to 0–30 Q)
+  envMod: number;        // 0–1 filter envelope depth
+  filterDecay: number;   // ms 50–800
+  // Amp ADSR
+  attack: number;        // ms 1–500
+  decay: number;         // ms 1–500
+  sustain: number;       // 0–1
+  release: number;       // ms 1–2000
+  // Extra
+  distortion: number;    // 0–1
 }
 
 export interface MelodyLayer {
@@ -26,7 +37,19 @@ export interface MelodyLayer {
   soloed: boolean;
 }
 
-const DEFAULT_SYNTH: LayerSynth = { presetIndex: 0, octaveOffset: 0, cutoff: 0.5 };
+export const DEFAULT_SYNTH: LayerSynth = {
+  presetIndex: 0,
+  octaveOffset: 0,
+  cutoff: 0.5,
+  resonance: 0.27,   // ~8/30
+  envMod: 0.4,
+  filterDecay: 150,
+  attack: 5,
+  decay: 50,
+  sustain: 1.0,
+  release: 80,
+  distortion: 0.15,
+};
 
 function makeLayer(colorIndex: 0 | 1 | 2 | 3): MelodyLayer {
   return {
@@ -62,8 +85,8 @@ interface MelodyLayerState {
 
 // Start with 2 layers so polymeter is immediately audible:
 // Layer 0 = 2-bar Classic Lead, Layer 1 = 4-bar FM Bell
-const initialLayer0: MelodyLayer = { ...makeLayer(0), barLength: 2, synth: { presetIndex: 0, octaveOffset: 0, cutoff: 0.5 } };
-const initialLayer1: MelodyLayer = { ...makeLayer(1), barLength: 4, synth: { presetIndex: 2, octaveOffset: 0, cutoff: 0.5 } };
+const initialLayer0: MelodyLayer = { ...makeLayer(0), barLength: 2, synth: { ...DEFAULT_SYNTH, presetIndex: 0 } };
+const initialLayer1: MelodyLayer = { ...makeLayer(1), barLength: 4, synth: { ...DEFAULT_SYNTH, presetIndex: 2 } };
 
 export const useMelodyLayerStore = create<MelodyLayerState>((set) => ({
   enabled: false,

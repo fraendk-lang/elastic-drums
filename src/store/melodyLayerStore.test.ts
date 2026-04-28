@@ -1,12 +1,12 @@
 // src/store/melodyLayerStore.test.ts
 import { describe, it, expect, beforeEach } from "vitest";
-import { useMelodyLayerStore } from "./melodyLayerStore";
+import { useMelodyLayerStore, DEFAULT_SYNTH } from "./melodyLayerStore";
 
 function resetStore() {
   useMelodyLayerStore.setState({
     enabled: false,
     layers: [
-      { id: "l0", colorIndex: 0, barLength: 2, notes: [], synth: { presetIndex: 0, octaveOffset: 0, cutoff: 0.5 }, muted: false, soloed: false }
+      { id: "l0", colorIndex: 0, barLength: 2, notes: [], synth: { ...DEFAULT_SYNTH }, muted: false, soloed: false }
     ],
     activeLayerId: "l0",
   });
@@ -78,8 +78,9 @@ describe("melodyLayerStore — setSynth", () => {
     expect(useMelodyLayerStore.getState().layers[0]!.synth.presetIndex).toBe(0); // unchanged
   });
   it("setSynthFull replaces entire synth object", () => {
-    useMelodyLayerStore.getState().setSynthFull("l0", { presetIndex: 3, octaveOffset: 1, cutoff: 0.3 });
-    expect(useMelodyLayerStore.getState().layers[0]!.synth).toEqual({ presetIndex: 3, octaveOffset: 1, cutoff: 0.3 });
+    const full = { ...DEFAULT_SYNTH, presetIndex: 3, octaveOffset: 1, cutoff: 0.3 };
+    useMelodyLayerStore.getState().setSynthFull("l0", full);
+    expect(useMelodyLayerStore.getState().layers[0]!.synth).toEqual(full);
   });
 });
 
