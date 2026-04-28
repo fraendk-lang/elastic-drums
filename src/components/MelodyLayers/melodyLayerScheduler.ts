@@ -163,8 +163,12 @@ const _unsubStore = useMelodyLayerStore.subscribe((state) => {
     _lastDrumStep = -1;
   }
   if (state.layers.length !== _prevLayerCount) {
+    // Zero the new slot's counter when a layer is added so it starts from the top
+    if (state.layers.length > _prevLayerCount) {
+      _stepCounters[state.layers.length - 1] = 0;
+    }
     _prevLayerCount = state.layers.length;
-    // Reset counters for slots that changed
+    // Reset counters for slots beyond the current layer count
     for (let i = state.layers.length; i < 4; i++) _stepCounters[i] = 0;
   }
   // Reset counter for each layer whose barLength changed
