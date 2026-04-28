@@ -9,7 +9,7 @@
  *   + EQ Hi/Mid/Lo knobs | Rev/Dly send knobs | Pan knob
  */
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { audioEngine } from "../audio/AudioEngine";
 import { useMixerBarStore, faderToGain, NUM_MIXER_CHANNELS, GROUP_BUS_IDS, type GroupBusId } from "../store/mixerBarStore";
 import { Knob } from "./Knob";
@@ -33,7 +33,14 @@ const CHANNELS: { id: number; label: string; color: string }[] = [
   { id: 13, label: "CHRD",  color: "#a78bfa" },
   { id: 14, label: "LEAD",  color: "#f472b6" },
   { id: 15, label: "SAMPL", color: "#f97316" },
-  { id: 16, label: "LOOPS", color: "#2EC4B6" },
+  { id: 16, label: "LP 1",  color: "#2EC4B6" },
+  { id: 17, label: "LP 2",  color: "#2EC4B6" },
+  { id: 18, label: "LP 3",  color: "#2EC4B6" },
+  { id: 19, label: "LP 4",  color: "#2EC4B6" },
+  { id: 20, label: "LP 5",  color: "#2EC4B6" },
+  { id: 21, label: "LP 6",  color: "#2EC4B6" },
+  { id: 22, label: "LP 7",  color: "#2EC4B6" },
+  { id: 23, label: "LP 8",  color: "#2EC4B6" },
 ];
 
 // ── Group bus meta ────────────────────────────────────────────────────────────
@@ -337,6 +344,11 @@ export function MixerBar() {
           const isExpanded = expandedChannel === id;
 
           return (
+            <React.Fragment key={id}>
+              {/* Separator before LOOPS group (LP 1 = channel 16) */}
+              {id === 16 && (
+                <div className="w-px self-stretch mx-0.5 bg-[#2EC4B6]/20 flex-shrink-0" />
+              )}
             <div
               key={id}
               className={`flex flex-col items-center gap-1 min-w-[46px] px-1 rounded transition-colors ${
@@ -423,6 +435,7 @@ export function MixerBar() {
                 </button>
               </div>
             </div>
+            </React.Fragment>
           );
         })}
 
