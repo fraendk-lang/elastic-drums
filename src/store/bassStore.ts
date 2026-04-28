@@ -491,7 +491,7 @@ interface BassStore {
   setAutomationValue: (param: string, step: number, value: number | undefined) => void;
   setAutomationParam: (param: string) => void;
   clearAutomation: (param: string) => void;
-  loadBassPattern: (data: { steps: BassStep[]; length: number; params: BassParams; rootNote: number; rootName: string; scaleName: string }) => void;
+  loadBassPattern: (data: { steps: BassStep[]; length: number; params: BassParams; rootNote: number; rootName: string; scaleName: string; automationData?: Record<string, Array<number | undefined>> }) => void;
 }
 
 function createEmptySteps(): BassStep[] {
@@ -873,6 +873,8 @@ export const useBassStore = create<BassStore>((set, get) => ({
       rootNote: data.rootNote,
       rootName: data.rootName,
       scaleName: data.scaleName,
+      // Restore saved automation, or clear it so previous session's data doesn't bleed through
+      automationData: data.automationData ?? {},
     });
     bassEngine.setParams(params);
   },

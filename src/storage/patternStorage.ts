@@ -36,6 +36,7 @@ export interface StoredBassPattern {
   rootNote: number;
   rootName: string;
   scaleName: string;
+  automationData?: Record<string, Array<number | undefined>>;
   createdAt: number;
   updatedAt: number;
 }
@@ -184,7 +185,7 @@ export async function deleteSong(id: string): Promise<void> {
 
 export async function saveBassPattern(
   name: string,
-  data: { steps: BassStep[]; length: number; params: BassParams; rootNote: number; rootName: string; scaleName: string },
+  data: { steps: BassStep[]; length: number; params: BassParams; rootNote: number; rootName: string; scaleName: string; automationData?: Record<string, Array<number | undefined>> },
 ): Promise<StoredBassPattern> {
   const db = await openDB();
   const now = Date.now();
@@ -197,6 +198,7 @@ export async function saveBassPattern(
     rootNote: data.rootNote,
     rootName: data.rootName,
     scaleName: data.scaleName,
+    automationData: data.automationData ? structuredClone(data.automationData) : undefined,
     createdAt: now,
     updatedAt: now,
   };

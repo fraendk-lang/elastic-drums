@@ -171,14 +171,14 @@ export function BassSequencer() {
 
   const handleSave = useCallback(async () => {
     const name = saveName.trim() || `Bass ${new Date().toLocaleTimeString()}`;
-    const { steps, length, params, rootNote, rootName, scaleName } = useBassStore.getState();
-    await saveBassPattern(name, { steps, length, params, rootNote, rootName, scaleName });
+    const { steps, length, params, rootNote, rootName, scaleName, automationData } = useBassStore.getState();
+    await saveBassPattern(name, { steps, length, params, rootNote, rootName, scaleName, automationData });
     setSaveName("");
     setSaveOpen(false);
   }, [saveName]);
 
   const handleLoad = useCallback((p: StoredBassPattern) => {
-    loadBassPattern({ steps: p.steps, length: p.length, params: p.params, rootNote: p.rootNote, rootName: p.rootName, scaleName: p.scaleName });
+    loadBassPattern({ steps: p.steps, length: p.length, params: p.params, rootNote: p.rootNote, rootName: p.rootName, scaleName: p.scaleName, automationData: p.automationData });
     setLoadOpen(false);
   }, [loadBassPattern]);
 

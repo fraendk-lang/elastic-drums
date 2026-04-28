@@ -54,6 +54,11 @@ export function AutomationLane({
     [pageOffset, values, stepsOnPage],
   );
   const activeCount = pageValues.filter((v) => v !== undefined).length;
+  // Total points across ALL steps (not just current page) — used for the collapsed indicator
+  const totalDataPoints = useMemo(
+    () => values.filter((v) => v !== undefined).length,
+    [values],
+  );
   const currentValue = values[currentStep];
 
   const clamp = useCallback(
@@ -172,14 +177,24 @@ export function AutomationLane({
         <button
           onClick={() => setCollapsed((c) => !c)}
           className="flex items-center gap-1.5 group"
-          title={collapsed ? "Expand automation" : "Collapse automation"}
+          title={collapsed ? "Expand automation lane" : "Collapse automation lane"}
         >
           <span
             className="text-[8px] font-black tracking-[0.16em] transition-colors"
-            style={{ color: collapsed ? "rgba(255,255,255,0.25)" : color }}
+            style={{ color: collapsed ? (totalDataPoints > 0 ? color : "rgba(255,255,255,0.25)") : color }}
           >
             AUTOMATION
           </span>
+          {/* Data indicator — visible when collapsed and there's data */}
+          {collapsed && totalDataPoints > 0 && (
+            <span
+              className="text-[7px] font-bold tabular-nums px-1 py-0.5 rounded"
+              style={{ background: `${color}22`, color, border: `1px solid ${color}40` }}
+              title={`${totalDataPoints} automation points on ${paramDef?.label ?? selectedParam}`}
+            >
+              {totalDataPoints}
+            </span>
+          )}
           <svg
             width="10" height="10" viewBox="0 0 10 10"
             className="transition-transform duration-200 opacity-40 group-hover:opacity-70"
