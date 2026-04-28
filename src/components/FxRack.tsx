@@ -61,9 +61,10 @@ const MODULE_DEFS: FxModuleDef[] = [
     name: "REVERB",
     color: "#8b5cf6",
     params: [
-      { id: "level",   label: "LVL",  min: 0, max: 100, default: 35 },
-      { id: "damping", label: "DMP",  min: 0, max: 100, default: 60 },
-      { id: "type",    label: "TYPE", min: 0, max: 3,   default: 1  }, // 0=room 1=hall 2=plate 3=spring
+      { id: "level",    label: "LVL",  min: 0, max: 100, default: 35 },
+      { id: "damping",  label: "DMP",  min: 0, max: 100, default: 60 },
+      { id: "preDelay", label: "PRE",  min: 0, max: 100, default: 15 }, // 0–150ms pre-delay
+      { id: "type",     label: "TYPE", min: 0, max: 3,   default: 1  }, // 0=room 1=hall 2=plate 3=spring
     ],
   },
   {
@@ -109,8 +110,18 @@ const MODULE_DEFS: FxModuleDef[] = [
     name: "CHORUS",
     color: "#06b6d4",
     params: [
-      { id: "rate", label: "RATE", min: 0, max: 100, default: 30 },
+      { id: "rate",  label: "RATE",  min: 0, max: 100, default: 30 }, // 0.05–4 Hz (wide, lush pad sweep)
       { id: "depth", label: "DEPTH", min: 0, max: 100, default: 40 },
+    ],
+  },
+  {
+    id: "flanger",
+    name: "FLANGER",
+    color: "#22d3ee",
+    params: [
+      { id: "rate",     label: "RATE", min: 0, max: 100, default: 30 }, // 0.1–5 Hz
+      { id: "depth",    label: "DPTH", min: 0, max: 100, default: 50 }, // sweep depth
+      { id: "feedback", label: "FB",   min: 0, max: 100, default: 40 }, // resonance
     ],
   },
   {
@@ -119,7 +130,9 @@ const MODULE_DEFS: FxModuleDef[] = [
     color: "#ec4899",
     params: [
       { id: "threshold", label: "THR", min: 0, max: 100, default: 50 },
-      { id: "ratio", label: "RAT", min: 0, max: 100, default: 40 },
+      { id: "ratio",     label: "RAT", min: 0, max: 100, default: 40 },
+      { id: "attack",    label: "ATK", min: 0, max: 100, default: 30 }, // 1–50ms
+      { id: "release",   label: "REL", min: 0, max: 100, default: 40 }, // 50–500ms
     ],
   },
 ];
@@ -155,6 +168,9 @@ function applyFxParam(
       }
       if (paramId === "damping") {
         audioEngine.setReverbDamping(500 + (value / 100) * 15500);
+      }
+      if (paramId === "preDelay") {
+        audioEngine.setReverbPreDelay((value / 100) * 150); // 0–150ms
       }
       if (paramId === "type") {
         const types = ["room", "hall", "plate", "spring"] as const;
@@ -217,23 +233,34 @@ function applyFxParam(
 
     case "chorus":
       if (paramId === "rate" || paramId === "depth") {
-        const rate  = 0.8 + (allParams.rate  ?? 30) / 100 * 2.0; // 0.8–2.8 Hz
-        const depth = (allParams.depth ?? 40) / 100;              // 0–1
+        const rate  = 0.05 + (allParams.rate  ?? 30) / 100 * 3.95; // 0.05–4 Hz (lush slow sweep → fast shimmer)
+        const depth = (allParams.depth ?? 40) / 100;                // 0–1
         audioEngine.setChorusRate(rate);
         audioEngine.setChorusDepth(depth);
       }
       break;
 
+    case "flanger":
+      if (paramId === "rate" || paramId === "depth" || paramId === "feedback") {
+        const rate     = 0.1 + (allParams.rate     ?? 30) / 100 * 4.9; // 0.1–5 Hz
+        const depth    = (allParams.depth    ?? 50) / 100;              // 0–1
+        const feedback = (allParams.feedback ?? 40) / 100;              // 0–1
+        audioEngine.setFlangerParams(rate, depth, feedback);
+      }
+      break;
+
     case "comp":
-      if (paramId === "threshold" || paramId === "ratio") {
+      if (paramId === "threshold" || paramId === "ratio" || paramId === "attack" || paramId === "release") {
         // Threshold: -24 to -6 dB
         const thr = -24 + (allParams.threshold ?? 50) / 100 * 18;
         // Ratio: 1:1 to 16:1
         const rat = 1 + (allParams.ratio ?? 40) / 100 * 15;
-        const attack = 0.01;
-        const release = 0.15;
+        // Attack: 1–50ms
+        const atk = 0.001 + (allParams.attack ?? 30) / 100 * 0.049;
+        // Release: 50–500ms
+        const rel = 0.05 + (allParams.release ?? 40) / 100 * 0.45;
         const knee = 6;
-        audioEngine.setMasterCompressor(thr, rat, attack, release, knee);
+        audioEngine.setMasterCompressor(thr, rat, atk, rel, knee);
       }
       break;
   }
@@ -262,6 +289,7 @@ function applyModuleToggle(
       }
       if (enabled) {
         audioEngine.setReverbDamping(500 + ((params.damping ?? 60) / 100) * 15500);
+        audioEngine.setReverbPreDelay(((params.preDelay ?? 15) / 100) * 150);
         const types = ["room", "hall", "plate", "spring"] as const;
         audioEngine.setReverbType(types[Math.round(params.type ?? 1)] ?? "hall");
       }
@@ -327,8 +355,8 @@ function applyModuleToggle(
 
     case "chorus":
       if (enabled) {
-        const rate  = 0.8 + (params.rate  ?? 30) / 100 * 2.0; // 0.8–2.8 Hz
-        const depth = (params.depth ?? 40) / 100;              // 0–1
+        const rate  = 0.05 + (params.rate  ?? 30) / 100 * 3.95; // 0.05–4 Hz
+        const depth = (params.depth ?? 40) / 100;                // 0–1
         audioEngine.setChorusRate(rate);
         audioEngine.setChorusDepth(depth);
         audioEngine.setChorusLevel(0.65);
@@ -347,11 +375,24 @@ function applyModuleToggle(
       }
       break;
 
+    case "flanger":
+      if (enabled) {
+        const rate     = 0.1 + (params.rate     ?? 30) / 100 * 4.9; // 0.1–5 Hz
+        const depth    = (params.depth    ?? 50) / 100;              // 0–1
+        const feedback = (params.feedback ?? 40) / 100;              // 0–1
+        audioEngine.startFlanger(rate, depth, feedback);
+      } else {
+        audioEngine.stopFlanger();
+      }
+      break;
+
     case "comp":
       if (enabled) {
         const thr = -24 + (params.threshold ?? 50) / 100 * 18;
         const rat = 1 + (params.ratio ?? 40) / 100 * 15;
-        audioEngine.setMasterCompressor(thr, rat, 0.01, 0.15, 6);
+        const atk = 0.001 + (params.attack  ?? 30) / 100 * 0.049; // 1–50ms
+        const rel = 0.05  + (params.release ?? 40) / 100 * 0.45;  // 50–500ms
+        audioEngine.setMasterCompressor(thr, rat, atk, rel, 6);
       } else {
         // Reset to neutral (soft compression)
         audioEngine.setMasterCompressor(-24, 1, 0.01, 0.15, 6);
@@ -466,13 +507,14 @@ export function FxRack({ isOpen, onToggle }: FxRackProps) {
   const [modules, setModules] = useState<
     Record<string, FxModuleState>
   >({
-    reverb: { enabled: false, target: "master", params: { level: 35, damping: 60, type: 1 } },
-    delay: { enabled: false, target: "master", params: { division: 4, feedback: 40, mix: 30 } },
-    filter: { enabled: false, target: "master", params: { cutoff: 80, resonance: 20 } },
-    drive: { enabled: false, target: "master", params: { amount: 0, tone: 50 } },
-    sidechain: { enabled: false, target: "master", params: { amount: 70, release: 30 } },
-    chorus: { enabled: false, target: "master", params: { rate: 30, depth: 40 } },
-    comp: { enabled: false, target: "master", params: { threshold: 50, ratio: 40 } },
+    reverb:   { enabled: false, target: "master", params: { level: 35, damping: 60, preDelay: 15, type: 1 } },
+    delay:    { enabled: false, target: "master", params: { division: 4, feedback: 40, mix: 30 } },
+    filter:   { enabled: false, target: "master", params: { cutoff: 80, resonance: 20 } },
+    drive:    { enabled: false, target: "master", params: { amount: 0, tone: 50 } },
+    sidechain:{ enabled: false, target: "master", params: { amount: 70, release: 30 } },
+    chorus:   { enabled: false, target: "master", params: { rate: 30, depth: 40 } },
+    flanger:  { enabled: false, target: "master", params: { rate: 30, depth: 50, feedback: 40 } },
+    comp:     { enabled: false, target: "master", params: { threshold: 50, ratio: 40, attack: 30, release: 40 } },
   });
 
   // Generic parameter change handler
