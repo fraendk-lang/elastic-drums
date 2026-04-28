@@ -132,6 +132,20 @@ export function MelodyLayersEditor() {
     if (!enabled) return;
 
     const handler = (e: KeyboardEvent) => {
+      // Undo / Redo — always active when Melody Layers is enabled
+      if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        useMelodyLayerStore.getState().undo();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && (e.key === "Z" || (e.key === "z" && e.shiftKey))) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        useMelodyLayerStore.getState().redo();
+        return;
+      }
+
       const ARROW_KEYS = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
       const ACTION_KEYS = [...ARROW_KEYS, "Delete", "Backspace", "Escape"];
       if (!ACTION_KEYS.includes(e.key)) return;

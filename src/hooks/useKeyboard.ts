@@ -103,18 +103,6 @@ export function useKeyboard() {
         return;
       }
 
-      // Preset navigation — cycles through ALL presets (including beyond 10)
-      if (key === "arrowright") {
-        e.preventDefault();
-        nextPreset();
-        return;
-      }
-      if (key === "arrowleft") {
-        e.preventDefault();
-        prevPreset();
-        return;
-      }
-
       // ? → shortcut overlay
       if (key === "?") {
         e.preventDefault();

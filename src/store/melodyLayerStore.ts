@@ -65,6 +65,18 @@ function makeLayer(colorIndex: 0 | 1 | 2 | 3): MelodyLayer {
   };
 }
 
+// ─── History (module-level, outside Zustand to avoid re-renders) ────────────
+// Only layers[] is snapshotted — playback/transport state is excluded.
+const HISTORY_MAX = 50;
+const _past: MelodyLayer[][] = [];
+const _future: MelodyLayer[][] = [];
+
+function pushHistory(layers: MelodyLayer[]): void {
+  _past.push(layers.map((l) => ({ ...l, notes: [...l.notes] })));
+  if (_past.length > HISTORY_MAX) _past.shift();
+  _future.length = 0; // clear redo stack on new action
+}
+
 interface MelodyLayerState {
   enabled: boolean;
   layers: MelodyLayer[];
@@ -93,6 +105,8 @@ interface MelodyLayerState {
     accentPulses?: number,
     accentRotation?: number,
   ) => void;
+  undo: () => void;
+  redo: () => void;
 }
 
 // Start with 2 layers so polymeter is immediately audible:
@@ -131,27 +145,28 @@ export const useMelodyLayerStore = create<MelodyLayerState>((set) => ({
     layers: s.layers.map((l) => l.id === id ? { ...l, ...patch } : l),
   })),
 
-  addNote: (layerId, note) => set((s) => ({
-    layers: s.layers.map((l) => l.id === layerId
-      ? { ...l, notes: [...l.notes, note] }
-      : l
-    ),
-  })),
+  addNote: (layerId, note) => set((s) => {
+    pushHistory(s.layers);
+    return { layers: s.layers.map((l) => l.id === layerId ? { ...l, notes: [...l.notes, note] } : l) };
+  }),
 
-  removeNote: (layerId, noteId) => set((s) => ({
-    layers: s.layers.map((l) => l.id === layerId
-      ? { ...l, notes: l.notes.filter((n) => n.id !== noteId) }
-      : l
-    ),
-    selectedNoteId: s.selectedNoteId === noteId ? null : s.selectedNoteId,
-  })),
+  removeNote: (layerId, noteId) => set((s) => {
+    pushHistory(s.layers);
+    return {
+      layers: s.layers.map((l) => l.id === layerId ? { ...l, notes: l.notes.filter((n) => n.id !== noteId) } : l),
+      selectedNoteId: s.selectedNoteId === noteId ? null : s.selectedNoteId,
+    };
+  }),
 
-  updateNote: (layerId, noteId, patch) => set((s) => ({
-    layers: s.layers.map((l) => l.id === layerId
-      ? { ...l, notes: l.notes.map((n) => n.id === noteId ? { ...n, ...patch } : n) }
-      : l
-    ),
-  })),
+  updateNote: (layerId, noteId, patch) => set((s) => {
+    pushHistory(s.layers);
+    return {
+      layers: s.layers.map((l) => l.id === layerId
+        ? { ...l, notes: l.notes.map((n) => n.id === noteId ? { ...n, ...patch } : n) }
+        : l
+      ),
+    };
+  }),
 
   setSynth: (layerId, patch) => set((s) => ({
     layers: s.layers.map((l) => l.id === layerId
@@ -164,12 +179,28 @@ export const useMelodyLayerStore = create<MelodyLayerState>((set) => ({
     layers: s.layers.map((l) => l.id === layerId ? { ...l, synth: { ...synth } } : l),
   })),
 
-  clearNotes: (layerId) => set((s) => ({
-    layers: s.layers.map((l) => l.id === layerId ? { ...l, notes: [] } : l),
-  })),
+  clearNotes: (layerId) => set((s) => {
+    pushHistory(s.layers);
+    return { layers: s.layers.map((l) => l.id === layerId ? { ...l, notes: [] } : l) };
+  }),
+
+  undo: () => set((s) => {
+    const prev = _past.pop();
+    if (!prev) return s;
+    _future.push(s.layers.map((l) => ({ ...l, notes: [...l.notes] })));
+    return { layers: prev, selectedNoteId: null };
+  }),
+
+  redo: () => set((s) => {
+    const next = _future.pop();
+    if (!next) return s;
+    _past.push(s.layers.map((l) => ({ ...l, notes: [...l.notes] })));
+    return { layers: next, selectedNoteId: null };
+  }),
 
   applyLayerEuclidean: (pulses, eucSteps, rotation, noteMode, scaleName, rootNote, accentPulses = 0, accentRotation = 0) =>
     set((s) => {
+      pushHistory(s.layers);
       const layer = s.layers.find((l) => l.id === s.activeLayerId);
       if (!layer) return s;
 
