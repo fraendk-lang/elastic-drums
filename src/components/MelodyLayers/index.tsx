@@ -142,6 +142,12 @@ export function MelodyLayersEditor() {
       return;
     }
 
+    // Left-click on note body = delete
+    if (hit.note && !hit.isRightEdge && e.button === 0) {
+      removeNote(activeLayerIdRef.current, hit.note.id);
+      return;
+    }
+
     if (!hit.note && e.button === 0) {
       const snappedBeat = Math.round(hit.beat * 4) / 4;
       if (snappedBeat < 0 || snappedBeat >= totalBeatsRef.current) return;
@@ -153,7 +159,7 @@ export function MelodyLayersEditor() {
       };
       addNote(activeLayerIdRef.current, newNote);
     }
-  }, [hitTestNote, addNote]);
+  }, [hitTestNote, addNote, removeNote]);
 
   const handleGridPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const drag = resizeDragRef.current;
@@ -180,7 +186,11 @@ export function MelodyLayersEditor() {
       const endX = (n.startBeat + n.durationBeats) * bw;
       return x >= n.startBeat * bw && x >= endX - 6 && x <= endX;
     });
-    setGridCursor(onRightEdge ? "ew-resize" : "crosshair");
+    const onNoteBody = !onRightEdge && notesRef.current.some((n) => {
+      if (n.pitch !== pitch) return false;
+      return x >= n.startBeat * bw && x <= (n.startBeat + n.durationBeats) * bw;
+    });
+    setGridCursor(onRightEdge ? "ew-resize" : onNoteBody ? "pointer" : "crosshair");
     const hasNote = notesRef.current.some(
       (n) => n.pitch === pitch && beat >= n.startBeat && beat < n.startBeat + n.durationBeats
     );
