@@ -35,7 +35,14 @@ const CHANNELS = [
   { id: 13, label: "CHRD",  color: "#a78bfa", badge: "SYN" },
   { id: 14, label: "LEAD",  color: "#f472b6", badge: "SYN" },
   { id: 15, label: "SAMPL", color: "#f97316", badge: "SMPL" },
-  { id: 16, label: "LOOPS", color: "#2EC4B6", badge: "LOOP" },
+  { id: 16, label: "LP 1",  color: "#2EC4B6", badge: "LP" },
+  { id: 17, label: "LP 2",  color: "#2EC4B6", badge: "LP" },
+  { id: 18, label: "LP 3",  color: "#2EC4B6", badge: "LP" },
+  { id: 19, label: "LP 4",  color: "#2EC4B6", badge: "LP" },
+  { id: 20, label: "LP 5",  color: "#2EC4B6", badge: "LP" },
+  { id: 21, label: "LP 6",  color: "#2EC4B6", badge: "LP" },
+  { id: 22, label: "LP 7",  color: "#2EC4B6", badge: "LP" },
+  { id: 23, label: "LP 8",  color: "#2EC4B6", badge: "LP" },
 ];
 
 const NUM_CHANNELS = CHANNELS.length;
@@ -43,7 +50,8 @@ const NUM_CHANNELS = CHANNELS.length;
 const GROUPS = [
   { id: "drums", label: "DRUMS", color: "#f59e0b", channels: [0, 1, 2, 3, 4, 5] },
   { id: "tops",  label: "TOPS",  color: "#3b82f6", channels: [6, 7, 8, 9, 10, 11] },
-  { id: "music", label: "MUSIC", color: "#10b981", channels: [12, 13, 14, 15, 16] },
+  { id: "music", label: "MUSIC", color: "#10b981", channels: [12, 13, 14, 15] },
+  { id: "loops", label: "LOOPS", color: "#2EC4B6", channels: [16, 17, 18, 19, 20, 21, 22, 23] },
 ];
 
 const BUS_STRIPS = [
@@ -382,7 +390,7 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
 
         {/* CHANNELS / SENDS tabs → show group boxes */}
         {(activeTab === "channels" || activeTab === "sends") && GROUPS.map((group) => (
-          <GroupBox key={group.id} label={group.label} color={group.color}>
+          <GroupBox key={group.id} label={group.label} color={group.color} defaultCollapsed={group.id === "loops"}>
             {group.channels.map((chId) => {
               const ch = CHANNELS[chId]!;
               return (
@@ -534,21 +542,36 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
 
 // ─── GroupBox ────────────────────────────────────────────
 
-function GroupBox({ label, color, children }: { label: string; color: string; children: React.ReactNode }) {
+function GroupBox({ label, color, children, defaultCollapsed = false }: {
+  label: string; color: string; children: React.ReactNode; defaultCollapsed?: boolean;
+}) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
   return (
     <div className="flex flex-col gap-2 flex-shrink-0">
-      <div
-        className="text-center text-[6px] font-black tracking-[0.24em] py-1.5 px-3 rounded-lg"
+      <button
+        onClick={() => setCollapsed((c) => !c)}
+        className="flex items-center justify-center gap-1.5 text-[6px] font-black tracking-[0.24em] py-1.5 px-3 rounded-lg cursor-pointer select-none transition-opacity hover:opacity-80"
         style={{ color, background: `${color}12`, border: `1px solid ${color}20` }}
+        title={collapsed ? `Expand ${label}` : `Collapse ${label}`}
       >
         {label}
-      </div>
-      <div
-        className="flex gap-2 flex-1 p-2 rounded-[14px]"
-        style={{ background: `${color}06`, border: `1px solid ${color}10` }}
-      >
-        {children}
-      </div>
+        <svg
+          width="7" height="7" viewBox="0 0 10 10"
+          className="transition-transform duration-150"
+          style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)", opacity: 0.6 }}
+        >
+          <path d="M2 3.5 L5 6.5 L8 3.5" stroke="currentColor" strokeWidth="2"
+            fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {!collapsed && (
+        <div
+          className="flex gap-2 flex-1 p-2 rounded-[14px]"
+          style={{ background: `${color}06`, border: `1px solid ${color}10` }}
+        >
+          {children}
+        </div>
+      )}
     </div>
   );
 }

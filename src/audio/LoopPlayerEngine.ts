@@ -2,7 +2,7 @@
  * Loop Player Engine — 8-slot tempo-synced audio loop player
  *
  * Architecture per slot:
- *   source (loop=true) → gainNode → output → MixerBar channel 16 → master
+ *   source (loop=true) → gainNode → slotOutput[i] → MixerBar channel (16+i) → master
  *
  * Tempo sync:
  *   source.playbackRate = globalBpm / slotOriginalBpm
@@ -21,12 +21,13 @@
 // time — we call audioEngine.getAudioContext() only inside methods.
 import { audioEngine } from "./AudioEngine";
 
-const SLOT_COUNT    = 8;
-const LOOP_CHANNEL  = 16; // MixerBar channel index for the LOOPS strip
+const SLOT_COUNT        = 8;
+const LOOP_CHANNEL_BASE = 16; // LP 1 = ch 16, LP 2 = ch 17, …, LP 8 = ch 23
 
 export class LoopPlayerEngine {
   private ctx: AudioContext | null = null;
-  private output: GainNode | null = null;
+  // Per-slot output GainNodes — each routes to its own mixer channel (16+i)
+  private slotOutputs: (GainNode | null)[] = new Array(SLOT_COUNT).fill(null);
 
   // Per-slot active audio nodes
   private sources: (AudioBufferSourceNode | null)[] = new Array(SLOT_COUNT).fill(null);
@@ -36,18 +37,21 @@ export class LoopPlayerEngine {
    * Initialise the engine with an AudioContext.
    * Idempotent: calling again with the same ctx is a no-op.
    * Calling with a new ctx (after destroy/rebuild) re-connects from scratch.
-   * Auto-connects output → mixer channel LOOP_CHANNEL so App.tsx doesn't
-   * need a separate connect call.
+   * Each slot gets its own output GainNode → its own mixer channel (LP 1–8).
    */
   init(ctx: AudioContext): void {
     if (this.ctx === ctx) return;          // already up — same context, nothing to do
-    if (this.output) this.output.disconnect(); // clean up old connection if any
+    // Disconnect any old per-slot outputs
+    this.slotOutputs.forEach((o) => { if (o) { try { o.disconnect(); } catch { /* ok */ } } });
 
-    this.ctx    = ctx;
-    this.output = ctx.createGain();
-    this.output.gain.value = 0.9;
-    // Auto-wire to LOOPS mixer strip (channel 16)
-    this.output.connect(audioEngine.getChannelOutput(LOOP_CHANNEL));
+    this.ctx = ctx;
+    this.slotOutputs = Array.from({ length: SLOT_COUNT }, (_, i) => {
+      const g = ctx.createGain();
+      g.gain.value = 0.9;
+      // Wire each slot to its own mixer channel: LP 1 = 16, LP 2 = 17, …
+      g.connect(audioEngine.getChannelOutput(LOOP_CHANNEL_BASE + i));
+      return g;
+    });
   }
 
   /**
@@ -57,10 +61,10 @@ export class LoopPlayerEngine {
    * Fast Refresh). Returns true if the engine is ready to use.
    */
   private _ensureInit(): boolean {
-    if (this.ctx && this.output) return true;
+    if (this.ctx && this.slotOutputs[0]) return true;
     const ctx = audioEngine.getAudioContext();
     if (ctx) this.init(ctx);
-    return !!(this.ctx && this.output);
+    return !!(this.ctx && this.slotOutputs[0]);
   }
 
   /**
@@ -121,7 +125,7 @@ export class LoopPlayerEngine {
     gain.gain.value = Math.max(0, Math.min(1, volume));
 
     source.connect(gain);
-    gain.connect(this.output!);
+    gain.connect(this.slotOutputs[slotIdx]!);
 
     // Start reading from loopStart so playback begins on beat 1
     source.start(Math.max(ctx.currentTime, startTime), loopStart);
@@ -235,15 +239,16 @@ export class LoopPlayerEngine {
     return this.sources[slotIdx] !== null;
   }
 
-  getOutput(): GainNode | null {
-    return this.output;
+  /** Returns the output GainNode for a specific slot (used for diagnostics). */
+  getSlotOutput(slotIdx: number): GainNode | null {
+    return this.slotOutputs[slotIdx] ?? null;
   }
 
   destroy(): void {
     this.stopAll();
-    if (this.output) this.output.disconnect();
-    this.output = null;
-    this.ctx    = null;
+    this.slotOutputs.forEach((o) => { if (o) { try { o.disconnect(); } catch { /* ok */ } } });
+    this.slotOutputs = new Array(SLOT_COUNT).fill(null);
+    this.ctx = null;
   }
 
   // ── Private ──────────────────────────────────────────────
