@@ -316,6 +316,11 @@ export function MelodyLayersEditor() {
   const handleGridPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (resizeDragRef.current) {
       e.currentTarget.releasePointerCapture(e.pointerId);
+      const draggedPx = Math.abs(e.clientX - resizeDragRef.current.startX);
+      if (draggedPx < 5) {
+        // Tiny movement on resize handle = treat as click = delete
+        removeNote(resizeDragRef.current.layerId, resizeDragRef.current.noteId);
+      }
       resizeDragRef.current = null;
       return;
     }
