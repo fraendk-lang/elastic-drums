@@ -2,7 +2,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useMelodyLayerStore, type MelodyLayerNote, LAYER_COLORS } from "../../store/melodyLayerStore";
 import { useDrumStore } from "../../store/drumStore";
+import { useBassStore } from "../../store/bassStore";
 import { MELODY_PRESETS } from "../../store/melodyStore";
+import { snapToScale, isNoteInScale } from "../PianoRoll/types";
 import { melodyLayerBeatStore } from "./melodyLayerScheduler";
 
 // Activate scheduler via side-effect import
@@ -64,6 +66,9 @@ export function MelodyLayersEditor() {
   const enabled = useMelodyLayerStore((s) => s.enabled);
 
   const isPlaying = useDrumStore((s) => s.isPlaying);
+  const rootMidi = useBassStore((s) => s.rootNote);
+  const scaleName = useBassStore((s) => s.scaleName);
+  const [scaleSnap, setScaleSnap] = useState(false);
   const beatInfo = useSyncExternalStore(
     melodyLayerBeatStore.subscribe,
     melodyLayerBeatStore.getSnapshot,
@@ -111,6 +116,12 @@ export function MelodyLayersEditor() {
   activeLayerIdxRef.current = activeLayerIdx;
   const totalBeatsRef = useRef(totalBeats);
   totalBeatsRef.current = totalBeats;
+  const scaleSnapRef = useRef(scaleSnap);
+  scaleSnapRef.current = scaleSnap;
+  const rootMidiRef = useRef(rootMidi);
+  rootMidiRef.current = rootMidi;
+  const scaleNameRef = useRef(scaleName);
+  scaleNameRef.current = scaleName;
 
   // ─── Keyboard: arrow keys move selected note; capture phase blocks drum-preset nav ──
 
@@ -163,12 +174,34 @@ export function MelodyLayersEditor() {
         updateNote(curActiveId, selId, { startBeat: newBeat });
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        const semis = e.shiftKey ? 12 : 1;
-        updateNote(curActiveId, selId, { pitch: Math.min(MIDI_MAX, note.pitch + semis) });
+        if (scaleSnapRef.current) {
+          // Step to next in-scale pitch above
+          let newPitch = note.pitch;
+          for (let d = 1; d <= 12; d++) {
+            const c = note.pitch + d;
+            if (c > MIDI_MAX) break;
+            if (isNoteInScale(c, rootMidiRef.current, scaleNameRef.current)) { newPitch = c; break; }
+          }
+          updateNote(curActiveId, selId, { pitch: newPitch });
+        } else {
+          const semis = e.shiftKey ? 12 : 1;
+          updateNote(curActiveId, selId, { pitch: Math.min(MIDI_MAX, note.pitch + semis) });
+        }
       } else if (e.key === "ArrowDown") {
         e.preventDefault();
-        const semis = e.shiftKey ? 12 : 1;
-        updateNote(curActiveId, selId, { pitch: Math.max(MIDI_MIN, note.pitch - semis) });
+        if (scaleSnapRef.current) {
+          // Step to next in-scale pitch below
+          let newPitch = note.pitch;
+          for (let d = 1; d <= 12; d++) {
+            const c = note.pitch - d;
+            if (c < MIDI_MIN) break;
+            if (isNoteInScale(c, rootMidiRef.current, scaleNameRef.current)) { newPitch = c; break; }
+          }
+          updateNote(curActiveId, selId, { pitch: newPitch });
+        } else {
+          const semis = e.shiftKey ? 12 : 1;
+          updateNote(curActiveId, selId, { pitch: Math.max(MIDI_MIN, note.pitch - semis) });
+        }
       }
     };
 
@@ -247,9 +280,13 @@ export function MelodyLayersEditor() {
         (n) => n.pitch === hit.pitch && snappedBeat >= n.startBeat && snappedBeat < n.startBeat + n.durationBeats
       );
       if (collision) return;
+      const rawPitch = hit.pitch;
+      const finalPitch = scaleSnapRef.current
+        ? Math.max(MIDI_MIN, Math.min(MIDI_MAX, snapToScale(rawPitch, rootMidiRef.current, scaleNameRef.current)))
+        : rawPitch;
       const newNote: MelodyLayerNote = {
         id: crypto.randomUUID(),
-        pitch: hit.pitch,
+        pitch: finalPitch,
         startBeat: snappedBeat,
         durationBeats: 0.5,
       };
@@ -279,7 +316,10 @@ export function MelodyLayersEditor() {
         Math.round((move.origStartBeat + dx / move.beatWidth) * 4) / 4,
       ));
       const deltaRows = Math.round(dy / ROW_H);
-      const newPitch = Math.max(MIDI_MIN, Math.min(MIDI_MAX, move.origPitch - deltaRows));
+      let newPitch = Math.max(MIDI_MIN, Math.min(MIDI_MAX, move.origPitch - deltaRows));
+      if (scaleSnapRef.current) {
+        newPitch = Math.max(MIDI_MIN, Math.min(MIDI_MAX, snapToScale(newPitch, rootMidiRef.current, scaleNameRef.current)));
+      }
       updateNote(move.layerId, move.noteId, { startBeat: newStartBeat, pitch: newPitch });
       return;
     }
@@ -344,7 +384,11 @@ export function MelodyLayersEditor() {
 
   const ghostNote = useMemo(() => {
     if (!hoverCell) return null;
-    const { pitch, beat } = hoverCell;
+    const rawPitch = hoverCell.pitch;
+    const pitch = scaleSnap
+      ? Math.max(MIDI_MIN, Math.min(MIDI_MAX, snapToScale(rawPitch, rootMidi, scaleName)))
+      : rawPitch;
+    const { beat } = hoverCell;
     if (beat < 0 || beat >= totalBeats) return null;
     return { pitch, startBeat: beat, durationBeats: 0.5, id: "ghost" };
   }, [hoverCell, totalBeats]);
@@ -474,6 +518,20 @@ export function MelodyLayersEditor() {
           {displayPitch !== null ? fullPitchName(displayPitch) : "–"}
         </div>
 
+        {/* Scale snap toggle */}
+        <button
+          onClick={() => setScaleSnap((v) => !v)}
+          className="ml-1 text-[7px] font-bold tracking-[0.1em] px-1.5 py-0.5 rounded border transition-all"
+          style={{
+            background: scaleSnap ? "rgba(16,185,129,0.15)" : "transparent",
+            borderColor: scaleSnap ? "rgba(16,185,129,0.5)" : "rgba(255,255,255,0.08)",
+            color: scaleSnap ? "#10b981" : "rgba(255,255,255,0.2)",
+          }}
+          title="Snap to Scale — notes snap to current key/scale"
+        >
+          SCALE
+        </button>
+
         {/* Clear active layer */}
         <button
           onClick={() => clearNotes(activeLayer.id)}
@@ -505,7 +563,7 @@ export function MelodyLayersEditor() {
             fontFamily: "monospace",
           }}
         >
-          {fullPitchName(hoverCell.pitch)}
+          {fullPitchName(scaleSnap ? Math.max(MIDI_MIN, Math.min(MIDI_MAX, snapToScale(hoverCell.pitch, rootMidi, scaleName))) : hoverCell.pitch)}
         </div>
       )}
       <div
@@ -553,6 +611,8 @@ export function MelodyLayersEditor() {
             const isBlack = isBlackKey(pitch);
             const name = pitchName(pitch);
             const isC = name === "C";
+            const inScale = scaleSnap && isNoteInScale(pitch, rootMidi, scaleName);
+            const isRoot = scaleSnap && (((pitch - rootMidi) % 12 + 12) % 12 === 0);
 
             return (
               <div
@@ -560,7 +620,11 @@ export function MelodyLayersEditor() {
                 style={{
                   display: "flex",
                   height: ROW_H,
-                  background: isBlack ? "rgba(0,0,0,0.25)" : "transparent",
+                  background: isRoot
+                    ? "rgba(16,185,129,0.14)"
+                    : inScale
+                      ? "rgba(16,185,129,0.05)"
+                      : isBlack ? "rgba(0,0,0,0.25)" : "transparent",
                   borderBottom: isC ? "1px solid #222" : "1px solid #181a22",
                 }}
               >
