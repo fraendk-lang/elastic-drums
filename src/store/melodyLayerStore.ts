@@ -72,7 +72,8 @@ export const useMelodyLayerStore = create<MelodyLayerState>((set) => ({
   setActiveLayer: (id) => set({ activeLayerId: id }),
 
   addLayer: () => set((s) => {
-    if (s.layers.length >= 4) return s;
+    // Max 3 layers: each uses engines 1–3 (engine 0 reserved for step-sequencer)
+    if (s.layers.length >= 3) return s;
     const colorIndex = s.layers.length as 0 | 1 | 2 | 3;
     const newLayer = makeLayer(colorIndex);
     return { layers: [...s.layers, newLayer], activeLayerId: newLayer.id };

@@ -106,7 +106,9 @@ function tick(currentDrumStep: number, bpm: number): void {
 
     const shouldPlay = !layer.muted && !(anySoloed && !layer.soloed);
     const localStep = counter % (layer.barLength * 16);
-    const engine = melodyLayerEngines[i];
+    // Engines 1–3: layer 0 → engine 1, layer 1 → engine 2, layer 2 → engine 3.
+    // Engine 0 (melodyEngine) is reserved for the main melody step-sequencer.
+    const engine = melodyLayerEngines[i + 1];
     if (!engine) continue;
 
     // Apply synth at start of each loop

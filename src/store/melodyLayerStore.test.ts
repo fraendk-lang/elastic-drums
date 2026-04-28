@@ -20,9 +20,9 @@ describe("melodyLayerStore — addLayer", () => {
     expect(layers).toHaveLength(2);
     expect(layers[1]!.colorIndex).toBe(1);
   });
-  it("does not add beyond 4 layers", () => {
+  it("does not add beyond 3 layers (engines 1–3 reserved for layers)", () => {
     for (let i = 0; i < 5; i++) useMelodyLayerStore.getState().addLayer();
-    expect(useMelodyLayerStore.getState().layers).toHaveLength(4);
+    expect(useMelodyLayerStore.getState().layers).toHaveLength(3);
   });
 });
 
