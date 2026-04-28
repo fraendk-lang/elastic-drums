@@ -509,7 +509,7 @@ export function MelodyLayersEditor() {
       <div
         ref={gridRef}
         className="relative overflow-y-auto overflow-x-hidden"
-        style={{ height: Math.min(gridHeight + RULER_H, 180), background: "#0d0f14", cursor: gridCursor }}
+        style={{ height: Math.min(gridHeight + RULER_H, 240), background: "#0d0f14", cursor: gridCursor }}
         onPointerDown={handleGridPointerDown}
         onPointerMove={handleGridPointerMove}
         onPointerUp={handleGridPointerUp}
@@ -576,8 +576,8 @@ export function MelodyLayersEditor() {
                     color: hoverCell?.pitch === pitch
                       ? layerColor
                       : isC
-                        ? "#666"
-                        : isBlack ? "#2a2a2a" : "#3a3a3a",
+                        ? "#aaa"
+                        : isBlack ? "#666" : "#888",
                     background: hoverCell?.pitch === pitch
                       ? `${layerColor}18`
                       : isBlack ? "#151820" : "#1a1d26",
@@ -604,6 +604,8 @@ export function MelodyLayersEditor() {
               </div>
             );
           })}
+          {/* Bottom padding so the last row (C3) is fully scrollable and clickable */}
+          <div style={{ height: ROW_H }} />
 
           {/* Notes */}
           {allDisplayNotes.map((note) => {
