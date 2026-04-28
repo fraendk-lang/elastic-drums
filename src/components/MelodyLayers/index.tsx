@@ -324,9 +324,10 @@ export function MelodyLayersEditor() {
         {layers.length < 4 && (
           <button
             onClick={() => addLayer()}
-            className="px-2 py-1 text-[7px] font-black rounded border border-dashed border-white/15 text-white/25 hover:text-white/50 hover:border-white/30 transition-all"
+            title="Add melody layer (up to 4) — each loops independently for polymeter"
+            className="px-2 py-1 text-[7px] font-black rounded border border-dashed border-white/20 text-white/35 hover:text-white/60 hover:border-white/40 transition-all"
           >
-            +
+            + LAYER
           </button>
         )}
 

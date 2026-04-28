@@ -58,12 +58,15 @@ interface MelodyLayerState {
   clearNotes: (layerId: string) => void;
 }
 
-const initialLayer = makeLayer(0);
+// Start with 2 layers so polymeter is immediately audible:
+// Layer 0 = 2-bar Classic Lead, Layer 1 = 4-bar FM Bell
+const initialLayer0: MelodyLayer = { ...makeLayer(0), barLength: 2, synth: { presetIndex: 0, octaveOffset: 0, cutoff: 0.5 } };
+const initialLayer1: MelodyLayer = { ...makeLayer(1), barLength: 4, synth: { presetIndex: 2, octaveOffset: 0, cutoff: 0.5 } };
 
 export const useMelodyLayerStore = create<MelodyLayerState>((set) => ({
   enabled: false,
-  layers: [{ ...initialLayer }],
-  activeLayerId: initialLayer.id,
+  layers: [{ ...initialLayer0 }, { ...initialLayer1 }],
+  activeLayerId: initialLayer0.id,
 
   setEnabled: (v) => set({ enabled: v }),
   setActiveLayer: (id) => set({ activeLayerId: id }),
