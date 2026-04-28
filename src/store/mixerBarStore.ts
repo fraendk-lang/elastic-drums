@@ -7,7 +7,7 @@
 
 import { create } from "zustand";
 
-export const NUM_MIXER_CHANNELS = 24; // 0-15 original channels + 16-23 LP 1–8
+export const NUM_MIXER_CHANNELS = 27; // 0-15 original channels + 16-23 LP 1–8 + 24-26 LAY 1–3
 
 /** Fader position 0-1000 (750 = 0dB unity) */
 export type FaderPos = number;
@@ -59,6 +59,10 @@ const BALANCED_FADERS: readonly number[] = [
   660,                            // 13: chords (up from 640 — open pad needs presence)
   670,                            // 14: melody/lead (up from 660)
   700,                            // 15: sampler
+  // 16-23: LP 1–8 (no entry → defaultChannel fallback 700)
+  // 24-26: LAY 1–3 (melody layers, same presence as lead)
+  ...new Array(8).fill(700),      // 16-23: LP 1–8
+  670, 660, 650,                  // 24-26: LAY 1–3
 ];
 
 const defaultChannel = (ch = 0): ChannelMixState => ({

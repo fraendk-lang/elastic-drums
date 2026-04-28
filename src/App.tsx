@@ -217,13 +217,14 @@ export function App() {
         const melodyCh = audioEngine.getChannelOutput(14);
         if (melodyOut && melodyCh) melodyOut.connect(melodyCh);
 
-        // Melody Layer engines 1–3 → also Channel 14 (shares melody mixer strip)
+        // Melody Layer engines 1–3 → individual channels 24/25/26 (LAY 1–3)
         for (let i = 1; i <= 3; i++) {
           const layerEngine = melodyLayerEngines[i];
           if (layerEngine) {
             layerEngine.init(ctx);
             const layerOut = layerEngine.getOutput();
-            if (layerOut && melodyCh) layerOut.connect(melodyCh);
+            const layCh = audioEngine.getChannelOutput(23 + i); // 24, 25, 26
+            if (layerOut && layCh) layerOut.connect(layCh);
           }
         }
 

@@ -43,6 +43,9 @@ const CHANNELS = [
   { id: 21, label: "LP 6",  color: "#2EC4B6", badge: "LP" },
   { id: 22, label: "LP 7",  color: "#2EC4B6", badge: "LP" },
   { id: 23, label: "LP 8",  color: "#2EC4B6", badge: "LP" },
+  { id: 24, label: "LAY 1", color: "#f472b6", badge: "LAY" },
+  { id: 25, label: "LAY 2", color: "#22c55e", badge: "LAY" },
+  { id: 26, label: "LAY 3", color: "#a78bfa", badge: "LAY" },
 ];
 
 const NUM_CHANNELS = CHANNELS.length;
@@ -50,8 +53,9 @@ const NUM_CHANNELS = CHANNELS.length;
 const GROUPS = [
   { id: "drums", label: "DRUMS", color: "#f59e0b", channels: [0, 1, 2, 3, 4, 5] },
   { id: "tops",  label: "TOPS",  color: "#3b82f6", channels: [6, 7, 8, 9, 10, 11] },
-  { id: "music", label: "MUSIC", color: "#10b981", channels: [12, 13, 14, 15] },
-  { id: "loops", label: "LOOPS", color: "#2EC4B6", channels: [16, 17, 18, 19, 20, 21, 22, 23] },
+  { id: "music",  label: "MUSIC",  color: "#10b981", channels: [12, 13, 14, 15] },
+  { id: "loops",  label: "LOOPS",  color: "#2EC4B6", channels: [16, 17, 18, 19, 20, 21, 22, 23] },
+  { id: "layers", label: "LAYERS", color: "#f472b6", channels: [24, 25, 26] },
 ];
 
 const BUS_STRIPS = [
@@ -390,7 +394,7 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
 
         {/* CHANNELS / SENDS tabs → show group boxes */}
         {(activeTab === "channels" || activeTab === "sends") && GROUPS.map((group) => (
-          <GroupBox key={group.id} label={group.label} color={group.color} defaultCollapsed={group.id === "loops"}>
+          <GroupBox key={group.id} label={group.label} color={group.color} defaultCollapsed={group.id === "loops" || group.id === "layers"}>
             {group.channels.map((chId) => {
               const ch = CHANNELS[chId]!;
               return (
