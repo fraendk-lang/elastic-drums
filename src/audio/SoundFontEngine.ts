@@ -56,8 +56,19 @@ export const CHORDS_INSTRUMENTS: InstrumentOption[] = [
   { id: "pad_8_sweep", name: "Sweep Pad", category: "Pads", reliability: "color" },
   // ─ Strings (lush harmony layers)
   { id: "synth_strings_1", name: "Synth Strings", category: "Strings", reliability: "core" },
+  { id: "synth_strings_2", name: "Synth Strings 2", category: "Strings", reliability: "color" },
   { id: "string_ensemble_1", name: "String Ensemble", category: "Strings", reliability: "core" },
   { id: "string_ensemble_2", name: "Slow Strings", category: "Strings", reliability: "color" },
+  // ─ Vocal / Choir (M1 "Universe" signature — choir_aahs is the most iconic M1 sample)
+  { id: "choir_aahs", name: "Choir Aahs", category: "Vocal", reliability: "core" },
+  { id: "voice_oohs", name: "Voice Oohs", category: "Vocal", reliability: "core" },
+  // ─ Brass Stabs (M1 / Oberheim / Juno-style punchy stabs)
+  { id: "synth_brass_1", name: "Synth Brass 1", category: "Brass", reliability: "core" },
+  { id: "synth_brass_2", name: "Synth Brass 2", category: "Brass", reliability: "core" },
+  { id: "brass_section", name: "Brass Section", category: "Brass", reliability: "color" },
+  // ─ Extra Pads
+  { id: "pad_5_bowed", name: "Bowed Glass", category: "Pads", reliability: "color" },
+  { id: "pad_6_metallic", name: "Metallic Pad", category: "Pads", reliability: "color" },
   // ─ Mallet (vibes, marimba — rhythmic chord voicings)
   { id: "vibraphone", name: "Vibraphone", category: "Mallet", reliability: "core" },
   { id: "marimba", name: "Marimba", category: "Mallet", reliability: "color" },
@@ -84,14 +95,25 @@ export const MELODY_INSTRUMENTS: InstrumentOption[] = [
   { id: "koto", name: "Koto", category: "Plucks", reliability: "color" },
   // ─ Wind & Brass (melodic solo instruments)
   { id: "flute", name: "Flute", category: "Wind", reliability: "core" },
+  { id: "pan_flute", name: "Pan Flute", category: "Wind", reliability: "core" },
+  { id: "piccolo", name: "Piccolo", category: "Wind", reliability: "color" },
+  { id: "recorder", name: "Recorder", category: "Wind", reliability: "color" },
   { id: "clarinet", name: "Clarinet", category: "Wind", reliability: "core" },
+  { id: "oboe", name: "Oboe", category: "Wind", reliability: "core" },
+  { id: "english_horn", name: "English Horn", category: "Wind", reliability: "color" },
   { id: "alto_sax", name: "Alto Sax", category: "Wind", reliability: "core" },
   { id: "trumpet", name: "Trumpet", category: "Brass", reliability: "core" },
   { id: "muted_trumpet", name: "Muted Trumpet", category: "Brass", reliability: "color" },
   // ─ Solo Strings (violin, fiddle — expressive melodic lines)
   { id: "violin", name: "Violin", category: "Strings", reliability: "core" },
   { id: "fiddle", name: "Fiddle", category: "Strings", reliability: "color" },
+  // ─ World / Plucks — additional
+  { id: "ocarina", name: "Ocarina", category: "Plucks", reliability: "core" },
+  // ─ Leads — DX7-style
+  { id: "lead_3_calliope", name: "Calliope Lead", category: "Leads", reliability: "core" },
+  { id: "lead_4_chiff", name: "Chiff Lead", category: "Leads", reliability: "core" },
   // ─ FX (atmospheric leads)
+  { id: "fx_2_soundtrack", name: "Soundtrack", category: "FX", reliability: "color" },
   { id: "fx_3_crystal", name: "Crystal", category: "FX", reliability: "color" },
   { id: "fx_4_atmosphere", name: "Atmosphere", category: "FX", reliability: "color" },
   { id: "shakuhachi", name: "Shakuhachi", category: "FX", reliability: "color" },
