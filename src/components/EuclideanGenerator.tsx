@@ -187,7 +187,7 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
   const { applyEuclidean: applyBassEuclidean } = useBassStore();
   const { applyEuclidean: applyChordsEuclidean } = useChordsStore();
   const { applyEuclidean: applyMelodyEuclidean, scaleName: melodyScale, rootNote: melodyRoot } = useMelodyStore();
-  const { applyLayerEuclidean, layers, activeLayerId } = useMelodyLayerStore();
+  const { applyLayerEuclidean, setEnabled: setLayersEnabled, layers, activeLayerId } = useMelodyLayerStore();
   const activeLayer = layers.find((l) => l.id === activeLayerId);
   const activeLayerColor = activeLayer ? LAYER_COLORS[activeLayer.colorIndex] : "#a78bfa";
 
@@ -238,12 +238,13 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
         break;
       case "layers":
         applyLayerEuclidean(pulses, steps, rotation, noteMode, melodyScale, melodyRoot, accentPulses, accentRotation);
+        setLayersEnabled(true); // auto-enable so playback starts immediately
         break;
     }
     onClose();
   }, [target, selectedVoice, pulses, steps, rotation, accentPulses, accentRotation, noteMode,
       applyDrumEuclidean, applyBassEuclidean, applyChordsEuclidean, applyMelodyEuclidean,
-      applyLayerEuclidean, melodyScale, melodyRoot, onClose]);
+      applyLayerEuclidean, setLayersEnabled, melodyScale, melodyRoot, onClose]);
 
   const mutate = useCallback(() => {
     // Random lightweight mutation: rotate, +/- pulse, nudge accent

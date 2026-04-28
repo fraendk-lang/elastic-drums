@@ -38,6 +38,8 @@ import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
 import { melodyEngine } from "./audio/MelodyEngine";
 import { melodyLayerEngines } from "./audio/melodyLayerEngines";
+// Activate melody-layer scheduler at app start (not tied to tab visibility)
+import "./components/MelodyLayers/melodyLayerScheduler";
 import { samplerEngine } from "./audio/SamplerEngine";
 import { loopPlayerEngine } from "./audio/LoopPlayerEngine";
 import { useBassStore, startBassScheduler, stopBassScheduler } from "./store/bassStore";
