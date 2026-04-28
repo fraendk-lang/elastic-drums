@@ -104,10 +104,10 @@ export function Transport({
       <button
         onClick={togglePlay}
         aria-label={isPlaying ? "Stop" : "Play"}
-        className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold transition-all ed-pad-press ${
+        className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold transition-all ed-pad-press shrink-0 ${
           isPlaying
-            ? "bg-red-500/15 text-red-400 border border-red-500/30 shadow-[0_0_12px_rgba(239,68,68,0.15)]"
-            : "bg-white/5 text-white/70 border border-white/10 hover:bg-white/10 hover:text-white hover:shadow-[0_0_10px_rgba(255,255,255,0.05)]"
+            ? "bg-red-500/20 text-red-400 border border-red-500/40 shadow-[0_0_16px_rgba(239,68,68,0.2)]"
+            : "bg-white/5 text-white/80 border border-white/15 hover:bg-[var(--ed-accent-orange)]/10 hover:text-[var(--ed-accent-orange)] hover:border-[var(--ed-accent-orange)]/30"
         }`}
       >
         {isPlaying ? "■" : "▶"}

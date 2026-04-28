@@ -348,11 +348,27 @@ export function MixerBar() {
 
           return (
             <React.Fragment key={id}>
-              {/* Separator before LOOPS group (LP 1 = channel 16) */}
+              {/* Separator: Drums → Hats (channel 6) */}
+              {id === 6 && (
+                <div className="w-px self-stretch mx-0.5 bg-[#3b82f6]/20 flex-shrink-0" />
+              )}
+              {/* Separator: Hats → Perc (channel 10) */}
+              {id === 10 && (
+                <div className="w-px self-stretch mx-0.5 bg-[#8b5cf6]/20 flex-shrink-0" />
+              )}
+              {/* Separator: Perc → Synths (channel 12) */}
+              {id === 12 && (
+                <div className="w-px self-stretch mx-0.5 bg-[#10b981]/20 flex-shrink-0" />
+              )}
+              {/* Separator: Synths → Sampler (channel 15) */}
+              {id === 15 && (
+                <div className="w-px self-stretch mx-0.5 bg-[#f97316]/20 flex-shrink-0" />
+              )}
+              {/* Separator: Sampler → Loops (channel 16) */}
               {id === 16 && (
                 <div className="w-px self-stretch mx-0.5 bg-[#2EC4B6]/20 flex-shrink-0" />
               )}
-              {/* Separator before LAYERS group (LAY 1 = channel 24) */}
+              {/* Separator: Loops → Layers (channel 24) */}
               {id === 24 && (
                 <div className="w-px self-stretch mx-0.5 bg-[#f472b6]/20 flex-shrink-0" />
               )}

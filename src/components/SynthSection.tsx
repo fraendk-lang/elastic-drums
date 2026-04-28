@@ -94,6 +94,7 @@ function findPresetIndex<T extends { name: string }>(presets: T[], name: string)
 
 export function SynthSection() {
   const [active, setActive] = useState<SynthTab>("bass");
+  const [macrosOpen, setMacrosOpen] = useState(false);
   const overlay = useOverlayStore();
 
   // Tab badge: dim color underline when tab content is producing sound but not selected
@@ -126,8 +127,6 @@ export function SynthSection() {
     window.addEventListener("synth-tab-switch", handler);
     return () => window.removeEventListener("synth-tab-switch", handler);
   }, []);
-  const activeTab = TABS.find((tab) => tab.id === active) ?? TABS[0]!;
-
   const applyHouseMacro = (macro: HouseMacro) => {
     const bassStore = useBassStore.getState();
     const chordsStore = useChordsStore.getState();
@@ -174,103 +173,96 @@ export function SynthSection() {
       <div className="flex items-center border-t border-[var(--ed-border)]/30 bg-[var(--ed-bg-primary)]">
         {TABS.map((tab) => {
           const isActive = active === tab.id;
+          const badgeColor = getTabBadgeColor(tab.id, false);
           return (
             <button
               key={tab.id}
               onClick={() => setActive(tab.id)}
-              className={`flex-1 py-1.5 text-[9px] font-bold tracking-[0.15em] transition-all border-b-2 ${
+              className={`flex-1 py-1.5 text-[9px] font-bold tracking-[0.15em] transition-all border-b-2 relative ${
                 isActive
                   ? "text-white/90 bg-white/[0.02]"
-                  : "text-white/20 hover:text-white/40 border-transparent"
+                  : "text-white/35 hover:text-white/60 border-transparent"
               }`}
               style={{
                 borderBottomColor: isActive
                   ? tab.color
-                  : (getTabBadgeColor(tab.id, false) ?? "transparent"),
+                  : (badgeColor ?? "transparent"),
                 textShadow: isActive ? `0 0 12px ${tab.color}40` : "none",
               }}
             >
               {tab.label}
+              {/* Tiny pulse dot when tab is playing but not selected */}
+              {!isActive && badgeColor && (
+                <span
+                  className="absolute top-1 right-1 w-1 h-1 rounded-full animate-pulse"
+                  style={{ backgroundColor: badgeColor }}
+                />
+              )}
             </button>
           );
         })}
 
-        <div className="ml-auto flex items-center">
+        {/* Right-side action buttons */}
+        <div className="ml-auto flex items-center shrink-0 border-l border-white/[0.06]">
+          <button
+            onClick={() => setMacrosOpen((o) => !o)}
+            className="px-2.5 py-1.5 text-[8px] font-bold tracking-[0.15em] transition-all border-b-2"
+            title="Toggle house macros"
+            style={{
+              color: macrosOpen ? "var(--ed-accent-orange)" : "rgba(255,255,255,0.3)",
+              borderBottomColor: macrosOpen ? "var(--ed-accent-orange)" : "transparent",
+              backgroundColor: macrosOpen ? "rgba(245,158,11,0.06)" : "transparent",
+            }}
+          >
+            MACROS
+          </button>
           <button
             onClick={() => overlay.openOverlay("midiPlayer")}
-            className="px-3 py-1.5 text-[9px] font-bold tracking-[0.15em] transition-all border-b-2 border-transparent text-white/20 hover:text-white/40 bg-white/[0.02] hover:bg-white/[0.05]"
+            className="px-2.5 py-1.5 text-[8px] font-bold tracking-[0.15em] transition-all border-b-2 border-transparent text-white/30 hover:text-white/60"
             title="Open MIDI arranger"
           >
             MIDI
           </button>
           <button
             onClick={() => overlay.openOverlay("pianoRoll")}
-            className="px-3 py-1.5 text-[9px] font-bold tracking-[0.15em] transition-all border-b-2 border-transparent text-white/20 hover:text-white/40 bg-white/[0.02] hover:bg-white/[0.05]"
+            className="px-2.5 py-1.5 text-[8px] font-bold tracking-[0.15em] transition-all border-b-2 border-transparent text-white/30 hover:text-white/60"
             title="Open Piano Roll Editor"
           >
-            PIANO ROLL
+            ROLL
           </button>
           <button
             onClick={() => overlay.openOverlay("melodyGen")}
-            className="px-3 py-1.5 text-[9px] font-bold tracking-[0.15em] transition-all border-b-2 border-transparent hover:bg-white/[0.05]"
+            className="px-2.5 py-1.5 text-[8px] font-bold tracking-[0.15em] transition-all border-b-2 border-transparent hover:text-white/60"
             title="Open Melody Generator"
-            style={{
-              color: STYLE_META.harbourGlow.color + "99",
-              borderBottomColor: "transparent",
-            }}
+            style={{ color: STYLE_META.harbourGlow.color + "80" }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = STYLE_META.harbourGlow.color; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = STYLE_META.harbourGlow.color + "99"; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = STYLE_META.harbourGlow.color + "80"; }}
           >
             GEN
           </button>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 border-t border-white/5 border-b border-white/5 bg-[linear-gradient(180deg,rgba(255,255,255,0.025),rgba(255,255,255,0.01))]">
-        <div className="flex items-center gap-2">
-          <span
-            className="text-[10px] font-black tracking-[0.2em]"
-            style={{ color: activeTab.color, textShadow: `0 0 12px ${activeTab.color}33` }}
-          >
-            {activeTab.label} WORKSPACE
-          </span>
-          <span className="text-[8px] font-bold tracking-[0.18em] text-white/20">
-            ARRANGE / EDIT / AUTOMATE
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2 text-[8px] font-bold tracking-[0.12em] text-white/35">
-          <span className="rounded-full border border-white/8 bg-black/25 px-2 py-0.5">CLIP EDITOR</span>
-          <span className="rounded-full border border-white/8 bg-black/25 px-2 py-0.5">MOTION LANES</span>
-          <span className="rounded-full border border-white/8 bg-black/25 px-2 py-0.5">PERFORMANCE READY</span>
-        </div>
-      </div>
-
-      <div className="border-b border-white/5 bg-[linear-gradient(180deg,rgba(255,255,255,0.022),rgba(255,255,255,0.008))] px-3 py-2">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black tracking-[0.18em] text-[var(--ed-accent-orange)]">
-              HOUSE MACROS
+      {/* House Macros — collapsed by default, toggle via MACROS button */}
+      {macrosOpen && (
+        <div className="border-b border-white/[0.06] bg-black/30 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[7px] font-black tracking-[0.18em] text-[var(--ed-accent-orange)]/60 mr-1 shrink-0">
+              STARTING WORLDS
             </span>
-            <span className="text-[8px] font-bold tracking-[0.16em] text-white/20">
-              CURATED STARTING WORLDS + PATTERN SEEDS
-            </span>
-          </div>
-
-          <div className="flex flex-wrap gap-1.5">
             {HOUSE_MACROS.map((macro) => (
               <button
                 key={macro.id}
-                onClick={() => applyHouseMacro(macro)}
-                className="rounded-lg border border-white/8 bg-black/20 px-2.5 py-1.5 text-left transition-all hover:border-[var(--ed-accent-orange)]/30 hover:bg-[var(--ed-accent-orange)]/10"
+                onClick={() => { applyHouseMacro(macro); setMacrosOpen(false); }}
+                className="rounded border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-left transition-all hover:border-[var(--ed-accent-orange)]/40 hover:bg-[var(--ed-accent-orange)]/10 active:scale-95"
               >
-                <div className="text-[8px] font-black tracking-[0.16em] text-white/75">{macro.label}</div>
-                <div className="mt-0.5 text-[7px] font-bold tracking-[0.12em] text-white/28">{macro.hint}</div>
+                <div className="text-[8px] font-black tracking-[0.14em] text-white/80">{macro.label}</div>
+                <div className="mt-0.5 text-[7px] font-medium text-white/30">{macro.hint}</div>
               </button>
             ))}
           </div>
         </div>
-      </div>
+      )}
 
       {/* Active sequencer */}
       {active === "bass" && <BassSequencer />}
