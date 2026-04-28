@@ -284,6 +284,11 @@ export function MelodyLayersEditor() {
       const finalPitch = scaleSnapRef.current
         ? Math.max(MIDI_MIN, Math.min(MIDI_MAX, snapToScale(rawPitch, rootMidiRef.current, scaleNameRef.current)))
         : rawPitch;
+      // Re-check collision at the snapped pitch (may differ from hit.pitch when scale snap is on)
+      const collisionAtFinal = notesRef.current.some(
+        (n) => n.pitch === finalPitch && snappedBeat >= n.startBeat && snappedBeat < n.startBeat + n.durationBeats
+      );
+      if (collisionAtFinal) return;
       const newNote: MelodyLayerNote = {
         id: crypto.randomUUID(),
         pitch: finalPitch,
@@ -390,8 +395,13 @@ export function MelodyLayersEditor() {
       : rawPitch;
     const { beat } = hoverCell;
     if (beat < 0 || beat >= totalBeats) return null;
+    // Don't show ghost if there's already a note at the (snapped) target pitch
+    const collision = notes.some(
+      (n) => n.pitch === pitch && beat >= n.startBeat && beat < n.startBeat + n.durationBeats
+    );
+    if (collision) return null;
     return { pitch, startBeat: beat, durationBeats: 0.5, id: "ghost" };
-  }, [hoverCell, totalBeats]);
+  }, [hoverCell, totalBeats, scaleSnap, rootMidi, scaleName, notes]);
 
   const allDisplayNotes = useMemo<DisplayNote[]>(
     () => ghostNote ? [...notes, { ...ghostNote, _ghost: true }] : notes,
