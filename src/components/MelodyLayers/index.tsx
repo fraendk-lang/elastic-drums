@@ -222,7 +222,7 @@ export function MelodyLayersEditor() {
       return;
     }
 
-    // Left-click on note body = select + start move drag (click without move = just select)
+    // Left-click on note body = start move drag (click without move = delete)
     if (hit.note && !hit.isRightEdge && e.button === 0) {
       e.currentTarget.setPointerCapture(e.pointerId);
       setSelectedNote(hit.note.id);
@@ -321,16 +321,13 @@ export function MelodyLayersEditor() {
     }
     if (moveDragRef.current) {
       e.currentTarget.releasePointerCapture(e.pointerId);
-      // Pure click = note stays selected (no delete); drag = move committed
+      if (!moveDragRef.current.hasMoved) {
+        // Pure click = delete
+        removeNote(moveDragRef.current.layerId, moveDragRef.current.noteId);
+      }
       moveDragRef.current = null;
     }
-  }, []);
-
-  // Double-click → delete note instantly
-  const handleGridDoubleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const hit = hitTestNote(e.clientX, e.clientY);
-    if (hit?.note) removeNote(activeLayerIdRef.current, hit.note.id);
-  }, [hitTestNote, removeNote]);
+  }, [removeNote]);
 
   // Right-click → delete note
   const handleGridContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -516,7 +513,6 @@ export function MelodyLayersEditor() {
         onPointerDown={handleGridPointerDown}
         onPointerMove={handleGridPointerMove}
         onPointerUp={handleGridPointerUp}
-        onDoubleClick={handleGridDoubleClick}
         onPointerLeave={(e) => {
           setHoverCell(null);
           setHoverPos(null);
