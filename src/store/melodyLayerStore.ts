@@ -44,9 +44,11 @@ interface MelodyLayerState {
   enabled: boolean;
   layers: MelodyLayer[];
   activeLayerId: string;
+  selectedNoteId: string | null;  // globally selected note (for arrow-key editing)
 
   setEnabled: (v: boolean) => void;
   setActiveLayer: (id: string) => void;
+  setSelectedNote: (id: string | null) => void;
   addLayer: () => void;
   removeLayer: (id: string) => void;
   updateLayer: (id: string, patch: Partial<Pick<MelodyLayer, "barLength" | "muted" | "soloed">>) => void;
@@ -67,9 +69,11 @@ export const useMelodyLayerStore = create<MelodyLayerState>((set) => ({
   enabled: false,
   layers: [{ ...initialLayer0 }, { ...initialLayer1 }],
   activeLayerId: initialLayer0.id,
+  selectedNoteId: null,
 
   setEnabled: (v) => set({ enabled: v }),
-  setActiveLayer: (id) => set({ activeLayerId: id }),
+  setActiveLayer: (id) => set({ activeLayerId: id, selectedNoteId: null }),
+  setSelectedNote: (id) => set({ selectedNoteId: id }),
 
   addLayer: () => set((s) => {
     // Max 3 layers: each uses engines 1–3 (engine 0 reserved for step-sequencer)
@@ -104,6 +108,7 @@ export const useMelodyLayerStore = create<MelodyLayerState>((set) => ({
       ? { ...l, notes: l.notes.filter((n) => n.id !== noteId) }
       : l
     ),
+    selectedNoteId: s.selectedNoteId === noteId ? null : s.selectedNoteId,
   })),
 
   updateNote: (layerId, noteId, patch) => set((s) => ({

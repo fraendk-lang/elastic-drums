@@ -56,11 +56,13 @@ type MoveDrag = {
 
 export function MelodyLayersEditor() {
   const {
-    layers, activeLayerId,
+    layers, activeLayerId, selectedNoteId,
     setActiveLayer, addLayer, removeLayer,
     updateLayer, addNote, removeNote, updateNote,
-    setSynth, clearNotes,
+    setSynth, clearNotes, setSelectedNote,
   } = useMelodyLayerStore();
+
+  const enabled = useMelodyLayerStore((s) => s.enabled);
 
   const isPlaying = useDrumStore((s) => s.isPlaying);
   const beatInfo = useSyncExternalStore(
@@ -110,6 +112,71 @@ export function MelodyLayersEditor() {
   const totalBeatsRef = useRef(totalBeats);
   totalBeatsRef.current = totalBeats;
 
+  // ─── Keyboard: arrow keys move selected note; capture phase blocks drum-preset nav ──
+
+  const selectedNoteIdRef = useRef(selectedNoteId);
+  selectedNoteIdRef.current = selectedNoteId;
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const handler = (e: KeyboardEvent) => {
+      const ARROW_KEYS = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
+      const ACTION_KEYS = [...ARROW_KEYS, "Delete", "Backspace", "Escape"];
+      if (!ACTION_KEYS.includes(e.key)) return;
+
+      // Always intercept arrow keys when Melody Layers is enabled,
+      // so they don't trigger drum preset navigation (useKeyboard.ts).
+      if (ARROW_KEYS.includes(e.key)) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+      }
+
+      const selId = selectedNoteIdRef.current;
+      if (!selId) return;
+
+      const { layers: curLayers, activeLayerId: curActiveId } = useMelodyLayerStore.getState();
+      const layer = curLayers.find((l) => l.id === curActiveId);
+      if (!layer) return;
+      const note = layer.notes.find((n) => n.id === selId);
+      if (!note) return;
+
+      if (e.key === "Escape") {
+        setSelectedNote(null);
+        return;
+      }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        removeNote(curActiveId, selId);
+        return;
+      }
+
+      // Arrow movement
+      const totalB = layer.barLength * 4;
+      if (e.key === "ArrowRight") {
+        const step = e.shiftKey ? 1 : 0.25;
+        const newBeat = Math.min(totalB - 0.25, Math.round((note.startBeat + step) * 4) / 4);
+        updateNote(curActiveId, selId, { startBeat: newBeat });
+      } else if (e.key === "ArrowLeft") {
+        const step = e.shiftKey ? 1 : 0.25;
+        const newBeat = Math.max(0, Math.round((note.startBeat - step) * 4) / 4);
+        updateNote(curActiveId, selId, { startBeat: newBeat });
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        const semis = e.shiftKey ? 12 : 1;
+        updateNote(curActiveId, selId, { pitch: Math.min(MIDI_MAX, note.pitch + semis) });
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        const semis = e.shiftKey ? 12 : 1;
+        updateNote(curActiveId, selId, { pitch: Math.max(MIDI_MIN, note.pitch - semis) });
+      }
+    };
+
+    // Use capture phase so we intercept before useKeyboard.ts (bubble phase)
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [enabled, setSelectedNote, removeNote, updateNote]);
+
   // ─── Hit testing ─────────────────────────────────────────────────────────────
 
   const hitTestNote = useCallback((clientX: number, clientY: number) => {
@@ -154,9 +221,10 @@ export function MelodyLayersEditor() {
       return;
     }
 
-    // Left-click on note body = start move drag (click without move = delete)
+    // Left-click on note body = select + start move drag (click without move = just select)
     if (hit.note && !hit.isRightEdge && e.button === 0) {
       e.currentTarget.setPointerCapture(e.pointerId);
+      setSelectedNote(hit.note.id);
       moveDragRef.current = {
         layerId: activeLayerIdRef.current,
         noteId: hit.note.id,
@@ -171,6 +239,7 @@ export function MelodyLayersEditor() {
     }
 
     if (!hit.note && e.button === 0) {
+      setSelectedNote(null);
       const snappedBeat = Math.round(hit.beat * 4) / 4;
       if (snappedBeat < 0 || snappedBeat >= totalBeatsRef.current) return;
       // Guard: don't add if any existing note covers this beat+pitch
@@ -186,7 +255,7 @@ export function MelodyLayersEditor() {
       };
       addNote(activeLayerIdRef.current, newNote);
     }
-  }, [hitTestNote, addNote]);
+  }, [hitTestNote, addNote, setSelectedNote]);
 
   const handleGridPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const resize = resizeDragRef.current;
@@ -249,14 +318,18 @@ export function MelodyLayersEditor() {
     }
     if (moveDragRef.current) {
       e.currentTarget.releasePointerCapture(e.pointerId);
-      if (!moveDragRef.current.hasMoved) {
-        // Pure click = delete
-        removeNote(moveDragRef.current.layerId, moveDragRef.current.noteId);
-      }
+      // Pure click = note stays selected (no delete); drag = move committed
       moveDragRef.current = null;
     }
-  }, [removeNote]);
+  }, []);
 
+  // Double-click → delete note instantly
+  const handleGridDoubleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const hit = hitTestNote(e.clientX, e.clientY);
+    if (hit?.note) removeNote(activeLayerIdRef.current, hit.note.id);
+  }, [hitTestNote, removeNote]);
+
+  // Right-click → delete note
   const handleGridContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     const hit = hitTestNote(e.clientX, e.clientY);
@@ -391,6 +464,7 @@ export function MelodyLayersEditor() {
         onPointerDown={handleGridPointerDown}
         onPointerMove={handleGridPointerMove}
         onPointerUp={handleGridPointerUp}
+        onDoubleClick={handleGridDoubleClick}
         onPointerLeave={(e) => {
           setHoverCell(null);
           if (resizeDragRef.current) {
@@ -475,6 +549,7 @@ export function MelodyLayersEditor() {
           {/* Notes */}
           {allDisplayNotes.map((note) => {
             const isGhost = note._ghost === true;
+            const isSelected = !isGhost && note.id === selectedNoteId;
             const rowIdx = MIDI_MAX - note.pitch;
             if (rowIdx < 0 || rowIdx >= ROWS) return null;
             return (
@@ -486,11 +561,12 @@ export function MelodyLayersEditor() {
                   left: PIANO_W + note.startBeat * beatWidth,
                   width: Math.max(4, note.durationBeats * beatWidth - 2),
                   height: ROW_H - 3,
-                  background: isGhost ? `${layerColor}30` : `${layerColor}70`,
-                  border: `1px solid ${isGhost ? layerColor + "40" : layerColor}`,
+                  background: isGhost ? `${layerColor}30` : isSelected ? `${layerColor}cc` : `${layerColor}70`,
+                  border: `1px solid ${isGhost ? layerColor + "40" : isSelected ? "#fff" : layerColor}`,
                   borderRadius: 3,
                   pointerEvents: "none",
                   boxSizing: "border-box",
+                  boxShadow: isSelected ? `0 0 0 1px ${layerColor}` : "none",
                 }}
               />
             );
