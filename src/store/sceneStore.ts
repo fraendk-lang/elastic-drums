@@ -19,7 +19,7 @@ import { soundFontEngine } from "../audio/SoundFontEngine";
 import { ROOT_NOTES } from "../audio/BassEngine";
 import { useLoopPlayerStore, type LoopSceneState } from "./loopPlayerStore";
 import { useChordPianoStore, type ChordNote } from "./chordPianoStore";
-import { useMelodyCRStore, type MelodyCRNote, type SynthSettings } from "./melodyCRStore";
+import { useMelodyLayerStore, type MelodyLayer } from "./melodyLayerStore";
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -52,16 +52,12 @@ export interface Scene {
   /** ChordPianoRoll notes for this scene.
    *  undefined = legacy scene recorded before this feature — notes are untouched on load. */
   chordPianoNotes?: ChordNote[];
-  /** Melody C&R state for this scene.
-   *  undefined = legacy scene recorded before this feature — C&R is untouched on load. */
-  melodyCR?: {
+  /** Melody Layers state for this scene.
+   *  undefined = legacy scene (pre-Layers) — untouched on load. */
+  melodyLayers?: {
     enabled: boolean;
-    barLength: 1 | 2 | 4;
-    callNotes: MelodyCRNote[];
-    responseNotes: MelodyCRNote[];
-    callSynth: SynthSettings;
-    responseSynth: SynthSettings;
-    rootNote: number;
+    layers: MelodyLayer[];
+    activeLayerId: string;
   };
 }
 
@@ -157,7 +153,7 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
       drumVoiceParams.push(deepClone(audioEngine.getVoiceParams(i)));
     }
 
-    const crState = useMelodyCRStore.getState();
+    const layersState = useMelodyLayerStore.getState();
 
     const scene: Scene = {
       name: `Scene ${slot + 1}`,
@@ -182,14 +178,10 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
         loopEndSeconds:  s.loopEndSeconds,
       })),
       chordPianoNotes: deepClone(useChordPianoStore.getState().notes),
-      melodyCR: {
-        enabled: crState.enabled,
-        barLength: crState.barLength,
-        callNotes: deepClone(crState.callNotes),
-        responseNotes: deepClone(crState.responseNotes),
-        callSynth: deepClone(crState.callSynth),
-        responseSynth: deepClone(crState.responseSynth),
-        rootNote: crState.rootNote,
+      melodyLayers: {
+        enabled: layersState.enabled,
+        layers: deepClone(layersState.layers),
+        activeLayerId: layersState.activeLayerId,
       },
       // Save global key/scale (from bass store as reference)
       rootNote: normalizeBassRootMidi(bass.rootName, bass.rootNote),
@@ -342,18 +334,13 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
         }
       }
 
-      // Restore Melody C&R state — legacy scenes (undefined) are silently skipped
-      if (scene.melodyCR !== undefined) {
-        const cr = useMelodyCRStore.getState();
-        cr.setEnabled(scene.melodyCR.enabled);
-        cr.setBarLength(scene.melodyCR.barLength);
-        cr.setRootNote(scene.melodyCR.rootNote);
-        cr.clearCallNotes();
-        cr.clearResponseNotes();
-        for (const n of deepClone(scene.melodyCR.callNotes)) cr.addCallNote(n);
-        for (const n of deepClone(scene.melodyCR.responseNotes)) cr.addResponseNote(n);
-        cr.setCallSynthFull(deepClone(scene.melodyCR.callSynth));
-        cr.setResponseSynthFull(deepClone(scene.melodyCR.responseSynth));
+      // Restore Melody Layers state — legacy scenes (undefined) are silently skipped
+      if (scene.melodyLayers !== undefined) {
+        useMelodyLayerStore.setState({
+          enabled: scene.melodyLayers.enabled,
+          layers: deepClone(scene.melodyLayers.layers),
+          activeLayerId: scene.melodyLayers.activeLayerId,
+        });
       }
     });
   },
