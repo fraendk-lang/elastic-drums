@@ -9,7 +9,7 @@
  *   + EQ Hi/Mid/Lo knobs | Rev/Dly send knobs | Pan knob
  */
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { audioEngine } from "../audio/AudioEngine";
 import { useMixerBarStore, faderToGain, NUM_MIXER_CHANNELS, GROUP_BUS_IDS, type GroupBusId } from "../store/mixerBarStore";
 import { Knob } from "./Knob";
@@ -204,9 +204,10 @@ function useGroupMeterData() {
 
 interface GroupBusPanelProps {
   groupCanvasRefs: ReturnType<typeof useGroupMeterData>;
+  faderH: number;
 }
 
-function GroupBusPanel({ groupCanvasRefs }: GroupBusPanelProps) {
+function GroupBusPanel({ groupCanvasRefs, faderH }: GroupBusPanelProps) {
   const groupBuses    = useMixerBarStore((s) => s.groupBuses);
   const setGroupFader = useMixerBarStore((s) => s.setGroupFader);
   const setGroupMute  = useMixerBarStore((s) => s.setGroupMute);
@@ -240,16 +241,16 @@ function GroupBusPanel({ groupCanvasRefs }: GroupBusPanelProps) {
                 {label}
               </span>
 
-              <div className="flex gap-1 items-end h-[56px]">
+              <div className="flex gap-1 items-end" style={{ height: faderH }}>
                 <canvas
                   ref={(el) => { groupCanvasRefs.current[i] = el; }}
                   width={4}
-                  height={56}
+                  height={faderH}
                   className="rounded-sm"
                   style={{ opacity: bus.muted ? 0.25 : 1, transition: "opacity 0.15s" }}
                 />
 
-                <div className="relative" style={{ width: 8, height: 56 }}>
+                <div className="relative" style={{ width: 8, height: faderH }}>
                   <div className="absolute inset-0 rounded bg-[var(--ed-bg-primary)] border border-white/[0.06]" />
                   <div
                     className="absolute left-0 right-0 h-px bg-white/20"
@@ -302,6 +303,30 @@ export function MixerBar() {
   const canvasRefs      = useMeterData();
   const groupCanvasRefs = useGroupMeterData();
 
+  // ── Resizable fader height ──────────────────────────────────────────────────
+  const [faderH, setFaderH] = useState(56); // default: compact 56px
+  const resizeDragRef = useRef<{ startY: number; startH: number } | null>(null);
+
+  const handleResizeStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    resizeDragRef.current = { startY: e.clientY, startH: faderH };
+
+    const onMove = (ev: PointerEvent) => {
+      if (!resizeDragRef.current) return;
+      const delta = resizeDragRef.current.startY - ev.clientY; // drag up = positive = taller
+      const next = Math.max(36, Math.min(200, resizeDragRef.current.startH + delta));
+      setFaderH(next);
+    };
+    const onUp = () => {
+      resizeDragRef.current = null;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [faderH]);
+
   const anySoloed = channels.some((ch) => ch.soloed);
 
   // Apply fader + mute/solo to audioEngine whenever they change
@@ -321,6 +346,19 @@ export function MixerBar() {
 
   return (
     <div className="relative flex flex-col shrink-0 bg-[#0e0e0e] border-t border-white/[0.07]">
+      {/* ── Top resize handle — drag up to grow, drag down to shrink ─────── */}
+      <div
+        onPointerDown={handleResizeStart}
+        className="group absolute top-0 left-0 right-0 h-[8px] cursor-row-resize z-20 flex items-center justify-center"
+        style={{ touchAction: "none" }}
+        title="Drag to resize mixer"
+      >
+        <div className="flex flex-col gap-[2px] items-center opacity-0 group-hover:opacity-60 transition-opacity">
+          <div className="w-8 h-[1.5px] rounded-full bg-white/60" />
+          <div className="w-5 h-[1.5px] rounded-full bg-white/40" />
+        </div>
+      </div>
+
       {/* Expanded panel — rendered above the strip */}
       {expandedChannel !== null && (
         <ExpandedPanel
@@ -337,7 +375,7 @@ export function MixerBar() {
 
       {/* Group Bus Panel — rendered above channel strips when open */}
       {groupPanelOpen && (
-        <GroupBusPanel groupCanvasRefs={groupCanvasRefs} />
+        <GroupBusPanel groupCanvasRefs={groupCanvasRefs} faderH={faderH} />
       )}
 
       {/* Compact strips — horizontal scroll */}
@@ -397,18 +435,18 @@ export function MixerBar() {
               </button>
 
               {/* Peak meter + fader side by side */}
-              <div className="flex gap-1 items-end h-[56px]">
+              <div className="flex gap-1 items-end" style={{ height: faderH }}>
                 {/* Meter */}
                 <canvas
                   ref={(el) => { canvasRefs.current[id] = el; }}
                   width={4}
-                  height={56}
+                  height={faderH}
                   className="rounded-sm"
                   style={{ opacity: ch.muted ? 0.25 : 1, transition: "opacity 0.15s" }}
                 />
 
                 {/* Fader */}
-                <div className="relative" style={{ width: 8, height: 56 }}>
+                <div className="relative" style={{ width: 8, height: faderH }}>
                   <div className="absolute inset-0 rounded bg-[var(--ed-bg-primary)] border border-white/[0.06]" />
                   {/* Unity tick */}
                   <div
