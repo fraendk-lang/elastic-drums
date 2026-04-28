@@ -20,6 +20,7 @@ import { ROOT_NOTES } from "../audio/BassEngine";
 import { useLoopPlayerStore, type LoopSceneState } from "./loopPlayerStore";
 import { useChordPianoStore, type ChordNote } from "./chordPianoStore";
 import { useMelodyLayerStore, type MelodyLayer } from "./melodyLayerStore";
+import { useMixerBarStore } from "./mixerBarStore";
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -58,6 +59,12 @@ export interface Scene {
     enabled: boolean;
     layers: MelodyLayer[];
     activeLayerId: string;
+  };
+  /** MixerBar per-channel mute/solo state at the time this scene was recorded.
+   *  undefined = legacy scene (pre-mixer-state) — untouched on load.
+   *  When a channel is muted here it stays muted when the scene is loaded. */
+  mixerState?: {
+    channels: Array<{ muted: boolean; soloed: boolean }>;
   };
 }
 
@@ -182,6 +189,12 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
         enabled: layersState.enabled,
         layers: deepClone(layersState.layers),
         activeLayerId: layersState.activeLayerId,
+      },
+      mixerState: {
+        channels: useMixerBarStore.getState().channels.map((ch) => ({
+          muted: ch.muted,
+          soloed: ch.soloed,
+        })),
       },
       // Save global key/scale (from bass store as reference)
       rootNote: normalizeBassRootMidi(bass.rootName, bass.rootNote),
@@ -341,6 +354,18 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
           layers: deepClone(scene.melodyLayers.layers),
           activeLayerId: scene.melodyLayers.activeLayerId,
         });
+      }
+
+      // Restore MixerBar mute/solo state — legacy scenes (undefined) are silently skipped.
+      // Merges onto existing channel state (fader/pan/EQ stay as-is, only mute+solo restored).
+      if (scene.mixerState !== undefined) {
+        const mixerBarState = useMixerBarStore.getState();
+        const newChannels = mixerBarState.channels.map((ch, i) => {
+          const saved = scene.mixerState!.channels[i];
+          if (!saved) return ch;
+          return { ...ch, muted: saved.muted, soloed: saved.soloed };
+        });
+        useMixerBarStore.setState({ channels: newChannels });
       }
     });
   },
