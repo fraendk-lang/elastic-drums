@@ -96,7 +96,7 @@ export function ChordPianoRoll({ isOpen, onClose }: ChordPianoRollProps) {
   const {
     notes, activeChordSet, snapEnabled, snapResolution, totalBeats, chordsSource,
     addNotes, removeGroup, setActiveChordSet, setSnapEnabled, setSnapResolution,
-    setChordsSource, clear,
+    setChordsSource, setTotalBeats, clear,
   } = useChordPianoStore();
 
   const rootNote = useChordsStore((s) => s.rootNote);
@@ -174,6 +174,35 @@ export function ChordPianoRoll({ isOpen, onClose }: ChordPianoRollProps) {
     [snapResolution],
   );
 
+  // ── Hit-test helper (shared by click + right-click) ────────────────────────
+  const hitTestGroup = useCallback(
+    (x: number, y: number): string | null =>
+      notes.find((n) => {
+        const ns = n.startBeat * pixelsPerBeat;
+        const ne = (n.startBeat + n.durationBeats) * pixelsPerBeat;
+        const nt = (MIDI_MAX - 1 - n.pitch) * ROW_H;
+        const nb = nt + ROW_H;
+        return x >= ns && x < ne && y >= nt && y < nb;
+      })?.chordGroup ?? null,
+    [notes, pixelsPerBeat],
+  );
+
+  // ── Right-click: delete chord group ────────────────────────────────────────
+  const handleGridContextMenu = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const hitGroup = hitTestGroup(x, y);
+      if (hitGroup) {
+        removeGroup(hitGroup);
+        if (selectedGroup === hitGroup) setSelectedGroup(null);
+      }
+    },
+    [hitTestGroup, removeGroup, selectedGroup],
+  );
+
   // ── Grid click — place chord ────────────────────────────────────────────────
   const handleGridPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -187,14 +216,7 @@ export function ChordPianoRoll({ isOpen, onClose }: ChordPianoRollProps) {
 
       if (pitch < MIDI_MIN || pitch >= MIDI_MAX) return;
 
-      // Hit-test existing note block
-      const hitGroup = notes.find((n) => {
-        const ns = n.startBeat * pixelsPerBeat;
-        const ne = (n.startBeat + n.durationBeats) * pixelsPerBeat;
-        const nt = (MIDI_MAX - 1 - n.pitch) * ROW_H;
-        const nb = nt + ROW_H;
-        return x >= ns && x < ne && y >= nt && y < nb;
-      })?.chordGroup ?? null;
+      const hitGroup = hitTestGroup(x, y);
 
       if (hitGroup) {
         setSelectedGroup(hitGroup === selectedGroup ? null : hitGroup);
@@ -223,7 +245,7 @@ export function ChordPianoRoll({ isOpen, onClose }: ChordPianoRollProps) {
     },
     [
       notes, tool, snapEnabled, snapBeat, pixelsPerBeat, rootNote, scaleName,
-      activeChordSet, snapResolution, selectedGroup, addNotes,
+      activeChordSet, snapResolution, selectedGroup, addNotes, hitTestGroup,
     ],
   );
 
@@ -236,13 +258,14 @@ export function ChordPianoRoll({ isOpen, onClose }: ChordPianoRollProps) {
       const y = e.clientY - rect.top;
       const beat = snapBeat(x / pixelsPerBeat);
       const pitch = MIDI_MAX - 1 - Math.floor(y / ROW_H);
-      if (pitch >= MIDI_MIN && pitch < MIDI_MAX) {
+      // Hide ghost when hovering over an existing note (prevents visual confusion)
+      if (pitch >= MIDI_MIN && pitch < MIDI_MAX && !hitTestGroup(x, y)) {
         setHoverCell({ beat, pitch });
       } else {
         setHoverCell(null);
       }
     },
-    [tool, snapBeat, pixelsPerBeat],
+    [tool, snapBeat, pixelsPerBeat, hitTestGroup],
   );
 
   // ── Ghost preview note computation ──────────────────────────────────────────
@@ -348,6 +371,26 @@ export function ChordPianoRoll({ isOpen, onClose }: ChordPianoRollProps) {
           </button>
         ))}
 
+        <div className="w-px h-4 bg-white/8" />
+
+        {/* Loop length */}
+        <span className="text-[7px] text-white/25 font-mono shrink-0">BARS</span>
+        {([1, 2, 4, 8] as const).map((bars) => {
+          const beats = bars * 4;
+          return (
+            <button key={bars}
+              onClick={() => setTotalBeats(beats)}
+              className={`h-6 px-2 text-[8px] font-bold rounded-md transition-all ${
+                totalBeats === beats
+                  ? "bg-white/15 text-white/90"
+                  : "text-white/25 hover:text-white/55"
+              }`}
+            >
+              {bars}
+            </button>
+          );
+        })}
+
         <div className="flex-1" />
         <span className="hidden lg:inline text-[7px] text-white/15">Ctrl+Scroll = zoom</span>
         <div className="w-px h-4 bg-white/8" />
@@ -452,6 +495,7 @@ export function ChordPianoRoll({ isOpen, onClose }: ChordPianoRollProps) {
               className="relative cursor-crosshair"
               style={{ width: gridWidth, height: gridHeight }}
               onPointerDown={handleGridPointerDown}
+              onContextMenu={handleGridContextMenu}
               onMouseMove={handleGridMouseMove}
               onMouseLeave={() => setHoverCell(null)}
             >

@@ -45,10 +45,7 @@ function releaseAll(): void {
 function tick(currentStep: number, bpm: number): void {
   const { notes, chordsSource, totalBeats } = useChordPianoStore.getState();
 
-  if (chordsSource === "grid" || notes.length === 0) {
-    return;
-  }
-
+  if (chordsSource === "grid" || notes.length === 0) return;
   if (currentStep === _lastStep) return;
 
   const advanced = _lastStep >= 0;
@@ -61,57 +58,52 @@ function tick(currentStep: number, bpm: number): void {
   }
 
   const totalSteps = Math.round(totalBeats * 4);
-  const prevWrapped = (_stepCounter - 1 + totalSteps) % totalSteps;
   const wrappedStep = _stepCounter % totalSteps;
 
-  if (wrappedStep < prevWrapped || wrappedStep === 0) releaseAll();
+  // Loop wrap: cut any still-active notes so they don't bleed into the next cycle.
+  // Only on actual wrap (advanced=true), not on the very first tick (_stepCounter=0).
+  if (wrappedStep === 0 && advanced) releaseAll();
 
   _currentBeat = wrappedStep / 4;
   for (const fn of _beatListeners) fn();
 
-  // Use the scheduled audio time for the current step for tight sync with drums
-  const t = getDrumCurrentStepAudioTime() + 0.01;
+  // The drum lookahead scheduler already sets this to a future audio timestamp
+  // (scheduled 0–300 ms ahead). Use it directly — no offset needed.
+  const t = getDrumCurrentStepAudioTime();
   const secPerBeat = 60 / bpm;
 
-  // Release groups that have ended
-  if (_activeGroups.size > 0) {
-    for (const n of notes) {
-      if (!_activeGroups.has(n.chordGroup)) continue;
-      const endStep = Math.round((n.startBeat + n.durationBeats) * 4);
-      const startStep = Math.round(n.startBeat * 4) % totalSteps;
-      if (wrappedStep >= endStep % totalSteps && wrappedStep !== startStep) {
-        _activeGroups.delete(n.chordGroup);
-        const timer = _releaseTimers.get(n.chordGroup);
-        if (timer) { clearTimeout(timer); _releaseTimers.delete(n.chordGroup); }
-        chordsEngine.releaseChord(t);
-      }
-    }
-  }
-
-  // Trigger groups starting this step
-  const groupsThisStep = new Map<string, { midis: number[]; maxDur: number }>();
+  // Collect notes that start on this step, grouped by chordGroup.
+  const groupsThisStep = new Map<string, { midis: number[]; durBeats: number }>();
   for (const n of notes) {
     const startStep = Math.round(n.startBeat * 4) % totalSteps;
     if (startStep !== wrappedStep) continue;
-    if (_activeGroups.has(n.chordGroup)) continue;
-    const entry = groupsThisStep.get(n.chordGroup) ?? { midis: [], maxDur: 0 };
+    const entry = groupsThisStep.get(n.chordGroup) ?? { midis: [], durBeats: 0 };
     entry.midis.push(n.pitch);
-    entry.maxDur = Math.max(entry.maxDur, n.durationBeats);
+    entry.durBeats = Math.max(entry.durBeats, n.durationBeats);
     groupsThisStep.set(n.chordGroup, entry);
   }
 
-  for (const [group, { midis, maxDur }] of groupsThisStep) {
-    chordsEngine.triggerChord(midis, t, false, false);
-    _activeGroups.add(group);
+  for (const [group, { midis, durBeats }] of groupsThisStep) {
+    // Cancel any pending safety-net timer from a previous trigger of this group
     const prev = _releaseTimers.get(group);
     if (prev) clearTimeout(prev);
-    const safetyMs = maxDur * secPerBeat * 1000 + 80;
+
+    const releaseSec = durBeats * secPerBeat;
+    const releaseAt = t + releaseSec;
+
+    // Trigger + pre-schedule release via Web Audio API — tight and exact.
+    // This is the same pattern used by chordsStore.ts (lookahead scheduling).
+    chordsEngine.triggerChord(midis, t, false, false);
+    chordsEngine.releaseChord(releaseAt);
+
+    _activeGroups.add(group);
+
+    // Safety-net timer: only clears JS tracking state.
+    // The actual audio release is already scheduled above via Web Audio API.
     const timer = setTimeout(() => {
       _releaseTimers.delete(group);
-      if (!_activeGroups.has(group)) return;
       _activeGroups.delete(group);
-      chordsEngine.releaseChord(audioEngine.currentTime);
-    }, safetyMs);
+    }, releaseSec * 1000 + 250);
     _releaseTimers.set(group, timer);
   }
 }
