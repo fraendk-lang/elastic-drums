@@ -183,8 +183,10 @@ export const useMelodyLayerStore = create<MelodyLayerState>((set) => ({
       // Note duration fills the slot but snaps to 1/4 beat minimum
       const durationBeats = Math.max(0.25, Math.round(beatsPerSlot * 4) / 4);
 
-      // Root MIDI: C4=60, offset by rootNote semitones, in octave 4 (center of 48–84 range)
-      const rootMidi = 60 + rootNote;
+      // Root MIDI: rootNote is a full MIDI note (e.g. 36 = C2, 37 = C#2 …).
+      // We only need the pitch class (semitone within octave), anchored to C4=60
+      // so generated notes land in the middle of the 48–84 playable range.
+      const rootMidi = 60 + (rootNote % 12);
       const scaleLen = scale.length;
       let walkCursor = 0;
       let noteIndex = 0;
