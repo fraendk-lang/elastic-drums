@@ -15,11 +15,54 @@ export const FILTER_MODELS: { id: FilterModel; name: string; description: string
  * Create a filter chain for the given model.
  * Returns { input, output } AudioNodes to connect in series.
  * Call `update(freq, res)` to modulate cutoff and resonance in real-time.
+ *
+ * scheduleEnvelope — pre-schedules attack+decay entirely on the audio thread.
+ *   Immune to JS/GC/React timer jitter (eliminates Safari clicks).
+ *   attackSec: ramp from filterBase → filterPeak
+ *   decaySec:  exponential decay filterPeak → filterBase (τ = decaySec/3)
+ *   audioTime: AudioContext.currentTime for the note trigger
+ *
+ * cancelEnvelope — cancels any scheduled envelope and smoothly returns to
+ *   filterBase. Call on note release / silence to avoid frequency jumps.
  */
 export interface FilterChain {
   input: AudioNode;
   output: AudioNode;
   update: (freq: number, resonance: number, time: number) => void;
+  scheduleEnvelope: (
+    filterBase: number,
+    filterPeak: number,
+    attackSec: number,
+    decaySec: number,
+    res: number,
+    audioTime: number,
+  ) => void;
+  cancelEnvelope: (filterBase: number, res: number, audioTime: number) => void;
+}
+
+// ── AudioParam envelope helpers ──────────────────────────────────────────────
+// Schedule attack+decay entirely on the audio thread — no JS timers involved.
+// This eliminates clicks caused by setInterval jitter in Safari (GC, React renders).
+
+function scheduleParamEnvelope(
+  param: AudioParam,
+  base: number,
+  peak: number,
+  attackSec: number,
+  decaySec: number,
+  audioTime: number,
+): void {
+  param.cancelScheduledValues(audioTime);
+  param.setValueAtTime(base, audioTime);
+  param.linearRampToValueAtTime(peak, audioTime + Math.max(attackSec, 0.001));
+  // τ = decaySec/3 → ~95% decay in decaySec
+  param.setTargetAtTime(base, audioTime + Math.max(attackSec, 0.001), decaySec / 3);
+}
+
+function cancelParamEnvelope(param: AudioParam, base: number, audioTime: number): void {
+  param.cancelScheduledValues(audioTime);
+  // Smooth return to base — avoids discontinuity if cancelled mid-attack
+  param.setTargetAtTime(base, audioTime, 0.015);
 }
 
 /**
@@ -38,6 +81,16 @@ function createLPF(ctx: AudioContext): FilterChain {
       filter.frequency.setTargetAtTime(freq, time, 0.008);
       // res 0-1 → Q 0.5-8 (musical range, no screaming resonance)
       filter.Q.setTargetAtTime(0.5 + res * 7.5, time, 0.008);
+    },
+    scheduleEnvelope(filterBase, filterPeak, attackSec, decaySec, res, audioTime) {
+      scheduleParamEnvelope(filter.frequency, filterBase, filterPeak, attackSec, decaySec, audioTime);
+      filter.Q.cancelScheduledValues(audioTime);
+      filter.Q.setValueAtTime(0.5 + res * 7.5, audioTime);
+    },
+    cancelEnvelope(filterBase, res, audioTime) {
+      cancelParamEnvelope(filter.frequency, filterBase, audioTime);
+      filter.Q.cancelScheduledValues(audioTime);
+      filter.Q.setTargetAtTime(0.5 + res * 7.5, audioTime, 0.015);
     },
   };
 }
@@ -81,6 +134,22 @@ function createLadder(ctx: AudioContext): FilterChain {
       stages[1]!.Q.setTargetAtTime(0.5, time, 0.005);
       stages[2]!.Q.setTargetAtTime(res * 10, time, 0.005);
       stages[3]!.Q.setTargetAtTime(res * 18, time, 0.005);
+    },
+    scheduleEnvelope(filterBase, filterPeak, attackSec, decaySec, res, audioTime) {
+      for (let i = 0; i < 4; i++) {
+        scheduleParamEnvelope(stages[i]!.frequency, filterBase * stageOffsets[i]!, filterPeak * stageOffsets[i]!, attackSec, decaySec, audioTime);
+      }
+      stages[0]!.Q.cancelScheduledValues(audioTime); stages[0]!.Q.setValueAtTime(0.5, audioTime);
+      stages[1]!.Q.cancelScheduledValues(audioTime); stages[1]!.Q.setValueAtTime(0.5, audioTime);
+      stages[2]!.Q.cancelScheduledValues(audioTime); stages[2]!.Q.setValueAtTime(res * 10, audioTime);
+      stages[3]!.Q.cancelScheduledValues(audioTime); stages[3]!.Q.setValueAtTime(res * 18, audioTime);
+    },
+    cancelEnvelope(filterBase, res, audioTime) {
+      for (let i = 0; i < 4; i++) {
+        cancelParamEnvelope(stages[i]!.frequency, filterBase * stageOffsets[i]!, audioTime);
+      }
+      stages[2]!.Q.cancelScheduledValues(audioTime); stages[2]!.Q.setTargetAtTime(res * 10, audioTime, 0.015);
+      stages[3]!.Q.cancelScheduledValues(audioTime); stages[3]!.Q.setTargetAtTime(res * 18, audioTime, 0.015);
     },
   };
 }
@@ -140,6 +209,21 @@ function createSteiner(ctx: AudioContext, mode: BiquadFilterType): FilterChain {
       stage2.Q.setTargetAtTime(q * 0.5, time, 0.005);
       // Mild pre-gain boost with resonance (1.0-1.4x, not 2.5x)
       preGain.gain.setTargetAtTime(1.0 + res * 0.4, time, 0.005);
+    },
+    scheduleEnvelope(filterBase, filterPeak, attackSec, decaySec, res, audioTime) {
+      scheduleParamEnvelope(stage1.frequency, filterBase * 1.005, filterPeak * 1.005, attackSec, decaySec, audioTime);
+      scheduleParamEnvelope(stage2.frequency, filterBase * 0.995, filterPeak * 0.995, attackSec, decaySec, audioTime);
+      const q = 1 + res * 11;
+      stage1.Q.cancelScheduledValues(audioTime); stage1.Q.setValueAtTime(q, audioTime);
+      stage2.Q.cancelScheduledValues(audioTime); stage2.Q.setValueAtTime(q * 0.5, audioTime);
+      preGain.gain.cancelScheduledValues(audioTime); preGain.gain.setValueAtTime(1.0 + res * 0.4, audioTime);
+    },
+    cancelEnvelope(filterBase, res, audioTime) {
+      cancelParamEnvelope(stage1.frequency, filterBase * 1.005, audioTime);
+      cancelParamEnvelope(stage2.frequency, filterBase * 0.995, audioTime);
+      const q = 1 + res * 11;
+      stage1.Q.cancelScheduledValues(audioTime); stage1.Q.setTargetAtTime(q, audioTime, 0.015);
+      stage2.Q.cancelScheduledValues(audioTime); stage2.Q.setTargetAtTime(q * 0.5, audioTime, 0.015);
     },
   };
 }

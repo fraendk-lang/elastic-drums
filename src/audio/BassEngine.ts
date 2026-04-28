@@ -158,7 +158,7 @@ export class BassEngine {
 
   private isRunning = false;
   private noteIsOn = false;
-  private _filterEnvTimer: ReturnType<typeof setInterval> | null = null;
+
   // Auto-release safety net: setTimeout that cannot be killed by cancelScheduledValues
   private _autoReleaseTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -302,15 +302,14 @@ export class BassEngine {
 
   /**
    * Schedule the 303 filter envelope via the filter chain.
-   * Fast attack + sharp exponential decay. Accent dramatically increases
-   * envelope depth and peak. JS timer drives filterChain.update at 60Hz
-   * (down from 200Hz) — imperceptibly smooth for filter sweeps, 3× less CPU.
+   * Fast attack + sharp exponential decay using pre-scheduled AudioParam automation.
+   *
+   * Runs entirely on the audio thread — immune to JS/GC/React timer jitter.
+   * This eliminates the click/dropout artefacts on Safari that the old
+   * setInterval(16ms) approach caused when the main thread stalled.
    */
-  private scheduleFilterEnvelope(_time: number, accent: boolean, slide: boolean): void {
-    if (!this.filterChain) return;
-
-    // Clear any previous envelope
-    if (this._filterEnvTimer) clearInterval(this._filterEnvTimer);
+  private scheduleFilterEnvelope(time: number, accent: boolean, slide: boolean): void {
+    if (!this.filterChain || !this.ctx) return;
 
     const p = this.params;
     const accentMul = accent ? (1.0 + p.accent * 2.5) : 1.0;
@@ -319,35 +318,12 @@ export class BassEngine {
     const filterBase = Math.max(p.cutoff, 20);
     const decaySec = (p.decay / 1000) * (accent ? 0.4 : 1.0);
     const res = Math.min(p.resonance / 30, 1.0);
+    const attackSec = ((slide || p.legato) ? p.slideTime : 3) / 1000;
 
-    const attackMs = (slide || p.legato) ? p.slideTime : 3;
-    const startTime = performance.now();
-    let currentFreq = filterBase;
-
-    this._filterEnvTimer = setInterval(() => {
-      const elapsed = (performance.now() - startTime) / 1000;
-      const now = this.ctx?.currentTime ?? 0;
-
-      if (elapsed < attackMs / 1000) {
-        const t = elapsed / (attackMs / 1000);
-        currentFreq = filterBase + (filterPeak - filterBase) * t;
-        this._filterEnvFreq = currentFreq;
-      } else {
-        const decayElapsed = elapsed - attackMs / 1000;
-        const t = Math.exp(-decayElapsed / (decaySec / 3));
-        currentFreq = filterBase + (filterPeak - filterBase) * t;
-        this._filterEnvFreq = currentFreq;
-      }
-
-      this.filterChain?.update(currentFreq, res, now);
-
-      if (elapsed > attackMs / 1000 + decaySec * 2) {
-        clearInterval(this._filterEnvTimer!);
-        this._filterEnvTimer = null;
-        this._filterEnvFreq = -1;
-        this.filterChain?.update(filterBase, res, now);
-      }
-    }, 16); // 16ms = 60Hz — smooth for filter envelopes, 3× less CPU than 5ms
+    // All scheduling happens on the audio thread — no JS timer needed.
+    this.filterChain.scheduleEnvelope(filterBase, filterPeak, attackSec, decaySec, res, time);
+    // Keep _filterEnvFreq updated for LFO filter-mod base (approximate peak)
+    this._filterEnvFreq = filterPeak;
   }
 
   /** Trigger a bass note */
@@ -429,12 +405,11 @@ export class BassEngine {
     this.noteIsOn = false;
     // Clear auto-release timer since we're releasing now
     if (this._autoReleaseTimer) { clearTimeout(this._autoReleaseTimer); this._autoReleaseTimer = null; }
-    // Clear any pending filter envelope
-    if (this._filterEnvTimer) {
-      clearInterval(this._filterEnvTimer);
-      this._filterEnvTimer = null;
-      this._filterEnvFreq = -1;
+    // Cancel any scheduled filter envelope — smoothly return to cutoff
+    if (this.filterChain && this.ctx) {
+      this.filterChain.cancelEnvelope(Math.max(this.params.cutoff, 20), Math.min(this.params.resonance / 30, 1.0), time);
     }
+    this._filterEnvFreq = -1;
   }
 
   /** Rest (no note on this step) */
@@ -454,10 +429,10 @@ export class BassEngine {
       this.output.gain.setValueAtTime(0, t);
     }
     this.noteIsOn = false;
-    if (this._filterEnvTimer) {
-      clearInterval(this._filterEnvTimer);
-      this._filterEnvTimer = null;
+    if (this.filterChain && this.ctx) {
+      this.filterChain.cancelEnvelope(Math.max(this.params.cutoff, 20), Math.min(this.params.resonance / 30, 1.0), t);
     }
+    this._filterEnvFreq = -1;
   }
 
   /** Update parameters live */
@@ -631,11 +606,6 @@ export class BassEngine {
   /** Stop all running oscillators and clear context reference.
    *  Call before AudioContext.close() to avoid orphaned oscillators. */
   destroy(): void {
-    // C1 fix: stop filter envelope timer before nulling ctx
-    if (this._filterEnvTimer) {
-      clearInterval(this._filterEnvTimer);
-      this._filterEnvTimer = null;
-    }
     this.stopLFO();
     if (this._autoReleaseTimer) {
       clearTimeout(this._autoReleaseTimer);
