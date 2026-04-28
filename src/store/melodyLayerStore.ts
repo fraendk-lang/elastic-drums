@@ -70,11 +70,26 @@ function makeLayer(colorIndex: 0 | 1 | 2 | 3): MelodyLayer {
 const HISTORY_MAX = 50;
 const _past: MelodyLayer[][] = [];
 const _future: MelodyLayer[][] = [];
+let _historyPaused = false;
 
 function pushHistory(layers: MelodyLayer[]): void {
+  if (_historyPaused) return;
   _past.push(layers.map((l) => ({ ...l, notes: [...l.notes] })));
   if (_past.length > HISTORY_MAX) _past.shift();
   _future.length = 0; // clear redo stack on new action
+}
+
+/** Call before starting a continuous drag — snapshots current state once,
+ *  then pauses history so every mousemove doesn't flood the stack. */
+export function beginDragEdit(): void {
+  const layers = useMelodyLayerStore.getState().layers;
+  pushHistory(layers);   // one snapshot for the whole drag
+  _historyPaused = true;
+}
+
+/** Call on pointerUp / pointerLeave to re-enable per-action history. */
+export function endDragEdit(): void {
+  _historyPaused = false;
 }
 
 interface MelodyLayerState {

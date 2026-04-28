@@ -1,6 +1,6 @@
 // src/components/MelodyLayers/index.tsx
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { useMelodyLayerStore, type MelodyLayerNote, LAYER_COLORS } from "../../store/melodyLayerStore";
+import { useMelodyLayerStore, type MelodyLayerNote, LAYER_COLORS, beginDragEdit, endDragEdit } from "../../store/melodyLayerStore";
 import { useDrumStore } from "../../store/drumStore";
 import { useBassStore } from "../../store/bassStore";
 import { MELODY_PRESETS } from "../../store/melodyStore";
@@ -258,6 +258,7 @@ export function MelodyLayersEditor() {
 
     if (hit.note && hit.isRightEdge) {
       e.currentTarget.setPointerCapture(e.pointerId);
+      beginDragEdit();
       resizeDragRef.current = {
         layerId: activeLayerIdRef.current,
         noteId: hit.note.id,
@@ -271,6 +272,7 @@ export function MelodyLayersEditor() {
     // Left-click on note body = start move drag (click without move = delete)
     if (hit.note && !hit.isRightEdge && e.button === 0) {
       e.currentTarget.setPointerCapture(e.pointerId);
+      beginDragEdit();
       setSelectedNote(hit.note.id);
       moveDragRef.current = {
         layerId: activeLayerIdRef.current,
@@ -376,19 +378,19 @@ export function MelodyLayersEditor() {
       e.currentTarget.releasePointerCapture(e.pointerId);
       const draggedPx = Math.abs(e.clientX - resizeDragRef.current.startX);
       if (draggedPx < 5) {
-        // Tiny movement on resize handle = treat as click = delete
         removeNote(resizeDragRef.current.layerId, resizeDragRef.current.noteId);
       }
       resizeDragRef.current = null;
+      endDragEdit();
       return;
     }
     if (moveDragRef.current) {
       e.currentTarget.releasePointerCapture(e.pointerId);
       if (!moveDragRef.current.hasMoved) {
-        // Pure click = delete
         removeNote(moveDragRef.current.layerId, moveDragRef.current.noteId);
       }
       moveDragRef.current = null;
+      endDragEdit();
     }
   }, [removeNote]);
 
@@ -603,10 +605,12 @@ export function MelodyLayersEditor() {
           if (resizeDragRef.current) {
             e.currentTarget.releasePointerCapture(e.pointerId);
             resizeDragRef.current = null;
+            endDragEdit();
           }
           if (moveDragRef.current) {
             e.currentTarget.releasePointerCapture(e.pointerId);
             moveDragRef.current = null;
+            endDragEdit();
           }
         }}
         onContextMenu={handleGridContextMenu}
