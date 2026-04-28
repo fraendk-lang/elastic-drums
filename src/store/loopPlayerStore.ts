@@ -48,7 +48,10 @@ export interface LoopSlotState {
   firstBeatOffset:  number;      // seconds to beat 1 in the file
   loopEndSeconds:   number;      // beat-aligned loop end (0 = use full buffer)
   waveformPeaks:    Float32Array | null; // 120 bars, normalized 0..1 amplitude
-  playStartedAt:    number | null;       // AudioContext currentTime when slot last started
+  playStartedAt:    number | null;       // AudioContext currentTime when loop actually started
+  // Volume-envelope automation
+  volumeEnvelope:   number[];    // 16 segments × 0–1 (default all 1.0)
+  envExpanded:      boolean;     // whether the envelope lane is visible
 }
 
 /** Serialisable per-slot snapshot saved inside a Scene.
@@ -62,6 +65,7 @@ export interface LoopSceneState {
   originalBpm:     number;
   firstBeatOffset: number;
   loopEndSeconds:  number;
+  volumeEnvelope?: number[];
 }
 
 interface LoopPlayerStore {
@@ -84,6 +88,11 @@ interface LoopPlayerStore {
    *  Slots playing in both scenes keep running uninterrupted. */
   loadSceneSlots(targetSlots: LoopSceneState[]): void;
   tapBpm             (idx: number): void;
+  /** Set one segment of the volume envelope (0–15) to a value 0–1.
+   *  Reschedules gain automation immediately if the slot is playing. */
+  setVolumeSegment   (idx: number, segIdx: number, value: number): void;
+  /** Toggle the envelope lane visibility for a slot. */
+  setEnvExpanded     (idx: number, expanded: boolean): void;
 }
 
 // ─── Defaults ─────────────────────────────────────────────
@@ -107,6 +116,8 @@ function createDefaultSlot(): LoopSlotState {
     loopEndSeconds:  0,
     waveformPeaks:   null,
     playStartedAt:   null,
+    volumeEnvelope:  Array(16).fill(1),
+    envExpanded:     false,
   };
 }
 
@@ -269,6 +280,28 @@ function _launchSlot(idx: number, slot: LoopSlotState): void {
     loopEnd,
     _pitchFactor(slot),
   );
+
+  // ── Schedule volume-envelope automation ──────────────────────────────────
+  // realCycleDuration: how many real-time seconds one loop cycle occupies.
+  // Loop region is `loopRegionSecs` of audio played at rate = globalBpm / originalBpm,
+  // so it takes `loopRegionSecs * originalBpm / globalBpm` seconds of real time.
+  const loopRegionSecs = (loopEnd !== undefined ? loopEnd : (slot.buffer?.duration ?? 0)) - loopStart;
+  const playbackRate   = slot.originalBpm > 0 ? globalBpm / slot.originalBpm : 1;
+  const realCycleDuration = loopRegionSecs / Math.max(0.1, playbackRate);
+
+  loopPlayerEngine.scheduleEnvelope(
+    idx,
+    slot.volumeEnvelope,
+    startTime,
+    realCycleDuration,
+  );
+
+  // Store the exact scheduled start time so reschedule-on-edit knows the phase
+  useLoopPlayerStore.setState((s) => {
+    const slots = [...s.slots];
+    slots[idx] = { ...slots[idx]!, playStartedAt: startTime };
+    return { slots };
+  });
 }
 
 // ─── Tap-BPM state (per-slot) ─────────────────────────────
@@ -290,9 +323,11 @@ const TAP_RESET_MS = 2500;
 const _prevSlots = (import.meta.hot?.data?.slots as LoopSlotState[] | undefined)
   ?.map((s): LoopSlotState => ({
     ...s,
-    analyzing: false,  // BPM worker is gone after reload → reset flag
-    pitching:  false,  // in-flight SoundTouch job is gone → reset flag
-    playing:   false,  // audio nodes are gone after reload → mark stopped
+    analyzing:      false,  // BPM worker is gone after reload → reset flag
+    pitching:       false,  // in-flight SoundTouch job is gone → reset flag
+    playing:        false,  // audio nodes are gone after reload → mark stopped
+    volumeEnvelope: s.volumeEnvelope ?? Array(16).fill(1),
+    envExpanded:    s.envExpanded ?? false,
   }));
 
 // ─── Store ────────────────────────────────────────────────
@@ -645,6 +680,45 @@ export const useLoopPlayerStore = create<LoopPlayerStore>((set, get) => ({
     });
 
     set({ slots: nextSlots });
+  },
+
+  // ── Volume envelope ────────────────────────────────────
+  setVolumeSegment: (idx, segIdx, value) => {
+    const clamped = Math.max(0, Math.min(1, value));
+    set((s) => {
+      const slots   = [...s.slots];
+      const oldEnv  = slots[idx]!.volumeEnvelope;
+      const newEnv  = [...oldEnv];
+      newEnv[segIdx] = clamped;
+      slots[idx] = { ...slots[idx]!, volumeEnvelope: newEnv };
+      return { slots };
+    });
+
+    // Reschedule envelope automation if slot is actively playing
+    const slot = useLoopPlayerStore.getState().slots[idx]!;
+    if (slot.playing && slot.playStartedAt !== null) {
+      const globalBpm         = useDrumStore.getState().bpm;
+      const loopEnd           = slot.loopEndSeconds > slot.firstBeatOffset
+        ? slot.loopEndSeconds
+        : (slot.buffer?.duration ?? 0);
+      const loopRegionSecs    = loopEnd - slot.firstBeatOffset;
+      const playbackRate      = slot.originalBpm > 0 ? globalBpm / slot.originalBpm : 1;
+      const realCycleDuration = loopRegionSecs / Math.max(0.1, playbackRate);
+      loopPlayerEngine.scheduleEnvelope(
+        idx,
+        slot.volumeEnvelope,
+        slot.playStartedAt,
+        realCycleDuration,
+      );
+    }
+  },
+
+  setEnvExpanded: (idx, expanded) => {
+    set((s) => {
+      const slots = [...s.slots];
+      slots[idx] = { ...slots[idx]!, envExpanded: expanded };
+      return { slots };
+    });
   },
 
   // ── Tap BPM ────────────────────────────────────────────

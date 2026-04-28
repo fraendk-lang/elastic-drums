@@ -37,6 +37,8 @@ function createEmptyLoopSlot(): LoopSlotState {
     loopEndSeconds:  0,
     waveformPeaks:   null,
     playStartedAt:   null,
+    volumeEnvelope:  Array(16).fill(1),
+    envExpanded:     false,
   };
 }
 

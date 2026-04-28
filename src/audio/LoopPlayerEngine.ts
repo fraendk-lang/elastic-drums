@@ -180,6 +180,56 @@ export class LoopPlayerEngine {
     }
   }
 
+  /**
+   * Schedule volume-envelope automation for a looping slot.
+   * Writes `setValueAtTime` calls spanning `numCycles` loop iterations ahead,
+   * aligned to `loopStartAudioTime + N * realCycleDuration`.
+   *
+   * Call immediately after `startSlot()`. Safe to re-call while playing —
+   * cancels old schedule first.
+   *
+   * @param slotIdx            - 0-based slot index
+   * @param envelope           - volume per segment (0–1); length = segment count
+   * @param loopStartAudioTime - AudioContext time of the very first loop cycle
+   * @param realCycleDuration  - real-time seconds per loop cycle (= loopRegionSecs / playbackRate)
+   * @param numCycles          - how many future cycles to pre-schedule (default 64 ≈ 8+ min at 8 s/cycle)
+   */
+  scheduleEnvelope(
+    slotIdx: number,
+    envelope: number[],
+    loopStartAudioTime: number,
+    realCycleDuration: number,
+    numCycles = 64,
+  ): void {
+    const gain = this.gains[slotIdx];
+    if (!gain || !this.ctx) return;
+    if (realCycleDuration < 0.01 || envelope.length === 0) return;
+
+    const now = this.ctx.currentTime;
+    const segCount = envelope.length;
+    const segDuration = realCycleDuration / segCount;
+
+    // Clear all previously scheduled values from now onward
+    try { gain.gain.cancelScheduledValues(now); } catch { /* ok */ }
+
+    // Find the first cycle that overlaps "now" (skip past cycles)
+    const firstCycle = Math.max(0, Math.floor((now - loopStartAudioTime) / realCycleDuration));
+
+    for (let cycle = firstCycle; cycle < firstCycle + numCycles; cycle++) {
+      const cycleStart = loopStartAudioTime + cycle * realCycleDuration;
+      // Don't schedule further than 10 minutes ahead
+      if (cycleStart > now + 600) break;
+      for (let seg = 0; seg < segCount; seg++) {
+        const t = cycleStart + seg * segDuration;
+        if (t < now - 0.05) continue; // skip strictly past events
+        const vol = Math.max(0, Math.min(1, envelope[seg] ?? 1));
+        try {
+          gain.gain.setValueAtTime(vol, Math.max(now, t));
+        } catch { /* ok */ }
+      }
+    }
+  }
+
   /** Returns true if a slot has an active AudioBufferSourceNode. */
   isSlotActive(slotIdx: number): boolean {
     return this.sources[slotIdx] !== null;

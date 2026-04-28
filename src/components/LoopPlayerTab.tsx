@@ -217,6 +217,8 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
   const setWarpMode        = useLoopPlayerStore((s) => s.setWarpMode);
   const togglePlay         = useLoopPlayerStore((s) => s.togglePlay);
   const tapBpm             = useLoopPlayerStore((s) => s.tapBpm);
+  const setVolumeSegment   = useLoopPlayerStore((s) => s.setVolumeSegment);
+  const setEnvExpanded     = useLoopPlayerStore((s) => s.setEnvExpanded);
   const globalBpm          = useDrumStore((s) => s.bpm);
   const isTransportPlay    = useDrumStore((s) => s.isPlaying);
 
@@ -224,6 +226,8 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
   const waveContRef = useRef<HTMLDivElement>(null);
   // Track which handle is being dragged: "start" | "end" | null
   const dragHandleRef = useRef<"start" | "end" | null>(null);
+  const envCanvasRef     = useRef<HTMLCanvasElement>(null);
+  const envDragActive    = useRef(false);
 
   const [isDragOver,    setIsDragOver]    = useState(false);
   const [bpmInput,      setBpmInput]      = useState(String(slot.originalBpm));
@@ -465,6 +469,90 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
     );
   }, [slot.buffer, slot.firstBeatOffset, slot.loopEndSeconds, slot.originalBpm, slot.analyzing, pendingSlices]);
 
+  // ── Redraw volume-envelope lane ──────────────────────────
+  useEffect(() => {
+    const canvas = envCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const w = canvas.width;
+    const h = canvas.height;
+    const env = slot.volumeEnvelope;
+    const segCount = env.length;
+    const segW = w / segCount;
+    ctx.clearRect(0, 0, w, h);
+
+    // Background
+    ctx.fillStyle = "rgba(0,0,0,0.3)";
+    ctx.fillRect(0, 0, w, h);
+
+    // Segment bars
+    for (let i = 0; i < segCount; i++) {
+      const v = env[i] ?? 1;
+      const barH = Math.max(2, v * (h - 4));
+      const x = i * segW;
+
+      // Muted segment: dim red tint
+      const isMuted = v < 0.02;
+      ctx.fillStyle = isMuted
+        ? "rgba(239,68,68,0.25)"
+        : `rgba(46,196,182,${0.18 + v * 0.55})`;
+      ctx.fillRect(x + 1, h - barH - 2, segW - 2, barH);
+
+      // Top handle line
+      ctx.fillStyle = isMuted ? "rgba(239,68,68,0.6)" : TEAL;
+      ctx.fillRect(x + 1, h - barH - 3, segW - 2, 2);
+    }
+
+    // Segment dividers
+    ctx.strokeStyle = "rgba(255,255,255,0.04)";
+    ctx.lineWidth = 1;
+    for (let i = 1; i < segCount; i++) {
+      const x = i * segW;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+
+    // "ENV" watermark
+    ctx.fillStyle = "rgba(46,196,182,0.12)";
+    ctx.font = "bold 7px monospace";
+    ctx.fillText("VOL ENV", 3, h - 3);
+  }, [slot.volumeEnvelope, slot.envExpanded]);
+
+  // ── Envelope lane interaction ─────────────────────────────
+  const handleEnvPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    envDragActive.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const canvas = envCanvasRef.current;
+    if (!canvas) return;
+    const rect    = canvas.getBoundingClientRect();
+    const relX    = Math.max(0, e.clientX - rect.left);
+    const relY    = Math.max(0, e.clientY - rect.top);
+    const segCount = slot.volumeEnvelope.length;
+    const segIdx  = Math.min(segCount - 1, Math.floor((relX / rect.width) * segCount));
+    const value   = Math.max(0, Math.min(1, 1 - relY / rect.height));
+    setVolumeSegment(slotIndex, segIdx, value);
+  }, [slot.volumeEnvelope, slotIndex, setVolumeSegment]);
+
+  const handleEnvPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!envDragActive.current) return;
+    const canvas = envCanvasRef.current;
+    if (!canvas) return;
+    const rect    = canvas.getBoundingClientRect();
+    const relX    = Math.max(0, e.clientX - rect.left);
+    const relY    = Math.max(0, e.clientY - rect.top);
+    const segCount = slot.volumeEnvelope.length;
+    const segIdx  = Math.min(segCount - 1, Math.max(0, Math.floor((relX / rect.width) * segCount)));
+    const value   = Math.max(0, Math.min(1, 1 - relY / rect.height));
+    setVolumeSegment(slotIndex, segIdx, value);
+  }, [slot.volumeEnvelope, slotIndex, setVolumeSegment]);
+
+  const handleEnvPointerUp = useCallback(() => {
+    envDragActive.current = false;
+  }, []);
+
   // ── File loading ─────────────────────────────────────────
   const handleLoadFile = useCallback(async (file: File) => {
     const ctx = audioEngine.getAudioContext();
@@ -688,7 +776,28 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
         </div>
       )}
 
-      {/* ── Row 3: BPM · LOCK · VOL · SLICE (only when loaded) ── */}
+      {/* ── Envelope lane (expandable, only when file loaded) ── */}
+      {slot.buffer && slot.envExpanded && (
+        <canvas
+          ref={envCanvasRef}
+          width={640}
+          height={44}
+          className="w-full rounded"
+          style={{
+            display: "block",
+            imageRendering: "pixelated",
+            cursor: "ns-resize",
+            border: `1px solid ${TEAL}18`,
+          }}
+          onPointerDown={handleEnvPointerDown}
+          onPointerMove={handleEnvPointerMove}
+          onPointerUp={handleEnvPointerUp}
+          onPointerLeave={handleEnvPointerUp}
+          title="Drag to paint volume segments — top=100%, bottom=0% (mute)"
+        />
+      )}
+
+      {/* ── Row 3: BPM · LOCK · VOL · ENV · SLICE (only when loaded) ── */}
       {slot.buffer && (
         <div className="flex items-center gap-1.5 flex-wrap">
 
@@ -747,6 +856,20 @@ const LoopSlot = memo(function LoopSlot({ slotIndex }: LoopSlotProps) {
               {Math.round(slot.volume * 100)}
             </span>
           </div>
+
+          {/* ENV toggle */}
+          <button
+            onClick={() => setEnvExpanded(slotIndex, !slot.envExpanded)}
+            className="text-[6px] font-bold px-1.5 py-0.5 rounded transition-all shrink-0"
+            style={{
+              background: slot.envExpanded ? `rgba(46,196,182,0.20)` : "rgba(255,255,255,0.04)",
+              color: slot.envExpanded ? TEAL : "rgba(255,255,255,0.35)",
+              border: `1px solid ${slot.envExpanded ? `${TEAL}50` : "rgba(255,255,255,0.08)"}`,
+            }}
+            title={slot.envExpanded ? "Hide volume envelope" : "Show volume envelope — draw to mute parts of the loop"}
+          >
+            ENV
+          </button>
 
           <div className="w-px h-3.5 bg-white/8 shrink-0" />
 
