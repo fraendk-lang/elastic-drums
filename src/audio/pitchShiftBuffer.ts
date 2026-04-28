@@ -71,16 +71,25 @@ async function soundTouchShift(buffer: AudioBuffer, semitones: number): Promise<
 /**
  * Pitch-shift an AudioBuffer offline. Mode determines algorithm quality.
  * 'repitch' is never called here — RE-PITCH bypasses offline processing entirely.
+ *
+ * bpmRatio: globalBpm / originalBpm — the same ratio applied as playbackRate.
+ * In beats/complex modes the engine time-stretches by setting playbackRate=bpmRatio,
+ * which also shifts pitch by log2(bpmRatio)*12 semitones. We pre-cancel that here
+ * so the perceived pitch stays at `semitones` regardless of tempo.
  */
 export async function pitchShiftBuffer(
   buffer: AudioBuffer,
   semitones: number,
   mode: WarpMode = "beats",
+  bpmRatio = 1,   // compensate playbackRate pitch shift in beats/complex mode
 ): Promise<AudioBuffer> {
-  if (Math.abs(semitones) < 0.01) return buffer;
-  if (mode === "repitch")         return buffer; // RE-PITCH: handled by playbackRate
+  if (mode === "repitch") return buffer; // RE-PITCH: handled by playbackRate
+
+  // Pre-cancel the pitch shift introduced by playbackRate = bpmRatio
+  const compSemitones = semitones - (bpmRatio > 0 && bpmRatio !== 1 ? Math.log2(bpmRatio) * 12 : 0);
+  if (Math.abs(compSemitones) < 0.01) return buffer;
 
   return mode === "complex"
-    ? phaseVocoderShift(buffer, semitones)
-    : soundTouchShift(buffer, semitones);
+    ? phaseVocoderShift(buffer, compSemitones)
+    : soundTouchShift(buffer, compSemitones);
 }
