@@ -669,7 +669,7 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
     if (savedSendsRef.current !== null) {
       const saved = savedSendsRef.current;
       savedSendsRef.current = null;
-      KAOSS_SYNTH_CHANNELS.forEach((ch, i) => {
+      saved.channels.forEach((ch, i) => {
         audioEngine.setChannelReverbSend(ch, saved.reverb[i] ?? 0);
         audioEngine.setChannelDelaySend(ch, saved.delay[i] ?? 0);
       });
