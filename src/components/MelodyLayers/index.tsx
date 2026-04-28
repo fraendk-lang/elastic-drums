@@ -80,6 +80,7 @@ export function MelodyLayersEditor() {
 
   const gridRef = useRef<HTMLDivElement>(null);
   const [hoverCell, setHoverCell] = useState<{ pitch: number; beat: number } | null>(null);
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
   const [gridCursor, setGridCursor] = useState("crosshair");
   const resizeDragRef = useRef<ResizeDrag | null>(null);
   const moveDragRef = useRef<MoveDrag | null>(null);
@@ -288,12 +289,14 @@ export function MelodyLayersEditor() {
     const rect = gridRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left - PIANO_W;
     const y = e.clientY - rect.top - RULER_H + gridRef.current.scrollTop;
-    if (x < 0 || y < 0) { setHoverCell(null); setGridCursor("crosshair"); return; }
+    if (x < 0 || y < 0) { setHoverCell(null); setHoverPos(null); setGridCursor("crosshair"); return; }
     const rowIdx = Math.floor(y / ROW_H);
-    if (rowIdx < 0 || rowIdx >= ROWS) { setHoverCell(null); setGridCursor("crosshair"); return; }
+    if (rowIdx < 0 || rowIdx >= ROWS) { setHoverCell(null); setHoverPos(null); setGridCursor("crosshair"); return; }
     const pitch = MIDI_MAX - rowIdx;
     const bw = beatWidthRef.current;
     const beat = Math.round((x / bw) * 4) / 4;
+    // Track cursor position relative to the grid container (for floating badge)
+    setHoverPos({ x: e.clientX - rect.left, y: rowIdx * ROW_H + RULER_H - (gridRef.current?.scrollTop ?? 0) });
     const onRightEdge = notesRef.current.some((n) => {
       if (n.pitch !== pitch) return false;
       const endX = (n.startBeat + n.durationBeats) * bw;
@@ -353,6 +356,18 @@ export function MelodyLayersEditor() {
   // ─── Playhead ────────────────────────────────────────────────────────────────
 
   const playheadX = isPlaying ? PIANO_W + beatInfo.beat * beatWidth : null;
+
+  // ─── Pitch display helpers ────────────────────────────────────────────────────
+
+  function fullPitchName(pitch: number): string {
+    const oct = Math.floor(pitch / 12) - 1;
+    return NOTE_NAMES[((pitch % 12) + 12) % 12]! + oct;
+  }
+
+  const selectedNote = selectedNoteId
+    ? notes.find((n) => n.id === selectedNoteId) ?? null
+    : null;
+  const displayPitch = selectedNote?.pitch ?? hoverCell?.pitch ?? null;
 
   // ─── Synth preset helper ─────────────────────────────────────────────────────
 
@@ -447,6 +462,19 @@ export function MelodyLayersEditor() {
           S
         </button>
 
+        {/* Pitch display — shows hovered or selected note */}
+        <div
+          className="ml-1 px-2 py-0.5 rounded border text-[9px] font-black tracking-wider min-w-[32px] text-center transition-all"
+          style={{
+            borderColor: displayPitch !== null ? `${layerColor}50` : "#1e2030",
+            color: displayPitch !== null ? layerColor : "#333",
+            background: displayPitch !== null ? `${layerColor}10` : "transparent",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {displayPitch !== null ? fullPitchName(displayPitch) : "–"}
+        </div>
+
         {/* Clear active layer */}
         <button
           onClick={() => clearNotes(activeLayer.id)}
@@ -457,6 +485,30 @@ export function MelodyLayersEditor() {
       </div>
 
       {/* ── Piano Roll Grid ── */}
+      <div className="relative">
+      {/* Floating pitch badge near cursor — rendered outside scroll area so it doesn't clip */}
+      {hoverPos && hoverCell && (
+        <div
+          style={{
+            position: "absolute",
+            left: Math.min(hoverPos.x + 12, (gridRef.current?.clientWidth ?? 200) - 44),
+            top: Math.max(4, hoverPos.y - 18),
+            zIndex: 30,
+            pointerEvents: "none",
+            background: `${layerColor}dd`,
+            color: "#000",
+            fontSize: 9,
+            fontWeight: 900,
+            letterSpacing: "0.05em",
+            padding: "1px 5px",
+            borderRadius: 3,
+            boxShadow: "0 1px 4px rgba(0,0,0,0.6)",
+            fontFamily: "monospace",
+          }}
+        >
+          {fullPitchName(hoverCell.pitch)}
+        </div>
+      )}
       <div
         ref={gridRef}
         className="relative overflow-y-auto overflow-x-hidden"
@@ -467,6 +519,7 @@ export function MelodyLayersEditor() {
         onDoubleClick={handleGridDoubleClick}
         onPointerLeave={(e) => {
           setHoverCell(null);
+          setHoverPos(null);
           if (resizeDragRef.current) {
             e.currentTarget.releasePointerCapture(e.pointerId);
             resizeDragRef.current = null;
@@ -521,15 +574,25 @@ export function MelodyLayersEditor() {
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "flex-end",
-                    paddingRight: 5,
-                    fontSize: 6,
-                    color: isBlack ? "#333" : "#444",
-                    background: isBlack ? "#151820" : "#1a1d26",
-                    borderRight: "1px solid #222",
+                    paddingRight: 4,
+                    fontSize: isC ? 7 : 6,
+                    fontWeight: isC ? 700 : 400,
+                    color: hoverCell?.pitch === pitch
+                      ? layerColor
+                      : isC
+                        ? "#666"
+                        : isBlack ? "#2a2a2a" : "#3a3a3a",
+                    background: hoverCell?.pitch === pitch
+                      ? `${layerColor}18`
+                      : isBlack ? "#151820" : "#1a1d26",
+                    borderRight: `1px solid ${hoverCell?.pitch === pitch ? layerColor + "40" : "#222"}`,
                     cursor: "default",
+                    transition: "color 0.08s, background 0.08s",
                   }}
                 >
-                  {isC ? name + (Math.floor(pitch / 12) - 1) : ""}
+                  {isC
+                    ? `C${Math.floor(pitch / 12) - 1}`
+                    : name}
                 </div>
 
                 {/* Beat cells — grid lines only */}
@@ -586,8 +649,26 @@ export function MelodyLayersEditor() {
               }}
             />
           )}
+
+          {/* Hover row highlight line */}
+          {hoverCell && (
+            <div
+              style={{
+                position: "absolute",
+                top: (MIDI_MAX - hoverCell.pitch) * ROW_H,
+                left: PIANO_W,
+                right: 0,
+                height: ROW_H,
+                background: `${layerColor}08`,
+                borderTop: `1px solid ${layerColor}20`,
+                borderBottom: `1px solid ${layerColor}20`,
+                pointerEvents: "none",
+              }}
+            />
+          )}
         </div>
       </div>
+      </div>{/* end piano roll wrapper */}
 
       {/* ── Synth panel ── */}
       <div
