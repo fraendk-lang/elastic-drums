@@ -285,7 +285,7 @@ export function MelodyLayersEditor() {
 
   const applyPreset = useCallback((index: number) => {
     setSynth(activeLayerIdRef.current, { presetIndex: index });
-    const engine = melodyLayerEngines[activeLayerIdxRef.current];
+    const engine = melodyLayerEngines[activeLayerIdxRef.current + 1];
     const preset = MELODY_PRESETS[index];
     if (engine && preset) engine.setParams(preset.params);
   }, [setSynth]);
