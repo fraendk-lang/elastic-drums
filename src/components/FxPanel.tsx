@@ -10,21 +10,32 @@ import { audioEngine } from "../audio/AudioEngine";
 import { useDrumStore } from "../store/drumStore";
 import { motionRecorder, type MotionRecording } from "../audio/MotionRecorder";
 
-// Synth channels that get auto-sends when Kaoss Pad uses REVERB/DELAY modes
+// Synth channels that get auto-sends when Kaoss Pad uses REVERB/DELAY modes (master/drums fallback)
 const KAOSS_SYNTH_CHANNELS = [12, 13, 14] as const;
 const KAOSS_AUTO_SEND = 0.38;
 
 // ─── Types ───────────────────────────────────────────────
 
-type FxTarget = "master" | "drums" | "bass" | "chords" | "melody";
+type FxTarget = "master" | "drums" | "bass" | "chords" | "melody" | "sampler" | "loops" | "layers";
 
 const FX_TARGETS: { id: FxTarget; label: string; channels: number[] }[] = [
-  { id: "master", label: "MASTER", channels: [] },
-  { id: "drums", label: "DRUMS", channels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
-  { id: "bass", label: "BASS", channels: [12] },
-  { id: "chords", label: "CHORDS", channels: [13] },
-  { id: "melody", label: "MELODY", channels: [14] },
+  { id: "master",  label: "MASTER",  channels: [] },
+  { id: "drums",   label: "DRUMS",   channels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
+  { id: "bass",    label: "BASS",    channels: [12] },
+  { id: "chords",  label: "CHORDS",  channels: [13] },
+  { id: "melody",  label: "MELODY",  channels: [14] },
+  { id: "sampler", label: "SAMPLER", channels: [15] },
+  { id: "loops",   label: "LOOPS",   channels: [16, 17, 18, 19, 20, 21, 22, 23] },
+  { id: "layers",  label: "LAYERS",  channels: [24, 25, 26] },
 ];
+
+/** Returns which channels to route sends/phaser/chorus to for a given target.
+ *  Master and Drums have no dedicated send buses — fall back to all synth channels. */
+function getSendChannels(target: FxTarget): number[] {
+  const t = FX_TARGETS.find((t) => t.id === target);
+  if (!t || t.id === "master" || t.id === "drums") return [...KAOSS_SYNTH_CHANNELS];
+  return t.channels;
+}
 
 interface FxPanelProps {
   isOpen: boolean;
@@ -325,10 +336,10 @@ function activateFxMode(mode: FxMode, x: number, y: number, target: FxTarget, bp
     audioEngine.startFlanger(rate, depth, feedback);
   }
   if (mode === "PHASER") {
-    [12, 13, 14].forEach((ch) => audioEngine.setChannelPhaserSend(ch, 0.38));
+    getSendChannels(target).forEach((ch) => audioEngine.setChannelPhaserSend(ch, 0.38));
   }
   if (mode === "CHORUS") {
-    [12, 13, 14].forEach((ch) => audioEngine.setChannelChorusSend(ch, 0.38));
+    getSendChannels(target).forEach((ch) => audioEngine.setChannelChorusSend(ch, 0.38));
   }
   applyFxMode(mode, x, y, target, bpm);
 }
@@ -356,11 +367,11 @@ function releaseFxMode(mode: FxMode, target: FxTarget): void {
       break;
     case "PHASER":
       audioEngine.setPhaserLevel(0);
-      [12, 13, 14].forEach((ch) => audioEngine.setChannelPhaserSend(ch, 0));
+      getSendChannels(target).forEach((ch) => audioEngine.setChannelPhaserSend(ch, 0));
       break;
     case "CHORUS":
       audioEngine.setChorusLevel(0);
-      [12, 13, 14].forEach((ch) => audioEngine.setChannelChorusSend(ch, 0));
+      getSendChannels(target).forEach((ch) => audioEngine.setChannelChorusSend(ch, 0));
       break;
   }
 }
@@ -557,7 +568,7 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
 
   const padRef = useRef<HTMLDivElement>(null);
   const beatFxListRef = useRef(createBeatFxList());
-  const savedSendsRef = useRef<{ reverb: number[]; delay: number[] } | null>(null);
+  const savedSendsRef = useRef<{ channels: number[]; reverb: number[]; delay: number[] } | null>(null);
 
   const applyPadState = useCallback((x: number, y: number, latch = false) => {
     setPadX(x);
@@ -601,13 +612,14 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
       const { x, y } = calcXY(e);
       setPadX(x);
       setPadY(y);
-      // Auto-open synth channel sends for REVERB/DELAY modes so the Kaoss Pad
+      // Auto-open channel sends for REVERB/DELAY modes so the Kaoss Pad
       // actually routes signal through the send buses (they start at 0 by default).
       if ((activeMode === "REVERB" || activeMode === "DELAY") && savedSendsRef.current === null) {
-        const savedReverb = KAOSS_SYNTH_CHANNELS.map((ch) => audioEngine.getChannelReverbSend(ch));
-        const savedDelay  = KAOSS_SYNTH_CHANNELS.map((ch) => audioEngine.getChannelDelaySend(ch));
-        savedSendsRef.current = { reverb: savedReverb, delay: savedDelay };
-        for (const ch of KAOSS_SYNTH_CHANNELS) {
+        const sendChs = getSendChannels(fxTarget);
+        const savedReverb = sendChs.map((ch) => audioEngine.getChannelReverbSend(ch));
+        const savedDelay  = sendChs.map((ch) => audioEngine.getChannelDelaySend(ch));
+        savedSendsRef.current = { channels: sendChs, reverb: savedReverb, delay: savedDelay };
+        for (const ch of sendChs) {
           audioEngine.setChannelReverbSend(ch, KAOSS_AUTO_SEND);
           audioEngine.setChannelDelaySend(ch, KAOSS_AUTO_SEND);
         }
@@ -642,7 +654,7 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
       if (savedSendsRef.current !== null) {
         const saved = savedSendsRef.current;
         savedSendsRef.current = null;
-        KAOSS_SYNTH_CHANNELS.forEach((ch, i) => {
+        saved.channels.forEach((ch, i) => {
           audioEngine.setChannelReverbSend(ch, saved.reverb[i] ?? 0);
           audioEngine.setChannelDelaySend(ch, saved.delay[i] ?? 0);
         });
