@@ -41,6 +41,17 @@ type ResizeDrag = {
   beatWidth: number;
 };
 
+type MoveDrag = {
+  layerId: string;
+  noteId: string;
+  startX: number;
+  startY: number;
+  origStartBeat: number;
+  origPitch: number;
+  beatWidth: number;
+  hasMoved: boolean;
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function MelodyLayersEditor() {
@@ -69,6 +80,7 @@ export function MelodyLayersEditor() {
   const [hoverCell, setHoverCell] = useState<{ pitch: number; beat: number } | null>(null);
   const [gridCursor, setGridCursor] = useState("crosshair");
   const resizeDragRef = useRef<ResizeDrag | null>(null);
+  const moveDragRef = useRef<MoveDrag | null>(null);
 
   // ─── Beat width ─────────────────────────────────────────────────────────────
 
@@ -142,9 +154,19 @@ export function MelodyLayersEditor() {
       return;
     }
 
-    // Left-click on note body = delete
+    // Left-click on note body = start move drag (click without move = delete)
     if (hit.note && !hit.isRightEdge && e.button === 0) {
-      removeNote(activeLayerIdRef.current, hit.note.id);
+      e.currentTarget.setPointerCapture(e.pointerId);
+      moveDragRef.current = {
+        layerId: activeLayerIdRef.current,
+        noteId: hit.note.id,
+        startX: e.clientX,
+        startY: e.clientY,
+        origStartBeat: hit.note.startBeat,
+        origPitch: hit.note.pitch,
+        beatWidth: beatWidthRef.current,
+        hasMoved: false,
+      };
       return;
     }
 
@@ -159,15 +181,32 @@ export function MelodyLayersEditor() {
       };
       addNote(activeLayerIdRef.current, newNote);
     }
-  }, [hitTestNote, addNote, removeNote]);
+  }, [hitTestNote, addNote]);
 
   const handleGridPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    const drag = resizeDragRef.current;
-    if (drag) {
-      const deltaPx = e.clientX - drag.startX;
-      const deltaBeat = deltaPx / drag.beatWidth;
-      const newDur = Math.max(0.25, Math.round((drag.origDur + deltaBeat) * 4) / 4);
-      updateNote(drag.layerId, drag.noteId, { durationBeats: newDur });
+    const resize = resizeDragRef.current;
+    if (resize) {
+      const deltaPx = e.clientX - resize.startX;
+      const deltaBeat = deltaPx / resize.beatWidth;
+      const newDur = Math.max(0.25, Math.round((resize.origDur + deltaBeat) * 4) / 4);
+      updateNote(resize.layerId, resize.noteId, { durationBeats: newDur });
+      return;
+    }
+
+    const move = moveDragRef.current;
+    if (move) {
+      const dx = e.clientX - move.startX;
+      const dy = e.clientY - move.startY;
+      if (!move.hasMoved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+      move.hasMoved = true;
+      setGridCursor("grabbing");
+      const newStartBeat = Math.max(0, Math.min(
+        totalBeatsRef.current - 0.25,
+        Math.round((move.origStartBeat + dx / move.beatWidth) * 4) / 4,
+      ));
+      const deltaRows = Math.round(dy / ROW_H);
+      const newPitch = Math.max(MIDI_MIN, Math.min(MIDI_MAX, move.origPitch - deltaRows));
+      updateNote(move.layerId, move.noteId, { startBeat: newStartBeat, pitch: newPitch });
       return;
     }
 
@@ -190,7 +229,7 @@ export function MelodyLayersEditor() {
       if (n.pitch !== pitch) return false;
       return x >= n.startBeat * bw && x <= (n.startBeat + n.durationBeats) * bw;
     });
-    setGridCursor(onRightEdge ? "ew-resize" : onNoteBody ? "pointer" : "crosshair");
+    setGridCursor(onRightEdge ? "ew-resize" : onNoteBody ? "grab" : "crosshair");
     const hasNote = notesRef.current.some(
       (n) => n.pitch === pitch && beat >= n.startBeat && beat < n.startBeat + n.durationBeats
     );
@@ -201,8 +240,17 @@ export function MelodyLayersEditor() {
     if (resizeDragRef.current) {
       e.currentTarget.releasePointerCapture(e.pointerId);
       resizeDragRef.current = null;
+      return;
     }
-  }, []);
+    if (moveDragRef.current) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+      if (!moveDragRef.current.hasMoved) {
+        // Pure click = delete
+        removeNote(moveDragRef.current.layerId, moveDragRef.current.noteId);
+      }
+      moveDragRef.current = null;
+    }
+  }, [removeNote]);
 
   const handleGridContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -342,6 +390,10 @@ export function MelodyLayersEditor() {
           if (resizeDragRef.current) {
             e.currentTarget.releasePointerCapture(e.pointerId);
             resizeDragRef.current = null;
+          }
+          if (moveDragRef.current) {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+            moveDragRef.current = null;
           }
         }}
         onContextMenu={handleGridContextMenu}
