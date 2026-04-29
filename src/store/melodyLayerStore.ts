@@ -65,7 +65,7 @@ export const DEFAULT_SYNTH: LayerSynth = {
   delaySend: 0.0,
   shimmerEnabled: false,
   shimmerDepth: 0.5,
-  shimmerFeedback: 0.4,
+  shimmerFeedback: 0.28,
   pitchGlide: 0,
 };
 

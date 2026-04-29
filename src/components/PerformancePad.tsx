@@ -112,7 +112,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   // ── Space FX state ──────────────────────────────────────────────────────────
   const [shimmerOn, setShimmerOn] = useState(false);
   const [shimmerDepth, setShimmerDepth] = useState(0.55);
-  const [shimmerFeedback, setShimmerFeedback] = useState(0.38);
+  const [shimmerFeedback, setShimmerFeedback] = useState(0.28);
 
   const padRef = useRef<HTMLDivElement | null>(null);
   const activeVoicesRef = useRef<Map<number, ActiveVoice>>(new Map());

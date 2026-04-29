@@ -103,7 +103,7 @@ export class MelodyLayerFxChain {
     this.shimmerFbHS = ctx.createBiquadFilter();
     this.shimmerFbHS.type = "highshelf";
     this.shimmerFbHS.frequency.value = 1800;
-    this.shimmerFbHS.gain.value = 6; // +6 dB per pass → highs accumulate = shimmer
+    this.shimmerFbHS.gain.value = 3; // +3 dB per pass (×1.41) — bright but stable at max feedback
 
     this.shimmerFbDelay = ctx.createDelay(1.0);
     this.shimmerFbDelay.delayTime.value = 0.08; // 80 ms pre-delay in feedback
@@ -163,8 +163,8 @@ export class MelodyLayerFxChain {
     this._shimmerEnabled = true;
     const now = this.ctx.currentTime;
     this.shimmerInputGain.gain.setTargetAtTime(Math.max(0, depth), now, 0.04);
-    // Cap feedback at 0.62 — above that the loop can self-oscillate
-    this.shimmerFbGain.gain.setTargetAtTime(Math.min(0.62, feedback), now, 0.04);
+    // Cap feedback at 0.50 — at +3 dB shelf (×1.41), 0.50×1.41=0.707 < 1 (stable)
+    this.shimmerFbGain.gain.setTargetAtTime(Math.min(0.50, feedback), now, 0.04);
   }
 
   disableShimmer(): void {
@@ -181,7 +181,7 @@ export class MelodyLayerFxChain {
 
   setShimmerFeedback(fb: number): void {
     if (!this._shimmerEnabled) return;
-    this.shimmerFbGain.gain.setTargetAtTime(Math.min(0.62, fb), this.ctx.currentTime, 0.02);
+    this.shimmerFbGain.gain.setTargetAtTime(Math.min(0.50, fb), this.ctx.currentTime, 0.02);
   }
 
   // ── Freeze API ────────────────────────────────────────────────────
