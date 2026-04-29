@@ -2,10 +2,11 @@
  * Clip Store — Ableton Session View-style clip matrix.
  *
  * Grid: 4 tracks (Drums, Bass, Chords, Melody) × 8 clip slots.
- * Each clip stores a snapshot of its track's pattern/steps.
+ * Each clip stores a snapshot of its track's pattern/steps + synth params.
  * Clicking a clip launches it on that track (replaces live state).
  *
- * Launches are quantized via sceneStore.launchQuantize.
+ * Launches are quantized via sceneStore.launchQuantize (only when playing).
+ * When playback is stopped, clips launch immediately regardless of quantize.
  */
 
 import { create } from "zustand";
@@ -13,9 +14,11 @@ import { useDrumStore, type PatternData } from "./drumStore";
 import { useBassStore } from "./bassStore";
 import { useChordsStore } from "./chordsStore";
 import { useMelodyStore } from "./melodyStore";
-import type { BassStep } from "../audio/BassEngine";
-import type { ChordsStep } from "../audio/ChordsEngine";
-import type { MelodyStep } from "../audio/MelodyEngine";
+import { bassEngine, type BassStep, type BassParams } from "../audio/BassEngine";
+import { chordsEngine, type ChordsStep, type ChordsParams } from "../audio/ChordsEngine";
+import { melodyEngine, type MelodyStep, type MelodyParams } from "../audio/MelodyEngine";
+import { audioEngine } from "../audio/AudioEngine";
+import { type ArpSettings } from "../audio/Arpeggiator";
 
 export type ClipTrack = "drums" | "bass" | "chords" | "melody";
 export const CLIP_TRACKS: ClipTrack[] = ["drums", "bass", "chords", "melody"];
@@ -31,18 +34,24 @@ export interface BassClip {
   name: string;
   steps: BassStep[];
   length: number;
+  params?: BassParams;
+  arp?: ArpSettings;
 }
 export interface ChordsClip {
   track: "chords";
   name: string;
   steps: ChordsStep[];
   length: number;
+  params?: ChordsParams;
+  arp?: ArpSettings;
 }
 export interface MelodyClip {
   track: "melody";
   name: string;
   steps: MelodyStep[];
   length: number;
+  params?: MelodyParams;
+  arp?: ArpSettings;
 }
 
 export type Clip = DrumClip | BassClip | ChordsClip | MelodyClip;
@@ -90,13 +99,34 @@ export const useClipStore = create<ClipStore>((set, get) => ({
       clip = { track: "drums", name: existingName ?? `D${slot + 1}`, pattern: deepClone(d.pattern) };
     } else if (track === "bass") {
       const b = useBassStore.getState();
-      clip = { track: "bass", name: existingName ?? `B${slot + 1}`, steps: deepClone(b.steps), length: b.length };
+      clip = {
+        track: "bass",
+        name: existingName ?? `B${slot + 1}`,
+        steps: deepClone(b.steps),
+        length: b.length,
+        params: deepClone(b.params),
+        arp: deepClone(b.arp),
+      };
     } else if (track === "chords") {
       const c = useChordsStore.getState();
-      clip = { track: "chords", name: existingName ?? `C${slot + 1}`, steps: deepClone(c.steps), length: c.length };
+      clip = {
+        track: "chords",
+        name: existingName ?? `C${slot + 1}`,
+        steps: deepClone(c.steps),
+        length: c.length,
+        params: deepClone(c.params),
+        arp: deepClone(c.arp),
+      };
     } else if (track === "melody") {
       const m = useMelodyStore.getState();
-      clip = { track: "melody", name: existingName ?? `M${slot + 1}`, steps: deepClone(m.steps), length: m.length };
+      clip = {
+        track: "melody",
+        name: existingName ?? `M${slot + 1}`,
+        steps: deepClone(m.steps),
+        length: m.length,
+        params: deepClone(m.params),
+        arp: deepClone(m.arp),
+      };
     }
     if (!clip) return;
     set((s) => ({
@@ -107,15 +137,32 @@ export const useClipStore = create<ClipStore>((set, get) => ({
   loadClip: (track, slot) => {
     const clip = get().clips[track][slot];
     if (!clip) return;
+
+    const ctx = audioEngine.getAudioContext();
+    const cleanupAt = (ctx?.currentTime ?? 0) + 0.005;
+
     if (clip.track === "drums") {
       useDrumStore.setState({ pattern: deepClone(clip.pattern) });
     } else if (clip.track === "bass") {
-      useBassStore.setState({ steps: deepClone(clip.steps), length: clip.length });
+      const update: Record<string, unknown> = { steps: deepClone(clip.steps), length: clip.length };
+      if (clip.params) { update.params = deepClone(clip.params); bassEngine.setParams(clip.params); }
+      if (clip.arp !== undefined) update.arp = deepClone(clip.arp);
+      useBassStore.setState(update);
+      bassEngine.panic(cleanupAt);
     } else if (clip.track === "chords") {
-      useChordsStore.setState({ steps: deepClone(clip.steps), length: clip.length });
+      const update: Record<string, unknown> = { steps: deepClone(clip.steps), length: clip.length };
+      if (clip.params) { update.params = deepClone(clip.params); chordsEngine.setParams(clip.params); }
+      if (clip.arp !== undefined) update.arp = deepClone(clip.arp);
+      useChordsStore.setState(update);
+      chordsEngine.panic(cleanupAt);
     } else if (clip.track === "melody") {
-      useMelodyStore.setState({ steps: deepClone(clip.steps), length: clip.length });
+      const update: Record<string, unknown> = { steps: deepClone(clip.steps), length: clip.length };
+      if (clip.params) { update.params = deepClone(clip.params); melodyEngine.setParams(clip.params); }
+      if (clip.arp !== undefined) update.arp = deepClone(clip.arp);
+      useMelodyStore.setState(update);
+      melodyEngine.panic(cleanupAt);
     }
+
     set((s) => ({
       activeClips: { ...s.activeClips, [track]: slot },
       queuedClips: { ...s.queuedClips, [track]: null },
@@ -130,6 +177,11 @@ export const useClipStore = create<ClipStore>((set, get) => ({
   queueClip: (track, slot) => {
     const clip = get().clips[track][slot];
     if (!clip) return;
+    // When not playing the scheduler never fires — launch immediately instead of queuing
+    if (!useDrumStore.getState().isPlaying) {
+      get().loadClip(track, slot);
+      return;
+    }
     // Toggle: if already queued, cancel
     if (get().queuedClips[track] === slot) {
       set((s) => ({ queuedClips: { ...s.queuedClips, [track]: null } }));
