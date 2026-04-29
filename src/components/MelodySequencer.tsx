@@ -7,6 +7,7 @@ import { useMelodyStore, MELODY_PRESETS, MELODY_STRATEGIES, MELODY_SIGNATURE_PRE
 import { MELODY_INSTRUMENTS, findInstrumentOption } from "../audio/SoundFontEngine";
 import { SCALES, ROOT_NOTES, scaleNote } from "../audio/BassEngine";
 import { useDrumStore } from "../store/drumStore";
+import { useArrangementStore } from "../store/arrangementStore";
 import { Knob } from "./Knob";
 import { SoundFontKnobs } from "./SoundFontKnobs";
 import { AutomationLane, type AutomationParam } from "./AutomationLane";
@@ -594,6 +595,25 @@ export function MelodySequencer() {
         {/* CLR */}
         <div className="flex items-center gap-[2px] relative">
           <button onClick={clearSteps} className="h-6 px-2 text-[7px] font-bold text-white/25 hover:text-red-400/70 hover:bg-white/5 rounded-md transition-all">CLR</button>
+          <button
+            className="text-[9px] font-black px-1.5 py-0.5 rounded border border-white/20 text-white/50 hover:text-white hover:border-white/40 transition-colors shrink-0"
+            title="Capture to Arrangement"
+            onClick={() => {
+              const { steps, length, params } = useMelodyStore.getState();
+              const store = useArrangementStore.getState();
+              let startBar = 0;
+              while (store.getActiveClip("melody", startBar) !== null) startBar++;
+              store.addClip({
+                trackId: "melody",
+                startBar,
+                lengthBars: Math.max(1, Math.ceil(length / 16)),
+                name: `Melody ${startBar + 1}`,
+                data: { kind: "melody", steps: structuredClone(steps), length, params: structuredClone(params) },
+              });
+            }}
+          >
+            + ARR
+          </button>
         </div>
 
         {/* Layers Toggle */}

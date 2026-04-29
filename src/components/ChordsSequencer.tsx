@@ -7,6 +7,7 @@ import { useChordsStore, CHORDS_PRESETS, CHORDLINE_STRATEGIES, CHORD_TYPE_NAMES,
 import { CHORDS_INSTRUMENTS, findInstrumentOption } from "../audio/SoundFontEngine";
 import { SCALES, ROOT_NOTES, scaleNote } from "../audio/BassEngine";
 import { useDrumStore } from "../store/drumStore";
+import { useArrangementStore } from "../store/arrangementStore";
 import { WAVETABLE_NAMES } from "../audio/Wavetables";
 import { Knob } from "./Knob";
 import { SoundFontKnobs } from "./SoundFontKnobs";
@@ -400,6 +401,25 @@ export function ChordsSequencer({ onOpenPianoRoll }: { onOpenPianoRoll?: () => v
           <button className="h-6 px-2 text-[7px] font-bold text-white/15 rounded-md transition-all cursor-default">SAVE</button>
           <button className="h-6 px-2 text-[7px] font-bold text-white/15 rounded-md transition-all cursor-default">LOAD</button>
           <button onClick={clearSteps} className="h-6 px-2 text-[7px] font-bold text-white/25 hover:text-red-400/70 hover:bg-white/5 rounded-md transition-all">CLR</button>
+          <button
+            className="text-[9px] font-black px-1.5 py-0.5 rounded border border-white/20 text-white/50 hover:text-white hover:border-white/40 transition-colors shrink-0"
+            title="Capture to Arrangement"
+            onClick={() => {
+              const { steps, length, params } = useChordsStore.getState();
+              const store = useArrangementStore.getState();
+              let startBar = 0;
+              while (store.getActiveClip("chords", startBar) !== null) startBar++;
+              store.addClip({
+                trackId: "chords",
+                startBar,
+                lengthBars: Math.max(1, Math.ceil(length / 16)),
+                name: `Chords ${startBar + 1}`,
+                data: { kind: "chords", steps: structuredClone(steps), length, params: structuredClone(params) },
+              });
+            }}
+          >
+            + ARR
+          </button>
           {onOpenPianoRoll && (
             <button
               onClick={onOpenPianoRoll}

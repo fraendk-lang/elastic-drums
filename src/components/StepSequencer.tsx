@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useDrumStore, drumCurrentStepStore } from "../store/drumStore";
+import { useArrangementStore } from "../store/arrangementStore";
 
 const VOICE_LABELS = [
   "KICK", "SNARE", "CLAP", "TOM L",
@@ -636,6 +637,25 @@ export function StepSequencer() {
             disabled={!pageClipboard}
           >
             PASTE
+          </button>
+          <button
+            className="text-[9px] font-black px-1.5 py-0.5 rounded border border-white/20 text-white/50 hover:text-white hover:border-white/40 transition-colors shrink-0"
+            title="Capture to Arrangement"
+            onClick={() => {
+              const { pattern } = useDrumStore.getState();
+              const store = useArrangementStore.getState();
+              let startBar = 0;
+              while (store.getActiveClip("drums", startBar) !== null) startBar++;
+              store.addClip({
+                trackId: "drums",
+                startBar,
+                lengthBars: Math.max(1, Math.ceil(pattern.length / 16)),
+                name: pattern.name || `Drums ${startBar + 1}`,
+                data: { kind: "drums", pattern: structuredClone(pattern) },
+              });
+            }}
+          >
+            + ARR
           </button>
         </div>
 
