@@ -258,10 +258,11 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     // Without batching, each setState triggers its own subscriber chain while
     // running inside the 20ms scheduler setInterval (outside React's event system).
     unstable_batchedUpdates(() => {
-      // Apply drum pattern
+      const cleanupAt = now + 0.005;
+
+      // Drums: load scene pattern OR silence (all steps inactive) when hidden
       if (!skip.has("drums")) {
         useDrumStore.setState({ pattern: deepClone(scene.drumPattern) });
-        // Restore drum voice params (audio-only, no re-render needed)
         if (scene.drumVoiceParams) {
           for (let i = 0; i < 12; i++) {
             const params = scene.drumVoiceParams[i];
@@ -272,22 +273,31 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
             }
           }
         }
+      } else {
+        // Silence drums: same pattern length/structure but all steps disabled
+        const current = useDrumStore.getState().pattern;
+        useDrumStore.setState({
+          pattern: {
+            ...current,
+            tracks: current.tracks.map(t => ({
+              ...t,
+              steps: t.steps.map(s => ({ ...s, active: false })),
+            })),
+          },
+        });
       }
 
-      // Apply all synth params BEFORE panic so the new state is locked in first.
+      // Apply synth params BEFORE panic (for active tracks)
       if (!skip.has("bass") && scene.bassParams) bassEngine.setParams(scene.bassParams);
       if (!skip.has("chords") && scene.chordsParams) chordsEngine.setParams(scene.chordsParams);
       if (!skip.has("melody") && scene.melodyParams) melodyEngine.setParams(scene.melodyParams);
 
-      // Single panic AFTER all params — 5 ms into the future so the WebAudio
-      // engine uses a smooth ramp-to-zero instead of an instantaneous value jump
-      // (instantaneous jumps alias as clicks at the speaker).
-      const cleanupAt = now + 0.005;
-      if (!skip.has("bass")) bassEngine.panic(cleanupAt);
-      if (!skip.has("chords")) chordsEngine.panic(cleanupAt);
-      if (!skip.has("melody")) melodyEngine.panic(cleanupAt);
+      // Panic active tracks; also panic hidden tracks to silence any residual notes
+      bassEngine.panic(cleanupAt);
+      chordsEngine.panic(cleanupAt);
+      melodyEngine.panic(cleanupAt);
 
-      // Apply bass steps + params to stores
+      // Apply bass steps + params to stores (or empty steps when hidden)
       if (!skip.has("bass")) {
         const bassUpdate: Record<string, unknown> = {
           steps: deepClone(scene.bassSteps),
@@ -296,9 +306,11 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
         };
         if (scene.bassParams) bassUpdate.params = deepClone(scene.bassParams);
         useBassStore.setState(bassUpdate);
+      } else {
+        useBassStore.setState({ steps: scene.bassSteps.map(s => ({ ...s, active: false })) });
       }
 
-      // Apply chords steps + params
+      // Apply chords steps + params (or empty when hidden)
       if (!skip.has("chords")) {
         const chordsUpdate: Record<string, unknown> = {
           steps: deepClone(scene.chordsSteps),
@@ -307,9 +319,11 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
         };
         if (scene.chordsParams) chordsUpdate.params = deepClone(scene.chordsParams);
         useChordsStore.setState(chordsUpdate);
+      } else {
+        useChordsStore.setState({ steps: scene.chordsSteps.map(s => ({ ...s, active: false })) });
       }
 
-      // Apply melody steps + params
+      // Apply melody steps + params (or empty when hidden)
       if (!skip.has("melody")) {
         const melodyUpdate: Record<string, unknown> = {
           steps: deepClone(scene.melodySteps),
@@ -318,16 +332,16 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
         };
         if (scene.melodyParams) melodyUpdate.params = deepClone(scene.melodyParams);
         useMelodyStore.setState(melodyUpdate);
+      } else {
+        useMelodyStore.setState({ steps: scene.melodySteps.map(s => ({ ...s, active: false })) });
       }
 
-      // Restore global key/scale — set DIRECTLY on each store to avoid sync ping-pong.
-      // The sync mechanism (syncScaleToOtherStores) can cause octave drift when
-      // it recalculates rootNote offsets between stores during scene load.
+      // Restore global key/scale for active tracks only
       if (scene.rootName && scene.scaleName) {
         const bassRootMidi = normalizeBassRootMidi(scene.rootName, scene.rootNote) ?? 36;
         const rootIndex = ROOT_NOTES.indexOf(scene.rootName);
         const chordsRootMidi = rootIndex >= 0 ? 48 + rootIndex : 48;
-        const melodyRootMidi = chordsRootMidi; // Same octave as chords
+        const melodyRootMidi = chordsRootMidi;
 
         if (!skip.has("bass")) useBassStore.setState({ rootNote: bassRootMidi, rootName: scene.rootName, scaleName: scene.scaleName });
         if (!skip.has("chords")) useChordsStore.setState({ rootNote: chordsRootMidi, rootName: scene.rootName, scaleName: scene.scaleName });
@@ -336,10 +350,13 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
 
       set({ activeScene: slot, nextScene: null });
 
-      // Restore loop player state — diff-based, bar-boundary synchronized.
-      // Legacy scenes (loopSlots undefined) are silently skipped.
-      if (!skip.has("loops") && scene.loopSlots && scene.loopSlots.length > 0) {
-        useLoopPlayerStore.getState().loadSceneSlots(scene.loopSlots);
+      // Loops: load scene state or stop all when hidden
+      if (!skip.has("loops")) {
+        if (scene.loopSlots && scene.loopSlots.length > 0) {
+          useLoopPlayerStore.getState().loadSceneSlots(scene.loopSlots);
+        }
+      } else {
+        useLoopPlayerStore.getState().stopAll();
       }
 
       // Restore ChordPianoRoll notes — legacy scenes (undefined) are silently skipped
