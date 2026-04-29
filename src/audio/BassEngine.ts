@@ -162,9 +162,12 @@ export class BassEngine {
   // Auto-release safety net: setTimeout that cannot be killed by cancelScheduledValues
   private _autoReleaseTimer: ReturnType<typeof setTimeout> | null = null;
 
-  private _lfoInterval: ReturnType<typeof setInterval> | null = null;
-  private _lfoPhase = 0;
-  private _lfoLastTick = 0;
+  /** rAF handle — replaces setInterval for jitter-free, audio-clock-driven LFO */
+  private _lfoRaf: number | null = null;
+  /** Phase accumulated up to the last startLFO call */
+  private _lfoPhaseBase = 0;
+  /** ctx.currentTime at the moment the current rAF loop was launched */
+  private _lfoStartAudioTime = 0;
   private _bpm = 120;
   private _filterEnvFreq = -1;
 
@@ -520,26 +523,35 @@ export class BassEngine {
   }
 
   startLFO(): void {
-    const wasRunning = this._lfoInterval !== null;
+    const wasRunning = this._lfoRaf !== null;
+
+    // Capture accumulated phase before stopping so restarts (BPM/rate changes)
+    // continue from the current LFO position rather than jumping.
+    if (wasRunning && this.ctx) {
+      const rate = this.params.lfoSync
+        ? (this._bpm / 60) / SYNC_BEATS[this.params.lfoSyncNote]
+        : this.params.lfoRate;
+      this._lfoPhaseBase += (this.ctx.currentTime - this._lfoStartAudioTime) * rate;
+    }
+
     this.stopLFO();
     if (!this.params.lfoEnabled || !this.ctx) return;
 
-    const rate = this.params.lfoSync
-      ? (this._bpm / 60) / SYNC_BEATS[this.params.lfoSyncNote]
-      : this.params.lfoRate;
+    // Fresh start: reset phase; restart (rate/BPM change): keep accumulated phase.
+    if (!wasRunning) this._lfoPhaseBase = 0;
+    this._lfoStartAudioTime = this.ctx.currentTime;
 
-    // Only reset phase on fresh start — preserve phase when changing rate/target while running
-    if (!wasRunning) this._lfoPhase = 0;
-    this._lfoLastTick = performance.now();
+    // rAF tick — phase is derived from AudioContext clock, so it is immune to
+    // main-thread GC / rendering jitter that plagued the old setInterval(16) approach.
+    const tick = () => {
+      if (!this.ctx || this._lfoRaf === null) return;
 
-    this._lfoInterval = setInterval(() => {
-      if (!this.ctx) return;
-      const now = performance.now();
-      const dt = (now - this._lfoLastTick) / 1000;
-      this._lfoLastTick = now;
-      this._lfoPhase += rate * dt;
+      const rate = this.params.lfoSync
+        ? (this._bpm / 60) / SYNC_BEATS[this.params.lfoSyncNote]
+        : this.params.lfoRate;
 
-      const raw = lfoWave(this.params.lfoShape, this._lfoPhase);
+      const phase = this._lfoPhaseBase + (this.ctx.currentTime - this._lfoStartAudioTime) * rate;
+      const raw = lfoWave(this.params.lfoShape, phase);
       const depth = this.params.lfoDepth;
 
       switch (this.params.lfoTarget) {
@@ -568,13 +580,17 @@ export class BassEngine {
           break;
         }
       }
-    }, 16);
+
+      this._lfoRaf = requestAnimationFrame(tick);
+    };
+
+    this._lfoRaf = requestAnimationFrame(tick);
   }
 
   stopLFO(): void {
-    if (this._lfoInterval !== null) {
-      clearInterval(this._lfoInterval);
-      this._lfoInterval = null;
+    if (this._lfoRaf !== null) {
+      cancelAnimationFrame(this._lfoRaf);
+      this._lfoRaf = null;
     }
     if (this.ctx) {
       if (this.filterChain) {
@@ -590,8 +606,9 @@ export class BassEngine {
   /** Update BPM for sync-mode LFO — call from scheduler on every tick */
   setBpm(bpm: number): void {
     this._bpm = bpm;
-    // If LFO is running in sync mode, restart it at the new rate
-    if (this._lfoInterval !== null && this.params.lfoSync) this.startLFO();
+    // If LFO is running in sync mode, restart it at the new rate.
+    // startLFO() will capture the current phase before restarting.
+    if (this._lfoRaf !== null && this.params.lfoSync) this.startLFO();
   }
 
   /** Get output node for routing to mixer */

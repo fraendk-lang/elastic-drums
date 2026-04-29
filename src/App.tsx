@@ -38,6 +38,7 @@ import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
 import { melodyEngine } from "./audio/MelodyEngine";
 import { melodyLayerEngines } from "./audio/melodyLayerEngines";
+import { initMelodyLayerFx, melodyLayerFxChains, initMelodyEngineFx } from "./audio/MelodyLayerFx";
 // Activate melody-layer scheduler at app start (not tied to tab visibility)
 import "./components/MelodyLayers/melodyLayerScheduler";
 import { samplerEngine } from "./audio/SamplerEngine";
@@ -58,7 +59,6 @@ import { useMidiClock } from "./hooks/useMidiClock";
 import { useUndoRedo } from "./hooks/useUndoRedo";
 import { loadSharedPattern } from "./utils/patternShare";
 import { scheduleAutoSave, loadAutoSave } from "./store/autoSave";
-import { useTransportStore } from "./store/transportStore";
 
 export function App() {
   const [audioReady, setAudioReady] = useState(false);
@@ -185,10 +185,29 @@ export function App() {
       });
     };
 
-    const unsubDrum   = useDrumStore.subscribe(triggerSave);
-    const unsubBass   = useBassStore.subscribe(triggerSave);
-    const unsubChords = useChordsStore.subscribe(triggerSave);
-    const unsubMelody = useMelodyStore.subscribe(triggerSave);
+    // Subscribe only to fields that are actually persisted — not to scheduler
+    // fields (isPlaying, currentStep, songPosition…) that change every tick.
+    const unsubDrum = useDrumStore.subscribe((s, p) => {
+      if (s.pattern !== p.pattern || s.bpm !== p.bpm || s.swing !== p.swing) triggerSave();
+    });
+    const unsubBass = useBassStore.subscribe((s, p) => {
+      if (
+        s.steps !== p.steps || s.params !== p.params || s.length !== p.length ||
+        s.rootNote !== p.rootNote || s.rootName !== p.rootName || s.scaleName !== p.scaleName
+      ) triggerSave();
+    });
+    const unsubChords = useChordsStore.subscribe((s, p) => {
+      if (
+        s.steps !== p.steps || s.params !== p.params || s.length !== p.length ||
+        s.rootNote !== p.rootNote || s.rootName !== p.rootName || s.scaleName !== p.scaleName
+      ) triggerSave();
+    });
+    const unsubMelody = useMelodyStore.subscribe((s, p) => {
+      if (
+        s.steps !== p.steps || s.params !== p.params || s.length !== p.length ||
+        s.rootNote !== p.rootNote || s.rootName !== p.rootName || s.scaleName !== p.scaleName
+      ) triggerSave();
+    });
 
     return () => {
       unsubDrum();
@@ -223,7 +242,16 @@ export function App() {
         const melodyCh = audioEngine.getChannelOutput(14);
         if (melodyOut && melodyCh) melodyOut.connect(melodyCh);
 
+        const masterGainNode = audioEngine.getMasterGainNode();
+
+        // Tap melodyEngine output into Space FX chain (parallel send for PerformancePad)
+        if (melodyOut && masterGainNode) {
+          initMelodyEngineFx(ctx, masterGainNode).connectSource(melodyOut);
+        }
+
         // Melody Layer engines 1–3 → individual channels 24/25/26 (LAY 1–3)
+        if (masterGainNode) initMelodyLayerFx(ctx, masterGainNode);
+
         for (let i = 1; i <= 3; i++) {
           const layerEngine = melodyLayerEngines[i];
           if (layerEngine) {
@@ -231,6 +259,9 @@ export function App() {
             const layerOut = layerEngine.getOutput();
             const layCh = audioEngine.getChannelOutput(23 + i); // 24, 25, 26
             if (layerOut && layCh) layerOut.connect(layCh);
+            // Tap output into Space FX chain (parallel send — doesn't affect dry path)
+            const fxChain = melodyLayerFxChains[i - 1];
+            if (layerOut && fxChain) fxChain.connectSource(layerOut);
           }
         }
 
@@ -287,18 +318,8 @@ export function App() {
         stopSamplerScheduler();
       }
 
-      // Sync transport store (replaces window.__drumStore hack)
-      if (state.bpm !== prev.bpm) useTransportStore.getState().setBpm(state.bpm);
-      if (state.isPlaying !== prev.isPlaying) useTransportStore.getState().setPlaying(state.isPlaying);
-      if (state.swing !== prev.swing) useTransportStore.getState().setSwing(state.swing);
     });
 
-    // Initialize transport store with current values
-    const { bpm, isPlaying, swing } = useDrumStore.getState();
-    useTransportStore.setState({ bpm, isPlaying, swing });
-
-    // Legacy compat: still set window ref for any code that reads it
-    (window as unknown as Record<string, unknown>).__drumStore = useDrumStore;
     // Register scene store for song mode integration
     setSceneStoreRef(useSceneStore as unknown as Parameters<typeof setSceneStoreRef>[0]);
     setClipStoreRef(useClipStore as unknown as Parameters<typeof setClipStoreRef>[0]);

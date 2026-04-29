@@ -9,7 +9,7 @@
  * Records pointer events into a loopable expression pattern.
  */
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { usePerformancePadStore, CHORD_SETS, type YAxisParam, type PadTarget, type PadMode } from "../store/performancePadStore";
 import { useMelodyStore, MELODY_PRESETS } from "../store/melodyStore";
 import { useBassStore, BASS_PRESETS } from "../store/bassStore";
@@ -18,6 +18,7 @@ import { melodyEngine } from "../audio/MelodyEngine";
 import { bassEngine, SCALES } from "../audio/BassEngine";
 import { audioEngine } from "../audio/AudioEngine";
 import { sendFxManager } from "../audio/SendFx";
+import { getMelodyEngineFxChain } from "../audio/MelodyLayerFx";
 
 interface Props {
   isOpen: boolean;
@@ -44,6 +45,7 @@ const Y_PARAMS: { id: YAxisParam; label: string; range: [number, number]; spring
   { id: "reverb",    label: "REVERB",   range: [0, 1.8],  springBack: true, group: "fx" },  // dry → massive wash
   { id: "delay",     label: "DELAY",    range: [0, 1.4],  springBack: true, group: "fx" },  // off → slapback echo
   { id: "drive",     label: "MASTER DRV",range: [0, 1.5], springBack: true, group: "fx" },  // clean → crushed
+  { id: "pitch",     label: "PITCH ↕",  range: [-12, 12], springBack: true, group: "fx" },  // MPE pitch bend ±12 st
 ];
 
 interface ActiveVoice {
@@ -106,6 +108,11 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   const scaleName = target === "melody" ? melodyScale : bassScale;
 
   const bpm = useDrumStore((s) => s.bpm);
+
+  // ── Space FX state ──────────────────────────────────────────────────────────
+  const [shimmerOn, setShimmerOn] = useState(false);
+  const [shimmerDepth, setShimmerDepth] = useState(0.55);
+  const [shimmerFeedback, setShimmerFeedback] = useState(0.38);
 
   const padRef = useRef<HTMLDivElement | null>(null);
   const activeVoicesRef = useRef<Map<number, ActiveVoice>>(new Map());
@@ -295,6 +302,12 @@ export function PerformancePad({ isOpen, onClose }: Props) {
       return;
     }
 
+    // Pitch bend → sweepLivePitch (detunes all active voices in real-time)
+    if (yParam === "pitch") {
+      if (target === "melody") melodyEngine.sweepLivePitch(paramValue);
+      return;
+    }
+
     // All other params (envMod, decay, distortion) → setParams (affects next trigger)
     if (target === "melody") melodyEngine.setParams({ [yParam]: paramValue });
     else bassEngine.setParams({ [yParam]: paramValue });
@@ -451,6 +464,9 @@ export function PerformancePad({ isOpen, onClose }: Props) {
         // Restore synth distortion (engine-specific)
         if (target === "melody") melodyEngine.setParams({ distortion: 0 });
         else bassEngine.setParams({ distortion: 0 });
+      } else if (yParam === "pitch") {
+        // Snap detune back to zero on finger lift
+        if (target === "melody") melodyEngine.resetLivePitch();
       }
     }
   };
@@ -912,6 +928,76 @@ export function PerformancePad({ isOpen, onClose }: Props) {
             <div className="mx-1 h-4 w-px bg-white/10" />
           </>
         )}
+
+        {/* ── Space FX ── Shimmer + Freeze (melody target only) ── */}
+        {target === "melody" && (
+          <div className="flex items-center gap-1 bg-white/[0.03] rounded-md px-1.5 py-0.5">
+            <span className="text-[8px] text-white/20 mr-1 tracking-wider">SPACE</span>
+            {/* SHIMMER toggle */}
+            <button
+              onClick={() => {
+                const next = !shimmerOn;
+                setShimmerOn(next);
+                const chain = getMelodyEngineFxChain();
+                if (chain) {
+                  if (next) chain.enableShimmer(shimmerDepth, shimmerFeedback);
+                  else chain.disableShimmer();
+                }
+              }}
+              className={`px-2 h-5 text-[8px] font-bold rounded transition-all ${
+                shimmerOn
+                  ? "bg-indigo-500/30 text-indigo-200"
+                  : "text-white/30 hover:text-white/60"
+              }`}
+              style={{ boxShadow: shimmerOn ? "0 0 8px rgba(129,140,248,0.4)" : "none" }}
+              title="Shimmer reverb — bright feedback tail"
+            >✦ SHIMM</button>
+
+            {/* SHIMMER depth inline mini-slider */}
+            {shimmerOn && (
+              <input
+                type="range" min={0} max={1} step={0.01}
+                value={shimmerDepth}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setShimmerDepth(v);
+                  getMelodyEngineFxChain()?.setShimmerDepth(v);
+                }}
+                className="w-14 h-1 accent-indigo-400 cursor-pointer"
+                title={`Shimmer depth: ${Math.round(shimmerDepth * 100)}%`}
+              />
+            )}
+            {shimmerOn && (
+              <input
+                type="range" min={0} max={1} step={0.01}
+                value={shimmerFeedback}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setShimmerFeedback(v);
+                  getMelodyEngineFxChain()?.setShimmerFeedback(v);
+                }}
+                className="w-14 h-1 accent-violet-400 cursor-pointer"
+                title={`Shimmer feedback: ${Math.round(shimmerFeedback * 100)}%`}
+              />
+            )}
+
+            <div className="w-px h-3 bg-white/10 mx-0.5" />
+
+            {/* FREEZE hold button */}
+            <button
+              onPointerDown={(e) => {
+                e.currentTarget.setPointerCapture(e.pointerId);
+                getMelodyEngineFxChain()?.activateFreeze();
+              }}
+              onPointerUp={() => getMelodyEngineFxChain()?.deactivateFreeze()}
+              onPointerLeave={() => getMelodyEngineFxChain()?.deactivateFreeze()}
+              className="px-2 h-5 text-[8px] font-bold rounded border border-cyan-500/20 text-cyan-400/50 hover:text-cyan-300 hover:border-cyan-400/50 hover:bg-cyan-500/10 active:bg-cyan-500/25 active:text-cyan-100 transition-all select-none"
+              title="Freeze — hold to sustain audio as infinite drone"
+            >❄ FREEZE</button>
+          </div>
+        )}
+
+        <div className="mx-1 h-4 w-px bg-white/10" />
 
         {/* Trail toggle */}
         <button onClick={() => setTrailEnabled(!trailEnabled)}

@@ -7,6 +7,8 @@ import { drumCurrentStepStore, getDrumCurrentStepAudioTime, useDrumStore } from 
 import { useMelodyLayerStore } from "../../store/melodyLayerStore";
 import { melodyLayerEngines } from "../../audio/melodyLayerEngines";
 import { MELODY_PRESETS } from "../../store/melodyStore";
+import { audioEngine } from "../../audio/AudioEngine";
+import { melodyLayerFxChains } from "../../audio/MelodyLayerFx";
 
 // ─── Per-layer step counters ───────────────────────────────────────────────────
 // One counter per layer slot (index 0–3), incremented on every drum tick.
@@ -46,7 +48,8 @@ export const melodyLayerBeatStore = {
  */
 function applyLayerSynth(
   engine: typeof melodyLayerEngines[0],
-  synth: import("../../store/melodyLayerStore").LayerSynth
+  synth: import("../../store/melodyLayerStore").LayerSynth,
+  channelNumber: number
 ): void {
   const preset = MELODY_PRESETS[synth.presetIndex];
   if (!preset) return;
@@ -64,7 +67,11 @@ function applyLayerSynth(
     ampSustain: synth.sustain,
     ampRelease: synth.release,
     distortion: synth.distortion,
+    volume: synth.volume ?? 0.7,
   });
+  // Apply sends at loop start so they stay consistent with stored state
+  audioEngine.setChannelReverbSend(channelNumber, synth.reverbSend ?? 0);
+  audioEngine.setChannelDelaySend(channelNumber, synth.delaySend ?? 0);
 }
 
 /**
@@ -119,20 +126,32 @@ function tick(currentDrumStep: number, bpm: number): void {
     const localStep = counter % (layer.barLength * 16);
     // Engines 1–3: layer 0 → engine 1, layer 1 → engine 2, layer 2 → engine 3.
     // Engine 0 (melodyEngine) is reserved for the main melody step-sequencer.
+    // Channels: layer i → engine[i+1] → mixer channel 24+i (App.tsx: 23 + (i+1))
     const engine = melodyLayerEngines[i + 1];
+    const channelNumber = 24 + i; // 24, 25, 26 for layers 0, 1, 2
     if (!engine) continue;
 
-    // Apply synth at start of each loop
+    // Apply synth + sends at start of each loop
     if (localStep === 0) {
-      applyLayerSynth(engine, layer.synth);
+      applyLayerSynth(engine, layer.synth, channelNumber);
+      // Sync shimmer state with stored params
+      const fxChain = melodyLayerFxChains[i];
+      if (fxChain) {
+        if (layer.synth.shimmerEnabled) {
+          fxChain.enableShimmer(layer.synth.shimmerDepth, layer.synth.shimmerFeedback);
+        } else {
+          fxChain.disableShimmer();
+        }
+      }
     }
 
     if (shouldPlay && layer.notes.length > 0) {
       const hits = layerNotesOnStep(layer.notes, counter, layer.barLength);
+      const pitchGlide = layer.synth.pitchGlide ?? 0;
       for (const note of hits) {
         const midiNote = Math.max(0, Math.min(127, note.pitch + layer.synth.octaveOffset * 12));
         const durationSec = Math.max(0.05, note.durationBeats * secPerBeat);
-        engine.triggerPolyNote(midiNote, t, durationSec);
+        engine.triggerPolyNote(midiNote, t, durationSec, 0.85, false, pitchGlide);
       }
     }
   }

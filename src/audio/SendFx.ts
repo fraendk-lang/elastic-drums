@@ -1163,8 +1163,19 @@ export class SendFxManager {
 
     // Clean up any active performance FX
     this.stopNoise();
-    if (this.ctx) {
-      this.stopStutter(this.ctx.createDynamicsCompressor());
+    // Directly tear down stutter state — calling stopStutter() here would create
+    // a new DynamicsCompressorNode on a closing context and schedule a 40 ms
+    // timer that fires against already-nulled nodes.  Instead we just stop and
+    // disconnect the oscillator/gate in-place; the timer cancel below handles
+    // the pending _stopStutterTimer.
+    if (this.stutterLfo) {
+      try { this.stutterLfo.stop(); } catch { /* already stopped */ }
+      try { this.stutterLfo.disconnect(); } catch { /* ok */ }
+      this.stutterLfo = null;
+    }
+    if (this.stutterGain) {
+      try { this.stutterGain.disconnect(); } catch { /* ok */ }
+      this.stutterGain = null;
     }
 
     // Disconnect all nodes

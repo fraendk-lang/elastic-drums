@@ -13,7 +13,7 @@
 import { create } from "zustand";
 import { useDrumStore } from "./drumStore";
 
-export type YAxisParam = "cutoff" | "resonance" | "envMod" | "decay" | "distortion" | "volume" | "reverb" | "delay" | "drive";
+export type YAxisParam = "cutoff" | "resonance" | "envMod" | "decay" | "distortion" | "volume" | "reverb" | "delay" | "drive" | "pitch";
 
 export type PadTarget = "melody" | "bass";
 

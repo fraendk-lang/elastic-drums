@@ -27,6 +27,15 @@ export interface LayerSynth {
   release: number;       // ms 1–2000
   // Extra
   distortion: number;    // 0–1
+  // Output / sends
+  volume: number;        // 0–1 output level
+  reverbSend: number;    // 0–1 send to reverb bus
+  delaySend: number;     // 0–1 send to delay bus
+  // Space FX
+  shimmerEnabled: boolean; // shimmer reverb on/off
+  shimmerDepth: number;    // 0–1 shimmer send depth
+  shimmerFeedback: number; // 0–1 shimmer feedback (brightness accumulation)
+  pitchGlide: number;      // semitones/second upward pitch drift (0 = off)
 }
 
 export interface MelodyLayer {
@@ -51,6 +60,13 @@ export const DEFAULT_SYNTH: LayerSynth = {
   sustain: 1.0,
   release: 80,
   distortion: 0.15,
+  volume: 0.7,
+  reverbSend: 0.0,
+  delaySend: 0.0,
+  shimmerEnabled: false,
+  shimmerDepth: 0.5,
+  shimmerFeedback: 0.4,
+  pitchGlide: 0,
 };
 
 function makeLayer(colorIndex: 0 | 1 | 2 | 3): MelodyLayer {

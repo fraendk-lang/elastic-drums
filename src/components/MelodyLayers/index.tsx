@@ -6,6 +6,10 @@ import { useBassStore } from "../../store/bassStore";
 import { MELODY_PRESETS } from "../../store/melodyStore";
 import { snapToScale, isNoteInScale } from "../PianoRoll/types";
 import { melodyLayerBeatStore } from "./melodyLayerScheduler";
+import { Knob } from "../Knob";
+import { audioEngine } from "../../audio/AudioEngine";
+import { melodyLayerEngines } from "../../audio/melodyLayerEngines";
+import { melodyLayerFxChains } from "../../audio/MelodyLayerFx";
 
 // Activate scheduler via side-effect import
 import "./melodyLayerScheduler";
@@ -800,49 +804,202 @@ export function MelodyLayersEditor() {
           </div>
         </div>
 
-        {/* Row 2: Filter */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span className="text-[7px] text-white/20 tracking-[0.1em] w-10">FILTER</span>
-          {([
-            { label: "CUT",  key: "cutoff",      min: 0,   max: 1,    step: 0.01 },
-            { label: "RES",  key: "resonance",   min: 0,   max: 1,    step: 0.01 },
-            { label: "ENV",  key: "envMod",      min: 0,   max: 1,    step: 0.01 },
-            { label: "DEC",  key: "filterDecay", min: 50,  max: 800,  step: 1    },
-          ] as const).map(({ label, key, min, max, step }) => (
-            <div key={key} className="flex items-center gap-1">
-              <span className="text-[7px] text-white/25 w-5 text-right">{label}</span>
-              <input
-                type="range" min={min} max={max} step={step}
-                value={activeLayer.synth[key]}
-                onChange={(e) => setSynth(activeLayer.id, { [key]: Number(e.target.value) })}
-                className="w-16 h-1"
-                style={{ accentColor: layerColor }}
+        {/* Row 2 + 3: Filter & Amp knobs */}
+        <div className="flex items-start gap-4 pt-0.5">
+          {/* FILTER group */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[7px] text-white/20 tracking-[0.1em]">FILTER</span>
+            <div className="flex items-end gap-1">
+              {([
+                { label: "CUT",  key: "cutoff",      min: 0,  max: 1,   defaultValue: 0.5  },
+                { label: "RES",  key: "resonance",   min: 0,  max: 1,   defaultValue: 0.27 },
+                { label: "ENV",  key: "envMod",      min: 0,  max: 1,   defaultValue: 0.4  },
+                { label: "DEC",  key: "filterDecay", min: 50, max: 800, defaultValue: 150  },
+              ] as const).map(({ label, key, min, max, defaultValue }) => (
+                <Knob
+                  key={key}
+                  value={activeLayer.synth[key]}
+                  min={min}
+                  max={max}
+                  defaultValue={defaultValue}
+                  label={label}
+                  color={layerColor}
+                  size={32}
+                  onChange={(v) => setSynth(activeLayer.id, { [key]: v })}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* AMP group */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[7px] text-white/20 tracking-[0.1em]">AMP</span>
+            <div className="flex items-end gap-1">
+              {([
+                { label: "ATK",  key: "attack",      min: 1, max: 500,  defaultValue: 5    },
+                { label: "DEC",  key: "decay",       min: 1, max: 500,  defaultValue: 50   },
+                { label: "SUS",  key: "sustain",     min: 0, max: 1,    defaultValue: 1.0  },
+                { label: "REL",  key: "release",     min: 1, max: 2000, defaultValue: 80   },
+                { label: "DIST", key: "distortion",  min: 0, max: 1,    defaultValue: 0.15 },
+              ] as const).map(({ label, key, min, max, defaultValue }) => (
+                <Knob
+                  key={key}
+                  value={activeLayer.synth[key]}
+                  min={min}
+                  max={max}
+                  defaultValue={defaultValue}
+                  label={label}
+                  color={layerColor}
+                  size={32}
+                  onChange={(v) => setSynth(activeLayer.id, { [key]: v })}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* FX group — VOL / REV / DLY */}
+          <div className="flex flex-col gap-1 ml-auto">
+            <span className="text-[7px] text-white/20 tracking-[0.1em]">FX</span>
+            <div className="flex items-end gap-1">
+              <Knob
+                value={activeLayer.synth.volume ?? 0.7}
+                min={0}
+                max={1}
+                defaultValue={0.7}
+                label="VOL"
+                color={layerColor}
+                size={32}
+                onChange={(v) => {
+                  setSynth(activeLayer.id, { volume: v });
+                  const eng = melodyLayerEngines[activeLayerIdx + 1];
+                  if (eng) eng.setParams({ volume: v });
+                }}
+              />
+              <Knob
+                value={activeLayer.synth.reverbSend ?? 0}
+                min={0}
+                max={1}
+                defaultValue={0}
+                label="REV"
+                color="#3b82f6"
+                size={32}
+                onChange={(v) => {
+                  setSynth(activeLayer.id, { reverbSend: v });
+                  audioEngine.setChannelReverbSend(24 + activeLayerIdx, v);
+                }}
+              />
+              <Knob
+                value={activeLayer.synth.delaySend ?? 0}
+                min={0}
+                max={1}
+                defaultValue={0}
+                label="DLY"
+                color="#f59e0b"
+                size={32}
+                onChange={(v) => {
+                  setSynth(activeLayer.id, { delaySend: v });
+                  audioEngine.setChannelDelaySend(24 + activeLayerIdx, v);
+                }}
               />
             </div>
-          ))}
+          </div>
         </div>
 
-        {/* Row 3: Amp ADSR + Distortion */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span className="text-[7px] text-white/20 tracking-[0.1em] w-10">AMP</span>
-          {([
-            { label: "ATK", key: "attack",     min: 1,   max: 500,  step: 1    },
-            { label: "DEC", key: "decay",      min: 1,   max: 500,  step: 1    },
-            { label: "SUS", key: "sustain",    min: 0,   max: 1,    step: 0.01 },
-            { label: "REL", key: "release",    min: 1,   max: 2000, step: 1    },
-            { label: "DIST", key: "distortion", min: 0,  max: 1,    step: 0.01 },
-          ] as const).map(({ label, key, min, max, step }) => (
-            <div key={key} className="flex items-center gap-1">
-              <span className="text-[7px] text-white/25 w-5 text-right">{label}</span>
-              <input
-                type="range" min={min} max={max} step={step}
-                value={activeLayer.synth[key]}
-                onChange={(e) => setSynth(activeLayer.id, { [key]: Number(e.target.value) })}
-                className="w-16 h-1"
-                style={{ accentColor: layerColor }}
-              />
-            </div>
-          ))}
+        {/* ── SPACE row ── Shimmer / Freeze / Pitch Glide ── */}
+        <div className="flex items-center gap-3 pt-1 border-t border-white/[0.04]">
+          {/* SHIMMER */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const next = !activeLayer.synth.shimmerEnabled;
+                setSynth(activeLayer.id, { shimmerEnabled: next });
+                const fxChain = melodyLayerFxChains[activeLayerIdx];
+                if (fxChain) {
+                  if (next) {
+                    fxChain.enableShimmer(activeLayer.synth.shimmerDepth, activeLayer.synth.shimmerFeedback);
+                  } else {
+                    fxChain.disableShimmer();
+                  }
+                }
+              }}
+              className="px-2 py-1 text-[7px] font-black tracking-[0.14em] rounded border transition-all"
+              style={{
+                color: activeLayer.synth.shimmerEnabled ? "#e0e7ff" : "rgba(255,255,255,0.25)",
+                borderColor: activeLayer.synth.shimmerEnabled ? "#818cf8" : "rgba(255,255,255,0.08)",
+                background: activeLayer.synth.shimmerEnabled ? "rgba(129,140,248,0.15)" : "transparent",
+                boxShadow: activeLayer.synth.shimmerEnabled ? "0 0 8px rgba(129,140,248,0.3)" : "none",
+              }}
+            >
+              SHIMMER
+            </button>
+            <Knob
+              value={activeLayer.synth.shimmerDepth}
+              min={0} max={1} defaultValue={0.5}
+              label="DEPTH"
+              color="#818cf8"
+              size={28}
+              onChange={(v) => {
+                setSynth(activeLayer.id, { shimmerDepth: v });
+                melodyLayerFxChains[activeLayerIdx]?.setShimmerDepth(v);
+              }}
+            />
+            <Knob
+              value={activeLayer.synth.shimmerFeedback}
+              min={0} max={1} defaultValue={0.4}
+              label="FEED"
+              color="#818cf8"
+              size={28}
+              onChange={(v) => {
+                setSynth(activeLayer.id, { shimmerFeedback: v });
+                melodyLayerFxChains[activeLayerIdx]?.setShimmerFeedback(v);
+              }}
+            />
+          </div>
+
+          {/* FREEZE */}
+          <button
+            onPointerDown={() => {
+              melodyLayerFxChains[activeLayerIdx]?.activateFreeze();
+            }}
+            onPointerUp={() => {
+              melodyLayerFxChains[activeLayerIdx]?.deactivateFreeze();
+            }}
+            onPointerLeave={() => {
+              melodyLayerFxChains[activeLayerIdx]?.deactivateFreeze();
+            }}
+            className="px-2.5 py-1 text-[7px] font-black tracking-[0.14em] rounded border transition-all select-none"
+            style={{
+              color: "rgba(255,255,255,0.3)",
+              borderColor: "rgba(34,211,238,0.2)",
+              background: "transparent",
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLElement).style.color = "#22d3ee";
+              (e.currentTarget as HTMLElement).style.borderColor = "rgba(34,211,238,0.6)";
+              (e.currentTarget as HTMLElement).style.background = "rgba(34,211,238,0.1)";
+            }}
+            onMouseLeave={e => {
+              const el = e.currentTarget as HTMLElement;
+              el.style.color = "rgba(255,255,255,0.3)";
+              el.style.borderColor = "rgba(34,211,238,0.2)";
+              el.style.background = "transparent";
+            }}
+          >
+            ❄ FREEZE
+          </button>
+
+          {/* PITCH GLIDE */}
+          <div className="flex items-center gap-1.5 ml-auto">
+            <span className="text-[7px] text-white/20 tracking-[0.1em]">PITCH</span>
+            <Knob
+              value={activeLayer.synth.pitchGlide ?? 0}
+              min={-12} max={12} defaultValue={0}
+              label="GLIDE"
+              color="#f472b6"
+              size={28}
+              onChange={(v) => setSynth(activeLayer.id, { pitchGlide: v })}
+            />
+          </div>
         </div>
       </div>
     </div>

@@ -625,6 +625,40 @@ export class MelodyEngine {
     this.params.cutoff = clampedCutoff;
   }
 
+  /**
+   * Sweep pitch on all currently-playing pool voices in real-time.
+   * Used by PerformancePad "pitch" Y-axis — detunes voices smoothly
+   * while a finger is held, creating an MPE-style continuous pitch bend.
+   * @param semitones offset from base pitch (positive = up, negative = down)
+   */
+  sweepLivePitch(semitones: number): void {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const cents = semitones * 100;
+    for (const voice of this.voicePool) {
+      if (!voice.inUse) continue;
+      voice.osc.detune.cancelScheduledValues(now);
+      voice.osc.detune.setTargetAtTime(cents, now, 0.015);
+      voice.sub.detune.cancelScheduledValues(now);
+      voice.sub.detune.setTargetAtTime(cents, now, 0.015);
+    }
+    // Also apply to mono osc path (non-pool notes)
+    if (this.osc) this.osc.detune.setTargetAtTime(cents, now, 0.015);
+    if (this.subOsc) this.subOsc.detune.setTargetAtTime(cents, now, 0.015);
+  }
+
+  /** Reset pitch sweep to zero — called on pointer-up to snap detune back */
+  resetLivePitch(): void {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    for (const voice of this.voicePool) {
+      voice.osc.detune.setTargetAtTime(0, now, 0.03);
+      voice.sub.detune.setTargetAtTime(0, now, 0.03);
+    }
+    if (this.osc) this.osc.detune.setTargetAtTime(0, now, 0.03);
+    if (this.subOsc) this.subOsc.detune.setTargetAtTime(0, now, 0.03);
+  }
+
   /** Sweep output volume directly — used by PerformancePad "volume" Y-axis on playing notes. */
   sweepLiveVolume(gain: number): void {
     if (!this.output) return;
@@ -778,7 +812,8 @@ export class MelodyEngine {
     startTime: number,
     duration: number,
     velocity = 0.85,
-    accent = false
+    accent = false,
+    pitchGlideSemPerSec = 0  // semitones/sec continuous pitch drift (0 = off)
   ): (() => void) | null {
     if (!this.ctx || !this.output) return null;
 
@@ -830,6 +865,17 @@ export class MelodyEngine {
     osc.frequency.setValueAtTime(freq, startTime);
     sub.frequency.setValueAtTime(freq / 2, startTime);
     subGain.gain.setValueAtTime(p.subOsc, startTime);
+
+    // Endless pitch glide: exponential ramp over note duration
+    // Each poly voice starts from its own base note and glides independently,
+    // producing the poly-meets-MPE texture.
+    if (pitchGlideSemPerSec !== 0) {
+      const semShift = pitchGlideSemPerSec * duration;
+      const targetFreq = Math.max(20, freq * Math.pow(2, semShift / 12));
+      const endTime = startTime + duration;
+      osc.frequency.exponentialRampToValueAtTime(targetFreq, endTime);
+      sub.frequency.exponentialRampToValueAtTime(Math.max(10, targetFreq / 2), endTime);
+    }
 
     // Filter type + Q
     filter.type = (p.filterType === "highpass" || p.filterType === "bandpass" || p.filterType === "notch")
