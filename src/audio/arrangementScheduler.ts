@@ -189,39 +189,46 @@ function resetScheduler(): void {
 
 // ─── Subscribe to arrangement mode changes ────────────────────────────────────
 
-useDrumStore.subscribe((state, prev) => {
-  // Arrangement mode just turned ON
-  if (state.arrangementMode && !prev.arrangementMode) {
-    _baselineBassParams = structuredClone(useBassStore.getState().params);
-    _baselineChordsParams = structuredClone(useChordsStore.getState().params);
-    _baselineMelodyParams = structuredClone(useMelodyStore.getState().params);
-    resetScheduler();
-    applyArrangementBar(0);
-  }
+function initScheduler(): void {
+  useDrumStore.subscribe((state, prev) => {
+    // Arrangement mode just turned ON
+    if (state.arrangementMode && !prev.arrangementMode) {
+      _baselineBassParams = structuredClone(useBassStore.getState().params);
+      _baselineChordsParams = structuredClone(useChordsStore.getState().params);
+      _baselineMelodyParams = structuredClone(useMelodyStore.getState().params);
+      resetScheduler();
+      applyArrangementBar(0);
+    }
 
-  // Arrangement mode just turned OFF
-  if (!state.arrangementMode && prev.arrangementMode) {
-    useDrumStore.setState({ arrangementSilence: false });
-    resetScheduler();
-  }
+    // Arrangement mode just turned OFF
+    if (!state.arrangementMode && prev.arrangementMode) {
+      useDrumStore.setState({ arrangementSilence: false });
+      resetScheduler();
+    }
 
-  // Playback stopped while in arrangement mode
-  if (!state.isPlaying && prev.isPlaying && state.arrangementMode) {
-    resetScheduler();
-    applyArrangementBar(0);
-  }
-});
+    // Playback stopped while in arrangement mode
+    if (!state.isPlaying && prev.isPlaying && state.arrangementMode) {
+      resetScheduler();
+      applyArrangementBar(0);
+    }
+  });
 
-// ─── Main step counter ────────────────────────────────────────────────────────
+  // ── Main step counter ──────────────────────────────────────────────────────
+  drumCurrentStepStore.subscribe(() => {
+    if (!useDrumStore.getState().arrangementMode) return;
+    if (!useDrumStore.getState().isPlaying) return;
 
-drumCurrentStepStore.subscribe(() => {
-  if (!useDrumStore.getState().arrangementMode) return;
-  if (!useDrumStore.getState().isPlaying) return;
+    _stepsElapsed++;
+    if (_stepsElapsed % 16 === 0) {
+      _arrangementBar = Math.floor(_stepsElapsed / 16);
+      notifyBarListeners();
+      applyArrangementBar(_arrangementBar);
+    }
+  });
+}
 
-  _stepsElapsed++;
-  if (_stepsElapsed % 16 === 0) {
-    _arrangementBar = Math.floor(_stepsElapsed / 16);
-    notifyBarListeners();
-    applyArrangementBar(_arrangementBar);
-  }
-});
+// Defer initialization to ensure all chunks are fully evaluated before
+// subscribing. Prevents "Cannot read properties of undefined" errors
+// caused by circular chunk dependencies in production Rollup bundles.
+// (chunk-audio → chunk-stores → chunk-audio circular reference)
+setTimeout(initScheduler, 0);
