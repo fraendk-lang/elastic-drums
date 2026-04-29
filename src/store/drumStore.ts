@@ -575,10 +575,8 @@ function startScheduler() {
             if (sceneStoreRef && !_sceneLoadPending) {
               const sceneIdx = nextEntry.sceneIndex;
               _sceneLoadPending = true;
-              setTimeout(() => {
-                sceneStoreRef.getState().loadScene(sceneIdx);
-                _sceneLoadPending = false;
-              }, 0);
+              sceneStoreRef.getState().loadScene(sceneIdx);
+              _sceneLoadPending = false;
             }
             // Tempo automation (can stay synchronous — just sets a number in state)
             if (nextEntry.tempoBpm !== undefined) {
@@ -602,16 +600,14 @@ function startScheduler() {
           const barInterval = launchQuantize === "4bar" ? 4 : launchQuantize === "2bar" ? 2 : 1;
           if (cycleCount % barInterval === 0) {
             if (nextScene !== null && !_sceneLoadPending) {
-              // Determine scene to load now, then defer to macrotask so the
-              // JSON-heavy loadScene() doesn't block this scheduler tick (audio gap).
-              // Clear nextScene immediately so the next scheduler tick doesn't re-fire.
+              // Load synchronously so the NEXT while-loop iteration (step 0 of new bar)
+              // reads the new pattern via useDrumStore.getState(). With setTimeout the
+              // deferred call arrived after lookahead steps were already scheduled old.
               const toLoad = nextScene;
               sceneStoreRef.setState({ nextScene: null });
               _sceneLoadPending = true;
-              setTimeout(() => {
-                sceneStoreRef.getState().loadScene(toLoad);
-                _sceneLoadPending = false;
-              }, 0);
+              sceneStoreRef.getState().loadScene(toLoad);
+              _sceneLoadPending = false;
             } else if (nextScene === null && !_sceneLoadPending) {
               // Follow Actions: fire when no explicit queue is pending
               const activeSceneData = activeScene >= 0 ? scenes[activeScene] : null;
@@ -632,10 +628,8 @@ function startScheduler() {
               // "none" / "loop" / undefined → no action
               if (followSlot !== null) {
                 _sceneLoadPending = true;
-                setTimeout(() => {
-                  sceneStoreRef.getState().loadScene(followSlot!);
-                  _sceneLoadPending = false;
-                }, 0);
+                sceneStoreRef.getState().loadScene(followSlot!);
+                _sceneLoadPending = false;
               }
             }
             // Resolve clip queue too (shared quantize)
