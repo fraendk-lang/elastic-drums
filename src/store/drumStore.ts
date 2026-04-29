@@ -429,7 +429,7 @@ function startScheduler() {
       let activePattern = pattern;
       if (songMode === "song" && songChain.length > 0) {
         const chainEntry = songChain[songPosition];
-        if (chainEntry) {
+        if (chainEntry && !chainEntry.hiddenTracks?.includes("drums")) {
           const sceneStoreRef = getSceneStore();
           if (sceneStoreRef) {
             const scene = sceneStoreRef.getState().scenes[chainEntry.sceneIndex] as { drumPattern?: PatternData } | null;
@@ -999,7 +999,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
         if (firstEntry) {
           const sceneStore = getSceneStore();
           if (sceneStore) {
-            sceneStore.getState().loadScene(firstEntry.sceneIndex);
+            sceneStore.getState().loadScene(firstEntry.sceneIndex, firstEntry.hiddenTracks);
           }
         }
       }
