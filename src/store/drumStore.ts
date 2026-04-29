@@ -427,13 +427,17 @@ function startScheduler() {
 
       // Song Mode: determine which scene to play
       let activePattern = pattern;
+      let _drumsHidden = false;
       if (songMode === "song" && songChain.length > 0) {
         const chainEntry = songChain[songPosition];
-        if (chainEntry && !chainEntry.hiddenTracks?.includes("drums")) {
+        if (chainEntry) {
           const sceneStoreRef = getSceneStore();
           if (sceneStoreRef) {
             const scene = sceneStoreRef.getState().scenes[chainEntry.sceneIndex] as { drumPattern?: PatternData } | null;
-            if (scene?.drumPattern) activePattern = scene.drumPattern;
+            if (scene?.drumPattern) {
+              activePattern = scene.drumPattern;
+              _drumsHidden = !!chainEntry.hiddenTracks?.includes("drums");
+            }
           }
         }
       }
@@ -464,6 +468,7 @@ function startScheduler() {
 
       // Trigger active steps with conditional trig evaluation
       for (let track = 0; track < 12; track++) {
+        if (_drumsHidden) break; // drums hidden in song chain — suppress all triggers
         const trackData = activePattern.tracks[track];
         if (!trackData || trackData.mute) continue;
         if (hasSolo && !trackData.solo) continue; // Skip non-soloed tracks
