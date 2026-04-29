@@ -172,6 +172,21 @@ function applyArrangementBar(bar: number): void {
   }
 }
 
+// ─── Public: seek to a specific bar ──────────────────────────────────────────
+
+/**
+ * Jump the arrangement playhead to `bar` immediately.
+ * Works both during playback and while stopped.
+ * The step counter resumes counting from bar * 16 on the next tick.
+ */
+export function seekToBar(bar: number): void {
+  const target = Math.max(0, bar);
+  _stepsElapsed = target * 16;
+  _arrangementBar = target;
+  notifyBarListeners();
+  applyArrangementBar(target);
+}
+
 // ─── Reset when arrangement mode turns on/off ─────────────────────────────────
 
 function resetScheduler(): void {

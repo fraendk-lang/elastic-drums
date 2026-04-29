@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useDrumStore, type SongChainEntry, drumCurrentStepStore } from "../store/drumStore";
-import { arrangementBarStore } from "../audio/arrangementScheduler";
+import { arrangementBarStore, seekToBar } from "../audio/arrangementScheduler";
 import { useSceneStore, type Scene } from "../store/sceneStore";
 import {
   SCENE_COLORS, LOOP_COLOR, getEntryColor, getEntryLabel, hexAlpha,
@@ -993,10 +993,17 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
       style={{ minWidth: ARR_LABEL_W + timelineW }}
       onClick={() => { setSelectedId(null); setContextMenu(null); }}
     >
-      {/* Bar ruler */}
+      {/* Bar ruler — click to seek */}
       <div
-        className="flex items-center border-b border-white/10 bg-black/20 shrink-0"
-        style={{ height: RULER_H, paddingLeft: ARR_LABEL_W }}
+        className="flex items-center border-b border-white/10 bg-black/20 shrink-0 select-none"
+        style={{ height: RULER_H, paddingLeft: ARR_LABEL_W, cursor: "pointer" }}
+        onPointerDown={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const xInRuler = e.clientX - rect.left;
+          if (xInRuler < ARR_LABEL_W) return; // clicked inside label column
+          const bar = Math.floor((xInRuler - ARR_LABEL_W) / barPx);
+          seekToBar(bar);
+        }}
       >
         {rulerTicks}
         <div
