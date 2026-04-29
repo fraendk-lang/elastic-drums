@@ -920,6 +920,14 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
     if (renaming) renameInputRef.current?.focus();
   }, [renaming]);
 
+  // Dismiss context menu on outside click
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handler = () => setContextMenu(null);
+    window.addEventListener("pointerdown", handler);
+    return () => window.removeEventListener("pointerdown", handler);
+  }, [contextMenu]);
+
   // Global pointer move + up (for drag)
   useEffect(() => {
     if (!drag) return;
@@ -1186,6 +1194,14 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
     + songRepeatCount
     + stepFraction;
   const playheadPx = playheadBarOffset * barPx;
+
+  // Reset arrangement mode when the view closes
+  useEffect(() => {
+    if (!isOpen) {
+      setArrangementMode(false);
+      setArrMode("scene");
+    }
+  }, [isOpen, setArrangementMode]);
 
   // Ctrl/Cmd+scroll zoom
   useEffect(() => {
