@@ -13,6 +13,7 @@ import { SoundFontKnobs } from "./SoundFontKnobs";
 import { AutomationLane, type AutomationParam } from "./AutomationLane";
 import { useMelodyLayerStore } from "../store/melodyLayerStore";
 import { MelodyLayersEditor } from "./MelodyLayers";
+import { ArpPanel } from "./ArpPanel";
 
 const MELODY_AUTO_PARAMS: AutomationParam[] = [
   { id: "cutoff", label: "CUT", min: 200, max: 8000 },
@@ -332,6 +333,7 @@ export function MelodySequencer() {
   const [durationDrag, setDurationDrag] = useState<{ sourceStep: number; endStep: number } | null>(null);
   const stepElRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [velocityLaneExpanded, setVelocityLaneExpanded] = useState(true);
+  const [showArp, setShowArp] = useState(false);
 
   const pageOffset = selectedPage * 16;
   const totalPages = Math.max(1, Math.ceil(length / 16));
@@ -616,6 +618,24 @@ export function MelodySequencer() {
           </button>
         </div>
 
+        <button
+          onClick={() => setShowArp((v) => !v)}
+          className={`text-[9px] font-black px-1.5 py-0.5 rounded border transition-colors shrink-0 flex items-center gap-1 ${
+            showArp
+              ? "border-[var(--ed-accent-melody)]/40 text-[var(--ed-accent-melody)]/80 bg-[var(--ed-accent-melody)]/10"
+              : "border-white/20 text-white/50 hover:text-white hover:border-white/40"
+          }`}
+          title="Arpeggiator"
+        >
+          ARP
+          {arp.mode !== "off" && (
+            <span
+              className="w-1.5 h-1.5 rounded-full animate-pulse"
+              style={{ backgroundColor: "var(--ed-accent-melody)" }}
+            />
+          )}
+        </button>
+
         {/* Layers Toggle */}
         <button
           onClick={() => setLayersEnabled(!layersEnabled)}
@@ -677,77 +697,12 @@ export function MelodySequencer() {
         <SoundFontKnobs channel={14} color={MELODY_COLOR} />
       )}
 
-      {/* ── Arp + Humanize strip ── */}
+      {showArp && (
+        <ArpPanel arp={arp} setArp={setArp} accentColor="var(--ed-accent-melody)" />
+      )}
+
+      {/* ── Humanize + Layers strip ── */}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1 border-b border-white/5 text-[7px] font-bold tracking-wider">
-        {/* ARP section */}
-        <span className="text-[var(--ed-accent-melody)]/70">ARP</span>
-        {(["off","up","down","updown","downup","converge","diverge","random","chord"] as const).map((m) => (
-          <button key={m} onClick={() => setArp("mode", m)}
-            className={`px-1.5 h-5 rounded transition-all ${
-              arp.mode === m
-                ? "bg-[var(--ed-accent-melody)]/25 text-[var(--ed-accent-melody)]"
-                : "text-white/25 hover:text-white/55"
-            }`}
-            title={`Arpeggiator: ${m}`}
-          >{m === "off" ? "—" : m.toUpperCase().slice(0,4)}</button>
-        ))}
-
-        {arp.mode !== "off" && (
-          <>
-            <span className="mx-0.5 text-white/15">|</span>
-            {(["1/4","1/8","1/8t","1/16","1/16t","1/32"] as const).map((r) => (
-              <button key={r} onClick={() => setArp("rate", r)}
-                className={`px-1 h-5 rounded transition-all ${
-                  arp.rate === r ? "bg-white/15 text-white/90" : "text-white/25 hover:text-white/55"
-                }`}
-                title={`Rate ${r}`}
-              >{r}</button>
-            ))}
-            <span className="mx-0.5 text-white/15">|</span>
-            {[1,2,3,4].map((o) => (
-              <button key={o} onClick={() => setArp("octaves", o)}
-                className={`w-5 h-5 rounded transition-all ${
-                  arp.octaves === o ? "bg-white/15 text-white/90" : "text-white/25 hover:text-white/55"
-                }`}
-                title={`${o} Oktave${o > 1 ? "n" : ""}`}
-              >{o}</button>
-            ))}
-            <span className="mx-0.5 text-white/15">|</span>
-            {(["short","medium","long"] as const).map((g) => (
-              <button key={g} onClick={() => setArp("gate", g)}
-                className={`px-1 h-5 rounded transition-all ${
-                  arp.gate === g ? "bg-white/15 text-white/90" : "text-white/25 hover:text-white/55"
-                }`}
-                title={`Gate ${g}`}
-              >{g[0]!.toUpperCase()}</button>
-            ))}
-            {/* Compact numeric sliders */}
-            <label className="flex items-center gap-1 text-white/40">
-              SW
-              <input type="range" min={0} max={50} value={Math.round(arp.swing * 100)}
-                onChange={(e) => setArp("swing", Number(e.target.value) / 100)}
-                className="w-12 accent-[var(--ed-accent-melody)]" title="Swing" />
-              <span className="w-5 text-[6px] text-white/50 font-mono">{Math.round(arp.swing * 100)}</span>
-            </label>
-            <label className="flex items-center gap-1 text-white/40">
-              SKIP
-              <input type="range" min={0} max={80} value={Math.round(arp.skipProb * 100)}
-                onChange={(e) => setArp("skipProb", Number(e.target.value) / 100)}
-                className="w-12 accent-[var(--ed-accent-melody)]" title="Skip probability" />
-              <span className="w-5 text-[6px] text-white/50 font-mono">{Math.round(arp.skipProb * 100)}</span>
-            </label>
-            <label className="flex items-center gap-1 text-white/40">
-              DECAY
-              <input type="range" min={0} max={100} value={Math.round(arp.velDecay * 100)}
-                onChange={(e) => setArp("velDecay", Number(e.target.value) / 100)}
-                className="w-12 accent-[var(--ed-accent-melody)]" title="Velocity decay per step" />
-              <span className="w-5 text-[6px] text-white/50 font-mono">{Math.round(arp.velDecay * 100)}</span>
-            </label>
-          </>
-        )}
-
-        <div className="flex-1" />
-
         {/* Humanize section */}
         <span className="text-[var(--ed-accent-melody)]/70">HUM</span>
         <label className="flex items-center gap-1 text-white/40">
