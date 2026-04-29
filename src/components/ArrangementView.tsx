@@ -6,7 +6,7 @@
  * Keyboard: D dup · Del delete · ⌘C copy · ⌘V paste · ←→ move · −/+ resize · C colour · F2 rename
  */
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useDrumStore, type SongChainEntry, drumCurrentStepStore } from "../store/drumStore";
 import { useSceneStore, type Scene } from "../store/sceneStore";
 import {
@@ -775,6 +775,20 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
   const { clips, totalBars } = useArrangementStore();
   const timelineW = totalBars * barPx;
 
+  const rulerTicks = useMemo(
+    () =>
+      Array.from({ length: totalBars }, (_, i) => (
+        <div
+          key={i}
+          className="text-[9px] text-white/40 font-mono shrink-0 border-l border-white/10 pl-1"
+          style={{ width: barPx, lineHeight: `${RULER_H}px` }}
+        >
+          {i + 1}
+        </div>
+      )),
+    [totalBars, barPx]
+  );
+
   return (
     <div className="flex flex-col" style={{ minWidth: ARR_LABEL_W + timelineW }}>
       {/* Bar ruler */}
@@ -782,15 +796,7 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
         className="flex items-center border-b border-white/10 bg-black/20 shrink-0"
         style={{ height: RULER_H, paddingLeft: ARR_LABEL_W }}
       >
-        {Array.from({ length: totalBars }, (_, i) => (
-          <div
-            key={i}
-            className="text-[9px] text-white/40 font-mono shrink-0 border-l border-white/10 pl-1"
-            style={{ width: barPx, lineHeight: `${RULER_H}px` }}
-          >
-            {i + 1}
-          </div>
-        ))}
+        {rulerTicks}
         {/* Playhead */}
         <div
           className="absolute top-0 bottom-0 w-px bg-red-500/80 pointer-events-none"
