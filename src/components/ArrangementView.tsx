@@ -32,6 +32,12 @@ const DEFAULT_BAR_PX = 40;
 const MAX_REPEATS    = 16;
 const MIN_REPEATS    = 1;
 
+// ─── Selection key helpers ────────────────────────────────────────────────────
+// Format: "${trackId}:${chainIndex}" or "loops:${chainIndex}"
+const makeSelKey  = (track: TrackId | "loops", idx: number) => `${track}:${idx}`;
+const getSelIdx   = (key: string) => parseInt(key.split(":")[1] ?? "");
+const getSelTrack = (key: string): TrackId | "loops" => key.split(":")[0] as TrackId | "loops";
+
 // ─── Per-track arrangement constants ─────────────────────────────────────────
 
 const TRACK_COLORS: Record<ArrangementTrackId, string> = {
@@ -301,7 +307,7 @@ interface ArrangementLoopLaneProps {
   height:       number;
   songPosition: number;
   songMode:     string;
-  selected:     Set<number>;
+  selected:     Set<string>;
   onSelect:     (i: number, multi: boolean) => void;
   onDragOver:   (i: number) => void;
   onDrop:       (e: React.DragEvent, i: number) => void;
@@ -322,7 +328,7 @@ function ArrangementLoopLane({
           .filter(s => s.playing);
         const w        = entry.repeats * barPx;
         const isActive = songMode === "song" && i === songPosition;
-        const isSel    = selected.has(i);
+        const isSel    = selected.has(makeSelKey("loops", i));
 
         return (
           <div
@@ -486,7 +492,7 @@ function ArrangementContextMenu({
 interface ArrangementDetailPanelProps {
   songChain:          SongChainEntry[];
   scenes:             (Scene | null)[];
-  selected:           Set<number>;
+  primaryIdx:         number | null;
   showColorPicker:    number | null;
   setShowColorPicker: (i: number | null) => void;
   onUpdateEntry:      (i: number, patch: Partial<SongChainEntry>) => void;
@@ -496,11 +502,11 @@ interface ArrangementDetailPanelProps {
 }
 
 function ArrangementDetailPanel({
-  songChain, scenes, selected,
+  songChain, scenes, primaryIdx,
   showColorPicker, setShowColorPicker,
   onUpdateEntry, onUpdateRepeats, onStartRename, onRemove,
 }: ArrangementDetailPanelProps) {
-  const primary = selected.size > 0 ? [...selected][0]! : null;
+  const primary = primaryIdx;
   const entry   = primary !== null ? (songChain[primary] ?? null) : null;
   const scene   = entry ? (scenes[entry.sceneIndex] ?? null) : null;
 
@@ -1157,13 +1163,13 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
   const setArrangementMode                    = useDrumStore((s) => s.setArrangementMode);
 
   const [barPx, setBarPx]                     = useState(DEFAULT_BAR_PX);
-  const [selected, setSelected]               = useState<Set<number>>(new Set());
+  const [selected, setSelected]               = useState<Set<string>>(new Set());
   const [dragIndex, setDragIndex]             = useState<number | null>(null);
   const [dropIndex, setDropIndex]             = useState<number | null>(null);
   const [isDragCopy, setIsDragCopy]           = useState(false);
   const [clipboard, setClipboard]             = useState<SongChainEntry | null>(null);
   const [contextMenu, setContextMenu]         =
-    useState<{ x: number; y: number; index: number } | null>(null);
+    useState<{ x: number; y: number; index: number; track: TrackId | "loops" } | null>(null);
   const [renamingIndex, setRenamingIndex]     = useState<number | null>(null);
   const [renameValue, setRenameValue]         = useState("");
   const [showColorPicker, setShowColorPicker] = useState<number | null>(null);
@@ -1295,7 +1301,9 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (renamingIndex !== null) return;
-      const primary = selected.size > 0 ? [...selected][0]! : null;
+      const primaryKey   = selected.size > 0 ? [...selected][0]! : null;
+      const primary      = primaryKey !== null ? getSelIdx(primaryKey) : null;
+      const primaryTrack = primaryKey ? getSelTrack(primaryKey) : ("drums" as TrackId | "loops");
 
       if (e.key === "Escape") {
         if (contextMenu) { setContextMenu(null); return; }
@@ -1306,7 +1314,8 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
       if (e.key === "Delete" || e.key === "Backspace") {
         if (selected.size === 0) return;
         e.preventDefault();
-        [...selected].sort((a, b) => b - a).forEach(i => removeFromSongChain(i));
+        const uniqueIdxs = [...new Set([...selected].map(getSelIdx))].sort((a, b) => b - a);
+        uniqueIdxs.forEach(i => removeFromSongChain(i));
         setSelected(new Set());
         return;
       }
@@ -1323,7 +1332,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
             color: entry.color, label: entry.label,
           });
         }
-        setSelected(new Set([primary + 1]));
+        setSelected(new Set([makeSelKey(primaryTrack, primary + 1)]));
         return;
       }
 
@@ -1345,7 +1354,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
             color: clipboard.color, label: clipboard.label,
           });
         }
-        setSelected(new Set([after + 1]));
+        setSelected(new Set([makeSelKey(primaryTrack, after + 1)]));
         return;
       }
 
@@ -1367,7 +1376,9 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
         if (primary === null || primary === 0) return;
         e.preventDefault();
         moveSongEntry(primary, primary - 1);
-        setSelected(new Set([primary - 1]));
+        setSelected(new Set(
+          [...selected].map(k => getSelIdx(k) === primary ? makeSelKey(getSelTrack(k), primary - 1) : k)
+        ));
         return;
       }
 
@@ -1376,7 +1387,9 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
         e.preventDefault();
         if (primary >= useDrumStore.getState().songChain.length - 1) return;
         moveSongEntry(primary, primary + 1);
-        setSelected(new Set([primary + 1]));
+        setSelected(new Set(
+          [...selected].map(k => getSelIdx(k) === primary ? makeSelKey(getSelTrack(k), primary + 1) : k)
+        ));
         return;
       }
 
@@ -1411,26 +1424,27 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
   }, [isOpen, selected, clipboard, renamingIndex, contextMenu, loopStart, loopEnd,
       removeFromSongChain, updateSongEntryRepeats, moveSongEntry, songChain]);
 
-  // Selection helper
-  const selectEntry = useCallback((index: number, multi: boolean) => {
+  // Selection helper — per-track per-chain-index
+  const selectEntry = useCallback((index: number, track: TrackId | "loops", multi: boolean) => {
+    const key = makeSelKey(track, index);
     setContextMenu(null);
     if (multi) {
       setSelected(prev => {
         const next = new Set(prev);
-        if (next.has(index)) next.delete(index); else next.add(index);
+        if (next.has(key)) next.delete(key); else next.add(key);
         return next;
       });
     } else {
       setSelected(prev =>
-        prev.size === 1 && prev.has(index) ? new Set() : new Set([index])
+        prev.size === 1 && prev.has(key) ? new Set() : new Set([key])
       );
     }
   }, []);
 
-  const openContextMenu = useCallback((e: React.MouseEvent, index: number) => {
+  const openContextMenu = useCallback((e: React.MouseEvent, index: number, track: TrackId | "loops") => {
     e.preventDefault();
-    setSelected(new Set([index]));
-    setContextMenu({ x: e.clientX, y: e.clientY, index });
+    setSelected(new Set([makeSelKey(track, index)]));
+    setContextMenu({ x: e.clientX, y: e.clientY, index, track });
   }, []);
 
   const handleSceneDrop = useCallback((e: React.DragEvent, atIndex?: number) => {
@@ -1467,7 +1481,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
         } else {
           moveSongEntry(from, toIndex);
         }
-        setSelected(new Set([toIndex]));
+        setSelected(new Set([makeSelKey("drums", toIndex)]));
       }
     } else {
       handleSceneDrop(e, toIndex);
@@ -1484,6 +1498,9 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
   }, [renamingIndex, renameValue, updateSongEntry]);
 
   if (!isOpen) return null;
+
+  const primarySelKey = selected.size > 0 ? [...selected][0]! : null;
+  const primaryIdx    = primarySelKey !== null ? getSelIdx(primarySelKey) : null;
 
   return (
     <div
@@ -1705,7 +1722,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                         isLastTrack={trackIndex === TRACKS.length - 1}
                         isActive={isActive}
                         progress={progress}
-                        isSelected={selected.has(clipIndex)}
+                        isSelected={selected.has(makeSelKey(id, clipIndex))}
                         isDragging={dragIndex === clipIndex}
                         isDropTarget={dropIndex === clipIndex && dragIndex !== clipIndex}
                         isRenaming={renamingIndex === clipIndex && trackIndex === 0}
@@ -1713,8 +1730,8 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                         renameInputRef={trackIndex === 0 ? renameInputRef : undefined}
                         onRenameChange={setRenameValue}
                         onRenameCommit={commitRename}
-                        onSelect={(multi) => selectEntry(clipIndex, multi)}
-                        onContextMenu={(e) => openContextMenu(e, clipIndex)}
+                        onSelect={(multi) => selectEntry(clipIndex, id, multi)}
+                        onContextMenu={(e) => openContextMenu(e, clipIndex, id)}
                         onDragStart={(e) => {
                           setDragIndex(clipIndex);
                           setIsDragCopy(e.altKey);
@@ -1769,7 +1786,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                   songPosition={songPosition}
                   songMode={songMode}
                   selected={selected}
-                  onSelect={(i, multi) => selectEntry(i, multi)}
+                  onSelect={(i, multi) => selectEntry(i, "loops", multi)}
                   onDragOver={(i) => setDropIndex(i)}
                   onDrop={(e, i) => handleEntryDrop(e, i)}
                 />
@@ -1822,7 +1839,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
         <ArrangementDetailPanel
           songChain={songChain}
           scenes={scenes}
-          selected={selected}
+          primaryIdx={primaryIdx}
           showColorPicker={showColorPicker}
           setShowColorPicker={setShowColorPicker}
           onUpdateEntry={updateSongEntry}
@@ -1903,7 +1920,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                   color: entry.color, label: entry.label,
                 });
               }
-              setSelected(new Set([contextMenu.index + 1]));
+              setSelected(new Set([makeSelKey(contextMenu.track, contextMenu.index + 1)]));
               setContextMenu(null);
             }}
             onCopy={() => {
@@ -1921,7 +1938,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                   color: clipboard.color, label: clipboard.label,
                 });
               }
-              setSelected(new Set([contextMenu.index + 1]));
+              setSelected(new Set([makeSelKey(contextMenu.track, contextMenu.index + 1)]));
               setContextMenu(null);
             }}
             onBarsChange={(delta) => {
