@@ -95,7 +95,7 @@ interface SceneStore {
   // Actions
   captureScene: (slot: number) => void;
   updateScene: (slot: number) => void; // Re-capture into existing slot, preserving name
-  loadScene: (slot: number) => void;
+  loadScene: (slot: number, hiddenTracks?: string[]) => void;
   queueScene: (slot: number) => void;
   clearScene: (slot: number) => void;
   renameScene: (slot: number, name: string) => void;
@@ -231,9 +231,10 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     useMelodyStore.setState(liveScaleState.melody);
   },
 
-  loadScene: (slot: number) => {
+  loadScene: (slot: number, hiddenTracks?: string[]) => {
     const scene = get().scenes[slot];
     if (!scene) return;
+    const skip = new Set(hiddenTracks ?? []);
 
     // ── Seamless scene transition strategy ───────────────────────────────────
     // Do NOT panic before loading params. Panicking first causes a hard silence
@@ -258,61 +259,66 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     // running inside the 20ms scheduler setInterval (outside React's event system).
     unstable_batchedUpdates(() => {
       // Apply drum pattern
-      useDrumStore.setState({ pattern: deepClone(scene.drumPattern) });
-
-      // Restore drum voice params (audio-only, no re-render needed)
-      if (scene.drumVoiceParams) {
-        for (let i = 0; i < 12; i++) {
-          const params = scene.drumVoiceParams[i];
-          if (params) {
-            for (const [key, val] of Object.entries(params)) {
-              audioEngine.setVoiceParam(i, key, val);
+      if (!skip.has("drums")) {
+        useDrumStore.setState({ pattern: deepClone(scene.drumPattern) });
+        // Restore drum voice params (audio-only, no re-render needed)
+        if (scene.drumVoiceParams) {
+          for (let i = 0; i < 12; i++) {
+            const params = scene.drumVoiceParams[i];
+            if (params) {
+              for (const [key, val] of Object.entries(params)) {
+                audioEngine.setVoiceParam(i, key, val);
+              }
             }
           }
         }
       }
 
       // Apply all synth params BEFORE panic so the new state is locked in first.
-      // setParams restores output.gain from the stored volume — panic follows
-      // immediately after to silence residual sustain without audible clicks.
-      if (scene.bassParams) bassEngine.setParams(scene.bassParams);
-      if (scene.chordsParams) chordsEngine.setParams(scene.chordsParams);
-      if (scene.melodyParams) melodyEngine.setParams(scene.melodyParams);
+      if (!skip.has("bass") && scene.bassParams) bassEngine.setParams(scene.bassParams);
+      if (!skip.has("chords") && scene.chordsParams) chordsEngine.setParams(scene.chordsParams);
+      if (!skip.has("melody") && scene.melodyParams) melodyEngine.setParams(scene.melodyParams);
 
       // Single panic AFTER all params — 5 ms into the future so the WebAudio
       // engine uses a smooth ramp-to-zero instead of an instantaneous value jump
       // (instantaneous jumps alias as clicks at the speaker).
       const cleanupAt = now + 0.005;
-      bassEngine.panic(cleanupAt);
-      chordsEngine.panic(cleanupAt);
-      melodyEngine.panic(cleanupAt);
+      if (!skip.has("bass")) bassEngine.panic(cleanupAt);
+      if (!skip.has("chords")) chordsEngine.panic(cleanupAt);
+      if (!skip.has("melody")) melodyEngine.panic(cleanupAt);
 
       // Apply bass steps + params to stores
-      const bassUpdate: Record<string, unknown> = {
-        steps: deepClone(scene.bassSteps),
-        length: scene.bassLength,
-        globalOctave: scene.bassGlobalOctave ?? 0,
-      };
-      if (scene.bassParams) bassUpdate.params = deepClone(scene.bassParams);
-      useBassStore.setState(bassUpdate);
+      if (!skip.has("bass")) {
+        const bassUpdate: Record<string, unknown> = {
+          steps: deepClone(scene.bassSteps),
+          length: scene.bassLength,
+          globalOctave: scene.bassGlobalOctave ?? 0,
+        };
+        if (scene.bassParams) bassUpdate.params = deepClone(scene.bassParams);
+        useBassStore.setState(bassUpdate);
+      }
 
       // Apply chords steps + params
-      const chordsUpdate: Record<string, unknown> = {
-        steps: deepClone(scene.chordsSteps),
-        length: scene.chordsLength,
-        globalOctave: scene.chordsGlobalOctave ?? 0,
-      };
-      if (scene.chordsParams) chordsUpdate.params = deepClone(scene.chordsParams);
-      useChordsStore.setState(chordsUpdate);
+      if (!skip.has("chords")) {
+        const chordsUpdate: Record<string, unknown> = {
+          steps: deepClone(scene.chordsSteps),
+          length: scene.chordsLength,
+          globalOctave: scene.chordsGlobalOctave ?? 0,
+        };
+        if (scene.chordsParams) chordsUpdate.params = deepClone(scene.chordsParams);
+        useChordsStore.setState(chordsUpdate);
+      }
 
       // Apply melody steps + params
-      const melodyUpdate: Record<string, unknown> = {
-        steps: deepClone(scene.melodySteps),
-        length: scene.melodyLength,
-        globalOctave: scene.melodyGlobalOctave ?? 0,
-      };
-      if (scene.melodyParams) melodyUpdate.params = deepClone(scene.melodyParams);
-      useMelodyStore.setState(melodyUpdate);
+      if (!skip.has("melody")) {
+        const melodyUpdate: Record<string, unknown> = {
+          steps: deepClone(scene.melodySteps),
+          length: scene.melodyLength,
+          globalOctave: scene.melodyGlobalOctave ?? 0,
+        };
+        if (scene.melodyParams) melodyUpdate.params = deepClone(scene.melodyParams);
+        useMelodyStore.setState(melodyUpdate);
+      }
 
       // Restore global key/scale — set DIRECTLY on each store to avoid sync ping-pong.
       // The sync mechanism (syncScaleToOtherStores) can cause octave drift when
@@ -323,28 +329,16 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
         const chordsRootMidi = rootIndex >= 0 ? 48 + rootIndex : 48;
         const melodyRootMidi = chordsRootMidi; // Same octave as chords
 
-        useBassStore.setState({
-          rootNote: bassRootMidi,
-          rootName: scene.rootName,
-          scaleName: scene.scaleName,
-        });
-        useChordsStore.setState({
-          rootNote: chordsRootMidi,
-          rootName: scene.rootName,
-          scaleName: scene.scaleName,
-        });
-        useMelodyStore.setState({
-          rootNote: melodyRootMidi,
-          rootName: scene.rootName,
-          scaleName: scene.scaleName,
-        });
+        if (!skip.has("bass")) useBassStore.setState({ rootNote: bassRootMidi, rootName: scene.rootName, scaleName: scene.scaleName });
+        if (!skip.has("chords")) useChordsStore.setState({ rootNote: chordsRootMidi, rootName: scene.rootName, scaleName: scene.scaleName });
+        if (!skip.has("melody")) useMelodyStore.setState({ rootNote: melodyRootMidi, rootName: scene.rootName, scaleName: scene.scaleName });
       }
 
       set({ activeScene: slot, nextScene: null });
 
       // Restore loop player state — diff-based, bar-boundary synchronized.
       // Legacy scenes (loopSlots undefined) are silently skipped.
-      if (scene.loopSlots && scene.loopSlots.length > 0) {
+      if (!skip.has("loops") && scene.loopSlots && scene.loopSlots.length > 0) {
         useLoopPlayerStore.getState().loadSceneSlots(scene.loopSlots);
       }
 

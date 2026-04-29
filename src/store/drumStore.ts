@@ -7,7 +7,7 @@ import { schedulerClock } from "../audio/SchedulerClock";
 let _sceneStoreRef: {
   getState: () => {
     scenes: ({ followAction?: string } | null)[];
-    loadScene: (slot: number) => void;
+    loadScene: (slot: number, hiddenTracks?: string[]) => void;
     nextScene: number | null;
     activeScene: number;
     launchQuantize: string;
@@ -89,6 +89,7 @@ export interface SongChainEntry {
   tempoRamp?: boolean;    // When true, ramp to tempoBpm over entry duration instead of instant jump
   color?: string;         // Hex colour override, e.g. "#a855f7" — undefined = auto from palette
   label?: string;         // User-assigned name, e.g. "Drop" — undefined = "Scene N"
+  hiddenTracks?: string[]; // Per-track delete: tracks skipped when this entry loads ("drums"|"bass"|"chords"|"melody"|"loops")
 }
 
 export type SongMode = "pattern" | "song";
@@ -575,7 +576,7 @@ function startScheduler() {
             if (sceneStoreRef && !_sceneLoadPending) {
               const sceneIdx = nextEntry.sceneIndex;
               _sceneLoadPending = true;
-              sceneStoreRef.getState().loadScene(sceneIdx);
+              sceneStoreRef.getState().loadScene(sceneIdx, nextEntry.hiddenTracks);
               _sceneLoadPending = false;
             }
             // Tempo automation (can stay synchronous — just sets a number in state)

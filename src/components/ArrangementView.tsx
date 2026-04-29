@@ -134,6 +134,7 @@ interface ArrangementClipProps {
   isActive:       boolean;
   progress:       number;
   isSelected:     boolean;
+  isHidden:       boolean;
   isDragging:     boolean;
   isDropTarget:   boolean;
   isRenaming:     boolean;
@@ -153,7 +154,7 @@ interface ArrangementClipProps {
 function ArrangementClip({
   entry, trackId, scene, color, label, width, height,
   isFirstTrack, isLastTrack, isActive, progress,
-  isSelected, isDragging, isDropTarget,
+  isSelected, isHidden, isDragging, isDropTarget,
   isRenaming, renameValue, renameInputRef,
   onRenameChange, onRenameCommit,
   onSelect, onContextMenu,
@@ -200,6 +201,18 @@ function ArrangementClip({
     : isFirstTrack              ? "6px 6px 0 0"
     : isLastTrack               ? "0 0 6px 6px"
     : "0";
+
+  // Render empty placeholder for hidden (per-track deleted) clips
+  if (isHidden) {
+    return (
+      <div
+        className="border-b border-r border-black/20"
+        style={{ width, minWidth: width, height }}
+        onClick={(e) => { e.stopPropagation(); onSelect(e.metaKey || e.ctrlKey); }}
+        onContextMenu={(e) => onContextMenu(e)}
+      />
+    );
+  }
 
   return (
     <div
@@ -1193,6 +1206,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
 
   const resizingRef    = useRef<{ index: number; startX: number; startRepeats: number } | null>(null);
   const lastRecScene   = useRef<number>(-1);
+  const recBarStart    = useRef<number>(-1);
   const timelineRef    = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
@@ -1232,15 +1246,28 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
 
   // REC mode: auto-append scene switches
   useEffect(() => {
-    if (!isRecording) { lastRecScene.current = -1; return; }
+    if (!isRecording) { lastRecScene.current = -1; recBarStart.current = -1; return; }
     setRecCount(0);
+    recBarStart.current = -1;
     const unsub = useSceneStore.subscribe((state, prev) => {
       const newScene = state.activeScene;
       if (newScene === prev.activeScene || newScene < 0) return;
       const scene = state.scenes[newScene];
       if (!scene) return;
       const bars = Math.max(1, Math.ceil((scene.drumPattern.length ?? 16) / 16));
+
+      // Fix previous entry's repeats to the actual number of bars played.
+      // barCycle is incremented before loadScene fires but the store update
+      // happens after — add 1 to get the bar that's actually starting now.
+      const currentBar = useDrumStore.getState().barCycle + 1;
+      const chain = useDrumStore.getState().songChain;
+      if (chain.length > 0 && recBarStart.current >= 0) {
+        const actualRepeats = Math.max(1, currentBar - recBarStart.current);
+        useDrumStore.getState().updateSongEntry(chain.length - 1, { repeats: actualRepeats });
+      }
+
       useDrumStore.getState().addToSongChain(newScene, bars);
+      recBarStart.current = currentBar;
       lastRecScene.current = newScene;
       setRecCount(c => c + 1);
     });
@@ -1314,8 +1341,27 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
       if (e.key === "Delete" || e.key === "Backspace") {
         if (selected.size === 0) return;
         e.preventDefault();
-        const uniqueIdxs = [...new Set([...selected].map(getSelIdx))].sort((a, b) => b - a);
-        uniqueIdxs.forEach(i => removeFromSongChain(i));
+
+        // Group selected keys by chain index, collect the tracks per index
+        const byIdx = new Map<number, string[]>();
+        for (const k of selected) {
+          const idx = getSelIdx(k);
+          const track = getSelTrack(k);
+          if (!byIdx.has(idx)) byIdx.set(idx, []);
+          byIdx.get(idx)!.push(track);
+        }
+        const allTracks = ["drums", "bass", "chords", "melody", "loops"] as const;
+
+        [...byIdx.keys()].sort((a, b) => b - a).forEach(idx => {
+          const entry = useDrumStore.getState().songChain[idx];
+          if (!entry) return;
+          const nowHidden = new Set([...(entry.hiddenTracks ?? []), ...byIdx.get(idx)!]);
+          if (allTracks.every(t => nowHidden.has(t))) {
+            removeFromSongChain(idx);
+          } else {
+            updateSongEntry(idx, { hiddenTracks: [...nowHidden] });
+          }
+        });
         setSelected(new Set());
         return;
       }
@@ -1723,6 +1769,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                         isActive={isActive}
                         progress={progress}
                         isSelected={selected.has(makeSelKey(id, clipIndex))}
+                        isHidden={entry.hiddenTracks?.includes(id) ?? false}
                         isDragging={dragIndex === clipIndex}
                         isDropTarget={dropIndex === clipIndex && dragIndex !== clipIndex}
                         isRenaming={renamingIndex === clipIndex && trackIndex === 0}
@@ -1962,7 +2009,17 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
               setContextMenu(null);
             }}
             onDelete={() => {
-              removeFromSongChain(contextMenu.index);
+              const { index, track } = contextMenu;
+              const entry = useDrumStore.getState().songChain[index];
+              if (entry) {
+                const allTracks = ["drums", "bass", "chords", "melody", "loops"] as const;
+                const nowHidden = new Set([...(entry.hiddenTracks ?? []), track]);
+                if (allTracks.every(t => nowHidden.has(t))) {
+                  removeFromSongChain(index);
+                } else {
+                  updateSongEntry(index, { hiddenTracks: [...nowHidden] });
+                }
+              }
               setSelected(new Set());
               setContextMenu(null);
             }}
