@@ -13,6 +13,11 @@ import {
   SCENE_COLORS, LOOP_COLOR, getEntryColor, getEntryLabel, hexAlpha,
 } from "../utils/arrangementColors";
 import { drumWaveformBars, bassWaveformBars } from "../utils/waveformMini";
+import {
+  useArrangementStore,
+  type ArrangementClip,
+  type ArrangementTrackId,
+} from "../store/arrangementStore";
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 
@@ -25,6 +30,26 @@ const MAX_BAR_PX     = 120;
 const DEFAULT_BAR_PX = 40;
 const MAX_REPEATS    = 16;
 const MIN_REPEATS    = 1;
+
+// ─── Per-track arrangement constants ─────────────────────────────────────────
+
+const TRACK_COLORS: Record<ArrangementTrackId, string> = {
+  drums:  "#ef4444",
+  bass:   "#14b8a6",
+  chords: "#a855f7",
+  melody: "#eab308",
+};
+
+const TRACK_LABELS: Record<ArrangementTrackId, string> = {
+  drums:  "DRUMS",
+  bass:   "BASS",
+  chords: "CHORDS",
+  melody: "MELODY",
+};
+
+const ARR_TRACKS: ArrangementTrackId[] = ["drums", "bass", "chords", "melody"];
+const ARR_TRACK_H = 44;
+const ARR_LABEL_W = 72;
 
 // ─── Track definitions ────────────────────────────────────────────────────────
 
@@ -607,12 +632,15 @@ interface ArrangementStatusBarProps {
   setBarPx:       React.Dispatch<React.SetStateAction<number>>;
   onClear:        () => void;
   onClose:        () => void;
+  arrMode:        "scene" | "clips";
+  onSetArrMode:   (m: "scene" | "clips") => void;
 }
 
 function ArrangementStatusBar({
   chainLength, totalBars, songMode, setSongMode,
   isRecording, setIsRecording, recCount,
   barPx, setBarPx, onClear, onClose,
+  arrMode, onSetArrMode,
 }: ArrangementStatusBarProps) {
   return (
     <div className="flex items-center justify-between px-4 py-2 border-b border-white/8 shrink-0">
@@ -648,6 +676,30 @@ function ArrangementStatusBar({
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Mode toggle */}
+        <div className="flex gap-1 items-center">
+          <button
+            className={`text-[9px] font-black px-2 py-0.5 rounded transition-colors ${
+              arrMode === "scene"
+                ? "bg-white/15 text-white"
+                : "text-white/40 hover:text-white/70"
+            }`}
+            onClick={() => onSetArrMode("scene")}
+          >
+            SCENE
+          </button>
+          <button
+            className={`text-[9px] font-black px-2 py-0.5 rounded transition-colors ${
+              arrMode === "clips"
+                ? "bg-white/15 text-white"
+                : "text-white/40 hover:text-white/70"
+            }`}
+            onClick={() => onSetArrMode("clips")}
+          >
+            CLIPS ✦
+          </button>
+        </div>
+
         <div className="flex items-center gap-1 border border-white/8 rounded-lg px-1.5 py-1">
           <button
             onClick={() => setBarPx(px => Math.max(MIN_BAR_PX, px - 8))}
@@ -680,6 +732,134 @@ function ArrangementStatusBar({
   );
 }
 
+// ─── PerTrackClip ─────────────────────────────────────────────────────────────
+
+interface PerTrackClipProps {
+  clip:  ArrangementClip;
+  barPx: number;
+  color: string;
+}
+
+function PerTrackClip({ clip, barPx, color }: PerTrackClipProps) {
+  const x = clip.startBar * barPx;
+  const w = Math.max(8, clip.lengthBars * barPx - 1);
+
+  return (
+    <div
+      className="absolute top-0.5 bottom-0.5 rounded overflow-hidden select-none"
+      style={{
+        left:            x,
+        width:           w,
+        backgroundColor: hexAlpha(color, 0.22),
+        border:          `1px solid ${hexAlpha(color, 0.45)}`,
+      }}
+    >
+      <span
+        className="text-[8px] font-bold px-1 truncate block leading-none pt-1"
+        style={{ color: hexAlpha(color, 0.9) }}
+      >
+        {clip.name}
+      </span>
+    </div>
+  );
+}
+
+// ─── PerTrackArrangement ──────────────────────────────────────────────────────
+
+interface PerTrackArrangementProps {
+  barPx:      number;
+  currentBar: number;
+}
+
+function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
+  const { clips, totalBars } = useArrangementStore();
+  const timelineW = totalBars * barPx;
+
+  return (
+    <div className="flex flex-col" style={{ minWidth: ARR_LABEL_W + timelineW }}>
+      {/* Bar ruler */}
+      <div
+        className="flex items-center border-b border-white/10 bg-black/20 shrink-0"
+        style={{ height: RULER_H, paddingLeft: ARR_LABEL_W }}
+      >
+        {Array.from({ length: totalBars }, (_, i) => (
+          <div
+            key={i}
+            className="text-[9px] text-white/40 font-mono shrink-0 border-l border-white/10 pl-1"
+            style={{ width: barPx, lineHeight: `${RULER_H}px` }}
+          >
+            {i + 1}
+          </div>
+        ))}
+        {/* Playhead */}
+        <div
+          className="absolute top-0 bottom-0 w-px bg-red-500/80 pointer-events-none"
+          style={{ left: ARR_LABEL_W + currentBar * barPx }}
+        />
+      </div>
+
+      {/* Track rows */}
+      {ARR_TRACKS.map((trackId) => {
+        const color = TRACK_COLORS[trackId];
+        const trackClips = clips.filter((c) => c.trackId === trackId);
+
+        return (
+          <div
+            key={trackId}
+            className="flex relative border-b border-white/10"
+            style={{ height: ARR_TRACK_H }}
+          >
+            {/* Label */}
+            <div
+              className="flex items-center shrink-0 border-r border-white/10 px-2"
+              style={{ width: ARR_LABEL_W, borderLeft: `3px solid ${color}` }}
+            >
+              <span className="text-[9px] font-black" style={{ color }}>
+                {TRACK_LABELS[trackId]}
+              </span>
+            </div>
+
+            {/* Timeline */}
+            <div className="relative overflow-hidden" style={{ width: timelineW, height: ARR_TRACK_H }}>
+              <div className="absolute inset-0 bg-black/10" />
+              {trackClips.map((clip) => (
+                <PerTrackClip
+                  key={clip.id}
+                  clip={clip}
+                  barPx={barPx}
+                  color={clip.color ?? color}
+                />
+              ))}
+              {/* Playhead */}
+              <div
+                className="absolute top-0 bottom-0 w-px bg-red-500/60 pointer-events-none"
+                style={{ left: currentBar * barPx }}
+              />
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Phase 2 placeholders */}
+      {["LOOPS", "SAMPLER"].map((label) => (
+        <div
+          key={label}
+          className="flex relative border-b border-white/5 opacity-30"
+          style={{ height: 36 }}
+        >
+          <div
+            className="flex items-center shrink-0 border-r border-white/5 px-2"
+            style={{ width: ARR_LABEL_W, borderLeft: "3px solid #555" }}
+          >
+            <span className="text-[9px] font-black text-white/40">{label}</span>
+          </div>
+          <div className="flex items-center px-2 text-[9px] text-white/20">Phase 2</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
@@ -695,6 +875,9 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
   const clearSongChain         = useDrumStore((s) => s.clearSongChain);
   const updateSongEntry        = useDrumStore((s) => s.updateSongEntry);
   const scenes                 = useSceneStore((s) => s.scenes);
+
+  const [arrMode, setArrMode]                 = useState<"scene" | "clips">("scene");
+  const setArrangementMode                    = useDrumStore((s) => s.setArrangementMode);
 
   const [barPx, setBarPx]                     = useState(DEFAULT_BAR_PX);
   const [selected, setSelected]               = useState<Set<number>>(new Set());
@@ -1037,9 +1220,19 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
             }
           }}
           onClose={onClose}
+          arrMode={arrMode}
+          onSetArrMode={(m) => {
+            setArrMode(m);
+            setArrangementMode(m === "clips");
+          }}
         />
 
         {/* Timeline */}
+        {arrMode === "clips" ? (
+          <div className="flex flex-1 min-h-0 overflow-x-auto overflow-y-auto">
+            <PerTrackArrangement barPx={barPx} currentBar={0} />
+          </div>
+        ) : (
         <div className="flex flex-1 min-h-0 overflow-hidden" ref={timelineRef}>
 
           {/* Track labels */}
@@ -1332,6 +1525,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
             </div>
           </div>
         </div>
+        )}
 
         {/* Detail panel */}
         <ArrangementDetailPanel
