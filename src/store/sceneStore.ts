@@ -21,6 +21,7 @@ import { useLoopPlayerStore, type LoopSceneState } from "./loopPlayerStore";
 import { useChordPianoStore, type ChordNote } from "./chordPianoStore";
 import { useMelodyLayerStore, type MelodyLayer } from "./melodyLayerStore";
 import { useMixerBarStore } from "./mixerBarStore";
+import { type ArpSettings } from "../audio/Arpeggiator";
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -66,6 +67,11 @@ export interface Scene {
   mixerState?: {
     channels: Array<{ muted: boolean; soloed: boolean }>;
   };
+  /** Arpeggiator settings for each sequencer.
+   *  undefined = legacy scene (pre-arp-panel) — untouched on load. */
+  bassArp?: ArpSettings;
+  chordsArp?: ArpSettings;
+  melodyArp?: ArpSettings;
 }
 
 export type LaunchQuantize = "immediate" | "1bar" | "2bar" | "4bar";
@@ -196,6 +202,10 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
           soloed: ch.soloed,
         })),
       },
+      // Save arpeggiator settings for each sequencer
+      bassArp:   deepClone(bass.arp),
+      chordsArp: deepClone(chords.arp),
+      melodyArp: deepClone(melody.arp),
       // Save global key/scale (from bass store as reference)
       rootNote: normalizeBassRootMidi(bass.rootName, bass.rootNote),
       rootName: bass.rootName,
@@ -367,6 +377,12 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
         });
         useMixerBarStore.setState({ channels: newChannels });
       }
+
+      // Restore arpeggiator settings — legacy scenes (undefined) are silently skipped.
+      // The arp scheduler reads from the store on the next step, so no audio-thread call needed.
+      if (scene.bassArp !== undefined)   useBassStore.setState({ arp: deepClone(scene.bassArp) });
+      if (scene.chordsArp !== undefined) useChordsStore.setState({ arp: deepClone(scene.chordsArp) });
+      if (scene.melodyArp !== undefined) useMelodyStore.setState({ arp: deepClone(scene.melodyArp) });
     });
   },
 

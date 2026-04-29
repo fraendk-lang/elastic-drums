@@ -62,7 +62,7 @@ export const FX_CATALOG: FxMeta[] = [
       { id: "rate",   label: "Rate",  min: 0.02, max: 12,   default: 0.5,  unit: "Hz" },
       { id: "center", label: "Freq",  min: 80,   max: 9000, default: 1200, unit: "Hz" },
       { id: "depth",  label: "Depth", min: 0,    max: 1,    default: 0.6 },
-      { id: "res",    label: "Res",   min: 0.5,  max: 20,   default: 5.5 },
+      { id: "res",    label: "Res",   min: 0.5,  max: 12,   default: 4 },
     ],
   },
 ];
@@ -308,7 +308,7 @@ function createAutofilter(ctx: AudioContext): FxSlot {
   input.connect(filter);
   filter.connect(output);
 
-  const params = { rate: 0.5, center: 1000, depth: 0.7, res: 4 };
+  const params = { rate: 0.5, center: 1200, depth: 0.6, res: 4 };
   return {
     id: uid(),
     type: "autofilter",
@@ -326,7 +326,7 @@ function createAutofilter(ctx: AudioContext): FxSlot {
         // Exponential depth: subtle at low values, dramatic at high
         depthGain.gain.value = Math.pow(v, 1.6) * 4000;
       }
-      if (id === "res") filter.Q.value = v;
+      if (id === "res") filter.Q.value = Math.min(12, v); // clamp: Q>12 causes self-oscillation in biquad lowpass
     },
     dispose: () => {
       try { lfo.stop(); } catch { /* */ }
