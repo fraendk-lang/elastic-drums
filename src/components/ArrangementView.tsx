@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useDrumStore, type SongChainEntry, drumCurrentStepStore } from "../store/drumStore";
+import { arrangementBarStore } from "../audio/arrangementScheduler";
 import { useSceneStore, type Scene } from "../store/sceneStore";
 import {
   SCENE_COLORS, LOOP_COLOR, getEntryColor, getEntryLabel, hexAlpha,
@@ -1163,6 +1164,12 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
     drumCurrentStepStore.getSnapshot,
   );
 
+  // live bar position from arrangementScheduler
+  const arrCurrentBar = useSyncExternalStore(
+    arrangementBarStore.subscribe,
+    arrangementBarStore.getSnapshot,
+  );
+
   const resizingRef    = useRef<{ index: number; startX: number; startRepeats: number } | null>(null);
   const lastRecScene   = useRef<number>(-1);
   const timelineRef    = useRef<HTMLDivElement>(null);
@@ -1491,7 +1498,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
         {/* Timeline */}
         {arrMode === "clips" ? (
           <div className="flex flex-1 min-h-0 overflow-x-auto overflow-y-auto">
-            <PerTrackArrangement barPx={barPx} currentBar={0} />
+            <PerTrackArrangement barPx={barPx} currentBar={arrCurrentBar} />
           </div>
         ) : (
         <div className="flex flex-1 min-h-0 overflow-hidden" ref={timelineRef}>
