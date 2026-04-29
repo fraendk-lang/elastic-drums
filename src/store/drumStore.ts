@@ -451,6 +451,13 @@ function startScheduler() {
       // Track trigger state for conditional trigs (reuse preallocated array)
       _trigState.fill(false);
 
+      // Arrangement gap = silence: advance clock but trigger no voices
+      if (useDrumStore.getState().arrangementSilence) {
+        setDrumStep((currentStep + 1) % activePattern.length, nextStepTime);
+        nextStepTime += stepDuration;
+        continue;
+      }
+
       // Check if any track is soloed — if so, only soloed tracks play
       const hasSolo = activePattern.tracks.some((t) => t?.solo);
 
@@ -676,6 +683,10 @@ interface DrumStore {
 
   // Song Mode
   songMode: SongMode;
+  arrangementMode: boolean;
+  arrangementSilence: boolean;
+  setArrangementMode: (on: boolean) => void;
+  setArrangementSilence: (v: boolean) => void;
   songChain: SongChainEntry[];
   songPosition: number;       // Current index in song chain
   songRepeatCount: number;    // Current repeat within chain entry
@@ -751,6 +762,10 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   pageClipboard: null,
   isPlaying: false,
   songMode: "pattern" as SongMode,
+  arrangementMode: false,
+  arrangementSilence: false,
+  setArrangementMode: (on) => set({ arrangementMode: on }),
+  setArrangementSilence: (v) => set({ arrangementSilence: v }),
   songChain: [],
   songPosition: 0,
   songRepeatCount: 0,
