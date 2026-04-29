@@ -64,8 +64,7 @@ export interface ArrangementClip {
 
 // ─── Store ───────────────────────────────────────────────────────────────────
 
-let _nextId = 1;
-function newId(): string { return `ac_${_nextId++}`; }
+function newId(): string { return crypto.randomUUID(); }
 
 /** Returns true if [aStart, aStart+aLen) overlaps [bStart, bStart+bLen) */
 function overlaps(aStart: number, aLen: number, bStart: number, bLen: number): boolean {
@@ -112,7 +111,14 @@ export const useArrangementStore = create<ArrangementState>((set, get) => ({
   },
 
   removeClip(id) {
-    set((s) => ({ clips: s.clips.filter((c) => c.id !== id) }));
+    set((s) => {
+      const remaining = s.clips.filter((c) => c.id !== id);
+      const maxBar = remaining.reduce(
+        (m, c) => Math.max(m, c.startBar + c.lengthBars),
+        0
+      );
+      return { clips: remaining, totalBars: Math.max(16, maxBar + 4) };
+    });
   },
 
   moveClip(id, startBar) {
@@ -150,7 +156,13 @@ export const useArrangementStore = create<ArrangementState>((set, get) => ({
   },
 
   updateClipData(id, data) {
-    set((s) => ({ clips: s.clips.map((c) => c.id === id ? { ...c, data } : c) }));
+    set((s) => ({
+      clips: s.clips.map((c) => {
+        if (c.id !== id) return c;
+        if (data.kind !== c.trackId) return c; // guard: kind must match trackId
+        return { ...c, data };
+      }),
+    }));
   },
 
   getActiveClip(trackId, bar) {
