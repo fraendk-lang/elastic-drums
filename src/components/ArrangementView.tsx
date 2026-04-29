@@ -732,15 +732,92 @@ function ArrangementStatusBar({
   );
 }
 
+// ─── Drag types ──────────────────────────────────────────────────────────────
+
+type DragMode = "move" | "resize" | "draw";
+
+interface DragState {
+  mode:          DragMode;
+  clipId?:       string;
+  trackId:       ArrangementTrackId;
+  startClientX:  number;
+  origStart?:    number;
+  origLen?:      number;
+  drawBarStart?: number;
+}
+
+// ─── makeEmptyClipData ────────────────────────────────────────────────────────
+
+function makeEmptyClipData(trackId: ArrangementTrackId): import("../store/arrangementStore").ArrangementClipData {
+  switch (trackId) {
+    case "drums":
+      return {
+        kind: "drums",
+        pattern: {
+          name: "Clip",
+          tracks: Array.from({ length: 12 }, () => ({
+            steps: Array.from({ length: 64 }, () => ({
+              active: false, velocity: 100, microTiming: 0, probability: 100,
+              ratchetCount: 1, condition: "always" as const, gateLength: 1, paramLocks: {},
+            })),
+            mute: false, solo: false, volume: 100, pan: 0, length: 16,
+          })),
+          length: 16,
+          swing: 50,
+        },
+      };
+    case "bass":
+      return {
+        kind: "bass",
+        steps: Array.from({ length: 64 }, () => ({
+          active: false, note: 0, octave: 0, accent: false,
+          velocity: 0.82, slide: false, tie: false, gateLength: 1,
+        })),
+        length: 16,
+      };
+    case "chords":
+      return {
+        kind: "chords",
+        steps: Array.from({ length: 64 }, () => ({
+          active: false, note: 0, chordType: "maj" as const,
+          octave: 0, accent: false, velocity: 0.82, tie: false, gateLength: 1,
+        })),
+        length: 16,
+      };
+    case "melody":
+      return {
+        kind: "melody",
+        steps: Array.from({ length: 64 }, () => ({
+          active: false, note: 0, octave: 0, accent: false,
+          velocity: 0.82, slide: false, tie: false, gateLength: 1,
+        })),
+        length: 16,
+      };
+  }
+}
+
 // ─── PerTrackClip ─────────────────────────────────────────────────────────────
 
 interface PerTrackClipProps {
-  clip:  ArrangementClip;
-  barPx: number;
-  color: string;
+  clip:            ArrangementClip;
+  barPx:           number;
+  color:           string;
+  isSelected:      boolean;
+  isRenaming:      boolean;
+  renameValue:     string;
+  renameInputRef?: React.RefObject<HTMLInputElement | null>;
+  onRenameChange:  (v: string) => void;
+  onRenameCommit:  () => void;
+  onSelect:        (e: React.MouseEvent) => void;
+  onContextMenu:   (e: React.MouseEvent) => void;
+  onMoveStart:     (e: React.PointerEvent) => void;
+  onResizeStart:   (e: React.PointerEvent) => void;
 }
 
-function PerTrackClip({ clip, barPx, color }: PerTrackClipProps) {
+function PerTrackClip({
+  clip, barPx, color, isSelected, isRenaming, renameValue, renameInputRef,
+  onRenameChange, onRenameCommit, onSelect, onContextMenu, onMoveStart, onResizeStart,
+}: PerTrackClipProps) {
   const x = clip.startBar * barPx;
   const w = Math.max(8, clip.lengthBars * barPx - 1);
 
@@ -751,15 +828,42 @@ function PerTrackClip({ clip, barPx, color }: PerTrackClipProps) {
         left:            x,
         width:           w,
         backgroundColor: hexAlpha(color, 0.22),
-        border:          `1px solid ${hexAlpha(color, 0.45)}`,
+        border:          isSelected
+          ? `1px solid ${hexAlpha(color, 0.85)}`
+          : `1px solid ${hexAlpha(color, 0.45)}`,
+        cursor:          "grab",
       }}
+      onClick={onSelect}
+      onContextMenu={onContextMenu}
+      onPointerDown={onMoveStart}
     >
-      <span
-        className="text-[8px] font-bold px-1 truncate block leading-none pt-1"
-        style={{ color: hexAlpha(color, 0.9) }}
-      >
-        {clip.name}
-      </span>
+      {isRenaming ? (
+        <input
+          ref={renameInputRef}
+          value={renameValue}
+          onChange={(e) => onRenameChange(e.target.value)}
+          onBlur={onRenameCommit}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") onRenameCommit(); }}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="w-full bg-black/60 border-0 outline-none text-white px-1 text-[8px]"
+          style={{ height: "100%" }}
+        />
+      ) : (
+        <span
+          className="text-[8px] font-bold px-1 truncate block leading-none pt-1"
+          style={{ color: hexAlpha(color, 0.9) }}
+        >
+          {clip.name}
+        </span>
+      )}
+
+      {/* Resize handle — right edge */}
+      <div
+        className="absolute top-0 bottom-0 right-0 w-2 cursor-col-resize hover:bg-white/10 z-10"
+        onPointerDown={(e) => { e.stopPropagation(); onResizeStart(e); }}
+        onClick={(e) => e.stopPropagation()}
+      />
     </div>
   );
 }
@@ -772,7 +876,14 @@ interface PerTrackArrangementProps {
 }
 
 function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
-  const { clips, totalBars } = useArrangementStore();
+  const { clips, totalBars, addClip, moveClip, resizeClip, removeClip, renameClip } =
+    useArrangementStore();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [drag, setDrag] = useState<DragState | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; clipId: string } | null>(null);
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
   const timelineW = totalBars * barPx;
 
   const rulerTicks = useMemo(
@@ -789,15 +900,96 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
     [totalBars, barPx]
   );
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (renaming) return;
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
+        e.preventDefault();
+        removeClip(selectedId);
+        setSelectedId(null);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedId, renaming, removeClip]);
+
+  // Auto-focus rename input
+  useEffect(() => {
+    if (renaming) renameInputRef.current?.focus();
+  }, [renaming]);
+
+  // Global pointer move + up (for drag)
+  useEffect(() => {
+    if (!drag) return;
+
+    function onMove(e: PointerEvent) {
+      if (!drag) return;
+      const deltaX = e.clientX - drag.startClientX;
+      const deltaBars = Math.round(deltaX / barPx);
+
+      if (drag.mode === "move" && drag.clipId !== undefined && drag.origStart !== undefined) {
+        const newStart = Math.max(0, drag.origStart + deltaBars);
+        moveClip(drag.clipId, newStart);
+      } else if (drag.mode === "resize" && drag.clipId !== undefined && drag.origLen !== undefined) {
+        const newLen = Math.max(1, drag.origLen + deltaBars);
+        resizeClip(drag.clipId, newLen);
+      }
+    }
+
+    function onUp(e: PointerEvent) {
+      if (drag?.mode === "draw" && drag.drawBarStart !== undefined) {
+        const deltaX = e.clientX - drag.startClientX;
+        const deltaBars = Math.round(deltaX / barPx);
+        const rawLen = Math.abs(deltaBars) + 1;
+        const lengthBars = Math.max(1, rawLen);
+        const startBar = deltaBars < 0
+          ? Math.max(0, drag.drawBarStart + deltaBars)
+          : drag.drawBarStart;
+        addClip({
+          trackId: drag.trackId,
+          startBar,
+          lengthBars,
+          name: `${TRACK_LABELS[drag.trackId]} ${startBar + 1}`,
+          data: makeEmptyClipData(drag.trackId),
+        });
+      }
+      setDrag(null);
+    }
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [drag, barPx, addClip, moveClip, resizeClip]);
+
+  function startRename(clipId: string) {
+    const clip = clips.find((c) => c.id === clipId);
+    if (!clip) return;
+    setRenaming(clipId);
+    setRenameValue(clip.name);
+    setContextMenu(null);
+  }
+
+  function commitRename() {
+    if (renaming && renameValue.trim()) renameClip(renaming, renameValue.trim());
+    setRenaming(null);
+  }
+
   return (
-    <div className="flex flex-col" style={{ minWidth: ARR_LABEL_W + timelineW }}>
+    <div
+      className="flex flex-col"
+      style={{ minWidth: ARR_LABEL_W + timelineW }}
+      onClick={() => { setSelectedId(null); setContextMenu(null); }}
+    >
       {/* Bar ruler */}
       <div
         className="flex items-center border-b border-white/10 bg-black/20 shrink-0"
         style={{ height: RULER_H, paddingLeft: ARR_LABEL_W }}
       >
         {rulerTicks}
-        {/* Playhead */}
         <div
           className="absolute top-0 bottom-0 w-px bg-red-500/80 pointer-events-none"
           style={{ left: ARR_LABEL_W + currentBar * barPx }}
@@ -825,17 +1017,58 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
               </span>
             </div>
 
-            {/* Timeline */}
-            <div className="relative overflow-hidden" style={{ width: timelineW, height: ARR_TRACK_H }}>
+            {/* Timeline area */}
+            <div
+              className="relative overflow-hidden"
+              style={{ width: timelineW, height: ARR_TRACK_H, cursor: drag?.mode === "draw" ? "crosshair" : "default" }}
+              onPointerDown={(e) => {
+                if (e.target !== e.currentTarget) return;
+                const rect = e.currentTarget.getBoundingClientRect();
+                const bar = Math.floor((e.clientX - rect.left) / barPx);
+                setDrag({ mode: "draw", trackId, startClientX: e.clientX, drawBarStart: bar });
+              }}
+            >
               <div className="absolute inset-0 bg-black/10" />
+
               {trackClips.map((clip) => (
                 <PerTrackClip
                   key={clip.id}
                   clip={clip}
                   barPx={barPx}
                   color={clip.color ?? color}
+                  isSelected={selectedId === clip.id}
+                  isRenaming={renaming === clip.id}
+                  renameValue={renaming === clip.id ? renameValue : ""}
+                  renameInputRef={renaming === clip.id ? renameInputRef : undefined}
+                  onRenameChange={setRenameValue}
+                  onRenameCommit={commitRename}
+                  onSelect={(e) => { e.stopPropagation(); setSelectedId(clip.id); setContextMenu(null); }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setSelectedId(clip.id);
+                    setContextMenu({ x: e.clientX, y: e.clientY, clipId: clip.id });
+                  }}
+                  onMoveStart={(e) => {
+                    e.stopPropagation();
+                    setSelectedId(clip.id);
+                    if (e.altKey) {
+                      const newId = addClip({ ...clip });
+                      if (newId) {
+                        setDrag({ mode: "move", clipId: newId, trackId, startClientX: e.clientX, origStart: clip.startBar });
+                      }
+                    } else {
+                      setDrag({ mode: "move", clipId: clip.id, trackId, startClientX: e.clientX, origStart: clip.startBar });
+                    }
+                  }}
+                  onResizeStart={(e) => {
+                    e.stopPropagation();
+                    setSelectedId(clip.id);
+                    setDrag({ mode: "resize", clipId: clip.id, trackId, startClientX: e.clientX, origLen: clip.lengthBars });
+                  }}
                 />
               ))}
+
               {/* Playhead */}
               <div
                 className="absolute top-0 bottom-0 w-px bg-red-500/60 pointer-events-none"
@@ -862,6 +1095,28 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
           <div className="flex items-center px-2 text-[9px] text-white/20">Phase 2</div>
         </div>
       ))}
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-[#1a1a1a] border border-white/20 rounded shadow-xl py-1"
+          style={{ left: contextMenu.x, top: contextMenu.y, minWidth: 140 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            className="w-full text-left px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+            onClick={() => startRename(contextMenu.clipId)}
+          >
+            Rename
+          </button>
+          <button
+            className="w-full text-left px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+            onClick={() => { removeClip(contextMenu.clipId); setContextMenu(null); setSelectedId(null); }}
+          >
+            Delete
+          </button>
+        </div>
+      )}
     </div>
   );
 }
