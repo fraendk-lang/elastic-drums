@@ -1491,7 +1491,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
       onClick={onClose}
     >
       <div
-        className="flex flex-col bg-[linear-gradient(180deg,rgba(14,15,20,0.99),rgba(8,9,13,0.99))] border border-white/10 rounded-2xl shadow-[0_32px_80px_rgba(0,0,0,0.6)] w-[98vw] max-w-[1400px] max-h-[90vh] overflow-hidden"
+        className="flex flex-col bg-[linear-gradient(180deg,rgba(14,15,20,0.99),rgba(8,9,13,0.99))] border border-white/10 rounded-2xl shadow-[0_32px_80px_rgba(0,0,0,0.6)] w-[98vw] max-w-[1600px] h-[95vh] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <ArrangementStatusBar
