@@ -1836,6 +1836,10 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
         waveformPeaks: peaks,
         volume:        1,
         color:         AUDIO_COLOR,
+        sampleStartSec: 0,
+        sampleEndSec:   buffer.duration,
+        fadeInSec:      0,
+        fadeOutSec:     0,
       });
     } catch (err) {
       console.warn("AudioClip decode failed:", err);
@@ -2029,6 +2033,10 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                         waveformPeaks: peaks,
                         volume:        1,
                         color:         AUDIO_COLOR,
+                        sampleStartSec: 0,
+                        sampleEndSec:   buf.duration,
+                        fadeInSec:      0,
+                        fadeOutSec:     0,
                       });
                     } catch (err) { console.warn("AudioClip decode failed:", err); }
                   }}

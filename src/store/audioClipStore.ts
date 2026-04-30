@@ -11,24 +11,32 @@ import { create } from "zustand";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface AudioClip {
-  id:            string;
-  startBar:      number;        // 0-indexed bar position on the timeline
-  durationBars:  number;        // clip length in bars (computed from file)
-  fileName:      string;
-  buffer:        AudioBuffer;
-  waveformPeaks: Float32Array;  // 200 normalized 0..1 RMS peaks
-  volume:        number;        // 0-1
-  color:         string;        // user-assignable accent color
+  id:             string;
+  startBar:       number;        // 0-indexed bar position on the timeline
+  durationBars:   number;        // clip length in bars (visual timeline width)
+  fileName:       string;
+  buffer:         AudioBuffer;
+  waveformPeaks:  Float32Array;  // 200 normalized 0..1 RMS peaks
+  volume:         number;        // 0-1
+  color:          string;        // user-assignable accent color
+  // trim / fade (non-destructive, default = full file, no fade)
+  sampleStartSec: number;        // seconds into buffer where playback begins
+  sampleEndSec:   number;        // seconds into buffer where playback ends
+  fadeInSec:      number;        // fade-in duration in seconds
+  fadeOutSec:     number;        // fade-out duration in seconds
 }
 
 interface AudioClipStore {
   clips: AudioClip[];
-  addClip:    (clip: AudioClip) => void;
-  removeClip: (id: string) => void;
-  moveClip:   (id: string, startBar: number) => void;
-  resizeClip: (id: string, durationBars: number) => void;
-  setVolume:  (id: string, volume: number) => void;
-  setColor:   (id: string, color: string) => void;
+  addClip:       (clip: AudioClip) => void;
+  removeClip:    (id: string) => void;
+  moveClip:      (id: string, startBar: number) => void;
+  resizeClip:    (id: string, durationBars: number) => void;
+  setVolume:     (id: string, volume: number) => void;
+  setColor:      (id: string, color: string) => void;
+  setTrimPoints: (id: string, startSec: number, endSec: number) => void;
+  setFades:      (id: string, fadeIn: number, fadeOut: number) => void;
+  splitClip:     (id: string, splitAtSec: number, secPerBar: number) => void;
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -67,6 +75,63 @@ export const useAudioClipStore = create<AudioClipStore>((set) => ({
     set((s) => ({
       clips: s.clips.map((c) => (c.id === id ? { ...c, color } : c)),
     })),
+
+  setTrimPoints: (id, startSec, endSec) =>
+    set((s) => ({
+      clips: s.clips.map((c) => {
+        if (c.id !== id) return c;
+        const clampedStart = Math.max(0, Math.min(endSec - 0.1, startSec));
+        const clampedEnd   = Math.max(clampedStart + 0.1, Math.min(c.buffer.duration, endSec));
+        return { ...c, sampleStartSec: clampedStart, sampleEndSec: clampedEnd };
+      }),
+    })),
+
+  setFades: (id, fadeIn, fadeOut) =>
+    set((s) => ({
+      clips: s.clips.map((c) => {
+        if (c.id !== id) return c;
+        const maxHalf = (c.sampleEndSec - c.sampleStartSec) / 2;
+        return {
+          ...c,
+          fadeInSec:  Math.max(0, Math.min(maxHalf, fadeIn)),
+          fadeOutSec: Math.max(0, Math.min(maxHalf, fadeOut)),
+        };
+      }),
+    })),
+
+  splitClip: (id, splitAtSec, secPerBar) =>
+    set((s) => {
+      const clip = s.clips.find((c) => c.id === id);
+      if (!clip) return s;
+      if (
+        splitAtSec <= clip.sampleStartSec + 0.05 ||
+        splitAtSec >= clip.sampleEndSec   - 0.05
+      ) return s;
+
+      const part1Sec  = splitAtSec - clip.sampleStartSec;
+      const part2Sec  = clip.sampleEndSec - splitAtSec;
+      const part1Bars = part1Sec / secPerBar;
+
+      const clip1: AudioClip = {
+        ...clip,
+        id:            `${clip.id}-a`,
+        durationBars:  part1Bars,
+        sampleEndSec:  splitAtSec,
+        fadeOutSec:    0,
+      };
+      const clip2: AudioClip = {
+        ...clip,
+        id:             `${clip.id}-b`,
+        startBar:       clip.startBar + part1Bars,
+        durationBars:   part2Sec / secPerBar,
+        sampleStartSec: splitAtSec,
+        fadeInSec:      0,
+      };
+
+      return {
+        clips: s.clips.filter((c) => c.id !== id).concat([clip1, clip2]),
+      };
+    }),
 }));
 
 // ─── Waveform peak analysis ───────────────────────────────────────────────────
