@@ -1536,6 +1536,12 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
     if (!isRecording) { lastRecScene.current = -1; recBarStart.current = -1; return; }
     setRecCount(0);
     recBarStart.current = -1;
+
+    // Force at-least-1-bar quantize so every scene switch lands on a bar boundary.
+    // This prevents mid-bar pattern switches which cause audio glitches.
+    const prevQ = useSceneStore.getState().launchQuantize;
+    if (prevQ === "immediate") useSceneStore.getState().setLaunchQuantize("1bar");
+
     const unsub = useSceneStore.subscribe((state, prev) => {
       const newScene = state.activeScene;
       if (newScene === prev.activeScene || newScene < 0) return;
@@ -1544,9 +1550,9 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
       const bars = Math.max(1, Math.ceil((scene.drumPattern.length ?? 16) / 16));
 
       // Fix previous entry's repeats to the actual number of bars played.
-      // barCycle is incremented before loadScene fires but the store update
-      // happens after — add 1 to get the bar that's actually starting now.
-      const currentBar = useDrumStore.getState().barCycle + 1;
+      // barCycle is incremented at step 0 — same tick as quantized loadScene,
+      // so barCycle already reflects the new bar when we read it here.
+      const currentBar = useDrumStore.getState().barCycle;
       const chain = useDrumStore.getState().songChain;
       if (chain.length > 0 && recBarStart.current >= 0) {
         const actualRepeats = Math.max(1, currentBar - recBarStart.current);
@@ -1558,7 +1564,11 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
       lastRecScene.current = newScene;
       setRecCount(c => c + 1);
     });
-    return () => unsub();
+    return () => {
+      unsub();
+      // Restore quantize to what it was before recording
+      if (prevQ === "immediate") useSceneStore.getState().setLaunchQuantize(prevQ);
+    };
   }, [isRecording]);
 
   // Close context menu on outside click
