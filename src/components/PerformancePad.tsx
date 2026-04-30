@@ -19,6 +19,7 @@ import { bassEngine, SCALES } from "../audio/BassEngine";
 import { audioEngine } from "../audio/AudioEngine";
 import { sendFxManager } from "../audio/SendFx";
 import { ArpScheduler } from "../audio/ArpScheduler";
+import { DEFAULT_ARP_SETTINGS, type ArpSettings } from "../audio/Arpeggiator";
 import { getMelodyEngineFxChain } from "../audio/MelodyLayerFx";
 
 interface Props {
@@ -125,7 +126,6 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     arpSchedulerRef.current = new ArpScheduler();
   }
   const arpRootRef = useRef<number>(60);
-  void arpRootRef; // used by upcoming arp trigger logic (Task 4)
 
   const padRef = useRef<HTMLDivElement | null>(null);
   const activeVoicesRef = useRef<Map<number, ActiveVoice>>(new Map());
@@ -435,6 +435,26 @@ export function PerformancePad({ isOpen, onClose }: Props) {
         releases.push(r);
       });
       voice = { pointerId: e.pointerId, midi: rootMidi, startAt: performance.now(), velocity, releases, cellIndex: cellIdx };
+    } else if (arpOn && target === "melody") {
+      const midi = xToMidi(x);
+      arpRootRef.current = midi;
+      const arpSettings: ArpSettings = {
+        ...DEFAULT_ARP_SETTINGS,
+        mode: arpMode,
+        rate: arpRate,
+        octaves: arpOctaves,
+        gate: "medium",
+      };
+      arpSchedulerRef.current?.start({
+        getRoot: () => arpRootRef.current,
+        getSettings: () => ({ ...arpSettings, mode: arpMode, rate: arpRate, octaves: arpOctaves }),
+        getScaleName: () => scaleName,
+        onNote: (noteMidi, duration, atTime, vel) => {
+          melodyEngine.triggerPolyNote(noteMidi, atTime, duration, vel, false);
+        },
+        getBpm: () => useDrumStore.getState().bpm,
+      });
+      voice = { pointerId: e.pointerId, midi, startAt: performance.now(), velocity, releases: [] };
     } else {
       const midi = xToMidi(x);
       const release = fireVoice(midi, velocity, y);
@@ -460,6 +480,9 @@ export function PerformancePad({ isOpen, onClose }: Props) {
       // In chord mode: Y axis still modulates params for expressiveness,
       // but no re-pitch (chord is locked until pointer-up)
       modulateVoice(y);
+    } else if (arpOn && target === "melody") {
+      modulateVoice(y);
+      arpRootRef.current = xToMidi(x);
     } else {
       modulateVoice(y);
       if (gridSnap) {
@@ -483,6 +506,11 @@ export function PerformancePad({ isOpen, onClose }: Props) {
       const stillChordActive = Array.from(activeVoicesRef.current.values()).some((v) => v.cellIndex !== undefined);
       if (!stillChordActive) applyChordFollow(null);
     }
+    // Stop arp when last finger lifts (unless latch is on)
+    if (arpOn && target === "melody" && activeVoicesRef.current.size === 0 && !arpLatch) {
+      arpSchedulerRef.current?.stop();
+    }
+
     // Restore padVolume when Y-axis volume modulation ends
     if (activeVoicesRef.current.size === 0 && yParam === "volume") {
       if (target === "melody") melodyEngine.sweepLiveVolume(padVolume / 100);
