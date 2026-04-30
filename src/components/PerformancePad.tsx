@@ -117,7 +117,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   const [shimmerFeedback, setShimmerFeedback] = useState(0.28);
   const [padVolume, setPadVolume] = useState(80);
   const [arpOn, setArpOn] = useState(false);
-  const [arpMode, setArpMode] = useState<"up" | "updown" | "random">("up");
+  const [arpMode, setArpMode] = useState<"up" | "down" | "updown" | "downup" | "converge" | "diverge" | "random" | "chord">("up");
   const [arpRate, setArpRate] = useState<"1/4" | "1/8" | "1/16">("1/8");
   const [arpOctaves, setArpOctaves] = useState<1 | 2>(1);
   const [arpLatch, setArpLatch] = useState(false);
@@ -1298,9 +1298,14 @@ export function PerformancePad({ isOpen, onClose }: Props) {
             <span className="text-[7px] text-white/20 mr-1 tracking-wider">MODE</span>
             {(
               [
-                ["up",     "↑ UP"],
-                ["updown", "↕ UD"],
-                ["random", "? RND"],
+                ["up",       "↑ UP"],
+                ["down",     "↓ DN"],
+                ["updown",   "↕ UD"],
+                ["downup",   "↓↑ DU"],
+                ["converge", "→← CV"],
+                ["diverge",  "←→ DV"],
+                ["random",   "? RND"],
+                ["chord",    "≡ CHD"],
               ] as const
             ).map(([m, label]) => (
               <button
