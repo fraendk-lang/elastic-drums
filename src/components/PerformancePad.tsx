@@ -137,8 +137,8 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     if (!isOpen) return;
     if (target === "melody") melodyEngine.sweepLiveVolume(padVolume / 100);
     else bassEngine.sweepLiveVolume(padVolume / 100);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, target]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps — intentionally only on open/target change
 
   /** Apply chord-follow: transpose Bass + Melody engines to match the given chord root.
    *  Pass null to clear. Uses closest-octave diff from current bass rootNote. */
@@ -459,6 +459,12 @@ export function PerformancePad({ isOpen, onClose }: Props) {
       const stillChordActive = Array.from(activeVoicesRef.current.values()).some((v) => v.cellIndex !== undefined);
       if (!stillChordActive) applyChordFollow(null);
     }
+    // Restore padVolume when Y-axis volume modulation ends
+    if (activeVoicesRef.current.size === 0 && yParam === "volume") {
+      if (target === "melody") melodyEngine.sweepLiveVolume(padVolume / 100);
+      else bassEngine.sweepLiveVolume(padVolume / 100);
+    }
+
     // Spring-back: restore FX levels when ALL fingers are lifted
     if (activeVoicesRef.current.size === 0 && fxSnapshotRef.current) {
       const snap = fxSnapshotRef.current;
