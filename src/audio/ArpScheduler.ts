@@ -1,7 +1,21 @@
+/**
+ * ArpScheduler — tempo-synced arpeggiator scheduler for the XY Performance Pad.
+ *
+ * Subscribes to the shared SchedulerClock (AudioWorklet tick, ~20ms) and uses
+ * a 100ms lookahead window to schedule Web Audio note events with no drift.
+ * The caller provides getter functions (getRoot, getSettings, getScaleName) so
+ * the scheduler always reads the latest XY pad state at each step boundary.
+ *
+ * Usage:
+ *   scheduler.start({ getRoot, getSettings, getScaleName, onNote, getBpm });
+ *   // later:
+ *   scheduler.stop();
+ */
 import { schedulerClock } from './SchedulerClock';
 import { audioEngine } from './AudioEngine';
 import { generateArpNotes, type ArpSettings } from './Arpeggiator';
 
+/** Schedule notes this many seconds ahead of ctx.currentTime to prevent audio gaps. */
 const LOOKAHEAD_SEC = 0.1;
 
 export interface ArpSchedulerOptions {
@@ -45,6 +59,11 @@ export class ArpScheduler {
     if (!this._running || !this.options) return;
     const ctx = audioEngine.getAudioContext();
     if (!ctx) return;
+
+    // Clamp nextStepTime forward if we fell behind (tab resume, system sleep)
+    if (this.nextStepTime < ctx.currentTime - 1.0) {
+      this.nextStepTime = ctx.currentTime;
+    }
 
     const { getRoot, getSettings, getScaleName, onNote, getBpm } = this.options;
     const bpm = Math.max(20, getBpm());
