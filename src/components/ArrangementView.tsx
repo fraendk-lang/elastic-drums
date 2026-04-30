@@ -663,16 +663,112 @@ interface ArrangementDetailPanelProps {
   onUpdateRepeats:    (i: number, repeats: number) => void;
   onStartRename:      (i: number) => void;
   onRemove:           (i: number) => void;
+  // audio clip branch
+  selectedAudioClip:  AudioClip | null;
+  onAudioTrimPoints:  (id: string, startSec: number, endSec: number) => void;
+  onAudioFades:       (id: string, fadeIn: number, fadeOut: number) => void;
+  onAudioVolume:      (id: string, volume: number) => void;
+  onAudioSplit:       (id: string) => void;
+  onAudioRemove:      (id: string) => void;
 }
 
 function ArrangementDetailPanel({
   songChain, scenes, primaryIdx,
   showColorPicker, setShowColorPicker,
   onUpdateEntry, onUpdateRepeats, onStartRename, onRemove,
+  selectedAudioClip, onAudioTrimPoints, onAudioFades, onAudioVolume, onAudioSplit, onAudioRemove,
 }: ArrangementDetailPanelProps) {
   const primary = primaryIdx;
   const entry   = primary !== null ? (songChain[primary] ?? null) : null;
   const scene   = entry ? (scenes[entry.sceneIndex] ?? null) : null;
+
+  if (selectedAudioClip) {
+    const ac = selectedAudioClip;
+    return (
+      <div className="shrink-0 border-t border-white/8 px-4 py-2 flex items-center gap-3 flex-wrap bg-white/[0.02]">
+        <span className="text-[8px] font-black tracking-wider" style={{ color: hexAlpha(AUDIO_COLOR, 0.8) }}>
+          AUDIO
+        </span>
+        <span className="text-[8px] text-white/40 truncate max-w-[120px]">{ac.fileName}</span>
+
+        {/* Sample Start */}
+        <label className="flex items-center gap-1 text-[7px] text-white/35">
+          START
+          <input
+            type="number" step="0.01" min={0} max={ac.sampleEndSec - 0.1}
+            value={ac.sampleStartSec.toFixed(2)}
+            onChange={(e) => onAudioTrimPoints(ac.id, parseFloat(e.target.value) || 0, ac.sampleEndSec)}
+            className="w-14 h-5 px-1 text-[9px] bg-black/30 border border-white/10 rounded text-white font-mono"
+          />
+          s
+        </label>
+
+        {/* Sample End */}
+        <label className="flex items-center gap-1 text-[7px] text-white/35">
+          END
+          <input
+            type="number" step="0.01" min={ac.sampleStartSec + 0.1} max={ac.buffer.duration}
+            value={ac.sampleEndSec.toFixed(2)}
+            onChange={(e) => onAudioTrimPoints(ac.id, ac.sampleStartSec, parseFloat(e.target.value) || ac.buffer.duration)}
+            className="w-14 h-5 px-1 text-[9px] bg-black/30 border border-white/10 rounded text-white font-mono"
+          />
+          s
+        </label>
+
+        {/* Fade In */}
+        <label className="flex items-center gap-1 text-[7px] text-white/35">
+          FADE IN
+          <input
+            type="number" step="0.01" min={0}
+            value={ac.fadeInSec.toFixed(2)}
+            onChange={(e) => onAudioFades(ac.id, parseFloat(e.target.value) || 0, ac.fadeOutSec)}
+            className="w-12 h-5 px-1 text-[9px] bg-black/30 border border-white/10 rounded text-white font-mono"
+          />
+          s
+        </label>
+
+        {/* Fade Out */}
+        <label className="flex items-center gap-1 text-[7px] text-white/35">
+          FADE OUT
+          <input
+            type="number" step="0.01" min={0}
+            value={ac.fadeOutSec.toFixed(2)}
+            onChange={(e) => onAudioFades(ac.id, ac.fadeInSec, parseFloat(e.target.value) || 0)}
+            className="w-12 h-5 px-1 text-[9px] bg-black/30 border border-white/10 rounded text-white font-mono"
+          />
+          s
+        </label>
+
+        {/* Volume */}
+        <label className="flex items-center gap-1 text-[7px] text-white/35">
+          VOL
+          <input
+            type="number" step="1" min={0} max={100}
+            value={Math.round(ac.volume * 100)}
+            onChange={(e) => onAudioVolume(ac.id, (parseInt(e.target.value) || 0) / 100)}
+            className="w-12 h-5 px-1 text-[9px] bg-black/30 border border-white/10 rounded text-white font-mono"
+          />
+          %
+        </label>
+
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={() => onAudioSplit(ac.id)}
+            className="text-[8px] font-bold px-2 py-1 rounded border border-white/10 text-white/40 hover:text-white/80 hover:border-white/25 transition-colors"
+            title="⌘E — Split at hover position"
+          >
+            ✂ SPLIT
+          </button>
+          <button
+            onClick={() => onAudioRemove(ac.id)}
+            className="text-[8px] text-red-400/40 hover:text-red-400 transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!entry || primary === null) {
     return (
@@ -1609,6 +1705,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
   const moveAudioClip      = useAudioClipStore((s) => s.moveClip);
   const resizeAudioClip    = useAudioClipStore((s) => s.resizeClip);
   const setTrimPoints      = useAudioClipStore((s) => s.setTrimPoints);
+  const setFades           = useAudioClipStore((s) => s.setFades);
   const splitClip          = useAudioClipStore((s) => s.splitClip);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
 
@@ -1937,6 +2034,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
   const selectEntry = useCallback((index: number, track: TrackId | "loops", multi: boolean) => {
     const key = makeSelKey(track, index);
     setContextMenu(null);
+    setSelectedClipId(null);
     if (multi) {
       setSelected(prev => {
         const next = new Set(prev);
@@ -2480,15 +2578,16 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                   height={AUDIO_H}
                   totalBars={displayBars}
                   selectedId={selectedClipId}
-                  onRemove={removeAudioClip}
+                  onRemove={(id) => { removeAudioClip(id); setSelectedClipId(null); }}
                   onMove={moveAudioClip}
                   onResize={resizeAudioClip}
                   onDrop={handleAudioFileDrop}
                   onSelect={setSelectedClipId}
                   onTrimPoints={setTrimPoints}
                   onSplit={(id, atSec) => {
-                    const secPerBar = 60 / bpm * 4;
+                    const secPerBar = (60 / bpm) * 4;
                     splitClip(id, atSec, secPerBar);
+                    setSelectedClipId(null);
                   }}
                 />
               </div>
@@ -2551,6 +2650,18 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
             setRenamingIndex(i);
           }}
           onRemove={(i) => { removeFromSongChain(i); setSelected(new Set()); }}
+          selectedAudioClip={audioClips.find((c) => c.id === selectedClipId) ?? null}
+          onAudioTrimPoints={setTrimPoints}
+          onAudioFades={setFades}
+          onAudioVolume={(id, vol) => useAudioClipStore.getState().setVolume(id, vol)}
+          onAudioSplit={(id) => {
+            const secPerBar = (60 / bpm) * 4;
+            const clip = audioClips.find((c) => c.id === id);
+            if (!clip) return;
+            splitClip(id, (clip.sampleStartSec + clip.sampleEndSec) / 2, secPerBar);
+            setSelectedClipId(null);
+          }}
+          onAudioRemove={(id) => { removeAudioClip(id); setSelectedClipId(null); }}
         />
 
         {/* Scene palette */}
