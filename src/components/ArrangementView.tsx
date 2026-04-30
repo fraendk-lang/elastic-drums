@@ -1960,7 +1960,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
             </div>
             {/* AUDIO track label */}
             <div
-              className="relative flex items-center border-b border-white/5 shrink-0 pl-3"
+              className="relative flex items-center justify-between border-b border-white/5 shrink-0 pl-3 pr-1"
               style={{ height: AUDIO_H }}
             >
               <div
@@ -1973,6 +1973,45 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
               >
                 AUDIO
               </span>
+              {/* File upload button */}
+              <label
+                className="w-5 h-5 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-white/10"
+                style={{ color: hexAlpha(AUDIO_COLOR, 0.6) }}
+                title="Import audio file"
+              >
+                <input
+                  type="file"
+                  accept="audio/*,.wav,.mp3,.ogg,.flac,.aif,.aiff,.m4a"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    e.target.value = "";
+                    const { audioEngine: ae } = await import("../audio/AudioEngine");
+                    const ctx = ae.getAudioContext();
+                    if (!ctx) return;
+                    try {
+                      const buf   = await ctx.decodeAudioData(await file.arrayBuffer());
+                      const spb   = (60.0 / bpm) * 4;
+                      const peaks = computeWaveformPeaks(buf);
+                      addAudioClip({
+                        id:            `ac-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                        startBar:      0,
+                        durationBars:  Math.max(0.5, buf.duration / spb),
+                        fileName:      file.name,
+                        buffer:        buf,
+                        waveformPeaks: peaks,
+                        volume:        1,
+                        color:         AUDIO_COLOR,
+                      });
+                    } catch (err) { console.warn("AudioClip decode failed:", err); }
+                  }}
+                />
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor">
+                  <path d="M6 1L6 8M6 1L3.5 3.5M6 1L8.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+                  <path d="M1 9.5V11h10V9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+                </svg>
+              </label>
             </div>
           </div>
 
@@ -1981,12 +2020,17 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
 
             {/* Ruler */}
             <div
-              className="sticky top-0 z-20 relative border-b border-white/8 bg-[rgba(8,9,13,0.95)] select-none overflow-hidden"
-              style={{ height: RULER_H, minWidth: totalBars * barPx }}
+              className="sticky top-0 z-20 relative select-none overflow-hidden"
+              style={{
+                height: RULER_H,
+                minWidth: totalBars * barPx,
+                background: "linear-gradient(180deg, rgba(20,22,30,0.98) 0%, rgba(12,14,20,0.98) 100%)",
+                borderBottom: "1px solid rgba(255,255,255,0.12)",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+              }}
               onDragOver={e => e.preventDefault()}
               onDrop={e => handleSceneDrop(e)}
               onPointerDown={(e) => {
-                // Click on ruler (not a handle) sets loop start and begins range drag
                 if ((e.target as HTMLElement).dataset.loopHandle) return;
                 const rect = e.currentTarget.getBoundingClientRect();
                 const bar  = Math.floor((e.clientX - rect.left) / barPx);
@@ -1995,17 +2039,34 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                 loopDragRef.current = { handle: "end", startX: e.clientX, startBar: bar + 1 };
               }}
             >
-              {/* Bar tick marks */}
+              {/* Bar + beat tick marks */}
               <div className="absolute inset-0 flex pointer-events-none">
                 {Array.from({ length: totalBars }, (_, i) => (
                   <div
                     key={i}
-                    className="border-r border-white/5 flex items-center shrink-0"
-                    style={{ width: barPx, minWidth: barPx }}
+                    className="relative shrink-0 flex items-end pb-px"
+                    style={{ width: barPx, minWidth: barPx, borderRight: "1px solid rgba(255,255,255,0.12)" }}
                   >
-                    {i % 4 === 0 && (
-                      <span className="text-[7px] font-mono text-white/25 pl-0.5">{i + 1}</span>
-                    )}
+                    {/* Bar number */}
+                    <span
+                      className="absolute left-1 top-1 text-[8px] font-bold font-mono leading-none"
+                      style={{ color: i % 4 === 0 ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.35)" }}
+                    >
+                      {i + 1}
+                    </span>
+                    {/* Beat sub-ticks (3 lines at 1/4, 2/4, 3/4 of the bar) */}
+                    {barPx >= 32 && [1, 2, 3].map(beat => (
+                      <div
+                        key={beat}
+                        className="absolute bottom-0"
+                        style={{
+                          left:   (beat / 4) * barPx,
+                          width:  1,
+                          height: beat === 2 ? 6 : 4,
+                          backgroundColor: `rgba(255,255,255,${beat === 2 ? 0.18 : 0.1})`,
+                        }}
+                      />
+                    ))}
                   </div>
                 ))}
               </div>
