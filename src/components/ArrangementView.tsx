@@ -1373,7 +1373,7 @@ function AudioClipLane({
       onPointerMove={handleLanePointerMove}
       onPointerUp={handleLanePointerUp}
       onPointerCancel={handleLanePointerUp}
-      onDragOver={(e) => e.preventDefault()}
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
       onDrop={onDrop}
     >
       {/* Drop hint when empty */}
@@ -1461,6 +1461,8 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
   const setArrangementMode                    = useDrumStore((s) => s.setArrangementMode);
 
   const [barPx, setBarPx]                     = useState(DEFAULT_BAR_PX);
+  const [containerW, setContainerW]           = useState(0);
+  const scrollAreaRef                         = useRef<HTMLDivElement>(null);
   const [selected, setSelected]               = useState<Set<string>>(new Set());
   const [moveDrag, setMoveDrag]               = useState<{ from: number; to: number } | null>(null);
   const [clipboard, setClipboard]             = useState<SongChainEntry | null>(null);
@@ -1495,6 +1497,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   const totalBars     = Math.max(songChain.reduce((s, e) => s + e.repeats, 0), 32);
+  const displayBars   = Math.max(totalBars, containerW > 0 ? Math.ceil(containerW / barPx) + 2 : totalBars);
   const activeEntry   = songChain[songPosition];
   const stepsPerBar   = 16; // 1 bar = 16 steps in 4/4
   const stepFraction  = activeEntry
@@ -1606,6 +1609,17 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
       window.removeEventListener("pointerup", onUp);
     };
   }, [barPx, totalBars, loopStart, loopEnd, updateSongEntryRepeats]);
+
+  // Track scrollable container width so ruler fills the viewport
+  useEffect(() => {
+    const el = scrollAreaRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      setContainerW(entries[0]?.contentRect.width ?? 0);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -1785,6 +1799,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
     if (!/\.(wav|mp3|ogg|flac|aiff?|m4a)$/i.test(file.name)) return;
 
     const { audioEngine: ae } = await import("../audio/AudioEngine");
+    await ae.resume();
     const ctx = ae.getAudioContext();
     if (!ctx) return;
 
@@ -1988,6 +2003,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                     if (!file) return;
                     e.target.value = "";
                     const { audioEngine: ae } = await import("../audio/AudioEngine");
+                    await ae.resume();
                     const ctx = ae.getAudioContext();
                     if (!ctx) return;
                     try {
@@ -2016,14 +2032,14 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
           </div>
 
           {/* Scrollable area */}
-          <div className="relative flex-1 overflow-x-auto overflow-y-hidden">
+          <div className="relative flex-1 overflow-x-auto overflow-y-hidden" ref={scrollAreaRef}>
 
             {/* Ruler */}
             <div
               className="sticky top-0 z-20 relative select-none overflow-hidden"
               style={{
                 height: RULER_H,
-                minWidth: totalBars * barPx,
+                minWidth: displayBars * barPx,
                 background: "linear-gradient(180deg, rgba(20,22,30,0.98) 0%, rgba(12,14,20,0.98) 100%)",
                 borderBottom: "1px solid rgba(255,255,255,0.12)",
                 boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
@@ -2041,7 +2057,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
             >
               {/* Bar + beat tick marks */}
               <div className="absolute inset-0 flex pointer-events-none">
-                {Array.from({ length: totalBars }, (_, i) => (
+                {Array.from({ length: displayBars }, (_, i) => (
                   <div
                     key={i}
                     className="relative shrink-0 flex items-end pb-px"
@@ -2148,7 +2164,10 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
             <div
               ref={contentRef}
               className="relative"
-              style={{ minWidth: totalBars * barPx }}
+              style={{
+                minWidth: displayBars * barPx,
+                height:   TRACKS.length * TRACK_H + LOOP_H + AUDIO_H,
+              }}
               onPointerMove={handleContentPointerMove}
               onPointerUp={handleContentPointerUp}
               onPointerCancel={() => setMoveDrag(null)}
@@ -2158,6 +2177,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
               {[
                 ...TRACKS.map((_, ri) => ({ top: ri * TRACK_H, h: TRACK_H })),
                 { top: TRACKS.length * TRACK_H, h: LOOP_H },
+                { top: TRACKS.length * TRACK_H + LOOP_H, h: AUDIO_H },
               ].map(({ top, h }, ri) => (
                 <div
                   key={ri}
@@ -2174,7 +2194,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                 const chain = songChain;
                 let x = 0;
                 for (let i = 0; i < moveDrag.to; i++) x += (chain[i]?.repeats ?? 1) * barPx;
-                const totalH = TRACKS.length * TRACK_H + LOOP_H;
+                const totalH = TRACKS.length * TRACK_H + LOOP_H + AUDIO_H;
                 return (
                   <div
                     className="absolute top-0 pointer-events-none z-30"
@@ -2277,16 +2297,21 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
               </div>
 
               {/* AUDIO clip lane */}
-              <AudioClipLane
-                clips={audioClips}
-                barPx={barPx}
-                height={AUDIO_H}
-                totalBars={totalBars}
-                onRemove={removeAudioClip}
-                onMove={moveAudioClip}
-                onResize={resizeAudioClip}
-                onDrop={handleAudioFileDrop}
-              />
+              <div
+                className="absolute left-0"
+                style={{ top: TRACKS.length * TRACK_H + LOOP_H }}
+              >
+                <AudioClipLane
+                  clips={audioClips}
+                  barPx={barPx}
+                  height={AUDIO_H}
+                  totalBars={displayBars}
+                  onRemove={removeAudioClip}
+                  onMove={moveAudioClip}
+                  onResize={resizeAudioClip}
+                  onDrop={handleAudioFileDrop}
+                />
+              </div>
 
               {/* Loop-brace overlay on track area */}
               {loopStart !== null && loopEnd !== null && (
@@ -2295,7 +2320,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                   style={{
                     left:   loopStart * barPx,
                     width:  (loopEnd - loopStart) * barPx,
-                    height: TRACKS.length * TRACK_H + LOOP_H,
+                    height: TRACKS.length * TRACK_H + LOOP_H + AUDIO_H,
                     backgroundColor: "rgba(34,211,238,0.04)",
                     borderLeft:  "1px solid rgba(34,211,238,0.25)",
                     borderRight: "1px solid rgba(34,211,238,0.25)",
@@ -2310,7 +2335,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                   style={{
                     left:            playheadPx,
                     width:           2,
-                    height:          TRACKS.length * TRACK_H + LOOP_H,
+                    height:          TRACKS.length * TRACK_H + LOOP_H + AUDIO_H,
                     backgroundColor: "rgba(255,255,255,0.55)",
                   }}
                 >
