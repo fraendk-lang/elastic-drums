@@ -130,10 +130,14 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   const arpModeRef = useRef(arpMode);
   const arpRateRef = useRef(arpRate);
   const arpOctavesRef = useRef(arpOctaves);
+  const arpOnRef = useRef(arpOn);
+  const arpLatchRef = useRef(arpLatch);
   const scaleNameRef = useRef(scaleName);
   arpModeRef.current = arpMode;
   arpRateRef.current = arpRate;
   arpOctavesRef.current = arpOctaves;
+  arpOnRef.current = arpOn;
+  arpLatchRef.current = arpLatch;
   scaleNameRef.current = scaleName;
 
   const padRef = useRef<HTMLDivElement | null>(null);
