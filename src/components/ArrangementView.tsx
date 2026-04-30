@@ -136,7 +136,6 @@ interface ArrangementClipProps {
   isSelected:     boolean;
   isHidden:       boolean;
   isDragging:     boolean;
-  isDropTarget:   boolean;
   isRenaming:     boolean;
   renameValue:    string;
   renameInputRef?: React.RefObject<HTMLInputElement | null>;
@@ -144,22 +143,18 @@ interface ArrangementClipProps {
   onRenameCommit: () => void;
   onSelect:       (multi: boolean) => void;
   onContextMenu:  (e: React.MouseEvent) => void;
-  onDragStart:    (e: React.DragEvent) => void;
-  onDragEnd:      () => void;
-  onDragOver:     () => void;
-  onDrop:         (e: React.DragEvent) => void;
+  onMoveStart:    (e: React.PointerEvent) => void;
   onResizeStart:  (e: React.PointerEvent) => void;
 }
 
 function ArrangementClip({
   entry, trackId, scene, color, label, width, height,
   isFirstTrack, isLastTrack, isActive, progress,
-  isSelected, isHidden, isDragging, isDropTarget,
+  isSelected, isHidden, isDragging,
   isRenaming, renameValue, renameInputRef,
   onRenameChange, onRenameCommit,
   onSelect, onContextMenu,
-  onDragStart, onDragEnd, onDragOver, onDrop,
-  onResizeStart,
+  onMoveStart, onResizeStart,
 }: ArrangementClipProps) {
 
   // Waveform bars (drums + bass only)
@@ -207,9 +202,10 @@ function ArrangementClip({
     return (
       <div
         className="border-b border-r border-black/20"
-        style={{ width, minWidth: width, height }}
+        style={{ width, minWidth: width, height, cursor: "grab" }}
         onClick={(e) => { e.stopPropagation(); onSelect(e.metaKey || e.ctrlKey); }}
         onContextMenu={(e) => onContextMenu(e)}
+        onPointerDown={onMoveStart}
       />
     );
   }
@@ -223,17 +219,11 @@ function ArrangementClip({
         borderRight:     "1px solid rgba(0,0,0,0.25)",
         borderRadius,
         opacity:         isDragging ? 0.35 : 1,
-        outline:         isDropTarget ? "2px solid rgba(255,255,255,0.4)"
-                       : isSelected  ? `2px solid ${hexAlpha(color, 0.8)}`
-                       : "none",
+        outline:         isSelected ? `2px solid ${hexAlpha(color, 0.8)}` : "none",
         outlineOffset: "-1px",
         cursor: "grab",
       }}
-      draggable
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onDragOver={(e) => { e.preventDefault(); onDragOver(); }}
-      onDrop={onDrop}
+      onPointerDown={onMoveStart}
       onClick={(e) => { e.stopPropagation(); onSelect(e.metaKey || e.ctrlKey); }}
       onContextMenu={onContextMenu}
     >
@@ -1177,9 +1167,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
 
   const [barPx, setBarPx]                     = useState(DEFAULT_BAR_PX);
   const [selected, setSelected]               = useState<Set<string>>(new Set());
-  const [dragIndex, setDragIndex]             = useState<number | null>(null);
-  const [dropIndex, setDropIndex]             = useState<number | null>(null);
-  const [isDragCopy, setIsDragCopy]           = useState(false);
+  const [moveDrag, setMoveDrag]               = useState<{ from: number; to: number } | null>(null);
   const [clipboard, setClipboard]             = useState<SongChainEntry | null>(null);
   const [contextMenu, setContextMenu]         =
     useState<{ x: number; y: number; index: number; track: TrackId | "loops" } | null>(null);
@@ -1205,6 +1193,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
   );
 
   const resizingRef    = useRef<{ index: number; startX: number; startRepeats: number } | null>(null);
+  const contentRef     = useRef<HTMLDivElement>(null);
   const lastRecScene   = useRef<number>(-1);
   const recBarStart    = useRef<number>(-1);
   const timelineRef    = useRef<HTMLDivElement>(null);
@@ -1504,38 +1493,43 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
         moveSongEntry(useDrumStore.getState().songChain.length - 1, atIndex);
       }
     }
-    setDropIndex(null);
-    setDragIndex(null);
   }, [addToSongChain, moveSongEntry]);
 
-  const handleEntryDrop = useCallback((e: React.DragEvent, toIndex: number) => {
+  // Pointer-based clip move — works from any track row (including hidden ones)
+  const handleClipMoveStart = useCallback((e: React.PointerEvent, clipIndex: number) => {
+    if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    const fromStr = e.dataTransfer.getData("entryIndex");
-    if (fromStr !== "") {
-      const from = parseInt(fromStr);
-      if (!isNaN(from) && from !== toIndex) {
-        if (isDragCopy) {
-          const entry = useDrumStore.getState().songChain[from];
-          if (entry) {
-            addToSongChain(entry.sceneIndex, entry.repeats);
-            moveSongEntry(useDrumStore.getState().songChain.length - 1, toIndex);
-            if (entry.color || entry.label) {
-              updateSongEntry(toIndex, { color: entry.color, label: entry.label });
-            }
-          }
-        } else {
-          moveSongEntry(from, toIndex);
-        }
-        setSelected(new Set([makeSelKey("drums", toIndex)]));
-      }
-    } else {
-      handleSceneDrop(e, toIndex);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setMoveDrag({ from: clipIndex, to: clipIndex });
+  }, []);
+
+  const handleContentPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!moveDrag) return;
+    const el = contentRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const scrollLeft = timelineRef.current?.scrollLeft ?? 0;
+    const relX = e.clientX - rect.left + scrollLeft;
+    const chain = useDrumStore.getState().songChain;
+    let cumX = 0;
+    let toIndex = chain.length - 1;
+    for (let i = 0; i < chain.length; i++) {
+      const w = (chain[i]?.repeats ?? 1) * barPx;
+      if (relX < cumX + w * 0.5) { toIndex = i; break; }
+      cumX += w;
     }
-    setDragIndex(null);
-    setDropIndex(null);
-    setIsDragCopy(false);
-  }, [isDragCopy, addToSongChain, moveSongEntry, updateSongEntry, handleSceneDrop]);
+    if (toIndex !== moveDrag.to) setMoveDrag(prev => prev ? { ...prev, to: toIndex } : null);
+  }, [moveDrag, barPx]);
+
+  const handleContentPointerUp = useCallback(() => {
+    if (!moveDrag) return;
+    if (moveDrag.from !== moveDrag.to) {
+      moveSongEntry(moveDrag.from, moveDrag.to);
+      setSelected(new Set());
+    }
+    setMoveDrag(null);
+  }, [moveDrag, moveSongEntry]);
 
   const commitRename = useCallback(() => {
     if (renamingIndex === null) return;
@@ -1722,7 +1716,14 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
             </div>
 
             {/* Track content */}
-            <div className="relative" style={{ minWidth: totalBars * barPx }}>
+            <div
+              ref={contentRef}
+              className="relative"
+              style={{ minWidth: totalBars * barPx }}
+              onPointerMove={handleContentPointerMove}
+              onPointerUp={handleContentPointerUp}
+              onPointerCancel={() => setMoveDrag(null)}
+            >
 
               {/* Grid backgrounds */}
               {[
@@ -1738,6 +1739,26 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                   }}
                 />
               ))}
+
+              {/* Drop indicator line during pointer move */}
+              {moveDrag !== null && (() => {
+                const chain = songChain;
+                let x = 0;
+                for (let i = 0; i < moveDrag.to; i++) x += (chain[i]?.repeats ?? 1) * barPx;
+                const totalH = TRACKS.length * TRACK_H + LOOP_H;
+                return (
+                  <div
+                    className="absolute top-0 pointer-events-none z-30"
+                    style={{
+                      left: x - 1,
+                      width: 2,
+                      height: totalH,
+                      backgroundColor: "rgba(255,255,255,0.6)",
+                      boxShadow: "0 0 6px rgba(255,255,255,0.4)",
+                    }}
+                  />
+                );
+              })()}
 
               {/* Instrument rows */}
               {TRACKS.map(({ id }, trackIndex) => (
@@ -1770,8 +1791,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                         progress={progress}
                         isSelected={selected.has(makeSelKey(id, clipIndex))}
                         isHidden={entry.hiddenTracks?.includes(id) ?? false}
-                        isDragging={dragIndex === clipIndex}
-                        isDropTarget={dropIndex === clipIndex && dragIndex !== clipIndex}
+                        isDragging={moveDrag !== null && moveDrag.from === clipIndex}
                         isRenaming={renamingIndex === clipIndex && trackIndex === 0}
                         renameValue={renameValue}
                         renameInputRef={trackIndex === 0 ? renameInputRef : undefined}
@@ -1779,19 +1799,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                         onRenameCommit={commitRename}
                         onSelect={(multi) => selectEntry(clipIndex, id, multi)}
                         onContextMenu={(e) => openContextMenu(e, clipIndex, id)}
-                        onDragStart={(e) => {
-                          setDragIndex(clipIndex);
-                          setIsDragCopy(e.altKey);
-                          e.dataTransfer.setData("entryIndex", String(clipIndex));
-                          e.dataTransfer.effectAllowed = e.altKey ? "copy" : "move";
-                        }}
-                        onDragEnd={() => {
-                          setDragIndex(null);
-                          setDropIndex(null);
-                          setIsDragCopy(false);
-                        }}
-                        onDragOver={() => setDropIndex(clipIndex)}
-                        onDrop={(e) => handleEntryDrop(e, clipIndex)}
+                        onMoveStart={(e) => handleClipMoveStart(e, clipIndex)}
                         onResizeStart={(e) => {
                           e.stopPropagation();
                           resizingRef.current = {
@@ -1834,8 +1842,8 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                   songMode={songMode}
                   selected={selected}
                   onSelect={(i, multi) => selectEntry(i, "loops", multi)}
-                  onDragOver={(i) => setDropIndex(i)}
-                  onDrop={(e, i) => handleEntryDrop(e, i)}
+                  onDragOver={() => {}}
+                  onDrop={(e, i) => handleSceneDrop(e, i)}
                 />
               </div>
 
