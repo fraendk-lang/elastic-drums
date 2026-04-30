@@ -19,7 +19,7 @@ import { bassEngine, SCALES } from "../audio/BassEngine";
 import { audioEngine } from "../audio/AudioEngine";
 import { sendFxManager } from "../audio/SendFx";
 import { ArpScheduler } from "../audio/ArpScheduler";
-import { DEFAULT_ARP_SETTINGS, type ArpSettings } from "../audio/Arpeggiator";
+import { DEFAULT_ARP_SETTINGS } from "../audio/Arpeggiator";
 import { getMelodyEngineFxChain } from "../audio/MelodyLayerFx";
 
 interface Props {
@@ -126,6 +126,15 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     arpSchedulerRef.current = new ArpScheduler();
   }
   const arpRootRef = useRef<number>(60);
+
+  const arpModeRef = useRef(arpMode);
+  const arpRateRef = useRef(arpRate);
+  const arpOctavesRef = useRef(arpOctaves);
+  const scaleNameRef = useRef(scaleName);
+  arpModeRef.current = arpMode;
+  arpRateRef.current = arpRate;
+  arpOctavesRef.current = arpOctaves;
+  scaleNameRef.current = scaleName;
 
   const padRef = useRef<HTMLDivElement | null>(null);
   const activeVoicesRef = useRef<Map<number, ActiveVoice>>(new Map());
@@ -438,22 +447,23 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     } else if (arpOn && target === "melody") {
       const midi = xToMidi(x);
       arpRootRef.current = midi;
-      const arpSettings: ArpSettings = {
-        ...DEFAULT_ARP_SETTINGS,
-        mode: arpMode,
-        rate: arpRate,
-        octaves: arpOctaves,
-        gate: "medium",
-      };
-      arpSchedulerRef.current?.start({
-        getRoot: () => arpRootRef.current,
-        getSettings: () => ({ ...arpSettings, mode: arpMode, rate: arpRate, octaves: arpOctaves }),
-        getScaleName: () => scaleName,
-        onNote: (noteMidi, duration, atTime, vel) => {
-          melodyEngine.triggerPolyNote(noteMidi, atTime, duration, vel, false);
-        },
-        getBpm: () => useDrumStore.getState().bpm,
-      });
+      if (!arpSchedulerRef.current?.isRunning) {
+        arpSchedulerRef.current?.start({
+          getRoot: () => arpRootRef.current,
+          getSettings: () => ({
+            ...DEFAULT_ARP_SETTINGS,
+            mode: arpModeRef.current,
+            rate: arpRateRef.current,
+            octaves: arpOctavesRef.current,
+            gate: "medium",
+          }),
+          getScaleName: () => scaleNameRef.current,
+          onNote: (noteMidi, duration, atTime, vel) => {
+            melodyEngine.triggerPolyNote(noteMidi, atTime, duration, vel, false);
+          },
+          getBpm: () => useDrumStore.getState().bpm,
+        });
+      }
       voice = { pointerId: e.pointerId, midi, startAt: performance.now(), velocity, releases: [] };
     } else {
       const midi = xToMidi(x);
