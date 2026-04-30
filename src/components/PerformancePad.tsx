@@ -18,6 +18,8 @@ import { melodyEngine } from "../audio/MelodyEngine";
 import { bassEngine, SCALES } from "../audio/BassEngine";
 import { audioEngine } from "../audio/AudioEngine";
 import { sendFxManager } from "../audio/SendFx";
+import { ArpScheduler } from "../audio/ArpScheduler";
+import { DEFAULT_ARP_SETTINGS } from "../audio/Arpeggiator";
 import { getMelodyEngineFxChain } from "../audio/MelodyLayerFx";
 
 interface Props {
@@ -114,6 +116,14 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   const [shimmerDepth, setShimmerDepth] = useState(0.55);
   const [shimmerFeedback, setShimmerFeedback] = useState(0.28);
   const [padVolume, setPadVolume] = useState(80);
+  const [arpOn, setArpOn] = useState(DEFAULT_ARP_SETTINGS.mode !== "off");
+  const [arpMode, setArpMode] = useState<"up" | "updown" | "random">("up");
+  const [arpRate, setArpRate] = useState<"1/4" | "1/8" | "1/16">("1/8");
+  const [arpOctaves, setArpOctaves] = useState<1 | 2>(1);
+  const [arpLatch, setArpLatch] = useState(false);
+  const arpSchedulerRef = useRef(new ArpScheduler());
+  const arpRootRef = useRef<number>(60);
+  void arpRootRef; // used by upcoming arp trigger logic (Task 4)
 
   const padRef = useRef<HTMLDivElement | null>(null);
   const activeVoicesRef = useRef<Map<number, ActiveVoice>>(new Map());
@@ -140,6 +150,11 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, target]);
 
+  useEffect(() => {
+    const sched = arpSchedulerRef.current;
+    return () => { sched.stop(); };
+  }, []);
+
   /** Apply chord-follow: transpose Bass + Melody engines to match the given chord root.
    *  Pass null to clear. Uses closest-octave diff from current bass rootNote. */
   const applyChordFollow = useCallback((chordRootMidi: number | null) => {
@@ -157,6 +172,13 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     setBassLiveTranspose(diff);
     setMelodyLiveTranspose(diff);
   }, [chordFollow, bassRoot, setBassLiveTranspose, setMelodyLiveTranspose]);
+
+  const handleArpToggle = useCallback(() => {
+    setArpOn((prev) => {
+      if (prev) arpSchedulerRef.current.stop();
+      return !prev;
+    });
+  }, []);
 
   // ── Pitch mapping: X [0-1] → MIDI note via scale ──
   // ── Export recording to Piano Roll ──
@@ -1205,6 +1227,108 @@ export function PerformancePad({ isOpen, onClose }: Props) {
           <span className="text-[7px] text-orange-400/80 font-mono">{padVolume}%</span>
         </div>
       </div>
+
+      {/* Arp bar — melody target only */}
+      {target === "melody" && (
+        <div
+          className="flex items-center gap-2 px-5 py-2 border-t border-white/[0.06] flex-shrink-0"
+          style={{ background: "#0a080c" }}
+        >
+          {/* ARP ON/OFF */}
+          <button
+            onClick={handleArpToggle}
+            className={`px-3 h-6 text-[9px] font-bold rounded transition-all ${
+              arpOn
+                ? "bg-orange-500/30 text-orange-300"
+                : "bg-white/5 text-white/30 hover:text-white/60"
+            }`}
+            style={{ boxShadow: arpOn ? "0 0 8px rgba(249,115,22,0.25)" : "none" }}
+          >
+            ARP {arpOn ? "●" : "○"}
+          </button>
+
+          <div className="w-px h-4 bg-white/10" />
+
+          {/* Mode */}
+          <div className="flex items-center gap-0.5">
+            <span className="text-[7px] text-white/20 mr-1 tracking-wider">MODE</span>
+            {(
+              [
+                ["up",     "↑ UP"],
+                ["updown", "↕ UD"],
+                ["random", "? RND"],
+              ] as const
+            ).map(([m, label]) => (
+              <button
+                key={m}
+                onClick={() => setArpMode(m)}
+                className={`px-2 h-5 text-[8px] font-bold rounded transition-all ${
+                  arpMode === m
+                    ? "bg-orange-500/25 text-orange-300"
+                    : "text-white/25 hover:text-white/60"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="w-px h-4 bg-white/10" />
+
+          {/* Rate */}
+          <div className="flex items-center gap-0.5">
+            <span className="text-[7px] text-white/20 mr-1 tracking-wider">RATE</span>
+            {(["1/4", "1/8", "1/16"] as const).map((r) => (
+              <button
+                key={r}
+                onClick={() => setArpRate(r)}
+                className={`px-2 h-5 text-[8px] font-bold rounded transition-all ${
+                  arpRate === r
+                    ? "bg-orange-500/25 text-orange-300"
+                    : "text-white/25 hover:text-white/60"
+                }`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+
+          <div className="w-px h-4 bg-white/10" />
+
+          {/* Octave */}
+          <div className="flex items-center gap-0.5">
+            <span className="text-[7px] text-white/20 mr-1 tracking-wider">OCT</span>
+            {([1, 2] as const).map((o) => (
+              <button
+                key={o}
+                onClick={() => setArpOctaves(o)}
+                className={`px-2 h-5 text-[8px] font-bold rounded transition-all ${
+                  arpOctaves === o
+                    ? "bg-orange-500/25 text-orange-300"
+                    : "text-white/25 hover:text-white/60"
+                }`}
+              >
+                {o}
+              </button>
+            ))}
+          </div>
+
+          <div className="w-px h-4 bg-white/10" />
+
+          {/* Latch */}
+          <button
+            onClick={() => setArpLatch((v) => !v)}
+            className={`px-3 h-6 text-[9px] font-bold rounded transition-all ${
+              arpLatch
+                ? "bg-orange-500/20 text-orange-400"
+                : "bg-white/5 text-white/30 hover:text-white/60"
+            }`}
+            title="LATCH: arp keeps running after finger lift"
+          >
+            LATCH
+          </button>
+        </div>
+      )}
     </div>
   );
 }
