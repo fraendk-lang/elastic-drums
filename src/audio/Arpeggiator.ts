@@ -312,8 +312,9 @@ export function generateArpNotes(
     const vel = Math.max(0.05, Math.min(1, baseVelocity * decayFactor + jitter));
 
     if (mode === "chord") {
-      // Strum all pool notes simultaneously
-      for (const n of pool) {
+      // Strum pool notes simultaneously; cap at 8 voices to prevent voice overflow.
+      // Pool is already sorted ascending, so we take the lowest N notes (root-anchored).
+      for (const n of pool.slice(0, 8)) {
         result.push({ offset: t, note: n, duration: noteDuration, velocity: vel });
       }
     } else {

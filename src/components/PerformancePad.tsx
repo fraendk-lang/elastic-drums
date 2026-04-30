@@ -68,6 +68,9 @@ interface FxSnapshot {
   drive: number;
 }
 
+// Persist pad volume per-target across open/close cycles (component unmounts on close)
+const _padVolumeByTarget: Record<string, number> = {};
+
 export function PerformancePad({ isOpen, onClose }: Props) {
   const {
     target, mode, chordSetIndex, yParam, scaleOctaves, scaleLowestOct, gridSnap, trailEnabled, chordFollow,
@@ -115,7 +118,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   const [shimmerOn, setShimmerOn] = useState(false);
   const [shimmerDepth, setShimmerDepth] = useState(0.55);
   const [shimmerFeedback, setShimmerFeedback] = useState(0.28);
-  const [padVolume, setPadVolume] = useState(80);
+  const [padVolume, setPadVolume] = useState(() => _padVolumeByTarget[target] ?? 80);
   const [arpOn, setArpOn] = useState(false);
   const [arpMode, setArpMode] = useState<"up" | "down" | "updown" | "downup" | "converge" | "diverge" | "random" | "chord">("up");
   const [arpRate, setArpRate] = useState<"1/4" | "1/8" | "1/16">("1/8");
@@ -521,7 +524,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
       if (!stillChordActive) applyChordFollow(null);
     }
     // Stop arp when last finger lifts (unless latch is on)
-    if (arpOn && target === "melody" && activeVoicesRef.current.size === 0 && !arpLatch) {
+    if (arpOnRef.current && target === "melody" && activeVoicesRef.current.size === 0 && !arpLatchRef.current) {
       arpSchedulerRef.current?.stop();
     }
 
@@ -566,21 +569,53 @@ export function PerformancePad({ isOpen, onClose }: Props) {
           if (!usePerformancePadStore.getState().isLooping) return;
           if (ev.type === "down") {
             const midi = xToMidi(ev.x);
-            const release = fireVoice(midi, ev.velocity, ev.y);
-            const voice: ActiveVoice = { pointerId: ev.pointerId, midi, startAt: performance.now(), velocity: ev.velocity, releases: [release] };
-            playbackVoices.set(ev.pointerId, voice);
+            if (arpOnRef.current && target === "melody") {
+              arpRootRef.current = midi;
+              if (!arpSchedulerRef.current?.isRunning) {
+                arpSchedulerRef.current?.start({
+                  getRoot: () => arpRootRef.current,
+                  getSettings: () => ({
+                    ...DEFAULT_ARP_SETTINGS,
+                    mode: arpModeRef.current,
+                    rate: arpRateRef.current,
+                    octaves: arpOctavesRef.current,
+                    gate: "medium",
+                  }),
+                  getScaleName: () => scaleNameRef.current,
+                  onNote: (noteMidi, duration, atTime, vel) => {
+                    melodyEngine.triggerPolyNote(noteMidi, atTime, duration, vel, false);
+                  },
+                  getBpm: () => useDrumStore.getState().bpm,
+                });
+              }
+              playbackVoices.set(ev.pointerId, { pointerId: ev.pointerId, midi, startAt: performance.now(), velocity: ev.velocity, releases: [] });
+            } else {
+              const release = fireVoice(midi, ev.velocity, ev.y);
+              playbackVoices.set(ev.pointerId, { pointerId: ev.pointerId, midi, startAt: performance.now(), velocity: ev.velocity, releases: [release] });
+            }
           } else if (ev.type === "move") {
             const v = playbackVoices.get(ev.pointerId);
             if (!v) return;
-            modulateVoice(ev.y);
-            if (gridSnap) {
-              const newMidi = xToMidi(ev.x);
-              if (newMidi !== v.midi) repitchVoice(v, newMidi, ev.y);
+            if (arpOnRef.current && target === "melody") {
+              arpRootRef.current = xToMidi(ev.x);
+            } else {
+              modulateVoice(ev.y);
+              if (gridSnap) {
+                const newMidi = xToMidi(ev.x);
+                if (newMidi !== v.midi) repitchVoice(v, newMidi, ev.y);
+              }
             }
           } else if (ev.type === "up") {
-            const v = playbackVoices.get(ev.pointerId);
-            v?.releases.forEach((r) => r?.());
-            playbackVoices.delete(ev.pointerId);
+            if (arpOnRef.current && target === "melody") {
+              playbackVoices.delete(ev.pointerId);
+              if (playbackVoices.size === 0 && !arpLatchRef.current) {
+                arpSchedulerRef.current?.stop();
+              }
+            } else {
+              const v = playbackVoices.get(ev.pointerId);
+              v?.releases.forEach((r) => r?.());
+              playbackVoices.delete(ev.pointerId);
+            }
           }
         }, Math.max(0, delay));
         timers.push(timer);
@@ -1259,6 +1294,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
               value={padVolume}
               onChange={(e) => {
                 const v = Number(e.target.value);
+                _padVolumeByTarget[target] = v;
                 setPadVolume(v);
                 if (target === "melody") melodyEngine.sweepLiveVolume(v / 100);
                 else bassEngine.sweepLiveVolume(v / 100);

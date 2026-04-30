@@ -60,9 +60,11 @@ export class ArpScheduler {
     const ctx = audioEngine.getAudioContext();
     if (!ctx) return;
 
-    // Clamp nextStepTime forward if we fell behind (tab resume, system sleep)
+    // Clamp nextStepTime forward if we fell behind (tab resume, system sleep).
+    // Reset to currentTime + LOOKAHEAD_SEC (not just currentTime) to prevent a
+    // burst of catch-up notes filling the lookahead window all at once.
     if (this.nextStepTime < ctx.currentTime - 1.0) {
-      this.nextStepTime = ctx.currentTime;
+      this.nextStepTime = ctx.currentTime + LOOKAHEAD_SEC;
     }
 
     const { getRoot, getSettings, getScaleName, onNote, getBpm } = this.options;
