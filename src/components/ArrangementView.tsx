@@ -13,7 +13,7 @@ import { useSceneStore, type Scene } from "../store/sceneStore";
 import {
   SCENE_COLORS, LOOP_COLOR, getEntryColor, getEntryLabel, hexAlpha,
 } from "../utils/arrangementColors";
-import { bassWaveformBars } from "../utils/waveformMini";
+import { bassWaveformBars, noteWaveformBars } from "../utils/waveformMini";
 import {
   useArrangementStore,
   type ArrangementClip,
@@ -227,11 +227,22 @@ function ArrangementClip({
     };
   })();
 
-  // Waveform bars (bass only)
+  // Waveform bars (bass / chords / melody)
   const waveformBars = (() => {
-    if (trackId === "bass" && scene) {
+    if (!scene) return null;
+    if (trackId === "bass") {
       return bassWaveformBars(
         scene.bassSteps.slice(0, Math.min(scene.bassLength, 32))
+      );
+    }
+    if (trackId === "chords") {
+      return noteWaveformBars(
+        scene.chordsSteps.slice(0, Math.min(scene.chordsLength, 32))
+      );
+    }
+    if (trackId === "melody") {
+      return noteWaveformBars(
+        scene.melodySteps.slice(0, Math.min(scene.melodyLength, 32))
       );
     }
     return null;

@@ -37,3 +37,16 @@ export function bassWaveformBars(
     return 0.2 + Math.max(0, Math.min(1, (midi - MIN_NOTE) / (MAX_NOTE - MIN_NOTE))) * 0.8;
   });
 }
+
+/** Bar heights for a CHORDS or MELODY clip.
+ *  Scale degree 0-7 + octave offset (-1/0/+1) → normalised height. */
+export function noteWaveformBars(
+  steps: ReadonlyArray<{ active: boolean; note: number; octave: number; velocity?: number }>,
+): number[] {
+  // scale degree 0-7, octave -1..+1 → effective range 0-24
+  return steps.map((step) => {
+    if (!step.active) return 0;
+    const pos = step.note + (step.octave + 1) * 8; // 0..24
+    return 0.15 + Math.max(0, Math.min(1, pos / 24)) * 0.85;
+  });
+}
