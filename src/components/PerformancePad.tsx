@@ -113,6 +113,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   const [shimmerOn, setShimmerOn] = useState(false);
   const [shimmerDepth, setShimmerDepth] = useState(0.55);
   const [shimmerFeedback, setShimmerFeedback] = useState(0.28);
+  const [padVolume, setPadVolume] = useState(80);
 
   const padRef = useRef<HTMLDivElement | null>(null);
   const activeVoicesRef = useRef<Map<number, ActiveVoice>>(new Map());
@@ -131,6 +132,13 @@ export function PerformancePad({ isOpen, onClose }: Props) {
       setMelodyLiveTranspose(0);
     }
   }, [isOpen, setBassLiveTranspose, setMelodyLiveTranspose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (target === "melody") melodyEngine.sweepLiveVolume(padVolume / 100);
+    else bassEngine.sweepLiveVolume(padVolume / 100);
+  }, [isOpen, target]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps — intentionally only on open/target change
 
   /** Apply chord-follow: transpose Bass + Melody engines to match the given chord root.
    *  Pass null to clear. Uses closest-octave diff from current bass rootNote. */
@@ -1167,9 +1175,28 @@ export function PerformancePad({ isOpen, onClose }: Props) {
           )}
         </div>
 
-        {/* Right strip: stats */}
-        <div className="flex flex-col justify-end w-8 text-[8px] text-[var(--ed-text-muted)] font-mono">
-          <span className="text-[var(--ed-accent-melody)]/70 rotate-90 origin-left translate-y-[-50%]">Pitch →</span>
+        {/* Volume slider */}
+        <div className="flex flex-col items-center gap-1 w-10">
+          <span className="text-[7px] text-white/30 font-mono tracking-wider">VOL</span>
+          <div className="flex-1 flex items-center justify-center w-full">
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={padVolume}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setPadVolume(v);
+                if (target === "melody") melodyEngine.sweepLiveVolume(v / 100);
+                else bassEngine.sweepLiveVolume(v / 100);
+              }}
+              className="cursor-pointer accent-orange-400"
+              style={{ writingMode: "vertical-lr" as const, direction: "rtl" as const, width: "100%", height: "100%" }}
+              title={`Volume: ${padVolume}%`}
+            />
+          </div>
+          <span className="text-[7px] text-orange-400/80 font-mono">{padVolume}%</span>
         </div>
       </div>
     </div>
