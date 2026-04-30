@@ -29,28 +29,45 @@ function secondsPerBar(bpm: number): number {
   return (60.0 / bpm) * 4; // 4/4 time
 }
 
-function startClip(clip: AudioClip, offsetSec: number, startAtTime: number): void {
+function startClip(clip: AudioClip, extraOffsetSec: number, startAtTime: number): void {
   const ctx = audioEngine.getAudioContext();
   if (!ctx) return;
 
-  // Stop any previous instance of this clip
   stopClip(clip.id);
 
   const src  = ctx.createBufferSource();
   src.buffer = clip.buffer;
 
   const gain = ctx.createGain();
-  gain.gain.value = clip.volume;
-
   src.connect(gain);
   gain.connect(ctx.destination);
 
-  const when = Math.max(ctx.currentTime, startAtTime);
-  src.start(when, Math.max(0, offsetSec));
+  // Total audible duration after trim, minus any mid-clip offset
+  const playDuration = clip.sampleEndSec - clip.sampleStartSec - extraOffsetSec;
+  if (playDuration <= 0) return;
 
-  // Auto-clean when done
+  const when        = Math.max(ctx.currentTime, startAtTime);
+  const offsetInBuf = clip.sampleStartSec + extraOffsetSec;
+
+  // Fade in — only when playing from the start of the clip
+  if (clip.fadeInSec > 0 && extraOffsetSec === 0) {
+    gain.gain.setValueAtTime(0, when);
+    gain.gain.linearRampToValueAtTime(clip.volume, when + clip.fadeInSec);
+  } else {
+    gain.gain.setValueAtTime(clip.volume, when);
+  }
+
+  // Fade out
+  if (clip.fadeOutSec > 0 && clip.fadeOutSec < playDuration) {
+    const fadeOutStart = when + playDuration - clip.fadeOutSec;
+    gain.gain.setValueAtTime(clip.volume, fadeOutStart);
+    gain.gain.linearRampToValueAtTime(0, when + playDuration);
+  }
+
+  src.start(when, offsetInBuf);
+  src.stop(when + playDuration);
+
   src.onended = () => { _playing.delete(clip.id); };
-
   _playing.set(clip.id, src);
 }
 
@@ -83,14 +100,13 @@ export function seekAudioClips(bar: number): void {
   const clips = useAudioClipStore.getState().clips;
   for (const clip of clips) {
     const clipStartSec = clip.startBar * spb;
-    const clipEndSec   = (clip.startBar + clip.durationBars) * spb;
+    const clipEndSec   = clipStartSec + (clip.sampleEndSec - clip.sampleStartSec);
     const nowSec       = bar * spb;
 
     if (nowSec >= clipStartSec && nowSec < clipEndSec) {
-      // Mid-clip — start with time offset
-      const offset      = nowSec - clipStartSec;
+      const extraOffset = nowSec - clipStartSec;
       const scheduleAt  = transportStart + clipStartSec;
-      startClip(clip, offset, scheduleAt);
+      startClip(clip, extraOffset, scheduleAt);
     }
   }
 }
