@@ -1310,23 +1310,32 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
 // ─── AudioClipLane ────────────────────────────────────────────────────────────
 
 interface AudioClipLaneProps {
-  clips:      AudioClip[];
-  barPx:      number;
-  height:     number;
-  totalBars:  number;
-  onRemove:   (id: string) => void;
-  onMove:     (id: string, startBar: number) => void;
-  onResize:   (id: string, durationBars: number) => void;
-  onDrop:     (e: React.DragEvent) => void;
+  clips:          AudioClip[];
+  barPx:          number;
+  height:         number;
+  totalBars:      number;
+  selectedId:     string | null;
+  onRemove:       (id: string) => void;
+  onMove:         (id: string, startBar: number) => void;
+  onResize:       (id: string, durationBars: number) => void;
+  onDrop:         (e: React.DragEvent) => void;
+  onSelect:       (id: string | null) => void;
+  onTrimPoints:   (id: string, startSec: number, endSec: number) => void;
+  onSplit:        (id: string, splitAtSec: number) => void;
 }
 
 function AudioClipLane({
-  clips, barPx, height, totalBars,
-  onRemove, onMove, onResize, onDrop,
+  clips, barPx, height, totalBars, selectedId,
+  onRemove, onMove, onResize, onDrop, onSelect, onTrimPoints, onSplit,
 }: AudioClipLaneProps) {
-  const laneRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ id: string; offsetBar: number } | null>(null);
+  const laneRef   = useRef<HTMLDivElement>(null);
+  const dragRef   = useRef<{ id: string; offsetBar: number } | null>(null);
   const resizeRef = useRef<{ id: string; origBars: number; startX: number } | null>(null);
+  const trimRef   = useRef<{
+    id: string; side: "left" | "right";
+    origSec: number; startX: number;
+  } | null>(null);
+  const hoverRef  = useRef<{ id: string; atSec: number } | null>(null);
 
   const handleClipPointerDown = useCallback((e: React.PointerEvent, clip: AudioClip) => {
     if ((e.target as HTMLElement).dataset.resize) return;
@@ -1348,15 +1357,27 @@ function AudioClipLane({
       onMove(dragRef.current.id, Math.max(0, Math.round(rawBar)));
     }
     if (resizeRef.current) {
-      const dx       = e.clientX - resizeRef.current.startX;
+      const dx        = e.clientX - resizeRef.current.startX;
       const deltaBars = dx / barPx;
       onResize(resizeRef.current.id, Math.max(0.5, resizeRef.current.origBars + deltaBars));
     }
-  }, [barPx, onMove, onResize]);
+    if (trimRef.current) {
+      const clip = clips.find((c) => c.id === trimRef.current!.id);
+      if (!clip) return;
+      const clipWPx = clip.durationBars * barPx;
+      const dxSec   = ((e.clientX - trimRef.current.startX) / clipWPx) * clip.buffer.duration;
+      if (trimRef.current.side === "left") {
+        onTrimPoints(clip.id, trimRef.current.origSec + dxSec, clip.sampleEndSec);
+      } else {
+        onTrimPoints(clip.id, clip.sampleStartSec, trimRef.current.origSec + dxSec);
+      }
+    }
+  }, [barPx, onMove, onResize, onTrimPoints, clips]);
 
   const handleLanePointerUp = useCallback(() => {
     dragRef.current   = null;
     resizeRef.current = null;
+    trimRef.current   = null;
   }, []);
 
   const handleResizePointerDown = useCallback((e: React.PointerEvent, clip: AudioClip) => {
@@ -1364,6 +1385,36 @@ function AudioClipLane({
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     resizeRef.current = { id: clip.id, origBars: clip.durationBars, startX: e.clientX };
   }, []);
+
+  const handleTrimPointerDown = useCallback((
+    e: React.PointerEvent,
+    clip: AudioClip,
+    side: "left" | "right",
+  ) => {
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    trimRef.current = {
+      id:      clip.id,
+      side,
+      origSec: side === "left" ? clip.sampleStartSec : clip.sampleEndSec,
+      startX:  e.clientX,
+    };
+  }, []);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== "e") return;
+      if (!selectedId) return;
+      const clip = clips.find((c) => c.id === selectedId);
+      if (!clip) return;
+      const atSec = hoverRef.current?.id === selectedId
+        ? hoverRef.current.atSec
+        : (clip.sampleStartSec + clip.sampleEndSec) / 2;
+      onSplit(selectedId, atSec);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedId, clips, onSplit]);
 
   return (
     <div
@@ -1386,20 +1437,43 @@ function AudioClipLane({
       )}
 
       {clips.map((clip) => {
-        const x = clip.startBar * barPx;
-        const w = Math.max(barPx * 0.5, clip.durationBars * barPx);
+        const x   = clip.startBar * barPx;
+        const w   = Math.max(barPx * 0.5, clip.durationBars * barPx);
+        const dur = clip.buffer.duration;
+        const sel = selectedId === clip.id;
+
+        // Trim handle positions as fractions of clip width
+        const trimLFrac = dur > 0 ? clip.sampleStartSec / dur : 0;
+        const trimRFrac = dur > 0 ? clip.sampleEndSec   / dur : 1;
+        const trimLPx   = trimLFrac * w;
+        const trimRPx   = trimRFrac * w;
+
         return (
           <div
             key={clip.id}
-            className="absolute top-1 bottom-1 overflow-hidden rounded select-none"
+            className="absolute top-1 bottom-1 select-none"
             style={{
               left:            x,
               width:           w,
               backgroundColor: hexAlpha(clip.color, 0.15),
-              border:          `1px solid ${hexAlpha(clip.color, 0.4)}`,
+              border:          `1px solid ${sel ? hexAlpha(clip.color, 0.85) : hexAlpha(clip.color, 0.4)}`,
+              boxShadow:       sel ? `0 0 0 1px ${hexAlpha(clip.color, 0.35)}` : undefined,
+              borderRadius:    5,
+              overflow:        "hidden",
               cursor:          "grab",
             }}
-            onPointerDown={(e) => handleClipPointerDown(e, clip)}
+            onPointerDown={(e) => {
+              if ((e.target as HTMLElement).dataset.trim) return;
+              if ((e.target as HTMLElement).dataset.resize) return;
+              handleClipPointerDown(e, clip);
+              onSelect(clip.id);
+            }}
+            onPointerMove={(e) => {
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / w));
+              hoverRef.current = { id: clip.id, atSec: frac * dur };
+            }}
+            onPointerLeave={() => { hoverRef.current = null; }}
             onContextMenu={(e) => { e.preventDefault(); onRemove(clip.id); }}
           >
             {/* Waveform */}
@@ -1411,6 +1485,83 @@ function AudioClipLane({
                 height={height - 10}
               />
             )}
+
+            {/* Dimmed region — excluded left */}
+            {trimLPx > 1 && (
+              <div
+                className="absolute top-0 bottom-0 left-0 pointer-events-none"
+                style={{ width: trimLPx, backgroundColor: "rgba(0,0,0,0.55)" }}
+              />
+            )}
+
+            {/* Dimmed region — excluded right */}
+            {trimRPx < w - 1 && (
+              <div
+                className="absolute top-0 bottom-0 pointer-events-none"
+                style={{
+                  left:            trimRPx,
+                  right:           12,
+                  backgroundColor: "rgba(0,0,0,0.55)",
+                }}
+              />
+            )}
+
+            {/* Fade-in overlay */}
+            {clip.fadeInSec > 0 && (() => {
+              const fadePx = (clip.fadeInSec / ((clip.sampleEndSec - clip.sampleStartSec) || 1)) * (w - 24);
+              return (
+                <div
+                  className="absolute top-0 bottom-0 pointer-events-none"
+                  style={{
+                    left:       trimLPx,
+                    width:      Math.max(0, fadePx),
+                    background: "linear-gradient(to right, rgba(0,0,0,0.5), transparent)",
+                  }}
+                />
+              );
+            })()}
+
+            {/* Fade-out overlay */}
+            {clip.fadeOutSec > 0 && (() => {
+              const fadePx = (clip.fadeOutSec / ((clip.sampleEndSec - clip.sampleStartSec) || 1)) * (w - 24);
+              return (
+                <div
+                  className="absolute top-0 bottom-0 pointer-events-none"
+                  style={{
+                    right:      12 + (w - trimRPx - 12),
+                    width:      Math.max(0, fadePx),
+                    background: "linear-gradient(to left, rgba(0,0,0,0.5), transparent)",
+                  }}
+                />
+              );
+            })()}
+
+            {/* Trim-left handle */}
+            <div
+              data-trim="left"
+              className="absolute top-0 bottom-0 z-10 cursor-ew-resize"
+              style={{
+                left:            Math.max(0, trimLPx - 3),
+                width:           6,
+                backgroundColor: hexAlpha(clip.color, 0.9),
+                borderRadius:    "3px 0 0 3px",
+              }}
+              onPointerDown={(e) => handleTrimPointerDown(e, clip, "left")}
+            />
+
+            {/* Trim-right handle */}
+            <div
+              data-trim="right"
+              className="absolute top-0 bottom-0 z-10 cursor-ew-resize"
+              style={{
+                left:            Math.min(w - 15, trimRPx - 3),
+                width:           6,
+                backgroundColor: hexAlpha(clip.color, 0.9),
+                borderRadius:    "0 3px 3px 0",
+              }}
+              onPointerDown={(e) => handleTrimPointerDown(e, clip, "right")}
+            />
+
             {/* Filename label */}
             <div className="absolute top-0 left-0 right-6 px-1.5 pt-0.5 pointer-events-none">
               <span
@@ -1420,6 +1571,7 @@ function AudioClipLane({
                 {clip.fileName.replace(/\.[^.]+$/, "")}
               </span>
             </div>
+
             {/* Resize handle */}
             <div
               className="absolute top-0 bottom-0 right-0 w-3 cursor-col-resize hover:bg-white/10"
@@ -1451,11 +1603,14 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
   const bpm                    = useDrumStore((s) => s.bpm);
 
   // Audio clip store
-  const audioClips      = useAudioClipStore((s) => s.clips);
-  const addAudioClip    = useAudioClipStore((s) => s.addClip);
-  const removeAudioClip = useAudioClipStore((s) => s.removeClip);
-  const moveAudioClip   = useAudioClipStore((s) => s.moveClip);
-  const resizeAudioClip = useAudioClipStore((s) => s.resizeClip);
+  const audioClips         = useAudioClipStore((s) => s.clips);
+  const addAudioClip       = useAudioClipStore((s) => s.addClip);
+  const removeAudioClip    = useAudioClipStore((s) => s.removeClip);
+  const moveAudioClip      = useAudioClipStore((s) => s.moveClip);
+  const resizeAudioClip    = useAudioClipStore((s) => s.resizeClip);
+  const setTrimPoints      = useAudioClipStore((s) => s.setTrimPoints);
+  const splitClip          = useAudioClipStore((s) => s.splitClip);
+  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
 
   const [arrMode, setArrMode]                 = useState<"scene" | "clips">("scene");
   const setArrangementMode                    = useDrumStore((s) => s.setArrangementMode);
@@ -2324,10 +2479,17 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                   barPx={barPx}
                   height={AUDIO_H}
                   totalBars={displayBars}
+                  selectedId={selectedClipId}
                   onRemove={removeAudioClip}
                   onMove={moveAudioClip}
                   onResize={resizeAudioClip}
                   onDrop={handleAudioFileDrop}
+                  onSelect={setSelectedClipId}
+                  onTrimPoints={setTrimPoints}
+                  onSplit={(id, atSec) => {
+                    const secPerBar = 60 / bpm * 4;
+                    splitClip(id, atSec, secPerBar);
+                  }}
                 />
               </div>
 
