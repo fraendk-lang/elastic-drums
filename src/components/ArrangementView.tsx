@@ -1672,19 +1672,36 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
           {/* Track labels */}
           <div className="shrink-0 border-r border-white/8 flex flex-col" style={{ width: LABEL_W }}>
             <div style={{ height: RULER_H }} className="border-b border-white/8 shrink-0" />
-            {TRACKS.map(({ id, label }) => (
-              <div
-                key={id}
-                className="flex items-center justify-center border-b border-white/5 shrink-0"
-                style={{ height: TRACK_H }}
-              >
-                <span className="text-[8px] font-black tracking-[0.18em] text-white/35">{label}</span>
-              </div>
-            ))}
+            {TRACKS.map(({ id, label }) => {
+              const trackColor = TRACK_COLORS[id as keyof typeof TRACK_COLORS];
+              return (
+                <div
+                  key={id}
+                  className="relative flex items-center border-b border-white/5 shrink-0 pl-3"
+                  style={{ height: TRACK_H }}
+                >
+                  {/* Colored left accent bar */}
+                  <div
+                    className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
+                    style={{ backgroundColor: hexAlpha(trackColor, 0.7) }}
+                  />
+                  <span
+                    className="text-[8px] font-black tracking-[0.18em]"
+                    style={{ color: hexAlpha(trackColor, 0.65) }}
+                  >
+                    {label}
+                  </span>
+                </div>
+              );
+            })}
             <div
-              className="flex items-center justify-center border-b border-white/5 shrink-0"
+              className="relative flex items-center border-b border-white/5 shrink-0 pl-3"
               style={{ height: LOOP_H }}
             >
+              <div
+                className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
+                style={{ backgroundColor: hexAlpha(LOOP_COLOR, 0.6) }}
+              />
               <span
                 className="text-[8px] font-black tracking-[0.18em]"
                 style={{ color: hexAlpha(LOOP_COLOR, 0.6) }}
