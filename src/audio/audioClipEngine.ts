@@ -19,7 +19,8 @@ import { useAudioClipStore, type AudioClip } from "../store/audioClipStore";
 /** Currently-playing sources keyed by clip id. */
 const _playing = new Map<string, AudioBufferSourceNode>();
 
-let _stepsElapsed = 0;
+// -1 so the first increment on play-start yields 0, firing the bar-0 clip check.
+let _stepsElapsed = -1;
 let _subscribed   = false;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -70,7 +71,8 @@ export function stopAllAudioClips(): void {
 /** Called when the transport seeks to a specific bar (e.g. click on ruler). */
 export function seekAudioClips(bar: number): void {
   stopAllAudioClips();
-  _stepsElapsed = bar * 16;
+  // Set so the next bar-boundary check fires at bar N+1 (seek already plays mid-clip at bar N).
+  _stepsElapsed = bar * 16 - 1;
 
   const { bpm }          = useDrumStore.getState();
   const spb              = secondsPerBar(bpm);
@@ -104,7 +106,7 @@ export function initAudioClipEngine(): void {
 
     if (!isPlaying) {
       stopAllAudioClips();
-      _stepsElapsed = 0;
+      _stepsElapsed = -1;
       return;
     }
 
