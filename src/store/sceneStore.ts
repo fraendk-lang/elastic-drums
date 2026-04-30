@@ -7,7 +7,7 @@
 
 import { create } from "zustand";
 import { unstable_batchedUpdates } from "react-dom";
-import { useDrumStore, type PatternData } from "./drumStore";
+import { useDrumStore, type PatternData, getDrumNextStepTime } from "./drumStore";
 import { useBassStore } from "./bassStore";
 import { useChordsStore } from "./chordsStore";
 import { useMelodyStore } from "./melodyStore";
@@ -258,7 +258,16 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     // Without batching, each setState triggers its own subscriber chain while
     // running inside the 20ms scheduler setInterval (outside React's event system).
     unstable_batchedUpdates(() => {
-      const cleanupAt = now + 0.005;
+      // Time the panic to fire at the actual bar boundary, not immediately.
+      // loadScene is called from inside the drum scheduler while loop (lookahead ~0–300ms).
+      // getDrumNextStepTime() returns the time of the step being processed (step 15 of the
+      // old bar). Adding one step duration gives step 0 of the new bar — the exact boundary
+      // where old notes should stop and new ones begin.
+      const bpm           = useDrumStore.getState().bpm;
+      const secondsPerStep = 60 / bpm / 4;
+      const nextDrumStep  = getDrumNextStepTime();
+      const barBoundary   = nextDrumStep > now ? nextDrumStep + secondsPerStep : now;
+      const cleanupAt     = Math.max(now, barBoundary - 0.002);
 
       // Drums: load scene pattern OR silence (all steps inactive) when hidden
       if (!skip.has("drums")) {
