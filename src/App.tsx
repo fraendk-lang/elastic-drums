@@ -42,6 +42,7 @@ import { initMelodyLayerFx, melodyLayerFxChains, initMelodyEngineFx } from "./au
 // Activate melody-layer scheduler at app start (not tied to tab visibility)
 import "./components/MelodyLayers/melodyLayerScheduler";
 import "./audio/arrangementScheduler";
+import { initAudioClipEngine } from "./audio/audioClipEngine";
 import { samplerEngine } from "./audio/SamplerEngine";
 import { loopPlayerEngine } from "./audio/LoopPlayerEngine";
 import { useBassStore, startBassScheduler, stopBassScheduler } from "./store/bassStore";
@@ -275,6 +276,7 @@ export function App() {
         // Loop Player → Channel 16 (dedicated mixer strip: EQ, sends, fader, meter)
         // init() auto-connects output → channel 16 and is idempotent (safe to call again after HMR)
         loopPlayerEngine.init(ctx);
+        initAudioClipEngine();
       }
       setAudioReady(true);
 

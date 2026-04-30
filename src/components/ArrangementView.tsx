@@ -11,6 +11,7 @@ import { useDrumStore, type SongChainEntry, drumCurrentStepStore } from "../stor
 import { arrangementBarStore, seekToBar } from "../audio/arrangementScheduler";
 import { useSceneStore, type Scene } from "../store/sceneStore";
 import { useLoopPlayerStore } from "../store/loopPlayerStore";
+import { useAudioClipStore, computeWaveformPeaks, type AudioClip } from "../store/audioClipStore";
 import {
   SCENE_COLORS, LOOP_COLOR, getEntryColor, getEntryLabel, hexAlpha,
 } from "../utils/arrangementColors";
@@ -26,6 +27,8 @@ import {
 const LABEL_W        = 68;
 const TRACK_H        = 52;
 const LOOP_H         = 36;
+const AUDIO_H        = 52;
+const AUDIO_COLOR    = "#f97316"; // warm orange — distinct from drum red
 const RULER_H        = 22;
 const MIN_BAR_PX     = 16;
 const MAX_BAR_PX     = 120;
@@ -1304,6 +1307,132 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
   );
 }
 
+// ─── AudioClipLane ────────────────────────────────────────────────────────────
+
+interface AudioClipLaneProps {
+  clips:      AudioClip[];
+  barPx:      number;
+  height:     number;
+  totalBars:  number;
+  onRemove:   (id: string) => void;
+  onMove:     (id: string, startBar: number) => void;
+  onResize:   (id: string, durationBars: number) => void;
+  onDrop:     (e: React.DragEvent) => void;
+}
+
+function AudioClipLane({
+  clips, barPx, height, totalBars,
+  onRemove, onMove, onResize, onDrop,
+}: AudioClipLaneProps) {
+  const laneRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ id: string; offsetBar: number } | null>(null);
+  const resizeRef = useRef<{ id: string; origBars: number; startX: number } | null>(null);
+
+  const handleClipPointerDown = useCallback((e: React.PointerEvent, clip: AudioClip) => {
+    if ((e.target as HTMLElement).dataset.resize) return;
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const lane = laneRef.current;
+    if (!lane) return;
+    const laneRect = lane.getBoundingClientRect();
+    const clickBar = (e.clientX - laneRect.left) / barPx;
+    dragRef.current = { id: clip.id, offsetBar: clickBar - clip.startBar };
+  }, [barPx]);
+
+  const handleLanePointerMove = useCallback((e: React.PointerEvent) => {
+    if (dragRef.current) {
+      const lane = laneRef.current;
+      if (!lane) return;
+      const laneRect = lane.getBoundingClientRect();
+      const rawBar   = (e.clientX - laneRect.left) / barPx - dragRef.current.offsetBar;
+      onMove(dragRef.current.id, Math.max(0, Math.round(rawBar)));
+    }
+    if (resizeRef.current) {
+      const dx       = e.clientX - resizeRef.current.startX;
+      const deltaBars = dx / barPx;
+      onResize(resizeRef.current.id, Math.max(0.5, resizeRef.current.origBars + deltaBars));
+    }
+  }, [barPx, onMove, onResize]);
+
+  const handleLanePointerUp = useCallback(() => {
+    dragRef.current   = null;
+    resizeRef.current = null;
+  }, []);
+
+  const handleResizePointerDown = useCallback((e: React.PointerEvent, clip: AudioClip) => {
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    resizeRef.current = { id: clip.id, origBars: clip.durationBars, startX: e.clientX };
+  }, []);
+
+  return (
+    <div
+      ref={laneRef}
+      className="relative border-b border-black/20"
+      style={{ height, minWidth: totalBars * barPx, backgroundColor: hexAlpha(AUDIO_COLOR, 0.03) }}
+      onPointerMove={handleLanePointerMove}
+      onPointerUp={handleLanePointerUp}
+      onPointerCancel={handleLanePointerUp}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={onDrop}
+    >
+      {/* Drop hint when empty */}
+      {clips.length === 0 && (
+        <div className="absolute inset-0 flex items-center px-3 pointer-events-none">
+          <span className="text-[7px] tracking-widest" style={{ color: hexAlpha(AUDIO_COLOR, 0.25) }}>
+            AUDIO — drag WAV / MP3 to place
+          </span>
+        </div>
+      )}
+
+      {clips.map((clip) => {
+        const x = clip.startBar * barPx;
+        const w = Math.max(barPx * 0.5, clip.durationBars * barPx);
+        return (
+          <div
+            key={clip.id}
+            className="absolute top-1 bottom-1 overflow-hidden rounded select-none"
+            style={{
+              left:            x,
+              width:           w,
+              backgroundColor: hexAlpha(clip.color, 0.15),
+              border:          `1px solid ${hexAlpha(clip.color, 0.4)}`,
+              cursor:          "grab",
+            }}
+            onPointerDown={(e) => handleClipPointerDown(e, clip)}
+            onContextMenu={(e) => { e.preventDefault(); onRemove(clip.id); }}
+          >
+            {/* Waveform */}
+            {w > 24 && (
+              <LoopWaveformCanvas
+                peaks={clip.waveformPeaks}
+                color={clip.color}
+                width={w - 2}
+                height={height - 10}
+              />
+            )}
+            {/* Filename label */}
+            <div className="absolute top-0 left-0 right-6 px-1.5 pt-0.5 pointer-events-none">
+              <span
+                className="text-[6px] font-bold truncate block leading-tight"
+                style={{ color: hexAlpha(clip.color, 0.85) }}
+              >
+                {clip.fileName.replace(/\.[^.]+$/, "")}
+              </span>
+            </div>
+            {/* Resize handle */}
+            <div
+              className="absolute top-0 bottom-0 right-0 w-3 cursor-col-resize hover:bg-white/10"
+              data-resize="true"
+              onPointerDown={(e) => handleResizePointerDown(e, clip)}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
@@ -1319,6 +1448,14 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
   const clearSongChain         = useDrumStore((s) => s.clearSongChain);
   const updateSongEntry        = useDrumStore((s) => s.updateSongEntry);
   const scenes                 = useSceneStore((s) => s.scenes);
+  const bpm                    = useDrumStore((s) => s.bpm);
+
+  // Audio clip store
+  const audioClips      = useAudioClipStore((s) => s.clips);
+  const addAudioClip    = useAudioClipStore((s) => s.addClip);
+  const removeAudioClip = useAudioClipStore((s) => s.removeClip);
+  const moveAudioClip   = useAudioClipStore((s) => s.moveClip);
+  const resizeAudioClip = useAudioClipStore((s) => s.resizeClip);
 
   const [arrMode, setArrMode]                 = useState<"scene" | "clips">("scene");
   const setArrangementMode                    = useDrumStore((s) => s.setArrangementMode);
@@ -1640,6 +1777,46 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
     setContextMenu({ x: e.clientX, y: e.clientY, index, track });
   }, []);
 
+  // Audio file drop → decode → compute peaks → create clip at bar position
+  const handleAudioFileDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    if (!/\.(wav|mp3|ogg|flac|aiff?|m4a)$/i.test(file.name)) return;
+
+    const { audioEngine: ae } = await import("../audio/AudioEngine");
+    const ctx = ae.getAudioContext();
+    if (!ctx) return;
+
+    try {
+      const arrayBuf = await file.arrayBuffer();
+      const buffer   = await ctx.decodeAudioData(arrayBuf);
+
+      // Bar position from drop X relative to timeline content area
+      const laneEl = (e.currentTarget as HTMLElement);
+      const rect   = laneEl.getBoundingClientRect();
+      const dropX  = e.clientX - rect.left;
+      const startBar = Math.max(0, Math.floor(dropX / barPx));
+
+      const secPerBar    = (60.0 / bpm) * 4;
+      const durationBars = Math.max(0.5, buffer.duration / secPerBar);
+      const peaks        = computeWaveformPeaks(buffer);
+
+      addAudioClip({
+        id:           `ac-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        startBar,
+        durationBars,
+        fileName:     file.name,
+        buffer,
+        waveformPeaks: peaks,
+        volume:        1,
+        color:         AUDIO_COLOR,
+      });
+    } catch (err) {
+      console.warn("AudioClip decode failed:", err);
+    }
+  }, [barPx, bpm, addAudioClip]);
+
   const handleSceneDrop = useCallback((e: React.DragEvent, atIndex?: number) => {
     e.preventDefault();
     const sceneIdx = parseInt(e.dataTransfer.getData("sceneIndex"));
@@ -1779,6 +1956,22 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                 style={{ color: hexAlpha(LOOP_COLOR, 0.6) }}
               >
                 LOOPS
+              </span>
+            </div>
+            {/* AUDIO track label */}
+            <div
+              className="relative flex items-center border-b border-white/5 shrink-0 pl-3"
+              style={{ height: AUDIO_H }}
+            >
+              <div
+                className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
+                style={{ backgroundColor: hexAlpha(AUDIO_COLOR, 0.7) }}
+              />
+              <span
+                className="text-[8px] font-black tracking-[0.18em]"
+                style={{ color: hexAlpha(AUDIO_COLOR, 0.65) }}
+              >
+                AUDIO
               </span>
             </div>
           </div>
@@ -2021,6 +2214,18 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                   onDrop={(e, i) => handleSceneDrop(e, i)}
                 />
               </div>
+
+              {/* AUDIO clip lane */}
+              <AudioClipLane
+                clips={audioClips}
+                barPx={barPx}
+                height={AUDIO_H}
+                totalBars={totalBars}
+                onRemove={removeAudioClip}
+                onMove={moveAudioClip}
+                onResize={resizeAudioClip}
+                onDrop={handleAudioFileDrop}
+              />
 
               {/* Loop-brace overlay on track area */}
               {loopStart !== null && loopEnd !== null && (
