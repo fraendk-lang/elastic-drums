@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useDrumStore, type SongChainEntry, drumCurrentStepStore } from "../store/drumStore";
 import { arrangementBarStore, seekToBar } from "../audio/arrangementScheduler";
 import { useSceneStore, type Scene } from "../store/sceneStore";
+import { useLoopPlayerStore } from "../store/loopPlayerStore";
 import {
   SCENE_COLORS, LOOP_COLOR, getEntryColor, getEntryLabel, hexAlpha,
 } from "../utils/arrangementColors";
@@ -387,6 +388,49 @@ function ArrangementClip({
   );
 }
 
+// ─── LoopWaveformCanvas ───────────────────────────────────────────────────────
+
+interface LoopWaveformCanvasProps {
+  peaks:  Float32Array;
+  color:  string;
+  width:  number;
+  height: number;
+}
+
+function LoopWaveformCanvas({ peaks, color, width, height }: LoopWaveformCanvasProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, width, height);
+
+    const count  = peaks.length;
+    const barW   = Math.max(1, width / count);
+    const mid    = height / 2;
+
+    ctx.fillStyle = hexAlpha(color, 0.55);
+    for (let i = 0; i < count; i++) {
+      const amp  = peaks[i]!;
+      const barH = Math.max(1, amp * mid * 1.8);
+      const x    = i * barW;
+      ctx.fillRect(x, mid - barH, barW - 0.5, barH * 2);
+    }
+  }, [peaks, color, width, height]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={width}
+      height={height}
+      className="absolute inset-0 pointer-events-none"
+      style={{ width, height }}
+    />
+  );
+}
+
 // ─── ArrangementLoopLane ──────────────────────────────────────────────────────
 
 interface ArrangementLoopLaneProps {
@@ -407,11 +451,12 @@ function ArrangementLoopLane({
   songPosition, songMode, selected,
   onSelect, onDragOver, onDrop,
 }: ArrangementLoopLaneProps) {
+  const liveSlots = useLoopPlayerStore((s) => s.slots);
+
   return (
     <>
       {songChain.map((entry, i) => {
         const scene = scenes[entry.sceneIndex] ?? null;
-        // LoopSceneState has no fileName — display as "L1", "L2", etc.
         const activeSlots = (scene?.loopSlots ?? [])
           .map((s, idx) => ({ playing: s.playing, idx }))
           .filter(s => s.playing);
@@ -419,10 +464,21 @@ function ArrangementLoopLane({
         const isActive = songMode === "song" && i === songPosition;
         const isSel    = selected.has(makeSelKey("loops", i));
 
+        // Collect waveform peaks for active slots from the live store
+        const slotsWithPeaks = activeSlots.map(({ idx }) => ({
+          idx,
+          peaks: liveSlots[idx]?.waveformPeaks ?? null,
+          fileName: liveSlots[idx]?.fileName ?? "",
+        }));
+
+        const rowH = activeSlots.length > 0
+          ? Math.max(8, height / Math.min(activeSlots.length, 4))
+          : height;
+
         return (
           <div
             key={i}
-            className="relative overflow-hidden border-r border-b border-black/20 flex items-center gap-1 px-1"
+            className="relative overflow-hidden border-r border-b border-black/20"
             style={{
               width: w, minWidth: w, height,
               backgroundColor: isSel
@@ -439,27 +495,43 @@ function ArrangementLoopLane({
             onDrop={(e) => onDrop(e, i)}
           >
             {activeSlots.length === 0 ? (
-              <span className="text-[6px] text-white/12">—</span>
+              <span className="absolute inset-0 flex items-center px-2 text-[6px] text-white/12">—</span>
             ) : (
-              <>
-                {activeSlots.slice(0, 3).map(({ idx }) => (
-                  <span
-                    key={idx}
-                    className={`text-[6px] font-bold px-1 py-0.5 rounded ${isActive ? "animate-pulse" : ""}`}
-                    style={{
-                      backgroundColor: hexAlpha(LOOP_COLOR, 0.2),
-                      color:           hexAlpha(LOOP_COLOR, 0.9),
-                    }}
-                  >
-                    ● L{idx + 1}
-                  </span>
-                ))}
-                {activeSlots.length > 3 && (
-                  <span className="text-[6px]" style={{ color: hexAlpha(LOOP_COLOR, 0.5) }}>
-                    +{activeSlots.length - 3}
-                  </span>
-                )}
-              </>
+              slotsWithPeaks.slice(0, 4).map(({ idx, peaks, fileName }, row) => (
+                <div
+                  key={idx}
+                  className="absolute left-0 right-0 overflow-hidden"
+                  style={{ top: row * rowH, height: rowH }}
+                >
+                  {/* Waveform if peaks are available */}
+                  {peaks && w > 20 && (
+                    <LoopWaveformCanvas
+                      peaks={peaks}
+                      color={LOOP_COLOR}
+                      width={w}
+                      height={rowH}
+                    />
+                  )}
+                  {/* Slot label overlay */}
+                  <div className="absolute inset-0 flex items-center px-1.5 pointer-events-none">
+                    <span
+                      className="text-[6px] font-bold leading-none"
+                      style={{ color: hexAlpha(LOOP_COLOR, peaks ? 0.55 : 0.8) }}
+                    >
+                      {peaks
+                        ? (fileName ? fileName.replace(/\.[^.]+$/, "").slice(0, 12) : `L${idx + 1}`)
+                        : `L${idx + 1}`}
+                    </span>
+                  </div>
+                  {/* Row divider */}
+                  {row > 0 && (
+                    <div
+                      className="absolute top-0 left-0 right-0 h-px"
+                      style={{ backgroundColor: hexAlpha(LOOP_COLOR, 0.15) }}
+                    />
+                  )}
+                </div>
+              ))
             )}
           </div>
         );
