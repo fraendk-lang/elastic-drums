@@ -13,7 +13,7 @@ import { useSceneStore, type Scene } from "../store/sceneStore";
 import {
   SCENE_COLORS, LOOP_COLOR, getEntryColor, getEntryLabel, hexAlpha,
 } from "../utils/arrangementColors";
-import { drumWaveformBars, bassWaveformBars } from "../utils/waveformMini";
+import { bassWaveformBars } from "../utils/waveformMini";
 import {
   useArrangementStore,
   type ArrangementClip,
@@ -119,6 +119,66 @@ function WaveformMiniCanvas({ bars, color, width, height }: WaveformMiniCanvasPr
   );
 }
 
+// ─── DrumStepsMini ───────────────────────────────────────────────────────────
+
+interface DrumTrackStep {
+  active: boolean;
+  velocity?: number;
+}
+
+interface DrumStepsMiniProps {
+  tracks: ReadonlyArray<ReadonlyArray<DrumTrackStep>>;
+  stepCount: number;
+  color: string;
+  width: number;
+  height: number;
+}
+
+function DrumStepsMini({ tracks, stepCount, color, width, height }: DrumStepsMiniProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, width, height);
+
+    const activeTracks = tracks.filter(t => t.some(s => s.active));
+    if (activeTracks.length === 0) return;
+
+    const rows    = activeTracks.length;
+    const cols    = stepCount;
+    const cellW   = width / cols;
+    const cellH   = height / rows;
+    const pad     = Math.max(0.5, Math.min(1.5, cellW * 0.12));
+
+    activeTracks.forEach((track, row) => {
+      const y = row * cellH;
+      track.slice(0, cols).forEach((step, col) => {
+        if (!step.active) return;
+        const vel    = (step.velocity ?? 100) / 127;
+        const alpha  = 0.35 + vel * 0.55;
+        const x      = col * cellW;
+        ctx.fillStyle = hexAlpha(color, alpha);
+        ctx.beginPath();
+        ctx.roundRect(x + pad, y + pad, cellW - pad * 2, cellH - pad * 2, 1);
+        ctx.fill();
+      });
+    });
+  }, [tracks, stepCount, color, width, height]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={width}
+      height={height}
+      className="absolute pointer-events-none"
+      style={{ top: 2, left: 2, width, height }}
+    />
+  );
+}
+
 // ─── ArrangementClip ──────────────────────────────────────────────────────────
 
 interface ArrangementClipProps {
@@ -157,14 +217,18 @@ function ArrangementClip({
   onMoveStart, onResizeStart,
 }: ArrangementClipProps) {
 
-  // Waveform bars (drums + bass only)
+  // Drum mini-grid data (actual step pattern)
+  const drumStepData = (() => {
+    if (trackId !== "drums" || !scene) return null;
+    const len = Math.min(scene.drumPattern.length ?? 16, 64);
+    return {
+      tracks: scene.drumPattern.tracks.map(t => t.steps.slice(0, len)) as ReadonlyArray<ReadonlyArray<DrumTrackStep>>,
+      stepCount: len,
+    };
+  })();
+
+  // Waveform bars (bass only)
   const waveformBars = (() => {
-    if (trackId === "drums" && scene) {
-      const steps = scene.drumPattern.tracks.slice(0, 4).flatMap(t =>
-        t.steps.slice(0, Math.min(scene.drumPattern.length ?? 16, 32))
-      );
-      return drumWaveformBars(steps, entry.sceneIndex);
-    }
     if (trackId === "bass" && scene) {
       return bassWaveformBars(
         scene.bassSteps.slice(0, Math.min(scene.bassLength, 32))
@@ -235,7 +299,18 @@ function ArrangementClip({
         />
       )}
 
-      {/* Waveform mini */}
+      {/* Drum mini step-grid */}
+      {drumStepData && width > 30 && (
+        <DrumStepsMini
+          tracks={drumStepData.tracks}
+          stepCount={drumStepData.stepCount}
+          color={color}
+          width={width - 4}
+          height={height - 4}
+        />
+      )}
+
+      {/* Bass waveform mini */}
       {waveformBars && width > 30 && (
         <WaveformMiniCanvas
           bars={waveformBars}
