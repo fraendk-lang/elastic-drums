@@ -80,8 +80,8 @@ export const useAudioClipStore = create<AudioClipStore>((set) => ({
     set((s) => ({
       clips: s.clips.map((c) => {
         if (c.id !== id) return c;
-        const clampedStart = Math.max(0, Math.min(endSec - 0.1, startSec));
-        const clampedEnd   = Math.max(clampedStart + 0.1, Math.min(c.buffer.duration, endSec));
+        const clampedEnd   = Math.max(0.1, Math.min(c.buffer.duration, endSec));
+        const clampedStart = Math.max(0, Math.min(clampedEnd - 0.1, startSec));
         return { ...c, sampleStartSec: clampedStart, sampleEndSec: clampedEnd };
       }),
     })),
@@ -103,6 +103,7 @@ export const useAudioClipStore = create<AudioClipStore>((set) => ({
     set((s) => {
       const clip = s.clips.find((c) => c.id === id);
       if (!clip) return s;
+      if (secPerBar <= 0) return s;
       if (
         splitAtSec <= clip.sampleStartSec + 0.05 ||
         splitAtSec >= clip.sampleEndSec   - 0.05
@@ -118,6 +119,7 @@ export const useAudioClipStore = create<AudioClipStore>((set) => ({
         durationBars:  part1Bars,
         sampleEndSec:  splitAtSec,
         fadeOutSec:    0,
+        fadeInSec:     Math.min(clip.fadeInSec, part1Sec / 2),
       };
       const clip2: AudioClip = {
         ...clip,
@@ -126,6 +128,7 @@ export const useAudioClipStore = create<AudioClipStore>((set) => ({
         durationBars:   part2Sec / secPerBar,
         sampleStartSec: splitAtSec,
         fadeInSec:      0,
+        fadeOutSec:     Math.min(clip.fadeOutSec, part2Sec / 2),
       };
 
       return {
