@@ -1818,6 +1818,13 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
     });
     return () => {
       unsub();
+      // Finalize the last recorded entry's repeats (never updated by a subsequent scene trigger)
+      const lastBar = useDrumStore.getState().barCycle;
+      const chain   = useDrumStore.getState().songChain;
+      if (recBarStart.current >= 0 && chain.length > 0) {
+        const actualRepeats = Math.max(1, lastBar - recBarStart.current);
+        useDrumStore.getState().updateSongEntry(chain.length - 1, { repeats: actualRepeats });
+      }
       // Restore quantize to what it was before recording
       if (prevQ === "immediate") useSceneStore.getState().setLaunchQuantize(prevQ);
     };
