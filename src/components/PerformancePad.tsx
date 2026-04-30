@@ -19,7 +19,6 @@ import { bassEngine, SCALES } from "../audio/BassEngine";
 import { audioEngine } from "../audio/AudioEngine";
 import { sendFxManager } from "../audio/SendFx";
 import { ArpScheduler } from "../audio/ArpScheduler";
-import { DEFAULT_ARP_SETTINGS } from "../audio/Arpeggiator";
 import { getMelodyEngineFxChain } from "../audio/MelodyLayerFx";
 
 interface Props {
@@ -116,12 +115,15 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   const [shimmerDepth, setShimmerDepth] = useState(0.55);
   const [shimmerFeedback, setShimmerFeedback] = useState(0.28);
   const [padVolume, setPadVolume] = useState(80);
-  const [arpOn, setArpOn] = useState(DEFAULT_ARP_SETTINGS.mode !== "off");
+  const [arpOn, setArpOn] = useState(false);
   const [arpMode, setArpMode] = useState<"up" | "updown" | "random">("up");
   const [arpRate, setArpRate] = useState<"1/4" | "1/8" | "1/16">("1/8");
   const [arpOctaves, setArpOctaves] = useState<1 | 2>(1);
   const [arpLatch, setArpLatch] = useState(false);
-  const arpSchedulerRef = useRef(new ArpScheduler());
+  const arpSchedulerRef = useRef<ArpScheduler | null>(null);
+  if (arpSchedulerRef.current === null) {
+    arpSchedulerRef.current = new ArpScheduler();
+  }
   const arpRootRef = useRef<number>(60);
   void arpRootRef; // used by upcoming arp trigger logic (Task 4)
 
@@ -152,7 +154,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
 
   useEffect(() => {
     const sched = arpSchedulerRef.current;
-    return () => { sched.stop(); };
+    return () => { sched?.stop(); };
   }, []);
 
   /** Apply chord-follow: transpose Bass + Melody engines to match the given chord root.
@@ -175,7 +177,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
 
   const handleArpToggle = useCallback(() => {
     setArpOn((prev) => {
-      if (prev) arpSchedulerRef.current.stop();
+      if (prev) arpSchedulerRef.current?.stop();
       return !prev;
     });
   }, []);
