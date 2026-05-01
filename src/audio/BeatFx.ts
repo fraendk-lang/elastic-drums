@@ -206,7 +206,33 @@ class BeatFxManager {
     this._spiralLfo.start();
   }
 
-  private _buildFreeze(_ctx: AudioContext): void {}
+  private _buildFreeze(ctx: AudioContext): void {
+    const pumpGain = audioEngine.getPumpGain();
+    if (!pumpGain) return;
+
+    // Ring buffer holds 500ms of audio (mono capture from analyser)
+    const ringLen = Math.ceil(ctx.sampleRate * 0.5);
+    this._freezeRingBuffer = new Float32Array(ringLen);
+    this._freezeRingPos = 0;
+
+    const tempBuf = new Float32Array(2048); // matches analyser fftSize
+
+    // Continuously fill ring buffer from masterAnalyser time-domain data
+    this._freezeRingTimer = setInterval(() => {
+      const analyser = audioEngine.getMasterAnalyser();
+      if (!analyser || !this._freezeRingBuffer) return;
+      analyser.getFloatTimeDomainData(tempBuf);
+      for (let i = 0; i < tempBuf.length; i++) {
+        this._freezeRingBuffer[this._freezeRingPos] = tempBuf[i]!;
+        this._freezeRingPos = (this._freezeRingPos + 1) % this._freezeRingBuffer.length;
+      }
+    }, 20);
+
+    // Freeze output gain (connects into pumpGain)
+    this._freezeGain = ctx.createGain();
+    this._freezeGain.gain.value = 0;
+    this._freezeGain.connect(pumpGain);
+  }
 
   private _startSpiral(): void {
     if (!this._spiralWet || !this._spiralLfo || !this._ctx) return;
@@ -228,8 +254,59 @@ class BeatFxManager {
     this._spiralWet.gain.linearRampToValueAtTime(0, now + 0.15);
   }
 
-  private _startFreeze(): void {}
-  private _stopFreeze(): void {}
+  private _startFreeze(): void {
+    if (!this._freezeRingBuffer || !this._freezeGain || !this._ctx) return;
+    const ctx = this._ctx;
+    const now = ctx.currentTime;
+
+    // Determine how many samples to capture based on freezeLength param
+    const capMs = 10 + this.params.freezeLength * 190; // 10–200 ms
+    this._freezeCaptureSamples = Math.ceil((capMs / 1000) * ctx.sampleRate);
+    const capLen = Math.min(this._freezeCaptureSamples, this._freezeRingBuffer.length);
+
+    // Copy last `capLen` samples from ring buffer into AudioBuffer
+    const buf = ctx.createBuffer(1, capLen, ctx.sampleRate);
+    const out = buf.getChannelData(0);
+    const ringLen = this._freezeRingBuffer.length;
+    const startPos = (this._freezeRingPos - capLen + ringLen) % ringLen;
+    for (let i = 0; i < capLen; i++) {
+      out[i] = this._freezeRingBuffer[(startPos + i) % ringLen]!;
+    }
+
+    // Stop previous source if any
+    if (this._freezeSource) {
+      try { this._freezeSource.stop(); } catch { /* already stopped */ }
+      this._freezeSource.disconnect();
+    }
+
+    this._freezeSource = ctx.createBufferSource();
+    this._freezeSource.buffer = buf;
+    this._freezeSource.loop = true;
+    this._freezeSource.connect(this._freezeGain);
+    this._freezeSource.start(now);
+
+    // Crossfade in (30ms)
+    this._freezeGain.gain.cancelScheduledValues(now);
+    this._freezeGain.gain.setValueAtTime(0, now);
+    this._freezeGain.gain.linearRampToValueAtTime(1.0, now + 0.03);
+  }
+
+  private _stopFreeze(): void {
+    if (!this._freezeGain || !this._ctx) return;
+    const now = this._ctx.currentTime;
+    this._freezeGain.gain.cancelScheduledValues(now);
+    this._freezeGain.gain.setValueAtTime(this._freezeGain.gain.value, now);
+    this._freezeGain.gain.linearRampToValueAtTime(0, now + 0.08);
+    // Stop source after fade completes
+    const src = this._freezeSource;
+    if (src) {
+      setTimeout(() => {
+        try { src.stop(); } catch { /* already stopped */ }
+        src.disconnect();
+      }, 120);
+      this._freezeSource = null;
+    }
+  }
 
   private _buildNoise(ctx: AudioContext): void {
     const pumpGain = audioEngine.getPumpGain();
