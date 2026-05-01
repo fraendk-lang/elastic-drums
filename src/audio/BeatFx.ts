@@ -166,10 +166,68 @@ class BeatFxManager {
   }
 
   // Stubs for tasks 4–5 (filled in later tasks)
-  private _buildSpiral(_ctx: AudioContext): void {}
+  private _buildSpiral(ctx: AudioContext): void {
+    const pumpGain = audioEngine.getPumpGain();
+    if (!pumpGain) return;
+
+    // Flanger: delay modulated by LFO (0.1–5 ms range)
+    this._spiralDelay = ctx.createDelay(0.02);
+    this._spiralDelay.delayTime.value = 0.003; // 3ms center
+
+    this._spiralFeedback = ctx.createGain();
+    this._spiralFeedback.gain.value = 0.5;
+
+    this._spiralLfo = ctx.createOscillator();
+    this._spiralLfo.type = 'sine';
+    this._spiralLfo.frequency.value = 0.2 + this.params.spiralSpeed * 7.8;
+
+    this._spiralLfoGain = ctx.createGain();
+    this._spiralLfoGain.gain.value = 0.002; // ±2ms sweep
+
+    this._spiralWet = ctx.createGain();
+    this._spiralWet.gain.value = 0; // silent until press
+
+    this._spiralDry = ctx.createGain();
+    this._spiralDry.gain.value = 1;
+
+    // LFO → delay time modulation
+    this._spiralLfo.connect(this._spiralLfoGain);
+    this._spiralLfoGain.connect(this._spiralDelay.delayTime);
+
+    // Signal path: pumpGain input → spiral delay → feedback → wet out
+    // The flanger signal is injected back INTO pumpGain (parallel)
+    pumpGain.connect(this._spiralDelay);
+    this._spiralDelay.connect(this._spiralFeedback);
+    this._spiralFeedback.connect(this._spiralDelay); // feedback loop
+    this._spiralDelay.connect(this._spiralWet);
+    this._spiralWet.connect(pumpGain);
+
+    // LFO starts running (wet is at 0 so no sound until press)
+    this._spiralLfo.start();
+  }
+
   private _buildFreeze(_ctx: AudioContext): void {}
-  private _startSpiral(): void {}
-  private _stopSpiral(): void {}
+
+  private _startSpiral(): void {
+    if (!this._spiralWet || !this._spiralLfo || !this._ctx) return;
+    const now = this._ctx.currentTime;
+    this._spiralLfo.frequency.setValueAtTime(
+      0.2 + this.params.spiralSpeed * 7.8,
+      now
+    );
+    this._spiralWet.gain.cancelScheduledValues(now);
+    this._spiralWet.gain.setValueAtTime(0, now);
+    this._spiralWet.gain.linearRampToValueAtTime(0.7, now + 0.1);
+  }
+
+  private _stopSpiral(): void {
+    if (!this._spiralWet || !this._ctx) return;
+    const now = this._ctx.currentTime;
+    this._spiralWet.gain.cancelScheduledValues(now);
+    this._spiralWet.gain.setValueAtTime(this._spiralWet.gain.value, now);
+    this._spiralWet.gain.linearRampToValueAtTime(0, now + 0.15);
+  }
+
   private _startFreeze(): void {}
   private _stopFreeze(): void {}
 
