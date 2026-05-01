@@ -70,6 +70,7 @@ function MiniSlider({
 export function BeatFxPanel() {
   const [active, setActive] = useState<BeatFxId | null>(null);
   const [params, setParams] = useState<BeatFxParams>({ ...beatFxManager.params });
+  const [collapsed, setCollapsed] = useState(false);
   const connected = useRef(false);
 
   useEffect(() => {
@@ -98,17 +99,60 @@ export function BeatFxPanel() {
     beatFxManager.setParam(id, key, value);
   };
 
+  if (collapsed) {
+    return (
+      <div
+        className="flex flex-col items-center justify-start select-none shrink-0 cursor-pointer"
+        style={{ width: 16, background: "#07070e", borderLeft: "1px solid rgba(255,255,255,0.05)" }}
+        onClick={() => setCollapsed(false)}
+        title="Beat FX einblenden"
+      >
+        <div
+          style={{
+            marginTop: 40,
+            fontSize: 6,
+            fontWeight: 900,
+            letterSpacing: "0.18em",
+            color: "rgba(255,255,255,0.22)",
+            writingMode: "vertical-rl",
+            transform: "rotate(180deg)",
+            cursor: "pointer",
+          }}
+        >
+          BEAT FX
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="flex flex-col select-none shrink-0"
       style={{ width: 80, background: "#07070e", borderLeft: "1px solid rgba(255,255,255,0.05)" }}
     >
-      {/* Header */}
+      {/* Header with collapse button */}
       <div
-        className="text-center shrink-0"
-        style={{ padding: "6px 0 4px", fontSize: 6, fontWeight: 900, letterSpacing: "0.2em", color: "rgba(255,255,255,0.18)" }}
+        className="flex items-center justify-between shrink-0"
+        style={{ padding: "5px 5px 3px 8px" }}
       >
-        BEAT FX
+        <span style={{ fontSize: 6, fontWeight: 900, letterSpacing: "0.2em", color: "rgba(255,255,255,0.18)" }}>
+          BEAT FX
+        </span>
+        <button
+          onClick={() => setCollapsed(true)}
+          style={{
+            background: "none",
+            border: "none",
+            color: "rgba(255,255,255,0.2)",
+            cursor: "pointer",
+            fontSize: 8,
+            lineHeight: 1,
+            padding: "1px 2px",
+          }}
+          title="Beat FX ausblenden"
+        >
+          ✕
+        </button>
       </div>
 
       {/* Effects */}
