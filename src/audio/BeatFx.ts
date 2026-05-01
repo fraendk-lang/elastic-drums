@@ -297,14 +297,13 @@ class BeatFxManager {
     this._freezeGain.gain.cancelScheduledValues(now);
     this._freezeGain.gain.setValueAtTime(this._freezeGain.gain.value, now);
     this._freezeGain.gain.linearRampToValueAtTime(0, now + 0.08);
-    // Stop source after fade completes
     const src = this._freezeSource;
+    this._freezeSource = null;
     if (src) {
-      setTimeout(() => {
-        try { src.stop(); } catch { /* already stopped */ }
-        src.disconnect();
-      }, 120);
-      this._freezeSource = null;
+      // Disconnect immediately — prevents bleed if freeze is re-triggered within 80ms.
+      // No click risk since the gain is already fading to 0.
+      src.disconnect();
+      try { src.stop(); } catch { /* already stopped */ }
     }
   }
 
