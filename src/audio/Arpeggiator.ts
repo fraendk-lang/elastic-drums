@@ -216,8 +216,12 @@ export function generateArpNotes(
   if (extraChordNotes.length > 0) {
     poolBase = [...new Set(extraChordNotes)].sort((a, b) => a - b);
   } else {
-    const baseOctave = Math.floor(baseNote / 12);
-    const scaleNotes = getScaleNotes(rootMidi, scaleName, baseOctave - 1, baseOctave - 1 + octaves);
+    // Compute octave offset of baseNote relative to rootMidi so getScaleNotes
+    // generates notes in the correct playable range (not MIDI 108+ like the old code did).
+    const rootOctave = Math.floor(rootMidi / 12);
+    const noteOctave = Math.floor(baseNote / 12);
+    const startOct = noteOctave - rootOctave;
+    const scaleNotes = getScaleNotes(rootMidi, scaleName, startOct, startOct + octaves);
     if (scaleNotes.length === 0) {
       return [{ offset: 0, note: baseNote, duration: noteDuration, velocity: baseVelocity }];
     }
