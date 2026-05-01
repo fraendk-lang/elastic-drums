@@ -34,10 +34,10 @@ class BeatFxManager {
 
   // THROW state
   private _throwPreLevel = 0;
-  private _throwPreSize = 1.0;
 
   // ECHO state
   private _echoPreFeedback = 0.4;
+  private _echoPreFeedbackSaved = false;
   private _echoRestoreTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ── Nodes created on connect() — populated in Tasks 3–5 ─────────────────
@@ -123,8 +123,8 @@ class BeatFxManager {
 
   private _startThrow(): void {
     this._throwPreLevel = audioEngine.getReverbLevel();
-    this._throwPreSize = 0.5 + this.params.throwSize * 5.5; // 0.5–6s
-    audioEngine.setReverbSize(this._throwPreSize);
+    const throwSize = 0.5 + this.params.throwSize * 5.5; // 0.5–6s
+    audioEngine.setReverbSize(throwSize);
     audioEngine.setReverbLevelSmooth(1.0, 0.08);
   }
 
@@ -138,7 +138,11 @@ class BeatFxManager {
     if (this._echoRestoreTimer) { clearTimeout(this._echoRestoreTimer); this._echoRestoreTimer = null; }
     const fbGain = audioEngine.getDelayFeedbackGain();
     if (!fbGain || !this._ctx) return;
-    this._echoPreFeedback = fbGain.gain.value;
+    // Only save pre-press level on first press (not on rapid re-press mid-ramp)
+    if (!this._echoPreFeedbackSaved) {
+      this._echoPreFeedback = fbGain.gain.value;
+      this._echoPreFeedbackSaved = true;
+    }
     const target = 0.5 + this.params.echoFeedback * 0.42; // 0.5–0.92
     fbGain.gain.cancelScheduledValues(this._ctx.currentTime);
     fbGain.gain.setValueAtTime(fbGain.gain.value, this._ctx.currentTime);
@@ -157,6 +161,7 @@ class BeatFxManager {
     this._echoRestoreTimer = setTimeout(() => {
       const fbNow = audioEngine.getDelayFeedbackGain();
       if (fbNow) fbNow.gain.value = restore;
+      this._echoPreFeedbackSaved = false; // reset so next press saves fresh value
     }, 2500);
   }
 
