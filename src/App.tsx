@@ -32,6 +32,7 @@ const MidiClockPanel = lazy(() => import("./components/MidiClockPanel").then((m)
 const UserGuide = lazy(() => import("./components/UserGuide").then((m) => ({ default: m.UserGuide })));
 const PerformancePad = lazy(() => import("./components/PerformancePad").then((m) => ({ default: m.PerformancePad })));
 const MelodyGenerator = lazy(() => import("./components/MelodyGenerator").then((m) => ({ default: m.MelodyGenerator })));
+import { BeatFxPanel } from "./components/BeatFxPanel";
 import { ShortcutOverlay } from "./components/ShortcutOverlay";
 import { getMidiClockMode, subscribeMidiClockMode } from "./store/midiClockMode";
 import { bassEngine } from "./audio/BassEngine";
@@ -478,9 +479,12 @@ export function App() {
             <StepSequencer />
           </div>
 
-          {/* Right: Mini Mixer (hidden on small screens) */}
-          <div className="hidden lg:block w-44 border-l border-[var(--ed-border)] shrink-0">
-            <MixerStrip onOpenMixer={() => overlay.openOverlay("mixer")} />
+          {/* Right: Mini Mixer + Beat FX Sidebar */}
+          <div className="hidden lg:flex shrink-0">
+            <div className="w-44 border-l border-[var(--ed-border)]">
+              <MixerStrip onOpenMixer={() => overlay.openOverlay("mixer")} />
+            </div>
+            <BeatFxPanel />
           </div>
         </div>
 
