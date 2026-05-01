@@ -22,6 +22,7 @@ export class AudioEngine {
   private contextMode: "stable" | "live" = "stable";
 
   private masterGain: GainNode | null = null;
+  private chokeFilter: BiquadFilterNode | null = null;
   private masterAnalyser: AnalyserNode | null = null;
   private masterCompressor: DynamicsCompressorNode | null = null;
   private masterEqLow: BiquadFilterNode | null = null;
@@ -128,8 +129,14 @@ export class AudioEngine {
       fxNodes.masterSaturationDry.connect(this.pumpGain);
       fxNodes.masterSaturationWet.connect(this.pumpGain);
 
-      // pumpGain → compressor → limiter → analyser → speakers
-      this.pumpGain.connect(this.masterCompressor);
+      // pumpGain → chokeFilter → compressor → limiter → analyser → speakers
+      // chokeFilter defaults to 20 000 Hz (fully open) — BeatFx controls it for CHOKE effect
+      this.chokeFilter = this.ctx.createBiquadFilter();
+      this.chokeFilter.type = "lowpass";
+      this.chokeFilter.frequency.value = 20000;
+      this.chokeFilter.Q.value = 0.5;
+      this.pumpGain.connect(this.chokeFilter);
+      this.chokeFilter.connect(this.masterCompressor);
       this.masterCompressor.connect(this.masterLimiter);
       this.masterLimiter.connect(this.masterAnalyser);
       this.masterAnalyser.connect(this.ctx.destination);
@@ -217,6 +224,10 @@ export class AudioEngine {
 
   getAudioContext(): AudioContext | null { return this.ctx; }
   getMasterGainNode(): GainNode | null { return this.masterGain; }
+  getChokeFilter(): BiquadFilterNode | null { return this.chokeFilter; }
+  getPumpGain(): GainNode | null { return this.pumpGain; }
+  getMasterAnalyser(): AnalyserNode | null { return this.masterAnalyser; }
+  getDelayFeedbackGain(): GainNode | null { return sendFxManager.getDelayFeedbackGain(); }
   getContextMode(): "stable" | "live" { return this.contextMode; }
   setContextMode(mode: "stable" | "live"): void {
     if (this.contextMode === mode) return;

@@ -734,6 +734,8 @@ export class SendFxManager {
     if (this.delayGain) this.delayGain.gain.value = level;
   }
 
+  getDelayFeedbackGain(): GainNode | null { return this.delayFeedback; }
+
   getDelayLevel(): number {
     return this.delayGain?.gain.value ?? 0;
   }
