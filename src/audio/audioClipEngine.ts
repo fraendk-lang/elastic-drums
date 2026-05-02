@@ -40,9 +40,8 @@ function startClip(clip: AudioClip, extraOffsetSec: number, startAtTime: number)
 
   const gain = ctx.createGain();
   src.connect(gain);
-  // Route through master gain so all FX / compressor / Beat FX apply
-  const masterGain = audioEngine.getMasterGainNode();
-  gain.connect(masterGain ?? ctx.destination);
+  // Route through dedicated AUDIO channel (27) — goes through mixer, FX chain, Beat FX
+  gain.connect(audioEngine.getChannelOutput(27));
 
   const when        = Math.max(ctx.currentTime, startAtTime);
   const offsetInBuf = clip.sampleStartSec + extraOffsetSec;

@@ -21,6 +21,8 @@ import {
   type ArrangementClip,
   type ArrangementTrackId,
 } from "../store/arrangementStore";
+import { useMixerBarStore } from "../store/mixerBarStore";
+import { MixerBar } from "./MixerBar";
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 
@@ -880,13 +882,15 @@ interface ArrangementStatusBarProps {
   onClose:        () => void;
   arrMode:        "scene" | "clips";
   onSetArrMode:   (m: "scene" | "clips") => void;
+  onToggleMixer?: () => void;
+  mixerVisible?:  boolean;
 }
 
 function ArrangementStatusBar({
   chainLength, totalBars, songMode, setSongMode,
   isRecording, setIsRecording, recCount,
   barPx, setBarPx, onClear, onClose,
-  arrMode, onSetArrMode,
+  arrMode, onSetArrMode, onToggleMixer, mixerVisible,
 }: ArrangementStatusBarProps) {
   return (
     <div className="flex items-center justify-between px-4 py-2 border-b border-white/8 shrink-0">
@@ -966,6 +970,19 @@ function ArrangementStatusBar({
         >
           CLEAR
         </button>
+
+        {onToggleMixer && (
+          <button
+            onClick={onToggleMixer}
+            className={`px-2 py-1 rounded text-[8px] font-bold transition-all border ${
+              mixerVisible
+                ? "border-[#10b981]/50 bg-[#10b981]/15 text-[#10b981]"
+                : "border-white/10 bg-white/5 text-white/40 hover:text-white/70"
+            }`}
+          >
+            MIXER
+          </button>
+        )}
 
         <button
           onClick={onClose}
@@ -1708,6 +1725,23 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
   const splitClip          = useAudioClipStore((s) => s.splitClip);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
 
+  // Mixer M/S state — read from mixerBarStore for live feedback
+  const mixerChannels  = useMixerBarStore((s) => s.channels);
+  const setMixerMute   = useMixerBarStore((s) => s.setMute);
+  const setMixerSolo   = useMixerBarStore((s) => s.setSolo);
+  const setGroupMute   = useMixerBarStore((s) => s.setGroupMute);
+  const groupBuses     = useMixerBarStore((s) => s.groupBuses);
+  // Track → mixer channel mapping (DRUMS uses group bus, others use named channels)
+  const TRACK_MIXER: Record<string, number | null> = {
+    drums: null,   // uses group bus "drums"
+    bass:  12,
+    chords: 13,
+    melody: 14,
+    loops:  null,  // group bus "loops"
+    audio:  27,
+  };
+  const [showMixer, setShowMixer]               = useState(false);
+
   const [arrMode, setArrMode]                 = useState<"scene" | "clips">("scene");
   const setArrangementMode                    = useDrumStore((s) => s.setArrangementMode);
 
@@ -2197,6 +2231,8 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
             setArrMode(m);
             setArrangementMode(m === "clips");
           }}
+          onToggleMixer={() => setShowMixer(v => !v)}
+          mixerVisible={showMixer}
         />
 
         {/* Timeline */}
@@ -2211,60 +2247,145 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
           <div className="shrink-0 border-r border-white/8 flex flex-col" style={{ width: LABEL_W }}>
             <div style={{ height: RULER_H }} className="border-b border-white/8 shrink-0" />
             {TRACKS.map(({ id, label }) => {
-              const trackColor = TRACK_COLORS[id as keyof typeof TRACK_COLORS];
+              const trackColor  = TRACK_COLORS[id as keyof typeof TRACK_COLORS];
+              const mixCh       = TRACK_MIXER[id];
+              // Mute state: channel mute (bass/chords/melody) or group bus (drums)
+              const isMuted     = id === "drums"
+                ? groupBuses["drums"]?.muted ?? false
+                : mixCh !== null && mixCh !== undefined
+                  ? (mixerChannels[mixCh]?.muted ?? false)
+                  : false;
+              const isSoloed    = mixCh !== null && mixCh !== undefined
+                ? (mixerChannels[mixCh]?.soloed ?? false)
+                : false;
+
+              const toggleMute = () => {
+                if (id === "drums") setGroupMute("drums", !isMuted);
+                else if (mixCh !== null && mixCh !== undefined) setMixerMute(mixCh, !isMuted);
+              };
+              const toggleSolo = () => {
+                if (mixCh !== null && mixCh !== undefined) setMixerSolo(mixCh, !isSoloed);
+              };
+
               return (
                 <div
                   key={id}
-                  className="relative flex items-center border-b border-white/5 shrink-0 pl-3"
+                  className="relative flex items-center justify-between border-b border-white/5 shrink-0 pl-3 pr-1"
                   style={{ height: TRACK_H }}
                 >
-                  {/* Colored left accent bar */}
                   <div
                     className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
-                    style={{ backgroundColor: hexAlpha(trackColor, 0.7) }}
+                    style={{ backgroundColor: hexAlpha(trackColor, isMuted ? 0.2 : 0.7) }}
                   />
                   <span
                     className="text-[8px] font-black tracking-[0.18em]"
-                    style={{ color: hexAlpha(trackColor, 0.65) }}
+                    style={{ color: hexAlpha(trackColor, isMuted ? 0.25 : 0.65) }}
                   >
                     {label}
                   </span>
+                  {/* M/S buttons */}
+                  <div className="flex gap-0.5">
+                    <button
+                      onClick={toggleMute}
+                      title="Mute"
+                      className="w-5 h-5 rounded text-[7px] font-black transition-all"
+                      style={{
+                        background: isMuted ? "#ef444426" : "rgba(255,255,255,0.04)",
+                        border:     `1px solid ${isMuted ? "#ef4444aa" : "rgba(255,255,255,0.08)"}`,
+                        color:      isMuted ? "#ef4444" : "rgba(255,255,255,0.3)",
+                      }}
+                    >M</button>
+                    <button
+                      onClick={toggleSolo}
+                      title="Solo"
+                      className="w-5 h-5 rounded text-[7px] font-black transition-all"
+                      style={{
+                        background: isSoloed ? "#f59e0b26" : "rgba(255,255,255,0.04)",
+                        border:     `1px solid ${isSoloed ? "#f59e0baa" : "rgba(255,255,255,0.08)"}`,
+                        color:      isSoloed ? "#f59e0b" : "rgba(255,255,255,0.3)",
+                      }}
+                    >S</button>
+                  </div>
                 </div>
               );
             })}
-            {Array.from({ length: N_LOOP_ROWS }, (_, si) => (
+            {Array.from({ length: N_LOOP_ROWS }, (_, si) => {
+              const loopCh     = 16 + si; // LP 1 = ch 16, LP 2 = ch 17, LP 3 = ch 18
+              const isLMuted   = mixerChannels[loopCh]?.muted ?? false;
+              const isLSoloed  = mixerChannels[loopCh]?.soloed ?? false;
+              return (
               <div
                 key={si}
-                className="relative flex items-center border-b border-white/5 shrink-0 pl-3"
+                className="relative flex items-center justify-between border-b border-white/5 shrink-0 pl-3 pr-1"
                 style={{ height: LOOP_H }}
               >
                 <div
                   className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
-                  style={{ backgroundColor: hexAlpha(LOOP_COLOR, 0.6) }}
+                  style={{ backgroundColor: hexAlpha(LOOP_COLOR, isLMuted ? 0.15 : 0.6) }}
                 />
                 <span
                   className="text-[8px] font-black tracking-[0.18em]"
-                  style={{ color: hexAlpha(LOOP_COLOR, 0.6) }}
+                  style={{ color: hexAlpha(LOOP_COLOR, isLMuted ? 0.2 : 0.6) }}
                 >
                   {si === 0 ? "LOOPS" : `LOOP ${si + 1}`}
                 </span>
+                <div className="flex gap-0.5">
+                  <button onClick={() => setMixerMute(loopCh, !isLMuted)} title="Mute"
+                    className="w-5 h-5 rounded text-[7px] font-black transition-all"
+                    style={{
+                      background: isLMuted ? "#ef444426" : "rgba(255,255,255,0.04)",
+                      border: `1px solid ${isLMuted ? "#ef4444aa" : "rgba(255,255,255,0.08)"}`,
+                      color: isLMuted ? "#ef4444" : "rgba(255,255,255,0.3)",
+                    }}>M</button>
+                  <button onClick={() => setMixerSolo(loopCh, !isLSoloed)} title="Solo"
+                    className="w-5 h-5 rounded text-[7px] font-black transition-all"
+                    style={{
+                      background: isLSoloed ? "#f59e0b26" : "rgba(255,255,255,0.04)",
+                      border: `1px solid ${isLSoloed ? "#f59e0baa" : "rgba(255,255,255,0.08)"}`,
+                      color: isLSoloed ? "#f59e0b" : "rgba(255,255,255,0.3)",
+                    }}>S</button>
+                </div>
               </div>
-            ))}
+              );
+            })}
             {/* AUDIO track label */}
+            {(() => {
+              const isAMuted  = mixerChannels[27]?.muted  ?? false;
+              const isASoloed = mixerChannels[27]?.soloed ?? false;
+              return (
             <div
-              className="relative flex items-center justify-between border-b border-white/5 shrink-0 pl-3 pr-1"
+              className="relative flex flex-col justify-center border-b border-white/5 shrink-0 pl-3 pr-1 gap-1"
               style={{ height: AUDIO_H }}
             >
               <div
                 className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
-                style={{ backgroundColor: hexAlpha(AUDIO_COLOR, 0.7) }}
+                style={{ backgroundColor: hexAlpha(AUDIO_COLOR, isAMuted ? 0.2 : 0.7) }}
               />
-              <span
-                className="text-[8px] font-black tracking-[0.18em]"
-                style={{ color: hexAlpha(AUDIO_COLOR, 0.65) }}
-              >
-                AUDIO
-              </span>
+              <div className="flex items-center justify-between">
+                <span
+                  className="text-[8px] font-black tracking-[0.18em]"
+                  style={{ color: hexAlpha(AUDIO_COLOR, isAMuted ? 0.25 : 0.65) }}
+                >
+                  AUDIO
+                </span>
+                {/* M/S buttons */}
+                <div className="flex gap-0.5">
+                  <button onClick={() => setMixerMute(27, !isAMuted)} title="Mute"
+                    className="w-5 h-5 rounded text-[7px] font-black transition-all"
+                    style={{
+                      background: isAMuted ? "#ef444426" : "rgba(255,255,255,0.04)",
+                      border: `1px solid ${isAMuted ? "#ef4444aa" : "rgba(255,255,255,0.08)"}`,
+                      color: isAMuted ? "#ef4444" : "rgba(255,255,255,0.3)",
+                    }}>M</button>
+                  <button onClick={() => setMixerSolo(27, !isASoloed)} title="Solo"
+                    className="w-5 h-5 rounded text-[7px] font-black transition-all"
+                    style={{
+                      background: isASoloed ? "#f59e0b26" : "rgba(255,255,255,0.04)",
+                      border: `1px solid ${isASoloed ? "#f59e0baa" : "rgba(255,255,255,0.08)"}`,
+                      color: isASoloed ? "#f59e0b" : "rgba(255,255,255,0.3)",
+                    }}>S</button>
+                </div>
+              </div>
               {/* File upload button */}
               <label
                 className="w-5 h-5 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-white/10"
@@ -2311,6 +2432,8 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                 </svg>
               </label>
             </div>
+              );
+            })()}
           </div>
 
           {/* Scrollable area */}
@@ -2734,6 +2857,13 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
         </div>
 
         {/* Context menu */}
+        {/* Embedded mixer — shown when MIXER toggle is active */}
+        {showMixer && (
+          <div className="shrink-0 border-t border-white/8">
+            <MixerBar embedded />
+          </div>
+        )}
+
         {contextMenu && (
           <ArrangementContextMenu
             x={contextMenu.x}

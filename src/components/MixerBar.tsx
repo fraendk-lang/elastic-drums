@@ -44,6 +44,7 @@ const CHANNELS: { id: number; label: string; color: string }[] = [
   { id: 24, label: "LAY 1", color: "#f472b6" },
   { id: 25, label: "LAY 2", color: "#22c55e" },
   { id: 26, label: "LAY 3", color: "#a78bfa" },
+  { id: 27, label: "AUDIO", color: "#f97316" },
 ];
 
 // ── Group bus meta ────────────────────────────────────────────────────────────
@@ -293,7 +294,7 @@ function GroupBusPanel({ groupCanvasRefs, faderH }: GroupBusPanelProps) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function MixerBar() {
+export function MixerBar({ embedded = false }: { embedded?: boolean } = {}) {
   const {
     channels, expandedChannel,
     setFader, setMute, setSolo, setPan, setEQ, setSendRev, setSendDly, setExpanded,
@@ -347,17 +348,19 @@ export function MixerBar() {
   return (
     <div className="relative flex flex-col shrink-0 bg-[#0e0e0e] border-t border-white/[0.07]">
       {/* ── Top resize handle — drag up to grow, drag down to shrink ─────── */}
-      <div
-        onPointerDown={handleResizeStart}
-        className="group absolute top-0 left-0 right-0 h-[8px] cursor-row-resize z-20 flex items-center justify-center"
-        style={{ touchAction: "none" }}
-        title="Drag to resize mixer"
-      >
-        <div className="flex flex-col gap-[2px] items-center opacity-0 group-hover:opacity-60 transition-opacity">
-          <div className="w-8 h-[1.5px] rounded-full bg-white/60" />
-          <div className="w-5 h-[1.5px] rounded-full bg-white/40" />
+      {!embedded && (
+        <div
+          onPointerDown={handleResizeStart}
+          className="group absolute top-0 left-0 right-0 h-[8px] cursor-row-resize z-20 flex items-center justify-center"
+          style={{ touchAction: "none" }}
+          title="Drag to resize mixer"
+        >
+          <div className="flex flex-col gap-[2px] items-center opacity-0 group-hover:opacity-60 transition-opacity">
+            <div className="w-8 h-[1.5px] rounded-full bg-white/60" />
+            <div className="w-5 h-[1.5px] rounded-full bg-white/40" />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Expanded panel — rendered above the strip */}
       {expandedChannel !== null && (

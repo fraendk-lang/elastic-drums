@@ -7,7 +7,7 @@
 
 import { create } from "zustand";
 
-export const NUM_MIXER_CHANNELS = 27; // 0-15 original channels + 16-23 LP 1–8 + 24-26 LAY 1–3
+export const NUM_MIXER_CHANNELS = 28; // 0-15 original + 16-23 LP 1–8 + 24-26 LAY 1–3 + 27 AUDIO
 
 /** Fader position 0-1000 (750 = 0dB unity) */
 export type FaderPos = number;
