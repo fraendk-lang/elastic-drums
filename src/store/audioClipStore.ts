@@ -19,6 +19,7 @@ export interface AudioClip {
   waveformPeaks:  Float32Array;  // 200 normalized 0..1 RMS peaks
   volume:         number;        // 0-1
   color:          string;        // user-assignable accent color
+  loop:           boolean;       // loop continuously while transport plays
   // trim / fade (non-destructive, default = full file, no fade)
   sampleStartSec: number;        // seconds into buffer where playback begins
   sampleEndSec:   number;        // seconds into buffer where playback ends
@@ -34,6 +35,7 @@ interface AudioClipStore {
   resizeClip:    (id: string, durationBars: number) => void;
   setVolume:     (id: string, volume: number) => void;
   setColor:      (id: string, color: string) => void;
+  setLoop:       (id: string, loop: boolean) => void;
   setTrimPoints: (id: string, startSec: number, endSec: number) => void;
   setFades:      (id: string, fadeIn: number, fadeOut: number) => void;
   splitClip:     (id: string, splitAtSec: number, secPerBar: number) => void;
@@ -74,6 +76,11 @@ export const useAudioClipStore = create<AudioClipStore>((set) => ({
   setColor: (id, color) =>
     set((s) => ({
       clips: s.clips.map((c) => (c.id === id ? { ...c, color } : c)),
+    })),
+
+  setLoop: (id, loop) =>
+    set((s) => ({
+      clips: s.clips.map((c) => (c.id === id ? { ...c, loop } : c)),
     })),
 
   setTrimPoints: (id, startSec, endSec) =>

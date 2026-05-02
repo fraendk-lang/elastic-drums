@@ -40,14 +40,34 @@ function startClip(clip: AudioClip, extraOffsetSec: number, startAtTime: number)
 
   const gain = ctx.createGain();
   src.connect(gain);
-  gain.connect(ctx.destination);
+  // Route through master gain so all FX / compressor / Beat FX apply
+  const masterGain = audioEngine.getMasterGainNode();
+  gain.connect(masterGain ?? ctx.destination);
+
+  const when        = Math.max(ctx.currentTime, startAtTime);
+  const offsetInBuf = clip.sampleStartSec + extraOffsetSec;
+
+  if (clip.loop) {
+    // Continuous loop — AudioBufferSourceNode.loop handles repetition natively
+    src.loop      = true;
+    src.loopStart = clip.sampleStartSec;
+    src.loopEnd   = clip.sampleEndSec;
+    // Fade in only at clip start
+    if (clip.fadeInSec > 0 && extraOffsetSec === 0) {
+      gain.gain.setValueAtTime(0, when);
+      gain.gain.linearRampToValueAtTime(clip.volume, when + clip.fadeInSec);
+    } else {
+      gain.gain.setValueAtTime(clip.volume, when);
+    }
+    src.start(when, offsetInBuf);
+    // No src.stop() — runs until stopClip() is called
+    _playing.set(clip.id, src);
+    return;
+  }
 
   // Total audible duration after trim, minus any mid-clip offset
   const playDuration = clip.sampleEndSec - clip.sampleStartSec - extraOffsetSec;
   if (playDuration <= 0) return;
-
-  const when        = Math.max(ctx.currentTime, startAtTime);
-  const offsetInBuf = clip.sampleStartSec + extraOffsetSec;
 
   // Fade in — only when playing from the start of the clip
   if (clip.fadeInSec > 0 && extraOffsetSec === 0) {
@@ -99,11 +119,18 @@ export function seekAudioClips(bar: number): void {
 
   const clips = useAudioClipStore.getState().clips;
   for (const clip of clips) {
-    const clipStartSec = clip.startBar * spb;
-    const clipEndSec   = clipStartSec + (clip.sampleEndSec - clip.sampleStartSec);
-    const nowSec       = bar * spb;
+    const clipStartSec    = clip.startBar * spb;
+    const clipLengthSec   = clip.sampleEndSec - clip.sampleStartSec;
+    const clipEndSec      = clipStartSec + clipLengthSec;
+    const nowSec          = bar * spb;
 
-    if (nowSec >= clipStartSec && nowSec < clipEndSec) {
+    if (clip.loop && nowSec >= clipStartSec) {
+      // Looping clip: compute offset into current loop cycle
+      const elapsed   = nowSec - clipStartSec;
+      const cycleOff  = clipLengthSec > 0 ? elapsed % clipLengthSec : 0;
+      const scheduleAt = transportStart + clipStartSec;
+      startClip(clip, cycleOff, scheduleAt);
+    } else if (!clip.loop && nowSec >= clipStartSec && nowSec < clipEndSec) {
       const extraOffset = nowSec - clipStartSec;
       const scheduleAt  = transportStart + clipStartSec;
       startClip(clip, extraOffset, scheduleAt);
@@ -141,8 +168,11 @@ export function initAudioClipEngine(): void {
     const clips = useAudioClipStore.getState().clips;
     for (const clip of clips) {
       if (clip.startBar === currentBar) {
+        // Clip starts exactly on this bar — fire it (handles both loop and oneshot)
         startClip(clip, 0, barStartTime);
       }
+      // Looping clips that started earlier are already running via AudioBufferSourceNode.loop
+      // — no need to re-fire them here.
     }
   });
 }

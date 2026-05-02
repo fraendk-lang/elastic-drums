@@ -26,7 +26,9 @@ import {
 
 const LABEL_W        = 68;
 const TRACK_H        = 52;
-const LOOP_H         = 36;
+const LOOP_H         = 36;        // height per loop track row
+const N_LOOP_ROWS    = 3;         // number of visible loop track rows (slots 0–2)
+const LOOPS_TOTAL_H  = LOOP_H * N_LOOP_ROWS; // 108px total
 const AUDIO_H        = 52;
 const AUDIO_COLOR    = "#f97316"; // warm orange — distinct from drum red
 const RULER_H        = 22;
@@ -435,12 +437,14 @@ function LoopWaveformCanvas({ peaks, color, width, height }: LoopWaveformCanvasP
 }
 
 // ─── ArrangementLoopLane ──────────────────────────────────────────────────────
+// One row per loop player slot. Rendered N_LOOP_ROWS times (slots 0..N_LOOP_ROWS-1).
 
 interface ArrangementLoopLaneProps {
   songChain:    SongChainEntry[];
   scenes:       (Scene | null)[];
   barPx:        number;
   height:       number;
+  slotIndex:    number;  // which loop player slot this row represents
   songPosition: number;
   songMode:     string;
   selected:     Set<string>;
@@ -450,33 +454,22 @@ interface ArrangementLoopLaneProps {
 }
 
 function ArrangementLoopLane({
-  songChain, scenes, barPx, height,
+  songChain, scenes, barPx, height, slotIndex,
   songPosition, songMode, selected,
   onSelect, onDragOver, onDrop,
 }: ArrangementLoopLaneProps) {
-  const liveSlots = useLoopPlayerStore((s) => s.slots);
+  const liveSlot = useLoopPlayerStore((s) => s.slots[slotIndex]);
 
   return (
     <>
       {songChain.map((entry, i) => {
-        const scene = scenes[entry.sceneIndex] ?? null;
-        const activeSlots = (scene?.loopSlots ?? [])
-          .map((s, idx) => ({ playing: s.playing, idx }))
-          .filter(s => s.playing);
-        const w        = entry.repeats * barPx;
-        const isActive = songMode === "song" && i === songPosition;
-        const isSel    = selected.has(makeSelKey("loops", i));
-
-        // Collect waveform peaks for active slots from the live store
-        const slotsWithPeaks = activeSlots.map(({ idx }) => ({
-          idx,
-          peaks: liveSlots[idx]?.waveformPeaks ?? null,
-          fileName: liveSlots[idx]?.fileName ?? "",
-        }));
-
-        const rowH = activeSlots.length > 0
-          ? Math.max(8, height / Math.min(activeSlots.length, 4))
-          : height;
+        const scene      = scenes[entry.sceneIndex] ?? null;
+        const slotActive = scene?.loopSlots?.[slotIndex]?.playing ?? false;
+        const peaks      = liveSlot?.waveformPeaks ?? null;
+        const fileName   = liveSlot?.fileName ?? "";
+        const w          = entry.repeats * barPx;
+        const isActive   = songMode === "song" && i === songPosition;
+        const isSel      = selected.has(makeSelKey("loops", i));
 
         return (
           <div
@@ -486,9 +479,11 @@ function ArrangementLoopLane({
               width: w, minWidth: w, height,
               backgroundColor: isSel
                 ? hexAlpha(LOOP_COLOR, 0.18)
-                : isActive
-                  ? hexAlpha(LOOP_COLOR, 0.12)
-                  : hexAlpha(LOOP_COLOR, 0.05),
+                : isActive && slotActive
+                  ? hexAlpha(LOOP_COLOR, 0.14)
+                  : slotActive
+                    ? hexAlpha(LOOP_COLOR, 0.08)
+                    : hexAlpha(LOOP_COLOR, 0.03),
               outline:       isSel ? `1px solid ${hexAlpha(LOOP_COLOR, 0.5)}` : "none",
               outlineOffset: "-1px",
               cursor:        "default",
@@ -497,44 +492,28 @@ function ArrangementLoopLane({
             onDragOver={(e) => { e.preventDefault(); onDragOver(i); }}
             onDrop={(e) => onDrop(e, i)}
           >
-            {activeSlots.length === 0 ? (
-              <span className="absolute inset-0 flex items-center px-2 text-[6px] text-white/12">—</span>
-            ) : (
-              slotsWithPeaks.slice(0, 4).map(({ idx, peaks, fileName }, row) => (
-                <div
-                  key={idx}
-                  className="absolute left-0 right-0 overflow-hidden"
-                  style={{ top: row * rowH, height: rowH }}
-                >
-                  {/* Waveform if peaks are available */}
-                  {peaks && w > 20 && (
-                    <LoopWaveformCanvas
-                      peaks={peaks}
-                      color={LOOP_COLOR}
-                      width={w}
-                      height={rowH}
-                    />
-                  )}
-                  {/* Slot label overlay */}
-                  <div className="absolute inset-0 flex items-center px-1.5 pointer-events-none">
-                    <span
-                      className="text-[6px] font-bold leading-none"
-                      style={{ color: hexAlpha(LOOP_COLOR, peaks ? 0.55 : 0.8) }}
-                    >
-                      {peaks
-                        ? (fileName ? fileName.replace(/\.[^.]+$/, "").slice(0, 12) : `L${idx + 1}`)
-                        : `L${idx + 1}`}
-                    </span>
-                  </div>
-                  {/* Row divider */}
-                  {row > 0 && (
-                    <div
-                      className="absolute top-0 left-0 right-0 h-px"
-                      style={{ backgroundColor: hexAlpha(LOOP_COLOR, 0.15) }}
-                    />
-                  )}
+            {slotActive ? (
+              <>
+                {peaks && w > 20 && (
+                  <LoopWaveformCanvas
+                    peaks={peaks}
+                    color={LOOP_COLOR}
+                    width={w}
+                    height={height}
+                  />
+                )}
+                <div className="absolute inset-0 flex items-center px-1.5 pointer-events-none">
+                  <span
+                    className="text-[6px] font-bold leading-none truncate"
+                    style={{ color: hexAlpha(LOOP_COLOR, peaks ? 0.55 : 0.75) }}
+                  >
+                    {fileName ? fileName.replace(/\.[^.]+$/, "").slice(0, 14) : `L${slotIndex + 1}`}
+                  </span>
                 </div>
-              ))
+              </>
+            ) : (
+              <span className="absolute inset-0 flex items-center px-2 text-[6px]"
+                style={{ color: hexAlpha(LOOP_COLOR, 0.1) }}>—</span>
             )}
           </div>
         );
@@ -1416,13 +1395,14 @@ interface AudioClipLaneProps {
   onResize:       (id: string, durationBars: number) => void;
   onDrop:         (e: React.DragEvent) => void;
   onSelect:       (id: string | null) => void;
+  onLoop:         (id: string, loop: boolean) => void;
   onTrimPoints:   (id: string, startSec: number, endSec: number) => void;
   onSplit:        (id: string, splitAtSec: number) => void;
 }
 
 function AudioClipLane({
   clips, barPx, height, totalBars, selectedId,
-  onRemove, onMove, onResize, onDrop, onSelect, onTrimPoints, onSplit,
+  onRemove, onMove, onResize, onDrop, onSelect, onLoop, onTrimPoints, onSplit,
 }: AudioClipLaneProps) {
   const laneRef   = useRef<HTMLDivElement>(null);
   const dragRef   = useRef<{ id: string; offsetBar: number } | null>(null);
@@ -1658,14 +1638,32 @@ function AudioClipLane({
               onPointerDown={(e) => handleTrimPointerDown(e, clip, "right")}
             />
 
-            {/* Filename label */}
-            <div className="absolute top-0 left-0 right-6 px-1.5 pt-0.5 pointer-events-none">
+            {/* Filename label + loop toggle */}
+            <div className="absolute top-0 left-0 right-6 flex items-center gap-1 px-1.5 pt-0.5">
               <span
-                className="text-[6px] font-bold truncate block leading-tight"
+                className="text-[6px] font-bold truncate block leading-tight pointer-events-none"
                 style={{ color: hexAlpha(clip.color, 0.85) }}
               >
                 {clip.fileName.replace(/\.[^.]+$/, "")}
               </span>
+              {/* Loop toggle — click to enable/disable looping */}
+              <button
+                className="shrink-0 flex items-center justify-center rounded"
+                style={{
+                  width: 10, height: 10,
+                  fontSize: 8,
+                  background: clip.loop ? hexAlpha(clip.color, 0.35) : "transparent",
+                  border: `1px solid ${hexAlpha(clip.color, clip.loop ? 0.8 : 0.3)}`,
+                  color: hexAlpha(clip.color, clip.loop ? 1 : 0.4),
+                  cursor: "pointer",
+                  lineHeight: 1,
+                }}
+                title={clip.loop ? "Loop off" : "Loop on"}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); onLoop(clip.id, !clip.loop); }}
+              >
+                ↺
+              </button>
             </div>
 
             {/* Resize handle */}
@@ -1706,6 +1704,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
   const resizeAudioClip    = useAudioClipStore((s) => s.resizeClip);
   const setTrimPoints      = useAudioClipStore((s) => s.setTrimPoints);
   const setFades           = useAudioClipStore((s) => s.setFades);
+  const setAudioLoop       = useAudioClipStore((s) => s.setLoop);
   const splitClip          = useAudioClipStore((s) => s.splitClip);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
 
@@ -2096,6 +2095,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
         waveformPeaks: peaks,
         volume:        1,
         color:         AUDIO_COLOR,
+        loop:          false,
         sampleStartSec: 0,
         sampleEndSec:   buffer.duration,
         fadeInSec:      0,
@@ -2232,21 +2232,24 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                 </div>
               );
             })}
-            <div
-              className="relative flex items-center border-b border-white/5 shrink-0 pl-3"
-              style={{ height: LOOP_H }}
-            >
+            {Array.from({ length: N_LOOP_ROWS }, (_, si) => (
               <div
-                className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
-                style={{ backgroundColor: hexAlpha(LOOP_COLOR, 0.6) }}
-              />
-              <span
-                className="text-[8px] font-black tracking-[0.18em]"
-                style={{ color: hexAlpha(LOOP_COLOR, 0.6) }}
+                key={si}
+                className="relative flex items-center border-b border-white/5 shrink-0 pl-3"
+                style={{ height: LOOP_H }}
               >
-                LOOPS
-              </span>
-            </div>
+                <div
+                  className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
+                  style={{ backgroundColor: hexAlpha(LOOP_COLOR, 0.6) }}
+                />
+                <span
+                  className="text-[8px] font-black tracking-[0.18em]"
+                  style={{ color: hexAlpha(LOOP_COLOR, 0.6) }}
+                >
+                  {si === 0 ? "LOOPS" : `LOOP ${si + 1}`}
+                </span>
+              </div>
+            ))}
             {/* AUDIO track label */}
             <div
               className="relative flex items-center justify-between border-b border-white/5 shrink-0 pl-3 pr-1"
@@ -2293,6 +2296,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                         waveformPeaks: peaks,
                         volume:        1,
                         color:         AUDIO_COLOR,
+                        loop:          false,
                         sampleStartSec: 0,
                         sampleEndSec:   buf.duration,
                         fadeInSec:      0,
@@ -2444,7 +2448,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
               className="relative"
               style={{
                 minWidth: displayBars * barPx,
-                height:   TRACKS.length * TRACK_H + LOOP_H + AUDIO_H,
+                height:   TRACKS.length * TRACK_H + LOOPS_TOTAL_H + AUDIO_H,
               }}
               onPointerMove={handleContentPointerMove}
               onPointerUp={handleContentPointerUp}
@@ -2454,8 +2458,10 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
               {/* Grid backgrounds */}
               {[
                 ...TRACKS.map((_, ri) => ({ top: ri * TRACK_H, h: TRACK_H })),
-                { top: TRACKS.length * TRACK_H, h: LOOP_H },
-                { top: TRACKS.length * TRACK_H + LOOP_H, h: AUDIO_H },
+                ...Array.from({ length: N_LOOP_ROWS }, (_, si) => ({
+                  top: TRACKS.length * TRACK_H + si * LOOP_H, h: LOOP_H,
+                })),
+                { top: TRACKS.length * TRACK_H + LOOPS_TOTAL_H, h: AUDIO_H },
               ].map(({ top, h }, ri) => (
                 <div
                   key={ri}
@@ -2472,7 +2478,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                 const chain = songChain;
                 let x = 0;
                 for (let i = 0; i < moveDrag.to; i++) x += (chain[i]?.repeats ?? 1) * barPx;
-                const totalH = TRACKS.length * TRACK_H + LOOP_H + AUDIO_H;
+                const totalH = TRACKS.length * TRACK_H + LOOPS_TOTAL_H + AUDIO_H;
                 return (
                   <div
                     className="absolute top-0 pointer-events-none z-30"
@@ -2555,29 +2561,33 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                 </div>
               ))}
 
-              {/* Loop lane */}
-              <div
-                className="absolute left-0 flex"
-                style={{ top: TRACKS.length * TRACK_H, height: LOOP_H }}
-              >
-                <ArrangementLoopLane
-                  songChain={songChain}
-                  scenes={scenes}
-                  barPx={barPx}
-                  height={LOOP_H}
-                  songPosition={songPosition}
-                  songMode={songMode}
-                  selected={selected}
-                  onSelect={(i, multi) => selectEntry(i, "loops", multi)}
-                  onDragOver={() => {}}
-                  onDrop={(e, i) => handleSceneDrop(e, i)}
-                />
-              </div>
+              {/* Loop lanes — one row per slot */}
+              {Array.from({ length: N_LOOP_ROWS }, (_, si) => (
+                <div
+                  key={si}
+                  className="absolute left-0 flex"
+                  style={{ top: TRACKS.length * TRACK_H + si * LOOP_H, height: LOOP_H }}
+                >
+                  <ArrangementLoopLane
+                    songChain={songChain}
+                    scenes={scenes}
+                    barPx={barPx}
+                    height={LOOP_H}
+                    slotIndex={si}
+                    songPosition={songPosition}
+                    songMode={songMode}
+                    selected={selected}
+                    onSelect={(i, multi) => selectEntry(i, "loops", multi)}
+                    onDragOver={() => {}}
+                    onDrop={(e, i) => handleSceneDrop(e, i)}
+                  />
+                </div>
+              ))}
 
               {/* AUDIO clip lane */}
               <div
                 className="absolute left-0"
-                style={{ top: TRACKS.length * TRACK_H + LOOP_H }}
+                style={{ top: TRACKS.length * TRACK_H + LOOPS_TOTAL_H }}
               >
                 <AudioClipLane
                   clips={audioClips}
@@ -2590,6 +2600,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                   onResize={resizeAudioClip}
                   onDrop={handleAudioFileDrop}
                   onSelect={setSelectedClipId}
+                  onLoop={setAudioLoop}
                   onTrimPoints={setTrimPoints}
                   onSplit={(id, atSec) => {
                     const secPerBar = (60 / bpm) * 4;
@@ -2606,7 +2617,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                   style={{
                     left:   loopStart * barPx,
                     width:  (loopEnd - loopStart) * barPx,
-                    height: TRACKS.length * TRACK_H + LOOP_H + AUDIO_H,
+                    height: TRACKS.length * TRACK_H + LOOPS_TOTAL_H + AUDIO_H,
                     backgroundColor: "rgba(34,211,238,0.04)",
                     borderLeft:  "1px solid rgba(34,211,238,0.25)",
                     borderRight: "1px solid rgba(34,211,238,0.25)",
@@ -2621,7 +2632,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                   style={{
                     left:            playheadPx,
                     width:           2,
-                    height:          TRACKS.length * TRACK_H + LOOP_H + AUDIO_H,
+                    height:          TRACKS.length * TRACK_H + LOOPS_TOTAL_H + AUDIO_H,
                     backgroundColor: "rgba(255,255,255,0.55)",
                   }}
                 >
