@@ -10,12 +10,12 @@ interface EffectDef {
 }
 
 const EFFECTS: EffectDef[] = [
-  { id: "throw",  label: "THROW",  color: "#3b82f6", params: [{ key: "throwSize",    label: "SIZE" }] },
-  { id: "spiral", label: "SPIRAL", color: "#ec4899", params: [{ key: "spiralSpeed",  label: "SPD"  }] },
-  { id: "echo",   label: "ECHO",   color: "#10b981", params: [{ key: "echoFeedback", label: "FBK"  }] },
-  { id: "freeze", label: "FREEZE", color: "#a78bfa", params: [{ key: "freezeLength", label: "LEN"  }] },
-  { id: "choke",  label: "CHOKE",  color: "#0ea5e9", params: [{ key: "chokeFreq",    label: "FRQ"  }] },
-  { id: "noise",  label: "NOISE",  color: "#6b7280", params: [
+  { id: "throw",   label: "THROW",   color: "#3b82f6", params: [{ key: "throwSize",    label: "SIZE" }] },
+  { id: "echo",    label: "ECHO",    color: "#10b981", params: [{ key: "echoFeedback", label: "FBK"  }] },
+  { id: "choke",   label: "CHOKE",   color: "#0ea5e9", params: [{ key: "chokeFreq",    label: "FRQ"  }] },
+  { id: "stutter", label: "STUTTER", color: "#f59e0b", params: [{ key: "stutterRate",  label: "RATE" }] },
+  { id: "roll",    label: "ROLL",    color: "#a78bfa", params: [{ key: "rollLength",   label: "LEN"  }] },
+  { id: "noise",   label: "NOISE",   color: "#6b7280", params: [
     { key: "noiseVol", label: "VOL" },
     { key: "noiseCut", label: "CUT" },
   ]},
