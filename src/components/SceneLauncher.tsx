@@ -283,7 +283,7 @@ function SceneSlot({ index, scene, isActive, isQueued, onLoad, onQueue, onContex
 // ─── Scene Launcher Modal ───────────────────────────────
 
 export function SceneLauncher({ isOpen, onClose }: SceneLauncherProps) {
-  const { scenes, activeScene, nextScene, captureScene, updateScene, loadScene, queueScene, clearScene, renameScene, duplicateScene, launchQuantize, setLaunchQuantize, setSceneFollowAction } = useSceneStore();
+  const { scenes, activeScene, nextScene, captureScene, updateScene, queueScene, clearScene, renameScene, duplicateScene, launchQuantize, setLaunchQuantize, setSceneFollowAction } = useSceneStore();
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renamingSlot, setRenamingSlot] = useState<number | null>(null);
 
@@ -399,7 +399,7 @@ export function SceneLauncher({ isOpen, onClose }: SceneLauncherProps) {
               scene={scene}
               isActive={activeScene === i}
               isQueued={nextScene === i}
-              onLoad={loadScene}
+              onLoad={queueScene}
               onQueue={queueScene}
               onContextMenu={handleContextMenu}
               onStartRename={handleStartRename}
@@ -440,7 +440,7 @@ export function SceneLauncher({ isOpen, onClose }: SceneLauncherProps) {
           onClose={() => setContextMenu(null)}
           onCapture={handleCapture}
           onUpdate={handleUpdate}
-          onLoad={loadScene}
+          onLoad={queueScene}
           onQueue={queueScene}
           onRename={handleStartRename}
           onClear={clearScene}

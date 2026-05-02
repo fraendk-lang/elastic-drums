@@ -10,7 +10,8 @@
  */
 
 import { create } from "zustand";
-import { useDrumStore, type PatternData } from "./drumStore";
+import { unstable_batchedUpdates } from "react-dom";
+import { useDrumStore, type PatternData, getDrumNextStepTime } from "./drumStore";
 import { useBassStore } from "./bassStore";
 import { useChordsStore } from "./chordsStore";
 import { useMelodyStore } from "./melodyStore";
@@ -139,7 +140,13 @@ export const useClipStore = create<ClipStore>((set, get) => ({
     if (!clip) return;
 
     const ctx = audioEngine.getAudioContext();
-    const cleanupAt = (ctx?.currentTime ?? 0) + 0.005;
+    const now = ctx?.currentTime ?? 0;
+    // Use bar-boundary timing: same strategy as sceneStore.loadScene
+    const bpm = useDrumStore.getState().bpm;
+    const secondsPerStep = 60 / bpm / 4;
+    const nextDrumStep = getDrumNextStepTime();
+    const barBoundary = nextDrumStep > now ? nextDrumStep + secondsPerStep : now;
+    const cleanupAt = Math.max(now, barBoundary - 0.002);
 
     if (clip.track === "drums") {
       useDrumStore.setState({ pattern: deepClone(clip.pattern) });
@@ -216,9 +223,14 @@ export const useClipStore = create<ClipStore>((set, get) => ({
 
   resolveQueuedClips: () => {
     const { queuedClips } = get();
-    for (const track of CLIP_TRACKS) {
-      const slot = queuedClips[track];
-      if (slot !== null) get().loadClip(track, slot);
-    }
+    const toLoad = CLIP_TRACKS.filter((t) => queuedClips[t] !== null);
+    if (toLoad.length === 0) return;
+    // Batch all store updates into one React render cycle
+    unstable_batchedUpdates(() => {
+      for (const track of toLoad) {
+        const slot = queuedClips[track];
+        if (slot !== null) get().loadClip(track, slot);
+      }
+    });
   },
 }));
