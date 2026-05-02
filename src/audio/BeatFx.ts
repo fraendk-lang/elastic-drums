@@ -235,11 +235,22 @@ class BeatFxManager {
     const now = this._ctx.currentTime;
     // stutterRate 0→1: slow (200ms) → fast (40ms)
     const interval = 0.04 + (1 - this.params.stutterRate) * 0.16;
+    const fade = Math.min(0.004, interval * 0.05); // 4ms anti-click fade, max 5% of interval
+    const silenceEnd = interval * 0.28; // 28% silence duty
     const steps = Math.ceil(4 / interval);
+    // Start from current value so first cycle doesn't click
+    pump.gain.cancelScheduledValues(now);
+    pump.gain.setValueAtTime(pump.gain.value, now);
     for (let i = 0; i < steps; i++) {
       const t = now + i * interval;
-      pump.gain.setValueAtTime(1, t);
-      pump.gain.setValueAtTime(0, t + interval * 0.45);
+      // Fade up at cycle start (from 0 for i>0, from current for i=0)
+      pump.gain.linearRampToValueAtTime(1, t + fade);
+      // Hold at 1 until silence point
+      pump.gain.setValueAtTime(1, t + silenceEnd);
+      // Fade down into silence
+      pump.gain.linearRampToValueAtTime(0, t + silenceEnd + fade);
+      // Silence holds until next cycle's fade-up
+      pump.gain.setValueAtTime(0, t + interval - fade);
     }
   }
 
@@ -252,10 +263,13 @@ class BeatFxManager {
 
   // ── ROLL — Short delay loop ────────────────────────────────────────────
   // Loops last N ms of audio while held. Stops cleanly on release.
+  // Graph: pump → rollDelay ⟲ rollFeedback → rollWet → chokeFilter (downstream)
+  // rollWet MUST NOT connect back to pump — that creates a runaway feedback loop.
 
   private _buildRoll(ctx: AudioContext): void {
     const pump = audioEngine.getPumpGain();
-    if (!pump) return;
+    const chokeFilter = audioEngine.getChokeFilter();
+    if (!pump || !chokeFilter) return;
 
     this._rollDelay = ctx.createDelay(0.5);
     this._rollDelay.delayTime.value = 0.1;
@@ -266,18 +280,21 @@ class BeatFxManager {
     this._rollWet = ctx.createGain();
     this._rollWet.gain.value = 0;
 
+    // Tap from pump into the delay loop
     pump.connect(this._rollDelay);
+    // Internal feedback loop (self-contained, gain starts at 0)
     this._rollDelay.connect(this._rollFeedback);
     this._rollFeedback.connect(this._rollDelay);
+    // Wet output goes DOWNSTREAM of pump — avoids the runaway loop
     this._rollDelay.connect(this._rollWet);
-    this._rollWet.connect(pump);
+    this._rollWet.connect(chokeFilter);
   }
 
   private _startRoll(): void {
     if (!this._rollDelay || !this._rollFeedback || !this._rollWet || !this._ctx) return;
     const now = this._ctx.currentTime;
     this._rollDelay.delayTime.setValueAtTime(0.025 + this.params.rollLength * 0.175, now);
-    this._rollFeedback.gain.setValueAtTime(0.88, now);
+    this._rollFeedback.gain.setValueAtTime(0.78, now); // < 1.0 ensures natural decay
     this._rollWet.gain.cancelScheduledValues(now);
     this._rollWet.gain.setValueAtTime(0, now);
     this._rollWet.gain.linearRampToValueAtTime(0.75, now + 0.03);
