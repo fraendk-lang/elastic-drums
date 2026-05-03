@@ -1,5 +1,5 @@
 /**
- * Elastic Drums Service Worker
+ * Elastic Groove Service Worker
  * Caches app shell, WASM binary, and UI assets for offline use.
  */
 

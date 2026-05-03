@@ -12,7 +12,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error("Elastic Drums crashed:", error, info.componentStack);
+    console.error("Elastic Groove crashed:", error, info.componentStack);
   }
 
   render() {

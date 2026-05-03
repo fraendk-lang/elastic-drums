@@ -1,5 +1,5 @@
 /**
- * Elastic Drums AudioWorklet Processor
+ * Elastic Groove AudioWorklet Processor
  *
  * Runs the C++ DSP core (compiled to WASM) in the audio thread.
  * Communication with main thread via MessagePort.

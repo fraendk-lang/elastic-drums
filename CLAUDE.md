@@ -1,8 +1,8 @@
-# Elastic Drums — Project Memory
+# Elastic Groove — Project Memory
 
 ## What is this?
 
-Elastic Drums is a hybrid drum machine combining VA-Synthese (TR-808/909) with a Sample Engine (LinnDrum µ-Law) and an Elektron-level Sequencer. It runs as a Browser instrument (WASM) and VST3/AU Plugin (JUCE), sharing the same C++ DSP core.
+Elastic Groove is a hybrid drum machine combining VA-Synthese (TR-808/909) with a Sample Engine (LinnDrum µ-Law) and an Elektron-level Sequencer. It runs as a Browser instrument (WASM) and VST3/AU Plugin (JUCE), sharing the same C++ DSP core.
 
 ## Architecture
 

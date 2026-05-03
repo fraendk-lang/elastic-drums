@@ -3,7 +3,7 @@
  *
  * Modes:
  *   - Off: no sync
- *   - Send: Elastic Drums is the clock master
+ *   - Send: Elastic Groove is the clock master
  *   - Receive: follow external MIDI clock (BPM + Start/Stop)
  */
 
@@ -134,9 +134,9 @@ export function MidiClockPanel({ isOpen, onClose, getOutputs, selectOutput }: Mi
 
           {/* Info */}
           <div className="text-[8px] text-white/25 leading-relaxed">
-            <strong>Send:</strong> Elastic Drums is the master clock. External gear follows your tempo.
+            <strong>Send:</strong> Elastic Groove is the master clock. External gear follows your tempo.
             <br />
-            <strong>Receive:</strong> Elastic Drums follows external tempo. Start/Stop messages control playback.
+            <strong>Receive:</strong> Elastic Groove follows external tempo. Start/Stop messages control playback.
           </div>
         </div>
       </div>

@@ -1,5 +1,5 @@
 /**
- * Elastic Drums Voice Renderer
+ * Elastic Groove Voice Renderer
  *
  * Extracted voice synthesis methods from AudioEngine.
  * Handles all 12 drum voices: Kick, Snare, Clap, Tom, HiHat, Cymbal, Perc.

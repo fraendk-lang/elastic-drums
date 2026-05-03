@@ -1,5 +1,5 @@
 /**
- * Elastic Drums Audio Engine — Facade / Orchestrator
+ * Elastic Groove Audio Engine — Facade / Orchestrator
  * Delegates to: VoiceRenderer, SendFx, Metering, MixerRouting
  */
 

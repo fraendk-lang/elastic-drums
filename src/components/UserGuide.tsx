@@ -33,7 +33,7 @@ const SECTIONS: Section[] = [
     title: "1. Getting Started",
     body: {
       blocks: [
-        { type: "p", text: "Elastic Drums is a loop-based mini-DAW with four parallel engines: Drums (12 voices), Bass (303-style), Chords (polyphonic pad), and Melody (lead synth)." },
+        { type: "p", text: "Elastic Groove is a loop-based mini-DAW with four parallel engines: Drums (12 voices), Bass (303-style), Chords (polyphonic pad), and Melody (lead synth)." },
         { type: "p", text: "Each engine has its own sequencer and shares the master transport. Press Space to Play / Stop." },
         { type: "tip", text: "Tip: Start with a drum preset (press number key 1–9), then use the Euclidean generator (EUCLID button) to fill the other tracks quickly." },
       ],
@@ -144,7 +144,7 @@ const SECTIONS: Section[] = [
         { type: "h3", text: "MIDI Record in Piano Roll" },
         { type: "p", text: "Arm the MIDI REC button in the Piano Roll toolbar, start playback, and play external notes — they're captured into the current clip at the playhead position." },
         { type: "h3", text: "MIDI Clock" },
-        { type: "p", text: "SYNC button opens the clock panel. SEND makes Elastic Drums the master clock for external gear. RECEIVE follows external tempo + start/stop." },
+        { type: "p", text: "SYNC button opens the clock panel. SEND makes Elastic Groove the master clock for external gear. RECEIVE follows external tempo + start/stop." },
       ],
     },
   },
@@ -219,7 +219,7 @@ export function UserGuide({ isOpen, onClose }: UserGuideProps) {
           <div className="px-4 py-3 border-b border-[var(--ed-border)]">
             <h2 className="text-sm font-black tracking-wider">USER GUIDE</h2>
             <div className="text-[9px] text-[var(--ed-text-muted)] mt-0.5">
-              Elastic Drums manual
+              Elastic Groove manual
             </div>
           </div>
           <nav className="py-2">
