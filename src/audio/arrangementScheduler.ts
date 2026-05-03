@@ -17,6 +17,9 @@ import { useArrangementStore, type ArrangementTrackId } from "../store/arrangeme
 import { bassEngine, type BassParams } from "./BassEngine";
 import { chordsEngine, type ChordsParams } from "./ChordsEngine";
 import { melodyEngine, type MelodyParams } from "./MelodyEngine";
+import { audioEngine } from "./AudioEngine";
+import { faderToGain } from "../store/mixerBarStore";
+import { useArrangementAutoStore, interpolateAuto, AUTO_TRACK_CHANNELS } from "../store/arrangementAutoStore";
 
 // ─── Arrangement bar external store (for playhead) ───────────────────────────
 
@@ -74,6 +77,32 @@ function makeSilentMelodySteps(count = 64) {
     active: false, note: 0, octave: 0, accent: false,
     velocity: 0.82, slide: false, tie: false, gateLength: 1,
   }));
+}
+
+// ─── Apply automation lanes at bar boundary ───────────────────────────────────
+
+function applyAutoLanes(bar: number): void {
+  const { lanes: autoLanes, openLanes } = useArrangementAutoStore.getState();
+  for (const [trackId, isOpen] of Object.entries(openLanes)) {
+    if (!isOpen) continue;
+    const lane = autoLanes[trackId];
+    if (!lane) continue;
+    const val = interpolateAuto(lane.points, bar);  // 0-1
+    const ch  = AUTO_TRACK_CHANNELS[trackId];
+    if (lane.param === "volume") {
+      if (ch !== null && ch !== undefined) {
+        audioEngine.setChannelVolume(ch, faderToGain(val * 1000));
+      } else if (trackId === "drums") {
+        audioEngine.setGroupVolume("drums", faderToGain(val * 1000));
+      }
+    } else if (lane.param === "reverb" && ch !== null && ch !== undefined) {
+      audioEngine.setChannelReverbSend(ch, val);
+    } else if (lane.param === "delay" && ch !== null && ch !== undefined) {
+      audioEngine.setChannelDelaySend(ch, val);
+    } else if (lane.param === "pan" && ch !== null && ch !== undefined) {
+      audioEngine.setChannelPan(ch, val * 2 - 1);
+    }
+  }
 }
 
 // ─── Apply a single bar ───────────────────────────────────────────────────────
@@ -238,6 +267,7 @@ function initScheduler(): void {
       _arrangementBar = Math.floor(_stepsElapsed / 16);
       notifyBarListeners();
       applyArrangementBar(_arrangementBar);
+      applyAutoLanes(_arrangementBar);
     }
   });
 }

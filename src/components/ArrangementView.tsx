@@ -23,6 +23,12 @@ import {
 } from "../store/arrangementStore";
 import { useMixerBarStore } from "../store/mixerBarStore";
 import { MixerBar } from "./MixerBar";
+import {
+  useArrangementAutoStore,
+  type AutoLane,
+  type AutoPoint,
+  type AutoParam,
+} from "../store/arrangementAutoStore";
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 
@@ -1700,6 +1706,188 @@ function AudioClipLane({
   );
 }
 
+// ─── AutoLaneCanvas ───────────────────────────────────────────────────────────
+
+interface AutoLaneCanvasProps {
+  lane:       AutoLane;
+  totalBars:  number;
+  barPx:      number;
+  height:     number;
+  color:      string;
+  onChange:   (points: AutoPoint[]) => void;
+}
+
+function AutoLaneCanvas({ lane, totalBars, barPx, height, onChange }: AutoLaneCanvasProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const stateRef  = useRef<{ dragging: number | null }>({ dragging: null });
+  const width     = totalBars * barPx;
+
+  // Draw the automation lane
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, width, height);
+
+    const pts = [...lane.points].sort((a, b) => a.bar - b.bar);
+
+    // Build stepped path
+    const path = new Path2D();
+    const fillPath = new Path2D();
+
+    // Determine full y-range for the curve
+    const getY = (v: number) => height * (1 - v);
+
+    // Start fill path at bottom-left
+    fillPath.moveTo(0, height);
+
+    if (pts.length === 0) {
+      // Flat line at default value 0.75
+      const y = getY(0.75);
+      path.moveTo(0, y);
+      path.lineTo(width, y);
+      fillPath.lineTo(0, y);
+      fillPath.lineTo(width, y);
+    } else {
+      // Extend flat line from bar 0 to first point
+      const firstY = getY(pts[0]!.value);
+      path.moveTo(0, firstY);
+      path.lineTo(pts[0]!.bar * barPx, firstY);
+      fillPath.lineTo(0, firstY);
+      fillPath.lineTo(pts[0]!.bar * barPx, firstY);
+
+      // Draw stepped segments between adjacent points
+      for (let i = 0; i < pts.length; i++) {
+        const curr = pts[i]!;
+        const next = pts[i + 1];
+        const currX = curr.bar * barPx;
+        const currY = getY(curr.value);
+
+        if (next) {
+          const nextX = next.bar * barPx;
+          const nextY = getY(next.value);
+          // Horizontal then vertical
+          path.lineTo(nextX, currY);
+          path.lineTo(nextX, nextY);
+          fillPath.lineTo(nextX, currY);
+          fillPath.lineTo(nextX, nextY);
+        } else {
+          // Extend flat line from last point to end
+          path.lineTo(width, currY);
+          fillPath.lineTo(width, currY);
+        }
+        void currX; // suppress unused warning
+      }
+    }
+
+    // Close fill path to bottom
+    fillPath.lineTo(width, height);
+    fillPath.closePath();
+
+    // Fill gradient
+    const grad = ctx.createLinearGradient(0, 0, 0, height);
+    grad.addColorStop(0, "rgba(99,102,241,0.35)");
+    grad.addColorStop(1, "rgba(99,102,241,0.05)");
+    ctx.fillStyle = grad;
+    ctx.fill(fillPath);
+
+    // Draw line
+    ctx.strokeStyle = "#6366f1";
+    ctx.lineWidth   = 1.5;
+    ctx.stroke(path);
+
+    // Draw dots
+    for (const pt of pts) {
+      const x = pt.bar * barPx;
+      const y = getY(pt.value);
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fillStyle   = "#ffffff";
+      ctx.fill();
+      ctx.strokeStyle = "#6366f1";
+      ctx.lineWidth   = 1.5;
+      ctx.stroke();
+    }
+  }, [lane.points, totalBars, barPx, height, width]);
+
+  function getBarAndValue(e: React.PointerEvent<HTMLCanvasElement>): { bar: number; value: number } {
+    const rect  = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
+    const x     = e.clientX - rect.left;
+    const y     = e.clientY - rect.top;
+    const bar   = Math.max(0, Math.min(totalBars - 1, Math.round(x / barPx)));
+    const value = Math.max(0, Math.min(1, 1 - y / height));
+    return { bar, value };
+  }
+
+  function findNearPoint(bar: number, value: number): number | null {
+    const pts = lane.points;
+    for (let i = 0; i < pts.length; i++) {
+      const pt  = pts[i]!;
+      const dx  = (pt.bar - bar) * barPx;
+      const dy  = (pt.value - value) * height;
+      if (Math.sqrt(dx * dx + dy * dy) <= 6) return i;
+    }
+    return null;
+  }
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const { bar, value } = getBarAndValue(e);
+    const near = findNearPoint(bar, value);
+    if (near !== null) {
+      // Check if it's a removal click (no drag follows — handled in pointerUp)
+      stateRef.current.dragging = near;
+    } else {
+      // Add a new point
+      const newPts = [...lane.points, { bar, value }];
+      onChange(newPts);
+      stateRef.current.dragging = newPts.length - 1;
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const { dragging } = stateRef.current;
+    if (dragging === null) return;
+    const { bar, value } = getBarAndValue(e);
+    const newPts = [...lane.points];
+    newPts[dragging] = { bar, value };
+    onChange(newPts);
+  };
+
+  const handlePointerUp = () => {
+    stateRef.current.dragging = null;
+  };
+
+  // Right-click removes nearest point
+  const handleContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const rect  = e.currentTarget.getBoundingClientRect();
+    const x     = e.clientX - rect.left;
+    const y     = e.clientY - rect.top;
+    const bar   = Math.max(0, Math.min(totalBars - 1, Math.round(x / barPx)));
+    const value = Math.max(0, Math.min(1, 1 - y / height));
+    const near  = findNearPoint(bar, value);
+    if (near !== null) {
+      onChange(lane.points.filter((_, i) => i !== near));
+    }
+  };
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={width}
+      height={height}
+      style={{ display: "block", cursor: "crosshair", touchAction: "none" }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onContextMenu={handleContextMenu}
+    />
+  );
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
@@ -1745,6 +1933,10 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
     audio:  27,
   };
   const [showMixer, setShowMixer]               = useState(false);
+
+  const { lanes: autoLanes, openLanes, toggleLane, setParam: setAutoParam, setPoints } =
+    useArrangementAutoStore();
+  const AUTO_LANE_H = 38;
 
   const [arrMode, setArrMode]                 = useState<"scene" | "clips">("scene");
   const setArrangementMode                    = useDrumStore((s) => s.setArrangementMode);
@@ -1794,7 +1986,8 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
     const el = timelineRef.current;
     if (!el) return;
     const compute = (h: number) => {
-      const avail  = Math.max(0, h - RULER_H);
+      const openCount = Object.values(openLanes).filter(Boolean).length;
+      const avail  = Math.max(0, h - RULER_H - openCount * AUTO_LANE_H);
       const totalW = TRACKS.length * TRACK_WEIGHT + N_LOOP_ROWS * LOOP_WEIGHT + AUDIO_WEIGHT;
       const unit   = avail / totalW;
       setTrackH(Math.max(MIN_TRACK_H, Math.floor(unit * TRACK_WEIGHT)));
@@ -1805,9 +1998,23 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
     ro.observe(el);
     compute(el.getBoundingClientRect().height);
     return () => ro.disconnect();
-  }, []); // timelineRef is a stable ref — no dep needed
+  }, [openLanes, AUTO_LANE_H]); // re-run when auto lanes open/close
 
-  const loopsTotalH = loopH * N_LOOP_ROWS;
+  // Compute cumulative top offsets accounting for open automation lanes
+  let _trackTopOffset = 0;
+  const trackTops: Record<string, number> = {};
+  TRACKS.forEach(({ id }) => {
+    trackTops[id] = _trackTopOffset;
+    _trackTopOffset += trackH;
+    if (openLanes[id]) _trackTopOffset += AUTO_LANE_H;
+  });
+  const loopTops: number[] = [];
+  for (let i = 0; i < N_LOOP_ROWS; i++) {
+    loopTops.push(_trackTopOffset);
+    _trackTopOffset += loopH;
+  }
+  const audioTop        = _trackTopOffset;
+  const totalContentH   = _trackTopOffset + audioH;
 
   const totalBars     = Math.max(songChain.reduce((s, e) => s + e.repeats, 0), 32);
   const displayBars   = Math.max(totalBars, containerW > 0 ? Math.ceil(containerW / barPx) + 2 : totalBars);
@@ -2299,8 +2506,8 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
               };
 
               return (
+                <div key={id}>
                 <div
-                  key={id}
                   className="relative flex flex-col justify-center border-b border-white/5 shrink-0 pl-3.5 pr-1.5"
                   style={{ height: trackH, gap: 5 }}
                 >
@@ -2308,12 +2515,26 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                     className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
                     style={{ backgroundColor: hexAlpha(trackColor, isMuted ? 0.2 : 0.7) }}
                   />
-                  <span
-                    className="text-[7px] font-black tracking-[0.1em] leading-none truncate"
-                    style={{ color: hexAlpha(trackColor, isMuted ? 0.25 : 0.65) }}
-                  >
-                    {label}
-                  </span>
+                  <div className="flex items-center gap-1 min-w-0">
+                    <span
+                      className="text-[7px] font-black tracking-[0.1em] leading-none truncate"
+                      style={{ color: hexAlpha(trackColor, isMuted ? 0.25 : 0.65) }}
+                    >
+                      {label}
+                    </span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleLane(id); }}
+                      title={openLanes[id] ? "Automation schließen" : "Automation öffnen"}
+                      className="flex-shrink-0 w-[10px] h-[10px] rounded-sm flex items-center justify-center text-[7px] transition-all"
+                      style={{
+                        background: openLanes[id] ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)",
+                        border: `1px solid ${openLanes[id] ? "rgba(99,102,241,0.5)" : "rgba(255,255,255,0.1)"}`,
+                        color: openLanes[id] ? "#818cf8" : "rgba(255,255,255,0.3)",
+                      }}
+                    >
+                      {openLanes[id] ? "▾" : "▸"}
+                    </button>
+                  </div>
                   {/* M/S buttons */}
                   <div className="flex gap-0.5">
                     <button
@@ -2337,6 +2558,36 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                       }}
                     >S</button>
                   </div>
+                </div>
+                {/* Automation lane label row */}
+                {openLanes[id] && (
+                  <div
+                    className="relative flex items-center border-b border-white/5 shrink-0 pl-3.5 pr-1.5"
+                    style={{ height: AUTO_LANE_H, background: "rgba(99,102,241,0.03)" }}
+                  >
+                    <div className="absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-[#6366f1]/40" />
+                    <span className="text-[6px] font-black tracking-[0.14em] text-[#818cf8]/60 flex-1">
+                      AUTO
+                    </span>
+                    <select
+                      value={autoLanes[id]?.param ?? "volume"}
+                      onChange={(e) => setAutoParam(id, e.target.value as AutoParam)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-[6px] font-black tracking-[0.08em] rounded-md px-1 py-0.5 cursor-pointer"
+                      style={{
+                        background: "rgba(99,102,241,0.15)",
+                        border: "1px solid rgba(99,102,241,0.35)",
+                        color: "#818cf8",
+                        outline: "none",
+                      }}
+                    >
+                      <option value="volume">VOL</option>
+                      <option value="pan">PAN</option>
+                      <option value="reverb">REV</option>
+                      <option value="delay">DLY</option>
+                    </select>
+                  </div>
+                )}
                 </div>
               );
             })}
@@ -2571,7 +2822,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
               className="relative"
               style={{
                 minWidth: displayBars * barPx,
-                height:   TRACKS.length * trackH + loopsTotalH + audioH,
+                height:   totalContentH,
               }}
               onPointerMove={handleContentPointerMove}
               onPointerUp={handleContentPointerUp}
@@ -2580,11 +2831,13 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
 
               {/* Grid backgrounds */}
               {[
-                ...TRACKS.map((_, ri) => ({ top: ri * trackH, h: trackH })),
-                ...Array.from({ length: N_LOOP_ROWS }, (_, si) => ({
-                  top: TRACKS.length * trackH + si * loopH, h: loopH,
-                })),
-                { top: TRACKS.length * trackH + loopsTotalH, h: audioH },
+                ...TRACKS.flatMap(({ id }) => {
+                  const rows: { top: number; h: number }[] = [{ top: trackTops[id]!, h: trackH }];
+                  if (openLanes[id]) rows.push({ top: trackTops[id]! + trackH, h: AUTO_LANE_H });
+                  return rows;
+                }),
+                ...loopTops.map((top) => ({ top, h: loopH })),
+                { top: audioTop, h: audioH },
               ].map(({ top, h }, ri) => (
                 <div
                   key={ri}
@@ -2601,14 +2854,13 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                 const chain = songChain;
                 let x = 0;
                 for (let i = 0; i < moveDrag.to; i++) x += (chain[i]?.repeats ?? 1) * barPx;
-                const totalH = TRACKS.length * trackH + loopsTotalH + audioH;
                 return (
                   <div
                     className="absolute top-0 pointer-events-none z-30"
                     style={{
                       left: x - 1,
                       width: 2,
-                      height: totalH,
+                      height: totalContentH,
                       backgroundColor: "rgba(255,255,255,0.6)",
                       boxShadow: "0 0 6px rgba(255,255,255,0.4)",
                     }}
@@ -2618,10 +2870,10 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
 
               {/* Instrument rows */}
               {TRACKS.map(({ id }, trackIndex) => (
+                <div key={id}>
                 <div
-                  key={id}
                   className="absolute left-0 flex"
-                  style={{ top: trackIndex * trackH, height: trackH }}
+                  style={{ top: trackTops[id], height: trackH }}
                 >
                   {songChain.map((entry, clipIndex) => {
                     const scene    = scenes[entry.sceneIndex] ?? null;
@@ -2682,6 +2934,28 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                     </div>
                   )}
                 </div>
+                {/* Automation lane canvas */}
+                {openLanes[id] && (
+                  <div
+                    className="absolute left-0 right-0"
+                    style={{
+                      top:          trackTops[id]! + trackH,
+                      height:       AUTO_LANE_H,
+                      background:   "rgba(99,102,241,0.025)",
+                      borderBottom: "1px solid rgba(99,102,241,0.12)",
+                    }}
+                  >
+                    <AutoLaneCanvas
+                      lane={autoLanes[id] ?? { param: "volume", points: [] }}
+                      totalBars={displayBars}
+                      barPx={barPx}
+                      height={AUTO_LANE_H}
+                      color="#6366f1"
+                      onChange={(pts) => setPoints(id, pts)}
+                    />
+                  </div>
+                )}
+                </div>
               ))}
 
               {/* Loop lanes — one row per slot */}
@@ -2689,7 +2963,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                 <div
                   key={si}
                   className="absolute left-0 flex"
-                  style={{ top: TRACKS.length * trackH + si * loopH, height: loopH }}
+                  style={{ top: loopTops[si], height: loopH }}
                 >
                   <ArrangementLoopLane
                     songChain={songChain}
@@ -2710,7 +2984,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
               {/* AUDIO clip lane */}
               <div
                 className="absolute left-0"
-                style={{ top: TRACKS.length * trackH + loopsTotalH }}
+                style={{ top: audioTop }}
               >
                 <AudioClipLane
                   clips={audioClips}
@@ -2740,7 +3014,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                   style={{
                     left:   loopStart * barPx,
                     width:  (loopEnd - loopStart) * barPx,
-                    height: TRACKS.length * trackH + loopsTotalH + audioH,
+                    height: totalContentH,
                     backgroundColor: "rgba(34,211,238,0.04)",
                     borderLeft:  "1px solid rgba(34,211,238,0.25)",
                     borderRight: "1px solid rgba(34,211,238,0.25)",
@@ -2755,7 +3029,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                   style={{
                     left:            playheadPx,
                     width:           2,
-                    height:          TRACKS.length * trackH + loopsTotalH + audioH,
+                    height:          totalContentH,
                     backgroundColor: "rgba(255,255,255,0.55)",
                   }}
                 >
