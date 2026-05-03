@@ -13,23 +13,23 @@ export type AutoParam =
 
 /** Default (no-point) value per param — used by interpolateAuto */
 export const AUTO_PARAM_DEFAULTS: Record<AutoParam, number> = {
-  volume:      0.75,
-  pan:         0.5,
-  reverb:      0,
-  delay:       0,
-  filterCutoff:1.0,
-  drive:       0,
-  chorus:      0,
-  eqHi:        0.5,
-  eqMid:       0.5,
+  volume:       0.75,
+  pan:          0.5,
+  reverb:       0,
+  delay:        0,
+  filterCutoff: 1.0,
+  drive:        0,
+  chorus:       0,
+  eqHi:         0.5,
+  eqMid:        0.5,
 };
 
 /** Context-aware param options per track */
 export const TRACK_AUTO_PARAMS: Record<string, { value: AutoParam; label: string }[]> = {
   drums: [
-    { value: "volume",  label: "VOL"   },
-    { value: "reverb",  label: "REV"   },
-    { value: "delay",   label: "DLY"   },
+    { value: "volume",  label: "VOL" },
+    { value: "reverb",  label: "REV" },
+    { value: "delay",   label: "DLY" },
   ],
   bass: [
     { value: "volume",       label: "VOL"    },
@@ -64,44 +64,84 @@ export interface AutoPoint {
 }
 
 export interface AutoLane {
+  id:     string;
   param:  AutoParam;
   points: AutoPoint[];
+  open:   boolean;
 }
 
 interface ArrangementAutoState {
-  lanes:     Record<string, AutoLane>;   // keyed by trackId
-  openLanes: Record<string, boolean>;    // which tracks have the lane open
+  /** trackId → ordered array of lanes */
+  lanes: Record<string, AutoLane[]>;
 
-  toggleLane: (trackId: string) => void;
-  setParam:   (trackId: string, param: AutoParam)     => void;
-  setPoints:  (trackId: string, points: AutoPoint[])  => void;
+  addLane:    (trackId: string) => void;
+  removeLane: (trackId: string, laneId: string) => void;
+  toggleLane: (trackId: string, laneId: string) => void;
+  setParam:   (trackId: string, laneId: string, param: AutoParam)    => void;
+  setPoints:  (trackId: string, laneId: string, points: AutoPoint[]) => void;
 }
 
-const defaultLane = (): AutoLane => ({ param: "volume", points: [] });
+let _laneSeq = 0;
+const newLaneId = () => `lane-${++_laneSeq}`;
+
+/** Pick the first param not already used in this track, or "volume" */
+function nextParam(trackId: string, existingLanes: AutoLane[]): AutoParam {
+  const options = TRACK_AUTO_PARAMS[trackId] ?? TRACK_AUTO_PARAMS["melody"]!;
+  const used = new Set(existingLanes.map((l) => l.param));
+  return options.find((o) => !used.has(o.value))?.value ?? "volume";
+}
 
 export const useArrangementAutoStore = create<ArrangementAutoState>((set) => ({
-  lanes:     {},
-  openLanes: {},
+  lanes: {},
 
-  toggleLane: (id) =>
+  addLane: (trackId) =>
     set((s) => {
-      const open = !s.openLanes[id];
-      return {
-        openLanes: { ...s.openLanes, [id]: open },
-        lanes: open && !s.lanes[id]
-          ? { ...s.lanes, [id]: defaultLane() }
-          : s.lanes,
+      const existing = s.lanes[trackId] ?? [];
+      const lane: AutoLane = {
+        id:     newLaneId(),
+        param:  nextParam(trackId, existing),
+        points: [],
+        open:   true,
       };
+      return { lanes: { ...s.lanes, [trackId]: [...existing, lane] } };
     }),
 
-  setParam: (id, param) =>
+  removeLane: (trackId, laneId) =>
     set((s) => ({
-      lanes: { ...s.lanes, [id]: { ...(s.lanes[id] ?? defaultLane()), param } },
+      lanes: {
+        ...s.lanes,
+        [trackId]: (s.lanes[trackId] ?? []).filter((l) => l.id !== laneId),
+      },
     })),
 
-  setPoints: (id, points) =>
+  toggleLane: (trackId, laneId) =>
     set((s) => ({
-      lanes: { ...s.lanes, [id]: { ...(s.lanes[id] ?? defaultLane()), points } },
+      lanes: {
+        ...s.lanes,
+        [trackId]: (s.lanes[trackId] ?? []).map((l) =>
+          l.id === laneId ? { ...l, open: !l.open } : l,
+        ),
+      },
+    })),
+
+  setParam: (trackId, laneId, param) =>
+    set((s) => ({
+      lanes: {
+        ...s.lanes,
+        [trackId]: (s.lanes[trackId] ?? []).map((l) =>
+          l.id === laneId ? { ...l, param } : l,
+        ),
+      },
+    })),
+
+  setPoints: (trackId, laneId, points) =>
+    set((s) => ({
+      lanes: {
+        ...s.lanes,
+        [trackId]: (s.lanes[trackId] ?? []).map((l) =>
+          l.id === laneId ? { ...l, points } : l,
+        ),
+      },
     })),
 }));
 
@@ -119,7 +159,7 @@ export function interpolateAuto(points: AutoPoint[], bar: number, def = 0.75): n
   return def;
 }
 
-/** Track ID → mixer channel mapping (matches ArrangementView TRACK_MIXER) */
+/** Track ID → mixer channel mapping */
 export const AUTO_TRACK_CHANNELS: Record<string, number | null> = {
   drums:  null,  // group bus
   bass:   12,

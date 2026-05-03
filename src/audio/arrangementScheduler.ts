@@ -14,6 +14,7 @@ import { useBassStore } from "../store/bassStore";
 import { useChordsStore } from "../store/chordsStore";
 import { useMelodyStore } from "../store/melodyStore";
 import { useArrangementStore, type ArrangementTrackId } from "../store/arrangementStore";
+
 import { bassEngine, type BassParams } from "./BassEngine";
 import { chordsEngine, type ChordsParams } from "./ChordsEngine";
 import { melodyEngine, type MelodyParams } from "./MelodyEngine";
@@ -137,25 +138,24 @@ function restoreParam(trackId: string, param: AutoParam): void {
 
 /** Restore all currently-open automation lanes to their baseline mixer state */
 function restoreAllOpenLanes(): void {
-  const { lanes: autoLanes, openLanes } = useArrangementAutoStore.getState();
-  for (const [trackId, isOpen] of Object.entries(openLanes)) {
-    if (!isOpen) continue;
-    const lane = autoLanes[trackId];
-    if (lane) restoreParam(trackId, lane.param);
+  const { lanes } = useArrangementAutoStore.getState();
+  for (const [trackId, trackLanes] of Object.entries(lanes)) {
+    for (const lane of trackLanes) {
+      if (lane.open) restoreParam(trackId, lane.param);
+    }
   }
 }
 
 // ─── Apply automation lanes at bar boundary ───────────────────────────────────
 
 function applyAutoLanes(bar: number): void {
-  const { lanes: autoLanes, openLanes } = useArrangementAutoStore.getState();
-  for (const [trackId, isOpen] of Object.entries(openLanes)) {
-    if (!isOpen) continue;
-    const lane = autoLanes[trackId];
-    if (!lane) continue;
-    const def = AUTO_PARAM_DEFAULTS[lane.param] ?? 0.75;
-    const val = interpolateAuto(lane.points, bar, def);  // 0-1
-    const ch  = AUTO_TRACK_CHANNELS[trackId];
+  const { lanes } = useArrangementAutoStore.getState();
+  for (const [trackId, trackLanes] of Object.entries(lanes)) {
+    for (const lane of trackLanes) {
+      if (!lane.open) continue;
+  const def = AUTO_PARAM_DEFAULTS[lane.param] ?? 0.75;
+  const val = interpolateAuto(lane.points, bar, def);  // 0-1
+  const ch  = AUTO_TRACK_CHANNELS[trackId];
 
     switch (lane.param) {
       case "volume":
@@ -207,7 +207,8 @@ function applyAutoLanes(bar: number): void {
           audioEngine.setChannelEQ(ch, "mid", (val - 0.5) * 24);
         break;
     }
-  }
+    } // end for lane
+  }   // end for trackId
 }
 
 // ─── Apply a single bar ───────────────────────────────────────────────────────
@@ -371,28 +372,33 @@ function initScheduler(): void {
     }
   });
 
-  // ── Restore when a lane is closed or its param changes ────────────────────
+  // ── Restore when a lane is closed, removed, or its param changes ─────────
   useArrangementAutoStore.subscribe((state, prev) => {
-    // Only act during arrangement mode
     if (!useDrumStore.getState().arrangementMode) return;
 
-    // Lane was open and is now closed → restore that param
-    for (const trackId of Object.keys(prev.openLanes)) {
-      if (prev.openLanes[trackId] && !state.openLanes[trackId]) {
-        const lane = prev.lanes[trackId];
-        if (lane) restoreParam(trackId, lane.param);
-      }
-    }
+    for (const trackId of Object.keys(prev.lanes)) {
+      const prevLanes = prev.lanes[trackId]  ?? [];
+      const nextLanes = state.lanes[trackId] ?? [];
+      const nextMap   = new Map(nextLanes.map((l) => [l.id, l]));
 
-    // Param changed for an open lane → restore OLD param before applying new one
-    for (const trackId of Object.keys(state.lanes)) {
-      const wasOpen = prev.openLanes[trackId];
-      const isOpen  = state.openLanes[trackId];
-      if (wasOpen && isOpen) {
-        const oldParam = prev.lanes[trackId]?.param;
-        const newParam = state.lanes[trackId]?.param;
-        if (oldParam && newParam && oldParam !== newParam) {
-          restoreParam(trackId, oldParam);
+      for (const prevLane of prevLanes) {
+        const nextLane = nextMap.get(prevLane.id);
+
+        // Lane removed entirely
+        if (!nextLane && prevLane.open) {
+          restoreParam(trackId, prevLane.param);
+          continue;
+        }
+        if (!nextLane) continue;
+
+        // Lane toggled closed
+        if (prevLane.open && !nextLane.open) {
+          restoreParam(trackId, prevLane.param);
+        }
+
+        // Param changed on an open lane → restore old param first
+        if (prevLane.open && nextLane.open && prevLane.param !== nextLane.param) {
+          restoreParam(trackId, prevLane.param);
         }
       }
     }
@@ -406,6 +412,14 @@ function initScheduler(): void {
     _stepsElapsed++;
     if (_stepsElapsed % 16 === 0) {
       _arrangementBar = Math.floor(_stepsElapsed / 16);
+
+      // ── Loop region check ────────────────────────────────────────────────
+      const { loopRegion } = useArrangementStore.getState();
+      if (loopRegion.enabled && _arrangementBar >= loopRegion.end) {
+        seekToBar(loopRegion.start);
+        return; // seekToBar handles notify + apply
+      }
+
       notifyBarListeners();
       applyArrangementBar(_arrangementBar);
       applyAutoLanes(_arrangementBar);

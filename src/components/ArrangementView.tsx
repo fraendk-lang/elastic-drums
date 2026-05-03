@@ -895,6 +895,8 @@ interface ArrangementStatusBarProps {
   onSetArrMode:   (m: "scene" | "clips") => void;
   onToggleMixer?: () => void;
   mixerVisible?:  boolean;
+  loopEnabled?:   boolean;
+  onToggleLoop?:  () => void;
 }
 
 function ArrangementStatusBar({
@@ -902,6 +904,7 @@ function ArrangementStatusBar({
   isRecording, setIsRecording, recCount,
   barPx, setBarPx, onClear, onClose,
   arrMode, onSetArrMode, onToggleMixer, mixerVisible,
+  loopEnabled, onToggleLoop,
 }: ArrangementStatusBarProps) {
   return (
     <div className="flex items-center justify-between px-4 py-2 border-b border-white/8 shrink-0">
@@ -934,6 +937,20 @@ function ArrangementStatusBar({
         >
           {isRecording ? `⏺ REC +${recCount}` : "⏺ REC"}
         </button>
+
+        {onToggleLoop && (
+          <button
+            onClick={onToggleLoop}
+            className={`px-3 py-1 rounded-full text-[9px] font-black tracking-[0.18em] border transition-all ${
+              loopEnabled
+                ? "border-cyan-400/60 bg-cyan-400/15 text-cyan-400"
+                : "border-white/10 bg-white/5 text-white/35 hover:text-cyan-400/60 hover:border-cyan-400/30"
+            }`}
+            title="Toggle loop region (Clips mode ruler)"
+          >
+            ⟲ LOOP
+          </button>
+        )}
       </div>
 
       <div className="flex items-center gap-2">
@@ -1150,7 +1167,8 @@ interface PerTrackArrangementProps {
 }
 
 function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
-  const { clips, totalBars, addClip, moveClip, resizeClip, removeClip, renameClip } =
+  const { clips, totalBars, addClip, moveClip, resizeClip, removeClip, renameClip,
+          loopRegion, setLoopRegion } =
     useArrangementStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -1159,6 +1177,33 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; clipId: string } | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const timelineW = totalBars * barPx;
+
+  // Loop region drag
+  const loopDragRef = useRef<{ handle: "start" | "end"; startX: number; startBar: number } | null>(null);
+  const loopRegionRef = useRef(loopRegion);
+  useEffect(() => { loopRegionRef.current = loopRegion; }, [loopRegion]);
+
+  useEffect(() => {
+    function onMove(e: PointerEvent) {
+      const ld = loopDragRef.current;
+      if (!ld) return;
+      const dx = e.clientX - ld.startX;
+      const newBar = Math.max(0, Math.round(ld.startBar + dx / barPx));
+      const lr = loopRegionRef.current;
+      if (ld.handle === "start") {
+        setLoopRegion(Math.min(newBar, lr.end - 1), lr.end);
+      } else {
+        setLoopRegion(lr.start, Math.max(newBar, lr.start + 1));
+      }
+    }
+    function onUp() { loopDragRef.current = null; }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [barPx, setLoopRegion]);
 
   const rulerTicks = useMemo(
     () =>
@@ -1266,19 +1311,79 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
       style={{ minWidth: ARR_LABEL_W + timelineW }}
       onClick={() => { setSelectedId(null); setContextMenu(null); }}
     >
-      {/* Bar ruler — click to seek */}
+      {/* Bar ruler — click to seek, drag loop handles */}
       <div
-        className="flex items-center border-b border-white/10 bg-black/20 shrink-0 select-none"
+        className="relative flex items-center border-b border-white/10 bg-black/20 shrink-0 select-none"
         style={{ height: RULER_H, paddingLeft: ARR_LABEL_W, cursor: "pointer" }}
         onPointerDown={(e) => {
+          if ((e.target as HTMLElement).dataset.loopHandle) return;
           const rect = e.currentTarget.getBoundingClientRect();
           const xInRuler = e.clientX - rect.left;
-          if (xInRuler < ARR_LABEL_W) return; // clicked inside label column
+          if (xInRuler < ARR_LABEL_W) return;
           const bar = Math.floor((xInRuler - ARR_LABEL_W) / barPx);
           seekToBar(bar);
         }}
       >
         {rulerTicks}
+
+        {/* Loop region highlight */}
+        <div
+          className="absolute top-0 pointer-events-none"
+          style={{
+            left:            ARR_LABEL_W + loopRegion.start * barPx,
+            width:           (loopRegion.end - loopRegion.start) * barPx,
+            height:          RULER_H,
+            backgroundColor: loopRegion.enabled ? "rgba(34,211,238,0.18)" : "rgba(34,211,238,0.07)",
+            borderTop:       `2px solid rgba(34,211,238,${loopRegion.enabled ? 0.65 : 0.3})`,
+          }}
+        />
+        {/* Loop label */}
+        <div
+          className="absolute pointer-events-none text-[6px] font-black tracking-wider"
+          style={{
+            left:  ARR_LABEL_W + loopRegion.start * barPx + 8,
+            top:   3,
+            color: `rgba(34,211,238,${loopRegion.enabled ? 0.75 : 0.35})`,
+          }}
+        >
+          ⟲ {loopRegion.start + 1}–{loopRegion.end}
+        </div>
+        {/* Loop start handle */}
+        <div
+          data-loop-handle="start"
+          className="absolute top-0 z-10 cursor-ew-resize"
+          style={{
+            left:            ARR_LABEL_W + loopRegion.start * barPx - 3,
+            width:           6,
+            height:          RULER_H,
+            backgroundColor: `rgba(34,211,238,${loopRegion.enabled ? 0.8 : 0.4})`,
+            borderRadius:    "2px",
+          }}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            loopDragRef.current = { handle: "start", startX: e.clientX, startBar: loopRegion.start };
+            e.currentTarget.setPointerCapture(e.pointerId);
+          }}
+        />
+        {/* Loop end handle */}
+        <div
+          data-loop-handle="end"
+          className="absolute top-0 z-10 cursor-ew-resize"
+          style={{
+            left:            ARR_LABEL_W + loopRegion.end * barPx - 3,
+            width:           6,
+            height:          RULER_H,
+            backgroundColor: `rgba(34,211,238,${loopRegion.enabled ? 0.8 : 0.4})`,
+            borderRadius:    "2px",
+          }}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            loopDragRef.current = { handle: "end", startX: e.clientX, startBar: loopRegion.end };
+            e.currentTarget.setPointerCapture(e.pointerId);
+          }}
+        />
+
+        {/* Playhead */}
         <div
           className="absolute top-0 bottom-0 w-px bg-red-500/80 pointer-events-none"
           style={{ left: ARR_LABEL_W + currentBar * barPx }}
@@ -1960,6 +2065,10 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
   const scenes                 = useSceneStore((s) => s.scenes);
   const bpm                    = useDrumStore((s) => s.bpm);
 
+  // Arrangement loop region
+  const loopRegion             = useArrangementStore((s) => s.loopRegion);
+  const toggleLoopEnabled      = useArrangementStore((s) => s.toggleLoopEnabled);
+
   // Audio clip store
   const audioClips         = useAudioClipStore((s) => s.clips);
   const addAudioClip       = useAudioClipStore((s) => s.addClip);
@@ -1989,7 +2098,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
   };
   const [showMixer, setShowMixer]               = useState(false);
 
-  const { lanes: autoLanes, openLanes, toggleLane, setParam: setAutoParam, setPoints } =
+  const { lanes: autoLanes, addLane, removeLane, toggleLane, setParam: setAutoParam, setPoints } =
     useArrangementAutoStore();
   const AUTO_LANE_H = 64;
 
@@ -2037,12 +2146,16 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
   const [loopH,  setLoopH]  = useState(36);
   const [audioH, setAudioH] = useState(52);
 
+  // Total open lane count across all tracks (for height computation)
+  const openLaneCount = Object.values(autoLanes).reduce(
+    (sum, lanes) => sum + lanes.filter((l) => l.open).length, 0,
+  );
+
   useEffect(() => {
     const el = timelineRef.current;
     if (!el) return;
     const compute = (h: number) => {
-      const openCount = Object.values(openLanes).filter(Boolean).length;
-      const avail  = Math.max(0, h - RULER_H - openCount * AUTO_LANE_H);
+      const avail  = Math.max(0, h - RULER_H - openLaneCount * AUTO_LANE_H);
       const totalW = TRACKS.length * TRACK_WEIGHT + N_LOOP_ROWS * LOOP_WEIGHT + AUDIO_WEIGHT;
       const unit   = avail / totalW;
       setTrackH(Math.max(MIN_TRACK_H, Math.floor(unit * TRACK_WEIGHT)));
@@ -2053,15 +2166,16 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
     ro.observe(el);
     compute(el.getBoundingClientRect().height);
     return () => ro.disconnect();
-  }, [openLanes, AUTO_LANE_H]); // re-run when auto lanes open/close
+  }, [openLaneCount, AUTO_LANE_H]); // re-run when auto lanes open/close
 
-  // Compute cumulative top offsets accounting for open automation lanes
+  // Compute cumulative top offsets accounting for all open lanes per track
   let _trackTopOffset = 0;
   const trackTops: Record<string, number> = {};
   TRACKS.forEach(({ id }) => {
     trackTops[id] = _trackTopOffset;
     _trackTopOffset += trackH;
-    if (openLanes[id]) _trackTopOffset += AUTO_LANE_H;
+    const openHere = (autoLanes[id] ?? []).filter((l) => l.open).length;
+    _trackTopOffset += openHere * AUTO_LANE_H;
   });
   const loopTops: number[] = [];
   for (let i = 0; i < N_LOOP_ROWS; i++) {
@@ -2523,6 +2637,8 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
           }}
           onToggleMixer={() => setShowMixer(v => !v)}
           mixerVisible={showMixer}
+          loopEnabled={loopRegion.enabled}
+          onToggleLoop={toggleLoopEnabled}
         />
 
         {/* Inner column — timeline + panels + palette; shrinks when mixer appears */}
@@ -2577,18 +2693,17 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                     >
                       {label}
                     </span>
+                    {/* + add automation lane */}
                     <button
-                      onClick={(e) => { e.stopPropagation(); toggleLane(id); }}
-                      title={openLanes[id] ? "Automation schließen" : "Automation öffnen"}
+                      onClick={(e) => { e.stopPropagation(); addLane(id); }}
+                      title="Automation Lane hinzufügen"
                       className="flex-shrink-0 w-[10px] h-[10px] rounded-sm flex items-center justify-center text-[7px] transition-all"
                       style={{
-                        background: openLanes[id] ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)",
-                        border: `1px solid ${openLanes[id] ? "rgba(99,102,241,0.5)" : "rgba(255,255,255,0.1)"}`,
-                        color: openLanes[id] ? "#818cf8" : "rgba(255,255,255,0.3)",
+                        background: "rgba(99,102,241,0.12)",
+                        border: "1px solid rgba(99,102,241,0.3)",
+                        color: "#818cf8",
                       }}
-                    >
-                      {openLanes[id] ? "▾" : "▸"}
-                    </button>
+                    >+</button>
                   </div>
                   {/* M/S buttons */}
                   <div className="flex gap-0.5">
@@ -2614,20 +2729,31 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                     >S</button>
                   </div>
                 </div>
-                {/* Automation lane label row */}
-                {openLanes[id] && (
+                {/* Automation lane label rows — one per lane */}
+                {(autoLanes[id] ?? []).map((lane) => (
                   <div
+                    key={lane.id}
                     className="relative flex items-center border-b border-white/5 shrink-0 pl-3.5 pr-1.5"
                     style={{ height: AUTO_LANE_H, background: "rgba(99,102,241,0.03)" }}
                   >
                     <div className="absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-[#6366f1]/40" />
+                    {/* Collapse toggle */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleLane(id, lane.id); }}
+                      className="flex-shrink-0 w-[10px] h-[10px] rounded-sm flex items-center justify-center text-[7px] mr-1 transition-all"
+                      style={{
+                        background: lane.open ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)",
+                        border: `1px solid ${lane.open ? "rgba(99,102,241,0.5)" : "rgba(255,255,255,0.1)"}`,
+                        color: lane.open ? "#818cf8" : "rgba(255,255,255,0.3)",
+                      }}
+                    >{lane.open ? "▾" : "▸"}</button>
                     <span className="text-[6px] font-black tracking-[0.14em] text-[#818cf8]/60 flex-1">
                       AUTO
                     </span>
                     <div className="flex items-center gap-1">
                       <select
-                        value={autoLanes[id]?.param ?? "volume"}
-                        onChange={(e) => setAutoParam(id, e.target.value as AutoParam)}
+                        value={lane.param}
+                        onChange={(e) => setAutoParam(id, lane.id, e.target.value as AutoParam)}
                         onClick={(e) => e.stopPropagation()}
                         className="text-[6px] font-black tracking-[0.08em] rounded-md px-1 py-0.5 cursor-pointer"
                         style={{
@@ -2641,12 +2767,12 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
                         ))}
                       </select>
-                      {/* Clear all points */}
-                      {(autoLanes[id]?.points?.length ?? 0) > 0 && (
+                      {/* Clear points */}
+                      {lane.points.length > 0 && (
                         <button
-                          onClick={(e) => { e.stopPropagation(); setPoints(id, []); }}
-                          title="Alle Punkte löschen"
-                          className="text-[6px] font-black tracking-[0.08em] rounded px-1 py-0.5 transition-all"
+                          onClick={(e) => { e.stopPropagation(); setPoints(id, lane.id, []); }}
+                          title="Punkte löschen"
+                          className="text-[6px] font-black rounded px-1 py-0.5 transition-all"
                           style={{
                             background: "rgba(239,68,68,0.12)",
                             border:     "1px solid rgba(239,68,68,0.3)",
@@ -2654,9 +2780,20 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                           }}
                         >✕</button>
                       )}
+                      {/* Remove lane */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); removeLane(id, lane.id); }}
+                        title="Lane entfernen"
+                        className="text-[6px] font-black rounded px-1 py-0.5 transition-all"
+                        style={{
+                          background: "rgba(255,255,255,0.04)",
+                          border:     "1px solid rgba(255,255,255,0.1)",
+                          color:      "rgba(255,255,255,0.3)",
+                        }}
+                      >—</button>
                     </div>
                   </div>
-                )}
+                ))}
                 </div>
               );
             })}
@@ -2902,7 +3039,9 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
               {[
                 ...TRACKS.flatMap(({ id }) => {
                   const rows: { top: number; h: number }[] = [{ top: trackTops[id]!, h: trackH }];
-                  if (openLanes[id]) rows.push({ top: trackTops[id]! + trackH, h: AUTO_LANE_H });
+                  (autoLanes[id] ?? []).forEach((lane, li) => {
+                    if (lane.open) rows.push({ top: trackTops[id]! + trackH + li * AUTO_LANE_H, h: AUTO_LANE_H });
+                  });
                   return rows;
                 }),
                 ...loopTops.map((top) => ({ top, h: loopH })),
@@ -3003,27 +3142,28 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                     </div>
                   )}
                 </div>
-                {/* Automation lane canvas */}
-                {openLanes[id] && (
+                {/* Automation lane canvases — one per open lane */}
+                {(autoLanes[id] ?? []).map((lane, li) => lane.open && (
                   <div
+                    key={lane.id}
                     className="absolute left-0 right-0"
                     style={{
-                      top:          trackTops[id]! + trackH,
+                      top:          trackTops[id]! + trackH + li * AUTO_LANE_H,
                       height:       AUTO_LANE_H,
                       background:   "rgba(99,102,241,0.025)",
                       borderBottom: "1px solid rgba(99,102,241,0.12)",
                     }}
                   >
                     <AutoLaneCanvas
-                      lane={autoLanes[id] ?? { param: "volume", points: [] }}
+                      lane={lane}
                       totalBars={displayBars}
                       barPx={barPx}
                       height={AUTO_LANE_H}
                       color="#6366f1"
-                      onChange={(pts) => setPoints(id, pts)}
+                      onChange={(pts) => setPoints(id, lane.id, pts)}
                     />
                   </div>
-                )}
+                ))}
                 </div>
               ))}
 

@@ -71,9 +71,23 @@ function overlaps(aStart: number, aLen: number, bStart: number, bLen: number): b
   return aStart < bStart + bLen && aStart + aLen > bStart;
 }
 
+// ─── Loop Region ─────────────────────────────────────────────────────────────
+
+export interface LoopRegion {
+  start:   number;  // bar index (inclusive)
+  end:     number;  // bar index (exclusive — loops back at this bar)
+  enabled: boolean;
+}
+
+// ─── Store ───────────────────────────────────────────────────────────────────
+
 interface ArrangementState {
-  clips: ArrangementClip[];
-  totalBars: number;
+  clips:      ArrangementClip[];
+  totalBars:  number;
+  loopRegion: LoopRegion;
+
+  setLoopRegion:      (start: number, end: number) => void;
+  toggleLoopEnabled:  () => void;
 
   // ── Mutations ────────────────────────────────────────────────────────────
   /** Returns new clip id, or null if it would overlap an existing clip */
@@ -95,8 +109,14 @@ interface ArrangementState {
 }
 
 export const useArrangementStore = create<ArrangementState>((set, get) => ({
-  clips: [],
-  totalBars: 16,
+  clips:      [],
+  totalBars:  16,
+  loopRegion: { start: 0, end: 8, enabled: false },
+
+  setLoopRegion: (start, end) =>
+    set((s) => ({ loopRegion: { ...s.loopRegion, start, end } })),
+  toggleLoopEnabled: () =>
+    set((s) => ({ loopRegion: { ...s.loopRegion, enabled: !s.loopRegion.enabled } })),
 
   addClip(clip) {
     if (get().wouldOverlap(clip.trackId, clip.startBar, clip.lengthBars)) return null;
