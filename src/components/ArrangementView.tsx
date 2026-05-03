@@ -2273,15 +2273,15 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
               return (
                 <div
                   key={id}
-                  className="relative flex items-center justify-between border-b border-white/5 shrink-0 pl-3 pr-1"
-                  style={{ height: TRACK_H }}
+                  className="relative flex flex-col justify-center border-b border-white/5 shrink-0 pl-3.5 pr-1.5"
+                  style={{ height: TRACK_H, gap: 5 }}
                 >
                   <div
                     className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
                     style={{ backgroundColor: hexAlpha(trackColor, isMuted ? 0.2 : 0.7) }}
                   />
                   <span
-                    className="text-[8px] font-black tracking-[0.18em]"
+                    className="text-[7px] font-black tracking-[0.1em] leading-none truncate"
                     style={{ color: hexAlpha(trackColor, isMuted ? 0.25 : 0.65) }}
                   >
                     {label}
@@ -2291,7 +2291,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                     <button
                       onClick={toggleMute}
                       title="Mute"
-                      className="w-5 h-5 rounded text-[7px] font-black transition-all"
+                      className="flex-1 h-[17px] rounded text-[6px] font-black transition-all"
                       style={{
                         background: isMuted ? "#ef444426" : "rgba(255,255,255,0.04)",
                         border:     `1px solid ${isMuted ? "#ef4444aa" : "rgba(255,255,255,0.08)"}`,
@@ -2301,7 +2301,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                     <button
                       onClick={toggleSolo}
                       title="Solo"
-                      className="w-5 h-5 rounded text-[7px] font-black transition-all"
+                      className="flex-1 h-[17px] rounded text-[6px] font-black transition-all"
                       style={{
                         background: isSoloed ? "#f59e0b26" : "rgba(255,255,255,0.04)",
                         border:     `1px solid ${isSoloed ? "#f59e0baa" : "rgba(255,255,255,0.08)"}`,
@@ -2319,15 +2319,15 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
               return (
                 <div key={si}
                   className="relative border-b border-white/5 shrink-0 pl-3 pr-1"
-                  style={{ height: LOOP_H, display: "flex", alignItems: "center", justifyContent: "space-between" }}
+                  style={{ height: LOOP_H, display: "flex", alignItems: "center", gap: 4 }}
                 >
                   <div className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full"
                     style={{ backgroundColor: hexAlpha(LOOP_COLOR, isLMuted ? 0.15 : 0.6) }} />
-                  <span className="text-[7px] font-black tracking-[0.14em] leading-none"
+                  <span className="text-[7px] font-black tracking-[0.08em] leading-none flex-1 min-w-0 truncate"
                     style={{ color: hexAlpha(LOOP_COLOR, isLMuted ? 0.2 : 0.6) }}>
-                    {si === 0 ? "LOOPS" : `LOOP ${si + 1}`}
+                    {si === 0 ? "LP 1" : `LP ${si + 1}`}
                   </span>
-                  <div className="flex gap-px">
+                  <div className="flex gap-px shrink-0">
                     <button onClick={() => setMixerMute(loopCh, !isLMuted)} title="Mute"
                       className="rounded text-[6px] font-black transition-all flex items-center justify-center"
                       style={{ width: 16, height: 16,
@@ -2346,19 +2346,18 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
             })}
             {/* AUDIO track label */}
             <div
-              className="relative flex items-center justify-between border-b border-white/5 shrink-0 pl-3 pr-1"
-              style={{ height: AUDIO_H }}
+              className="relative flex flex-col justify-center border-b border-white/5 shrink-0 pl-3.5 pr-1.5"
+              style={{ height: AUDIO_H, gap: 5 }}
             >
               <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
                 style={{ backgroundColor: hexAlpha(AUDIO_COLOR, (mixerChannels[27]?.muted) ? 0.2 : 0.7) }} />
-              {/* Label + upload icon stacked */}
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[8px] font-black tracking-[0.18em]"
+              {/* Label + upload icon inline */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[7px] font-black tracking-[0.1em] leading-none"
                   style={{ color: hexAlpha(AUDIO_COLOR, (mixerChannels[27]?.muted) ? 0.25 : 0.65) }}>
                   AUDIO
                 </span>
-                {/* File upload button */}
-                <label className="w-4 h-4 rounded flex items-center justify-center cursor-pointer hover:bg-white/10 transition-colors"
+                <label className="w-[14px] h-[14px] rounded flex items-center justify-center cursor-pointer hover:bg-white/10 transition-colors"
                   style={{ color: hexAlpha(AUDIO_COLOR, 0.5) }} title="Import audio file">
                   <input type="file" accept="audio/*,.wav,.mp3,.ogg,.flac,.aif,.aiff,.m4a" className="hidden"
                     onChange={async (e) => {
@@ -2392,14 +2391,14 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
               {/* M/S buttons */}
               <div className="flex gap-0.5">
                 <button onClick={() => setMixerMute(27, !(mixerChannels[27]?.muted))} title="Mute"
-                  className="w-5 h-5 rounded text-[7px] font-black transition-all"
+                  className="flex-1 h-[17px] rounded text-[6px] font-black transition-all"
                   style={{
                     background: (mixerChannels[27]?.muted) ? "#ef444426" : "rgba(255,255,255,0.04)",
                     border: `1px solid ${(mixerChannels[27]?.muted) ? "#ef4444aa" : "rgba(255,255,255,0.08)"}`,
                     color: (mixerChannels[27]?.muted) ? "#ef4444" : "rgba(255,255,255,0.3)",
                   }}>M</button>
                 <button onClick={() => setMixerSolo(27, !(mixerChannels[27]?.soloed))} title="Solo"
-                  className="w-5 h-5 rounded text-[7px] font-black transition-all"
+                  className="flex-1 h-[17px] rounded text-[6px] font-black transition-all"
                   style={{
                     background: (mixerChannels[27]?.soloed) ? "#f59e0b26" : "rgba(255,255,255,0.04)",
                     border: `1px solid ${(mixerChannels[27]?.soloed) ? "#f59e0baa" : "rgba(255,255,255,0.08)"}`,
