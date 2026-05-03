@@ -298,6 +298,7 @@ export function MixerBar({ embedded = false }: { embedded?: boolean } = {}) {
   const {
     channels, expandedChannel,
     setFader, setMute, setSolo, setPan, setEQ, setSendRev, setSendDly, setExpanded,
+    groupBuses,
   } = useMixerBarStore();
 
   const [groupPanelOpen, setGroupPanelOpen] = useState(false);
@@ -336,7 +337,6 @@ export function MixerBar({ embedded = false }: { embedded?: boolean } = {}) {
     channels.forEach((ch, i) => {
       let gain: number;
       if (soloed.size > 0) {
-        // Soloed+muted channels are silenced — mute takes precedence
         gain = (soloed.has(i) && !ch.muted) ? faderToGain(ch.fader) : 0;
       } else {
         gain = ch.muted ? 0 : faderToGain(ch.fader);
@@ -344,6 +344,14 @@ export function MixerBar({ embedded = false }: { embedded?: boolean } = {}) {
       audioEngine.setChannelVolume(i, gain);
     });
   }, [channels]);
+
+  // Apply group bus fader + mute to audioEngine — runs always, not only when panel is open
+  useEffect(() => {
+    GROUP_BUS_IDS.forEach((id) => {
+      const bus = groupBuses[id]!;
+      audioEngine.setGroupVolume(id, bus.muted ? 0 : faderToGain(bus.fader));
+    });
+  }, [groupBuses]);
 
   return (
     <div className="relative flex flex-col shrink-0 bg-[#0e0e0e] border-t border-white/[0.07]">
