@@ -248,6 +248,7 @@ export function seekToBar(bar: number): void {
   _arrangementBar = target;
   notifyBarListeners();
   applyArrangementBar(target);
+  applyAutoLanes(target);
 }
 
 // ─── Reset when arrangement mode turns on/off ─────────────────────────────────
@@ -276,6 +277,7 @@ function initScheduler(): void {
       _baselineMelodyParams = structuredClone(useMelodyStore.getState().params);
       resetScheduler();
       applyArrangementBar(0);
+      applyAutoLanes(0);
     }
 
     // Arrangement mode just turned OFF
@@ -284,10 +286,16 @@ function initScheduler(): void {
       resetScheduler();
     }
 
+    // Playback started while in arrangement mode — apply current bar immediately
+    if (state.isPlaying && !prev.isPlaying && state.arrangementMode) {
+      applyAutoLanes(_arrangementBar);
+    }
+
     // Playback stopped while in arrangement mode
     if (!state.isPlaying && prev.isPlaying && state.arrangementMode) {
       resetScheduler();
       applyArrangementBar(0);
+      applyAutoLanes(0);
     }
   });
 
