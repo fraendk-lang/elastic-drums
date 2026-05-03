@@ -18,8 +18,8 @@ import { bassEngine, type BassParams } from "./BassEngine";
 import { chordsEngine, type ChordsParams } from "./ChordsEngine";
 import { melodyEngine, type MelodyParams } from "./MelodyEngine";
 import { audioEngine } from "./AudioEngine";
-import { faderToGain } from "../store/mixerBarStore";
-import { useArrangementAutoStore, interpolateAuto, AUTO_TRACK_CHANNELS, AUTO_PARAM_DEFAULTS } from "../store/arrangementAutoStore";
+import { faderToGain, useMixerBarStore } from "../store/mixerBarStore";
+import { useArrangementAutoStore, interpolateAuto, AUTO_TRACK_CHANNELS, AUTO_PARAM_DEFAULTS, type AutoParam } from "../store/arrangementAutoStore";
 
 // ─── Arrangement bar external store (for playhead) ───────────────────────────
 
@@ -79,6 +79,72 @@ function makeSilentMelodySteps(count = 64) {
   }));
 }
 
+// ─── Restore a single param to its pre-automation (mixer) state ──────────────
+
+function restoreParam(trackId: string, param: AutoParam): void {
+  const ch = AUTO_TRACK_CHANNELS[trackId];
+  const { channels, groupBuses } = useMixerBarStore.getState();
+
+  switch (param) {
+    case "volume": {
+      if (ch !== null && ch !== undefined) {
+        const c = channels[ch];
+        if (c) audioEngine.setChannelVolume(ch, c.muted ? 0 : faderToGain(c.fader));
+      } else if (trackId === "drums") {
+        const bus = groupBuses["drums"];
+        if (bus) audioEngine.setGroupVolume("drums", bus.muted ? 0 : faderToGain(bus.fader));
+      }
+      break;
+    }
+    case "filterCutoff":
+      if (ch !== null && ch !== undefined) audioEngine.bypassChannelFilter(ch);
+      break;
+    case "drive":
+      if (ch !== null && ch !== undefined) audioEngine.setChannelDrive(ch, 0);
+      break;
+    case "eqHi":
+      if (ch !== null && ch !== undefined) audioEngine.setChannelEQ(ch, "hi", 0);
+      break;
+    case "eqMid":
+      if (ch !== null && ch !== undefined) audioEngine.setChannelEQ(ch, "mid", 0);
+      break;
+    case "reverb": {
+      if (ch !== null && ch !== undefined) {
+        const send = (channels[ch]?.sendRev ?? 0) / 100;
+        audioEngine.setChannelReverbSend(ch, send);
+      }
+      break;
+    }
+    case "delay": {
+      if (ch !== null && ch !== undefined) {
+        const send = (channels[ch]?.sendDly ?? 0) / 100;
+        audioEngine.setChannelDelaySend(ch, send);
+      }
+      break;
+    }
+    case "chorus":
+      if (ch !== null && ch !== undefined) audioEngine.setChannelChorusSend(ch, 0);
+      break;
+    case "pan": {
+      if (ch !== null && ch !== undefined) {
+        const pan = channels[ch]?.pan ?? 0;
+        audioEngine.setChannelPan(ch, pan);
+      }
+      break;
+    }
+  }
+}
+
+/** Restore all currently-open automation lanes to their baseline mixer state */
+function restoreAllOpenLanes(): void {
+  const { lanes: autoLanes, openLanes } = useArrangementAutoStore.getState();
+  for (const [trackId, isOpen] of Object.entries(openLanes)) {
+    if (!isOpen) continue;
+    const lane = autoLanes[trackId];
+    if (lane) restoreParam(trackId, lane.param);
+  }
+}
+
 // ─── Apply automation lanes at bar boundary ───────────────────────────────────
 
 function applyAutoLanes(bar: number): void {
@@ -113,9 +179,14 @@ function applyAutoLanes(bar: number): void {
         break;
       case "filterCutoff": {
         if (ch !== null && ch !== undefined) {
-          // Exponential mapping: 0→1 maps 80 Hz → 18 000 Hz
-          const freq = 80 * Math.pow(18000 / 80, val);
-          audioEngine.setChannelFilter(ch, "lowpass", freq, 1.0);
+          if (val >= 0.995) {
+            // Fully open → bypass the filter entirely (no allpass coloring)
+            audioEngine.bypassChannelFilter(ch);
+          } else {
+            // Exponential mapping: 0→1 maps 80 Hz → 18 000 Hz
+            const freq = 80 * Math.pow(18000 / 80, val);
+            audioEngine.setChannelFilter(ch, "lowpass", freq, 1.0);
+          }
         }
         break;
       }
@@ -280,8 +351,9 @@ function initScheduler(): void {
       applyAutoLanes(0);
     }
 
-    // Arrangement mode just turned OFF
+    // Arrangement mode just turned OFF — restore all automated params
     if (!state.arrangementMode && prev.arrangementMode) {
+      restoreAllOpenLanes();
       useDrumStore.setState({ arrangementSilence: false });
       resetScheduler();
     }
@@ -296,6 +368,33 @@ function initScheduler(): void {
       resetScheduler();
       applyArrangementBar(0);
       applyAutoLanes(0);
+    }
+  });
+
+  // ── Restore when a lane is closed or its param changes ────────────────────
+  useArrangementAutoStore.subscribe((state, prev) => {
+    // Only act during arrangement mode
+    if (!useDrumStore.getState().arrangementMode) return;
+
+    // Lane was open and is now closed → restore that param
+    for (const trackId of Object.keys(prev.openLanes)) {
+      if (prev.openLanes[trackId] && !state.openLanes[trackId]) {
+        const lane = prev.lanes[trackId];
+        if (lane) restoreParam(trackId, lane.param);
+      }
+    }
+
+    // Param changed for an open lane → restore OLD param before applying new one
+    for (const trackId of Object.keys(state.lanes)) {
+      const wasOpen = prev.openLanes[trackId];
+      const isOpen  = state.openLanes[trackId];
+      if (wasOpen && isOpen) {
+        const oldParam = prev.lanes[trackId]?.param;
+        const newParam = state.lanes[trackId]?.param;
+        if (oldParam && newParam && oldParam !== newParam) {
+          restoreParam(trackId, oldParam);
+        }
+      }
     }
   });
 

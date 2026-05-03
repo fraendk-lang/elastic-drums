@@ -1865,9 +1865,11 @@ function AutoLaneCanvas({ lane, totalBars, barPx, height, onChange }: AutoLaneCa
     const hi  = Math.max(fromBar, toBar);
     for (let b = lo; b <= hi; b++) {
       const t = hi === lo ? 0 : (b - lo) / (hi - lo);
+      // When dragging right: lo=fromBar, so t=0→fromVal, t=1→toVal
+      // When dragging left:  lo=toBar,   so t=0→toVal,   t=1→fromVal
       const v = fromBar <= toBar
         ? fromVal + t * (toVal - fromVal)
-        : toVal   + (1 - t) * (fromVal - toVal);
+        : toVal   + t * (fromVal - toVal);
       map.set(b, Math.max(0, Math.min(1, v)));
     }
     onChange(Array.from(map.entries()).map(([bar, value]) => ({ bar, value })));
