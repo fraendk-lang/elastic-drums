@@ -27,13 +27,17 @@ import { MixerBar } from "./MixerBar";
 // ─── Layout constants ─────────────────────────────────────────────────────────
 
 const LABEL_W        = 86;
-const TRACK_H        = 52;
-const LOOP_H         = 36;        // height per loop track row
-const N_LOOP_ROWS    = 3;         // number of visible loop track rows (slots 0–2)
-const LOOPS_TOTAL_H  = LOOP_H * N_LOOP_ROWS; // 108px total
-const AUDIO_H        = 52;
+const MIN_TRACK_H    = 44;        // minimum track row height (px)
+const MIN_LOOP_H     = 28;        // minimum loop row height (px)
+const MIN_AUDIO_H    = 44;        // minimum audio row height (px)
+const N_LOOP_ROWS    = 5;         // number of visible loop track rows (slots 0–4)
 const AUDIO_COLOR    = "#f97316"; // warm orange — distinct from drum red
 const RULER_H        = 22;
+
+// Weight-based height distribution (used by ResizeObserver in component)
+const TRACK_WEIGHT   = 1.4;
+const LOOP_WEIGHT    = 0.8;
+const AUDIO_WEIGHT   = 1.2;
 const MIN_BAR_PX     = 16;
 const MAX_BAR_PX     = 120;
 const DEFAULT_BAR_PX = 40;
@@ -1781,6 +1785,30 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
   const timelineRef    = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Dynamic row heights via ResizeObserver ──────────────────────────────────
+  const [trackH, setTrackH] = useState(52);
+  const [loopH,  setLoopH]  = useState(36);
+  const [audioH, setAudioH] = useState(52);
+
+  useEffect(() => {
+    const el = timelineRef.current;
+    if (!el) return;
+    const compute = (h: number) => {
+      const avail  = Math.max(0, h - RULER_H);
+      const totalW = TRACKS.length * TRACK_WEIGHT + N_LOOP_ROWS * LOOP_WEIGHT + AUDIO_WEIGHT;
+      const unit   = avail / totalW;
+      setTrackH(Math.max(MIN_TRACK_H, Math.floor(unit * TRACK_WEIGHT)));
+      setLoopH (Math.max(MIN_LOOP_H,  Math.floor(unit * LOOP_WEIGHT)));
+      setAudioH(Math.max(MIN_AUDIO_H, Math.floor(unit * AUDIO_WEIGHT)));
+    };
+    const ro = new ResizeObserver(([e]) => compute(e!.contentRect.height));
+    ro.observe(el);
+    compute(el.getBoundingClientRect().height);
+    return () => ro.disconnect();
+  }, []); // timelineRef is a stable ref — no dep needed
+
+  const loopsTotalH = loopH * N_LOOP_ROWS;
+
   const totalBars     = Math.max(songChain.reduce((s, e) => s + e.repeats, 0), 32);
   const displayBars   = Math.max(totalBars, containerW > 0 ? Math.ceil(containerW / barPx) + 2 : totalBars);
   const activeEntry   = songChain[songPosition];
@@ -2274,7 +2302,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                 <div
                   key={id}
                   className="relative flex flex-col justify-center border-b border-white/5 shrink-0 pl-3.5 pr-1.5"
-                  style={{ height: TRACK_H, gap: 5 }}
+                  style={{ height: trackH, gap: 5 }}
                 >
                   <div
                     className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
@@ -2319,7 +2347,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
               return (
                 <div key={si}
                   className="relative border-b border-white/5 shrink-0 pl-3 pr-1"
-                  style={{ height: LOOP_H, display: "flex", alignItems: "center", gap: 4 }}
+                  style={{ height: loopH, display: "flex", alignItems: "center", gap: 4 }}
                 >
                   <div className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full"
                     style={{ backgroundColor: hexAlpha(LOOP_COLOR, isLMuted ? 0.15 : 0.6) }} />
@@ -2347,7 +2375,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
             {/* AUDIO track label */}
             <div
               className="relative flex flex-col justify-center border-b border-white/5 shrink-0 pl-3.5 pr-1.5"
-              style={{ height: AUDIO_H, gap: 5 }}
+              style={{ height: audioH, gap: 5 }}
             >
               <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
                 style={{ backgroundColor: hexAlpha(AUDIO_COLOR, (mixerChannels[27]?.muted) ? 0.2 : 0.7) }} />
@@ -2543,7 +2571,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
               className="relative"
               style={{
                 minWidth: displayBars * barPx,
-                height:   TRACKS.length * TRACK_H + LOOPS_TOTAL_H + AUDIO_H,
+                height:   TRACKS.length * trackH + loopsTotalH + audioH,
               }}
               onPointerMove={handleContentPointerMove}
               onPointerUp={handleContentPointerUp}
@@ -2552,11 +2580,11 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
 
               {/* Grid backgrounds */}
               {[
-                ...TRACKS.map((_, ri) => ({ top: ri * TRACK_H, h: TRACK_H })),
+                ...TRACKS.map((_, ri) => ({ top: ri * trackH, h: trackH })),
                 ...Array.from({ length: N_LOOP_ROWS }, (_, si) => ({
-                  top: TRACKS.length * TRACK_H + si * LOOP_H, h: LOOP_H,
+                  top: TRACKS.length * trackH + si * loopH, h: loopH,
                 })),
-                { top: TRACKS.length * TRACK_H + LOOPS_TOTAL_H, h: AUDIO_H },
+                { top: TRACKS.length * trackH + loopsTotalH, h: audioH },
               ].map(({ top, h }, ri) => (
                 <div
                   key={ri}
@@ -2573,7 +2601,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                 const chain = songChain;
                 let x = 0;
                 for (let i = 0; i < moveDrag.to; i++) x += (chain[i]?.repeats ?? 1) * barPx;
-                const totalH = TRACKS.length * TRACK_H + LOOPS_TOTAL_H + AUDIO_H;
+                const totalH = TRACKS.length * trackH + loopsTotalH + audioH;
                 return (
                   <div
                     className="absolute top-0 pointer-events-none z-30"
@@ -2593,7 +2621,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                 <div
                   key={id}
                   className="absolute left-0 flex"
-                  style={{ top: trackIndex * TRACK_H, height: TRACK_H }}
+                  style={{ top: trackIndex * trackH, height: trackH }}
                 >
                   {songChain.map((entry, clipIndex) => {
                     const scene    = scenes[entry.sceneIndex] ?? null;
@@ -2612,7 +2640,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                         color={color}
                         label={label}
                         width={w}
-                        height={TRACK_H}
+                        height={trackH}
                         isFirstTrack={trackIndex === 0}
                         isLastTrack={trackIndex === TRACKS.length - 1}
                         isActive={isActive}
@@ -2644,7 +2672,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                   {songChain.length === 0 && trackIndex === 0 && (
                     <div
                       className="flex items-center justify-center border-2 border-dashed border-white/8 rounded m-1.5 px-4"
-                      style={{ height: TRACK_H - 12, minWidth: 300 }}
+                      style={{ height: trackH - 12, minWidth: 300 }}
                       onDragOver={e => e.preventDefault()}
                       onDrop={e => handleSceneDrop(e)}
                     >
@@ -2661,13 +2689,13 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                 <div
                   key={si}
                   className="absolute left-0 flex"
-                  style={{ top: TRACKS.length * TRACK_H + si * LOOP_H, height: LOOP_H }}
+                  style={{ top: TRACKS.length * trackH + si * loopH, height: loopH }}
                 >
                   <ArrangementLoopLane
                     songChain={songChain}
                     scenes={scenes}
                     barPx={barPx}
-                    height={LOOP_H}
+                    height={loopH}
                     slotIndex={si}
                     songPosition={songPosition}
                     songMode={songMode}
@@ -2682,12 +2710,12 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
               {/* AUDIO clip lane */}
               <div
                 className="absolute left-0"
-                style={{ top: TRACKS.length * TRACK_H + LOOPS_TOTAL_H }}
+                style={{ top: TRACKS.length * trackH + loopsTotalH }}
               >
                 <AudioClipLane
                   clips={audioClips}
                   barPx={barPx}
-                  height={AUDIO_H}
+                  height={audioH}
                   totalBars={displayBars}
                   selectedId={selectedClipId}
                   onRemove={(id) => { removeAudioClip(id); setSelectedClipId(null); }}
@@ -2712,7 +2740,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                   style={{
                     left:   loopStart * barPx,
                     width:  (loopEnd - loopStart) * barPx,
-                    height: TRACKS.length * TRACK_H + LOOPS_TOTAL_H + AUDIO_H,
+                    height: TRACKS.length * trackH + loopsTotalH + audioH,
                     backgroundColor: "rgba(34,211,238,0.04)",
                     borderLeft:  "1px solid rgba(34,211,238,0.25)",
                     borderRight: "1px solid rgba(34,211,238,0.25)",
@@ -2727,7 +2755,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                   style={{
                     left:            playheadPx,
                     width:           2,
-                    height:          TRACKS.length * TRACK_H + LOOPS_TOTAL_H + AUDIO_H,
+                    height:          TRACKS.length * trackH + loopsTotalH + audioH,
                     backgroundColor: "rgba(255,255,255,0.55)",
                   }}
                 >
