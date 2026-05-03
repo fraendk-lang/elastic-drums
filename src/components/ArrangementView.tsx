@@ -26,7 +26,7 @@ import { MixerBar } from "./MixerBar";
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 
-const LABEL_W        = 68;
+const LABEL_W        = 86;
 const TRACK_H        = 52;
 const LOOP_H         = 36;        // height per loop track row
 const N_LOOP_ROWS    = 3;         // number of visible loop track rows (slots 0–2)
@@ -2235,6 +2235,9 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
           mixerVisible={showMixer}
         />
 
+        {/* Inner column — timeline + panels + palette; shrinks when mixer appears */}
+        <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+
         {/* Timeline */}
         {arrMode === "clips" ? (
           <div className="flex flex-1 min-h-0 overflow-x-auto overflow-y-auto">
@@ -2310,130 +2313,100 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
               );
             })}
             {Array.from({ length: N_LOOP_ROWS }, (_, si) => {
-              const loopCh     = 16 + si; // LP 1 = ch 16, LP 2 = ch 17, LP 3 = ch 18
-              const isLMuted   = mixerChannels[loopCh]?.muted ?? false;
-              const isLSoloed  = mixerChannels[loopCh]?.soloed ?? false;
+              const loopCh    = 16 + si;
+              const isLMuted  = mixerChannels[loopCh]?.muted  ?? false;
+              const isLSoloed = mixerChannels[loopCh]?.soloed ?? false;
               return (
-              <div
-                key={si}
-                className="relative flex items-center justify-between border-b border-white/5 shrink-0 pl-3 pr-1"
-                style={{ height: LOOP_H }}
-              >
-                <div
-                  className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
-                  style={{ backgroundColor: hexAlpha(LOOP_COLOR, isLMuted ? 0.15 : 0.6) }}
-                />
-                <span
-                  className="text-[8px] font-black tracking-[0.18em]"
-                  style={{ color: hexAlpha(LOOP_COLOR, isLMuted ? 0.2 : 0.6) }}
+                <div key={si}
+                  className="relative border-b border-white/5 shrink-0 pl-3 pr-1"
+                  style={{ height: LOOP_H, display: "flex", alignItems: "center", justifyContent: "space-between" }}
                 >
-                  {si === 0 ? "LOOPS" : `LOOP ${si + 1}`}
-                </span>
-                <div className="flex gap-0.5">
-                  <button onClick={() => setMixerMute(loopCh, !isLMuted)} title="Mute"
-                    className="w-5 h-5 rounded text-[7px] font-black transition-all"
-                    style={{
-                      background: isLMuted ? "#ef444426" : "rgba(255,255,255,0.04)",
-                      border: `1px solid ${isLMuted ? "#ef4444aa" : "rgba(255,255,255,0.08)"}`,
-                      color: isLMuted ? "#ef4444" : "rgba(255,255,255,0.3)",
-                    }}>M</button>
-                  <button onClick={() => setMixerSolo(loopCh, !isLSoloed)} title="Solo"
-                    className="w-5 h-5 rounded text-[7px] font-black transition-all"
-                    style={{
-                      background: isLSoloed ? "#f59e0b26" : "rgba(255,255,255,0.04)",
-                      border: `1px solid ${isLSoloed ? "#f59e0baa" : "rgba(255,255,255,0.08)"}`,
-                      color: isLSoloed ? "#f59e0b" : "rgba(255,255,255,0.3)",
-                    }}>S</button>
+                  <div className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full"
+                    style={{ backgroundColor: hexAlpha(LOOP_COLOR, isLMuted ? 0.15 : 0.6) }} />
+                  <span className="text-[7px] font-black tracking-[0.14em] leading-none"
+                    style={{ color: hexAlpha(LOOP_COLOR, isLMuted ? 0.2 : 0.6) }}>
+                    {si === 0 ? "LOOPS" : `LOOP ${si + 1}`}
+                  </span>
+                  <div className="flex gap-px">
+                    <button onClick={() => setMixerMute(loopCh, !isLMuted)} title="Mute"
+                      className="rounded text-[6px] font-black transition-all flex items-center justify-center"
+                      style={{ width: 16, height: 16,
+                        background: isLMuted ? "#ef444420" : "rgba(255,255,255,0.04)",
+                        border: `1px solid ${isLMuted ? "#ef4444aa" : "rgba(255,255,255,0.08)"}`,
+                        color: isLMuted ? "#ef4444" : "rgba(255,255,255,0.3)" }}>M</button>
+                    <button onClick={() => setMixerSolo(loopCh, !isLSoloed)} title="Solo"
+                      className="rounded text-[6px] font-black transition-all flex items-center justify-center"
+                      style={{ width: 16, height: 16,
+                        background: isLSoloed ? "#f59e0b20" : "rgba(255,255,255,0.04)",
+                        border: `1px solid ${isLSoloed ? "#f59e0baa" : "rgba(255,255,255,0.08)"}`,
+                        color: isLSoloed ? "#f59e0b" : "rgba(255,255,255,0.3)" }}>S</button>
+                  </div>
                 </div>
-              </div>
               );
             })}
             {/* AUDIO track label */}
-            {(() => {
-              const isAMuted  = mixerChannels[27]?.muted  ?? false;
-              const isASoloed = mixerChannels[27]?.soloed ?? false;
-              return (
             <div
-              className="relative flex flex-col justify-center border-b border-white/5 shrink-0 pl-3 pr-1 gap-1"
+              className="relative flex items-center justify-between border-b border-white/5 shrink-0 pl-3 pr-1"
               style={{ height: AUDIO_H }}
             >
-              <div
-                className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
-                style={{ backgroundColor: hexAlpha(AUDIO_COLOR, isAMuted ? 0.2 : 0.7) }}
-              />
-              <div className="flex items-center justify-between">
-                <span
-                  className="text-[8px] font-black tracking-[0.18em]"
-                  style={{ color: hexAlpha(AUDIO_COLOR, isAMuted ? 0.25 : 0.65) }}
-                >
+              <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
+                style={{ backgroundColor: hexAlpha(AUDIO_COLOR, (mixerChannels[27]?.muted) ? 0.2 : 0.7) }} />
+              {/* Label + upload icon stacked */}
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[8px] font-black tracking-[0.18em]"
+                  style={{ color: hexAlpha(AUDIO_COLOR, (mixerChannels[27]?.muted) ? 0.25 : 0.65) }}>
                   AUDIO
                 </span>
-                {/* M/S buttons */}
-                <div className="flex gap-0.5">
-                  <button onClick={() => setMixerMute(27, !isAMuted)} title="Mute"
-                    className="w-5 h-5 rounded text-[7px] font-black transition-all"
-                    style={{
-                      background: isAMuted ? "#ef444426" : "rgba(255,255,255,0.04)",
-                      border: `1px solid ${isAMuted ? "#ef4444aa" : "rgba(255,255,255,0.08)"}`,
-                      color: isAMuted ? "#ef4444" : "rgba(255,255,255,0.3)",
-                    }}>M</button>
-                  <button onClick={() => setMixerSolo(27, !isASoloed)} title="Solo"
-                    className="w-5 h-5 rounded text-[7px] font-black transition-all"
-                    style={{
-                      background: isASoloed ? "#f59e0b26" : "rgba(255,255,255,0.04)",
-                      border: `1px solid ${isASoloed ? "#f59e0baa" : "rgba(255,255,255,0.08)"}`,
-                      color: isASoloed ? "#f59e0b" : "rgba(255,255,255,0.3)",
-                    }}>S</button>
-                </div>
+                {/* File upload button */}
+                <label className="w-4 h-4 rounded flex items-center justify-center cursor-pointer hover:bg-white/10 transition-colors"
+                  style={{ color: hexAlpha(AUDIO_COLOR, 0.5) }} title="Import audio file">
+                  <input type="file" accept="audio/*,.wav,.mp3,.ogg,.flac,.aif,.aiff,.m4a" className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      e.target.value = "";
+                      const { audioEngine: ae } = await import("../audio/AudioEngine");
+                      await ae.resume();
+                      const ctx = ae.getAudioContext();
+                      if (!ctx) return;
+                      try {
+                        const buf   = await ctx.decodeAudioData(await file.arrayBuffer());
+                        const spb   = (60.0 / bpm) * 4;
+                        const peaks = computeWaveformPeaks(buf);
+                        addAudioClip({
+                          id: `ac-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                          startBar: 0, durationBars: Math.max(0.5, buf.duration / spb),
+                          fileName: file.name, buffer: buf, waveformPeaks: peaks,
+                          volume: 1, color: AUDIO_COLOR, loop: false,
+                          sampleStartSec: 0, sampleEndSec: buf.duration,
+                          fadeInSec: 0, fadeOutSec: 0,
+                        });
+                      } catch (err) { console.warn("AudioClip decode failed:", err); }
+                    }} />
+                  <svg width="9" height="9" viewBox="0 0 12 12" fill="currentColor">
+                    <path d="M6 1L6 8M6 1L3.5 3.5M6 1L8.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+                    <path d="M1 9.5V11h10V9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+                  </svg>
+                </label>
               </div>
-              {/* File upload button */}
-              <label
-                className="w-5 h-5 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-white/10"
-                style={{ color: hexAlpha(AUDIO_COLOR, 0.6) }}
-                title="Import audio file"
-              >
-                <input
-                  type="file"
-                  accept="audio/*,.wav,.mp3,.ogg,.flac,.aif,.aiff,.m4a"
-                  className="hidden"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    e.target.value = "";
-                    const { audioEngine: ae } = await import("../audio/AudioEngine");
-                    await ae.resume();
-                    const ctx = ae.getAudioContext();
-                    if (!ctx) return;
-                    try {
-                      const buf   = await ctx.decodeAudioData(await file.arrayBuffer());
-                      const spb   = (60.0 / bpm) * 4;
-                      const peaks = computeWaveformPeaks(buf);
-                      addAudioClip({
-                        id:            `ac-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-                        startBar:      0,
-                        durationBars:  Math.max(0.5, buf.duration / spb),
-                        fileName:      file.name,
-                        buffer:        buf,
-                        waveformPeaks: peaks,
-                        volume:        1,
-                        color:         AUDIO_COLOR,
-                        loop:          false,
-                        sampleStartSec: 0,
-                        sampleEndSec:   buf.duration,
-                        fadeInSec:      0,
-                        fadeOutSec:     0,
-                      });
-                    } catch (err) { console.warn("AudioClip decode failed:", err); }
-                  }}
-                />
-                <svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor">
-                  <path d="M6 1L6 8M6 1L3.5 3.5M6 1L8.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
-                  <path d="M1 9.5V11h10V9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
-                </svg>
-              </label>
+              {/* M/S buttons */}
+              <div className="flex gap-0.5">
+                <button onClick={() => setMixerMute(27, !(mixerChannels[27]?.muted))} title="Mute"
+                  className="w-5 h-5 rounded text-[7px] font-black transition-all"
+                  style={{
+                    background: (mixerChannels[27]?.muted) ? "#ef444426" : "rgba(255,255,255,0.04)",
+                    border: `1px solid ${(mixerChannels[27]?.muted) ? "#ef4444aa" : "rgba(255,255,255,0.08)"}`,
+                    color: (mixerChannels[27]?.muted) ? "#ef4444" : "rgba(255,255,255,0.3)",
+                  }}>M</button>
+                <button onClick={() => setMixerSolo(27, !(mixerChannels[27]?.soloed))} title="Solo"
+                  className="w-5 h-5 rounded text-[7px] font-black transition-all"
+                  style={{
+                    background: (mixerChannels[27]?.soloed) ? "#f59e0b26" : "rgba(255,255,255,0.04)",
+                    border: `1px solid ${(mixerChannels[27]?.soloed) ? "#f59e0baa" : "rgba(255,255,255,0.08)"}`,
+                    color: (mixerChannels[27]?.soloed) ? "#f59e0b" : "rgba(255,255,255,0.3)",
+                  }}>S</button>
+              </div>
             </div>
-              );
-            })()}
           </div>
 
           {/* Scrollable area */}
@@ -2856,10 +2829,11 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
           </div>
         </div>
 
-        {/* Context menu */}
-        {/* Embedded mixer — shown when MIXER toggle is active */}
+        </div>{/* end inner column */}
+
+        {/* Embedded mixer — outside inner column so it doesn't clip */}
         {showMixer && (
-          <div className="shrink-0 border-t border-white/8">
+          <div className="shrink-0 border-t border-white/8 overflow-hidden">
             <MixerBar embedded />
           </div>
         )}
