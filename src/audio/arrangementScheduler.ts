@@ -19,7 +19,7 @@ import { chordsEngine, type ChordsParams } from "./ChordsEngine";
 import { melodyEngine, type MelodyParams } from "./MelodyEngine";
 import { audioEngine } from "./AudioEngine";
 import { faderToGain } from "../store/mixerBarStore";
-import { useArrangementAutoStore, interpolateAuto, AUTO_TRACK_CHANNELS } from "../store/arrangementAutoStore";
+import { useArrangementAutoStore, interpolateAuto, AUTO_TRACK_CHANNELS, AUTO_PARAM_DEFAULTS } from "../store/arrangementAutoStore";
 
 // ─── Arrangement bar external store (for playhead) ───────────────────────────
 
@@ -87,20 +87,54 @@ function applyAutoLanes(bar: number): void {
     if (!isOpen) continue;
     const lane = autoLanes[trackId];
     if (!lane) continue;
-    const val = interpolateAuto(lane.points, bar);  // 0-1
+    const def = AUTO_PARAM_DEFAULTS[lane.param] ?? 0.75;
+    const val = interpolateAuto(lane.points, bar, def);  // 0-1
     const ch  = AUTO_TRACK_CHANNELS[trackId];
-    if (lane.param === "volume") {
-      if (ch !== null && ch !== undefined) {
-        audioEngine.setChannelVolume(ch, faderToGain(val * 1000));
-      } else if (trackId === "drums") {
-        audioEngine.setGroupVolume("drums", faderToGain(val * 1000));
+
+    switch (lane.param) {
+      case "volume":
+        if (ch !== null && ch !== undefined) {
+          audioEngine.setChannelVolume(ch, faderToGain(val * 1000));
+        } else if (trackId === "drums") {
+          audioEngine.setGroupVolume("drums", faderToGain(val * 1000));
+        }
+        break;
+      case "pan":
+        if (ch !== null && ch !== undefined)
+          audioEngine.setChannelPan(ch, val * 2 - 1);
+        break;
+      case "reverb":
+        if (ch !== null && ch !== undefined)
+          audioEngine.setChannelReverbSend(ch, val);
+        break;
+      case "delay":
+        if (ch !== null && ch !== undefined)
+          audioEngine.setChannelDelaySend(ch, val);
+        break;
+      case "filterCutoff": {
+        if (ch !== null && ch !== undefined) {
+          // Exponential mapping: 0→1 maps 80 Hz → 18 000 Hz
+          const freq = 80 * Math.pow(18000 / 80, val);
+          audioEngine.setChannelFilter(ch, "lowpass", freq, 1.0);
+        }
+        break;
       }
-    } else if (lane.param === "reverb" && ch !== null && ch !== undefined) {
-      audioEngine.setChannelReverbSend(ch, val);
-    } else if (lane.param === "delay" && ch !== null && ch !== undefined) {
-      audioEngine.setChannelDelaySend(ch, val);
-    } else if (lane.param === "pan" && ch !== null && ch !== undefined) {
-      audioEngine.setChannelPan(ch, val * 2 - 1);
+      case "drive":
+        if (ch !== null && ch !== undefined)
+          audioEngine.setChannelDrive(ch, val * 100);
+        break;
+      case "chorus":
+        if (ch !== null && ch !== undefined)
+          audioEngine.setChannelChorusSend(ch, val);
+        break;
+      case "eqHi":
+        if (ch !== null && ch !== undefined)
+          audioEngine.setChannelEQ(ch, "hi", (val - 0.5) * 24);
+        break;
+      case "eqMid":
+        if (ch !== null && ch !== undefined)
+          audioEngine.setChannelEQ(ch, "mid", (val - 0.5) * 24);
+        break;
     }
   }
 }

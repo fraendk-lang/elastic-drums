@@ -1,6 +1,62 @@
 import { create } from "zustand";
 
-export type AutoParam = "volume" | "pan" | "reverb" | "delay";
+export type AutoParam =
+  | "volume"       // 0-1 → faderToGain(val*1000)
+  | "pan"          // 0-1 → -1..+1
+  | "reverb"       // 0-1 send amount
+  | "delay"        // 0-1 send amount
+  | "filterCutoff" // 0-1 → 80..18 000 Hz (exp)
+  | "drive"        // 0-1 → 0..100
+  | "chorus"       // 0-1 send amount
+  | "eqHi"         // 0-1 → -12..+12 dB (0.5 = flat)
+  | "eqMid";       // 0-1 → -12..+12 dB (0.5 = flat)
+
+/** Default (no-point) value per param — used by interpolateAuto */
+export const AUTO_PARAM_DEFAULTS: Record<AutoParam, number> = {
+  volume:      0.75,
+  pan:         0.5,
+  reverb:      0,
+  delay:       0,
+  filterCutoff:1.0,
+  drive:       0,
+  chorus:      0,
+  eqHi:        0.5,
+  eqMid:       0.5,
+};
+
+/** Context-aware param options per track */
+export const TRACK_AUTO_PARAMS: Record<string, { value: AutoParam; label: string }[]> = {
+  drums: [
+    { value: "volume",  label: "VOL"   },
+    { value: "reverb",  label: "REV"   },
+    { value: "delay",   label: "DLY"   },
+  ],
+  bass: [
+    { value: "volume",       label: "VOL"    },
+    { value: "filterCutoff", label: "FILTER" },
+    { value: "drive",        label: "DRIVE"  },
+    { value: "eqHi",         label: "EQ HI"  },
+    { value: "reverb",       label: "REV"    },
+    { value: "delay",        label: "DLY"    },
+  ],
+  chords: [
+    { value: "volume",       label: "VOL"    },
+    { value: "filterCutoff", label: "FILTER" },
+    { value: "chorus",       label: "CHORUS" },
+    { value: "eqHi",         label: "EQ HI"  },
+    { value: "reverb",       label: "REV"    },
+    { value: "delay",        label: "DLY"    },
+  ],
+  melody: [
+    { value: "volume",       label: "VOL"    },
+    { value: "filterCutoff", label: "FILTER" },
+    { value: "drive",        label: "DRIVE"  },
+    { value: "eqHi",         label: "EQ HI"  },
+    { value: "chorus",       label: "CHORUS" },
+    { value: "reverb",       label: "REV"    },
+    { value: "delay",        label: "DLY"    },
+  ],
+};
 
 export interface AutoPoint {
   bar:   number;  // 0-based bar index
@@ -51,7 +107,7 @@ export const useArrangementAutoStore = create<ArrangementAutoState>((set) => ({
 
 /**
  * Stepped interpolation — holds value until next point.
- * Returns defaultValue (0.75 = unity) when no points are defined.
+ * Pass the param's default via AUTO_PARAM_DEFAULTS[lane.param].
  */
 export function interpolateAuto(points: AutoPoint[], bar: number, def = 0.75): number {
   if (points.length === 0) return def;

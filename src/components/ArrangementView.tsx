@@ -25,6 +25,7 @@ import { useMixerBarStore } from "../store/mixerBarStore";
 import { MixerBar } from "./MixerBar";
 import {
   useArrangementAutoStore,
+  TRACK_AUTO_PARAMS,
   type AutoLane,
   type AutoPoint,
   type AutoParam,
@@ -2581,10 +2582,9 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                         outline: "none",
                       }}
                     >
-                      <option value="volume">VOL</option>
-                      <option value="pan">PAN</option>
-                      <option value="reverb">REV</option>
-                      <option value="delay">DLY</option>
+                      {(TRACK_AUTO_PARAMS[id] ?? TRACK_AUTO_PARAMS["melody"]!).map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
                     </select>
                   </div>
                 )}
