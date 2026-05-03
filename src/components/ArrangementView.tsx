@@ -1720,10 +1720,21 @@ interface AutoLaneCanvasProps {
 
 function AutoLaneCanvas({ lane, totalBars, barPx, height, onChange }: AutoLaneCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const stateRef  = useRef<{ dragging: number | null }>({ dragging: null });
-  const width     = totalBars * barPx;
 
-  // Draw the automation lane
+  /** paint = free draw, drag = move existing point */
+  const actionRef = useRef<{
+    kind:     "paint" | "drag" | null;
+    dragIdx:  number | null;
+    lastBar:  number;
+    lastVal:  number;
+  }>({ kind: null, dragIdx: null, lastBar: 0, lastVal: 0 });
+
+  const [hover, setHover] = useState<{ x: number; y: number; bar: number; val: number } | null>(null);
+  const width = totalBars * barPx;
+  const getY  = (v: number) => height * (1 - v);
+  const getV  = (rawY: number) => Math.max(0, Math.min(1, 1 - rawY / height));
+
+  // ── Draw ────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -1731,146 +1742,186 @@ function AutoLaneCanvas({ lane, totalBars, barPx, height, onChange }: AutoLaneCa
     if (!ctx) return;
     ctx.clearRect(0, 0, width, height);
 
+    // Bar grid lines
+    ctx.strokeStyle = "rgba(255,255,255,0.05)";
+    ctx.lineWidth   = 1;
+    for (let b = 1; b < totalBars; b++) {
+      ctx.beginPath();
+      ctx.moveTo(b * barPx, 0);
+      ctx.lineTo(b * barPx, height);
+      ctx.stroke();
+    }
+    // Mid guide (value = 0.5)
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.setLineDash([3, 5]);
+    ctx.beginPath();
+    ctx.moveTo(0, height * 0.5);
+    ctx.lineTo(width, height * 0.5);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
     const pts = [...lane.points].sort((a, b) => a.bar - b.bar);
 
-    // Build stepped path
+    // Stepped path + fill
     const path = new Path2D();
-    const fillPath = new Path2D();
-
-    // Determine full y-range for the curve
-    const getY = (v: number) => height * (1 - v);
-
-    // Start fill path at bottom-left
-    fillPath.moveTo(0, height);
+    const fill = new Path2D();
+    fill.moveTo(0, height);
 
     if (pts.length === 0) {
-      // Flat line at default value 0.75
       const y = getY(0.75);
-      path.moveTo(0, y);
-      path.lineTo(width, y);
-      fillPath.lineTo(0, y);
-      fillPath.lineTo(width, y);
+      path.moveTo(0, y); path.lineTo(width, y);
+      fill.lineTo(0, y); fill.lineTo(width, y);
     } else {
-      // Extend flat line from bar 0 to first point
       const firstY = getY(pts[0]!.value);
       path.moveTo(0, firstY);
       path.lineTo(pts[0]!.bar * barPx, firstY);
-      fillPath.lineTo(0, firstY);
-      fillPath.lineTo(pts[0]!.bar * barPx, firstY);
+      fill.lineTo(0, firstY);
+      fill.lineTo(pts[0]!.bar * barPx, firstY);
 
-      // Draw stepped segments between adjacent points
       for (let i = 0; i < pts.length; i++) {
         const curr = pts[i]!;
         const next = pts[i + 1];
-        const currX = curr.bar * barPx;
-        const currY = getY(curr.value);
-
         if (next) {
-          const nextX = next.bar * barPx;
-          const nextY = getY(next.value);
-          // Horizontal then vertical
-          path.lineTo(nextX, currY);
-          path.lineTo(nextX, nextY);
-          fillPath.lineTo(nextX, currY);
-          fillPath.lineTo(nextX, nextY);
+          const nx = next.bar * barPx;
+          const cy = getY(curr.value);
+          const ny = getY(next.value);
+          path.lineTo(nx, cy); path.lineTo(nx, ny);
+          fill.lineTo(nx, cy); fill.lineTo(nx, ny);
         } else {
-          // Extend flat line from last point to end
-          path.lineTo(width, currY);
-          fillPath.lineTo(width, currY);
+          path.lineTo(width, getY(curr.value));
+          fill.lineTo(width, getY(curr.value));
         }
-        void currX; // suppress unused warning
       }
     }
+    fill.lineTo(width, height);
+    fill.closePath();
 
-    // Close fill path to bottom
-    fillPath.lineTo(width, height);
-    fillPath.closePath();
-
-    // Fill gradient
     const grad = ctx.createLinearGradient(0, 0, 0, height);
-    grad.addColorStop(0, "rgba(99,102,241,0.35)");
+    grad.addColorStop(0, "rgba(99,102,241,0.45)");
     grad.addColorStop(1, "rgba(99,102,241,0.05)");
     ctx.fillStyle = grad;
-    ctx.fill(fillPath);
+    ctx.fill(fill);
 
-    // Draw line
-    ctx.strokeStyle = "#6366f1";
+    ctx.strokeStyle = "#818cf8";
     ctx.lineWidth   = 1.5;
     ctx.stroke(path);
 
-    // Draw dots
+    // Point dots
     for (const pt of pts) {
-      const x = pt.bar * barPx;
-      const y = getY(pt.value);
+      const px = pt.bar * barPx;
+      const py = getY(pt.value);
       ctx.beginPath();
-      ctx.arc(x, y, 4, 0, Math.PI * 2);
-      ctx.fillStyle   = "#ffffff";
+      ctx.arc(px, py, 5, 0, Math.PI * 2);
+      ctx.fillStyle   = "#c7d2fe";
       ctx.fill();
       ctx.strokeStyle = "#6366f1";
       ctx.lineWidth   = 1.5;
       ctx.stroke();
     }
-  }, [lane.points, totalBars, barPx, height, width]);
 
-  function getBarAndValue(e: React.PointerEvent<HTMLCanvasElement>): { bar: number; value: number } {
-    const rect  = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
-    const x     = e.clientX - rect.left;
-    const y     = e.clientY - rect.top;
-    const bar   = Math.max(0, Math.min(totalBars - 1, Math.round(x / barPx)));
-    const value = Math.max(0, Math.min(1, 1 - y / height));
-    return { bar, value };
+    // Hover crosshair + label (only while not actively drawing)
+    if (hover && actionRef.current.kind === null) {
+      ctx.strokeStyle = "rgba(255,255,255,0.22)";
+      ctx.lineWidth   = 1;
+      ctx.setLineDash([3, 4]);
+      ctx.beginPath(); ctx.moveTo(hover.x, 0); ctx.lineTo(hover.x, height); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, hover.y); ctx.lineTo(width, hover.y);  ctx.stroke();
+      ctx.setLineDash([]);
+
+      const label = `B${hover.bar + 1}  ${Math.round(hover.val * 100)}%`;
+      ctx.font      = "9px monospace";
+      ctx.fillStyle = "rgba(199,210,254,0.85)";
+      const tx = Math.min(hover.x + 5, width - label.length * 5.5);
+      ctx.fillText(label, tx, Math.max(11, hover.y - 5));
+    }
+  }, [lane.points, totalBars, barPx, height, width, hover]);
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+  function fromEvent(e: React.PointerEvent<HTMLCanvasElement> | React.MouseEvent<HTMLCanvasElement>) {
+    const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
+    const rawX = e.clientX - rect.left;
+    const rawY = e.clientY - rect.top;
+    const bar  = Math.max(0, Math.min(totalBars - 1, Math.round(rawX / barPx)));
+    const val  = getV(rawY);
+    return { rawX, rawY, bar, val };
   }
 
-  function findNearPoint(bar: number, value: number): number | null {
-    const pts = lane.points;
-    for (let i = 0; i < pts.length; i++) {
-      const pt  = pts[i]!;
-      const dx  = (pt.bar - bar) * barPx;
-      const dy  = (pt.value - value) * height;
-      if (Math.sqrt(dx * dx + dy * dy) <= 6) return i;
+  function nearPoint(rawX: number, rawY: number): number | null {
+    for (let i = 0; i < lane.points.length; i++) {
+      const pt = lane.points[i]!;
+      if (Math.abs(pt.bar * barPx - rawX) <= 9 && Math.abs(getY(pt.value) - rawY) <= 9) return i;
     }
     return null;
   }
 
-  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  /**
+   * Paint automation values from (fromBar, fromVal) → (toBar, toVal).
+   * Linearly interpolates across all bars in between so diagonal drags
+   * produce smooth ramps instead of jagged steps.
+   */
+  function paintRange(fromBar: number, fromVal: number, toBar: number, toVal: number) {
+    const map = new Map(lane.points.map(p => [p.bar, p.value]));
+    const lo  = Math.min(fromBar, toBar);
+    const hi  = Math.max(fromBar, toBar);
+    for (let b = lo; b <= hi; b++) {
+      const t = hi === lo ? 0 : (b - lo) / (hi - lo);
+      const v = fromBar <= toBar
+        ? fromVal + t * (toVal - fromVal)
+        : toVal   + (1 - t) * (fromVal - toVal);
+      map.set(b, Math.max(0, Math.min(1, v)));
+    }
+    onChange(Array.from(map.entries()).map(([bar, value]) => ({ bar, value })));
+  }
+
+  // ── Pointer handlers ─────────────────────────────────────────────────────────
+  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.button !== 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    const { bar, value } = getBarAndValue(e);
-    const near = findNearPoint(bar, value);
+    const { rawX, rawY, bar, val } = fromEvent(e);
+    setHover(null);
+    const near = nearPoint(rawX, rawY);
     if (near !== null) {
-      // Check if it's a removal click (no drag follows — handled in pointerUp)
-      stateRef.current.dragging = near;
+      // Drag existing point
+      actionRef.current = { kind: "drag", dragIdx: near, lastBar: bar, lastVal: val };
     } else {
-      // Add a new point
-      const newPts = [...lane.points, { bar, value }];
-      onChange(newPts);
-      stateRef.current.dragging = newPts.length - 1;
+      // Start painting
+      actionRef.current = { kind: "paint", dragIdx: null, lastBar: bar, lastVal: val };
+      paintRange(bar, val, bar, val);
     }
   };
 
-  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const { dragging } = stateRef.current;
-    if (dragging === null) return;
-    const { bar, value } = getBarAndValue(e);
-    const newPts = [...lane.points];
-    newPts[dragging] = { bar, value };
-    onChange(newPts);
+  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const { rawX, rawY, bar, val } = fromEvent(e);
+    const a = actionRef.current;
+
+    if (a.kind === null) {
+      // Idle — show hover crosshair
+      setHover({ x: rawX, y: rawY, bar, val });
+      return;
+    }
+    if (a.kind === "drag" && a.dragIdx !== null) {
+      const newPts = [...lane.points];
+      newPts[a.dragIdx] = { bar, value: val };
+      onChange(newPts);
+    } else if (a.kind === "paint") {
+      paintRange(a.lastBar, a.lastVal, bar, val);
+    }
+    actionRef.current = { ...a, lastBar: bar, lastVal: val };
   };
 
-  const handlePointerUp = () => {
-    stateRef.current.dragging = null;
+  const onPointerUp = () => {
+    actionRef.current = { kind: null, dragIdx: null, lastBar: 0, lastVal: 0 };
   };
 
-  // Right-click removes nearest point
-  const handleContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  // Right-click: remove the nearest point (or the point at that bar)
+  const onContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
     e.preventDefault();
-    const rect  = e.currentTarget.getBoundingClientRect();
-    const x     = e.clientX - rect.left;
-    const y     = e.clientY - rect.top;
-    const bar   = Math.max(0, Math.min(totalBars - 1, Math.round(x / barPx)));
-    const value = Math.max(0, Math.min(1, 1 - y / height));
-    const near  = findNearPoint(bar, value);
+    const { rawX, rawY, bar } = fromEvent(e);
+    const near = nearPoint(rawX, rawY);
     if (near !== null) {
       onChange(lane.points.filter((_, i) => i !== near));
+    } else {
+      onChange(lane.points.filter(p => p.bar !== bar));
     }
   };
 
@@ -1880,11 +1931,12 @@ function AutoLaneCanvas({ lane, totalBars, barPx, height, onChange }: AutoLaneCa
       width={width}
       height={height}
       style={{ display: "block", cursor: "crosshair", touchAction: "none" }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
-      onContextMenu={handleContextMenu}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onPointerLeave={() => setHover(null)}
+      onContextMenu={onContextMenu}
     />
   );
 }
@@ -1937,7 +1989,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
 
   const { lanes: autoLanes, openLanes, toggleLane, setParam: setAutoParam, setPoints } =
     useArrangementAutoStore();
-  const AUTO_LANE_H = 38;
+  const AUTO_LANE_H = 64;
 
   const [arrMode, setArrMode]                 = useState<"scene" | "clips">("scene");
   const setArrangementMode                    = useDrumStore((s) => s.setArrangementMode);
@@ -2570,22 +2622,37 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                     <span className="text-[6px] font-black tracking-[0.14em] text-[#818cf8]/60 flex-1">
                       AUTO
                     </span>
-                    <select
-                      value={autoLanes[id]?.param ?? "volume"}
-                      onChange={(e) => setAutoParam(id, e.target.value as AutoParam)}
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-[6px] font-black tracking-[0.08em] rounded-md px-1 py-0.5 cursor-pointer"
-                      style={{
-                        background: "rgba(99,102,241,0.15)",
-                        border: "1px solid rgba(99,102,241,0.35)",
-                        color: "#818cf8",
-                        outline: "none",
-                      }}
-                    >
-                      {(TRACK_AUTO_PARAMS[id] ?? TRACK_AUTO_PARAMS["melody"]!).map(opt => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
+                    <div className="flex items-center gap-1">
+                      <select
+                        value={autoLanes[id]?.param ?? "volume"}
+                        onChange={(e) => setAutoParam(id, e.target.value as AutoParam)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-[6px] font-black tracking-[0.08em] rounded-md px-1 py-0.5 cursor-pointer"
+                        style={{
+                          background: "rgba(99,102,241,0.15)",
+                          border: "1px solid rgba(99,102,241,0.35)",
+                          color: "#818cf8",
+                          outline: "none",
+                        }}
+                      >
+                        {(TRACK_AUTO_PARAMS[id] ?? TRACK_AUTO_PARAMS["melody"]!).map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                      {/* Clear all points */}
+                      {(autoLanes[id]?.points?.length ?? 0) > 0 && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setPoints(id, []); }}
+                          title="Alle Punkte löschen"
+                          className="text-[6px] font-black tracking-[0.08em] rounded px-1 py-0.5 transition-all"
+                          style={{
+                            background: "rgba(239,68,68,0.12)",
+                            border:     "1px solid rgba(239,68,68,0.3)",
+                            color:      "rgba(239,68,68,0.7)",
+                          }}
+                        >✕</button>
+                      )}
+                    </div>
                   </div>
                 )}
                 </div>
