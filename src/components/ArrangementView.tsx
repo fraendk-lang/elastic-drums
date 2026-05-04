@@ -1226,6 +1226,42 @@ function PerTrackClip({
   const patternBars  = Math.max(1, patternSteps / 16);
   const loopCount    = Math.ceil(clip.lengthBars / patternBars);
 
+  // Long-press (touch alternative to double-click) — fires edit after 500ms hold
+  const lpTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lpStartX = useRef(0);
+  const lpStartY = useRef(0);
+  const lpFired  = useRef(false);
+
+  const handleCombinedPointerDown = useCallback((e: React.PointerEvent) => {
+    onMoveStart(e);
+    lpFired.current = false;
+    lpStartX.current = e.clientX;
+    lpStartY.current = e.clientY;
+    lpTimer.current = setTimeout(() => {
+      lpTimer.current = null;
+      lpFired.current = true;
+      onDoubleClick(e as unknown as React.MouseEvent);
+      if (navigator.vibrate) navigator.vibrate(30);
+    }, 500);
+  }, [onMoveStart, onDoubleClick]);
+
+  const handleCombinedPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!lpTimer.current) return;
+    if (Math.abs(e.clientX - lpStartX.current) > 8 || Math.abs(e.clientY - lpStartY.current) > 8) {
+      clearTimeout(lpTimer.current);
+      lpTimer.current = null;
+    }
+  }, []);
+
+  const handleCombinedPointerUp = useCallback(() => {
+    if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null; }
+  }, []);
+
+  const handleCombinedClick = useCallback((e: React.MouseEvent) => {
+    if (lpFired.current) { lpFired.current = false; return; }
+    onSelect(e);
+  }, [onSelect]);
+
   return (
     <div
       className="absolute top-0.5 bottom-0.5 rounded overflow-hidden select-none"
@@ -1238,10 +1274,13 @@ function PerTrackClip({
           : `1px solid ${hexAlpha(color, 0.45)}`,
         cursor:          "grab",
       }}
-      onClick={onSelect}
+      onClick={handleCombinedClick}
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
-      onPointerDown={onMoveStart}
+      onPointerDown={handleCombinedPointerDown}
+      onPointerMove={handleCombinedPointerMove}
+      onPointerUp={handleCombinedPointerUp}
+      onPointerCancel={handleCombinedPointerUp}
     >
       {/* Mini waveform + loop dividers */}
       {w > 12 && (

@@ -556,12 +556,13 @@ export function App() {
             onOpenEditor={() => overlay.openOverlay("pianoRoll")}
           />
         )}
+        {overlay.isOpen("clipLauncher") && <ClipLauncher isOpen onClose={() => overlay.closeOverlay("clipLauncher")} />}
+        {overlay.isOpen("arrangement") && <ArrangementView isOpen onClose={() => overlay.closeOverlay("arrangement")} />}
+        {/* PianoRoll + ChordPianoRoll must render AFTER ArrangementView so they appear on top when opened from a clip */}
         {overlay.isOpen("pianoRoll") && <PianoRoll isOpen onClose={() => overlay.closeOverlay("pianoRoll")} />}
         {overlay.isOpen("chordPianoRoll") && (
           <ChordPianoRoll isOpen onClose={() => overlay.closeOverlay("chordPianoRoll")} />
         )}
-        {overlay.isOpen("clipLauncher") && <ClipLauncher isOpen onClose={() => overlay.closeOverlay("clipLauncher")} />}
-        {overlay.isOpen("arrangement") && <ArrangementView isOpen onClose={() => overlay.closeOverlay("arrangement")} />}
         {overlay.isOpen("modMatrix") && <ModMatrixEditor isOpen onClose={() => overlay.closeOverlay("modMatrix")} />}
         {overlay.isOpen("macros") && <MacroPanel isOpen onClose={() => overlay.closeOverlay("macros")} />}
         {overlay.isOpen("midiLearn") && <MidiLearnPanel isOpen onClose={() => overlay.closeOverlay("midiLearn")} />}
