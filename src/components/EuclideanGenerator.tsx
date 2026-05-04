@@ -144,10 +144,18 @@ const GROOVE_STYLES: GrooveStyle[] = [
 const NOTE_MODES = [
   { id: "root",       label: "Root" },
   { id: "ascending",  label: "Ascend" },
+  { id: "contour",    label: "Contour" },
   { id: "walk",       label: "Walk" },
   { id: "alternate",  label: "1 ↔ 5" },
   { id: "pentatonic", label: "Pentatonic" },
   { id: "random",     label: "Random" },
+];
+
+const GATE_MODES: { id: "stac"|"med"|"leg"|"tie"; label: string; hint: string }[] = [
+  { id: "stac", label: "STAC", hint: "Staccato — 1 step gate (default)" },
+  { id: "med",  label: "MED",  hint: "Medium — half distance to next hit" },
+  { id: "leg",  label: "LEG",  hint: "Legato — fills to next hit" },
+  { id: "tie",  label: "TIE",  hint: "Tied — legato + no re-trigger" },
 ];
 
 type Target = "drums" | "bass" | "chords" | "melody" | "layers";
@@ -198,6 +206,8 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
   const [accentPulses, setAccentPulses] = useState(0);
   const [accentRotation, setAccentRotation] = useState(0);
   const [noteMode, setNoteMode] = useState("root");
+  const [gateMode, setGateMode] = useState<"stac"|"med"|"leg"|"tie">("stac");
+  const [octaveRange, setOctaveRange] = useState<1|2|3>(1);
   const [kitDensity, setKitDensity] = useState(0.5);  // 0 = sparse … 1 = dense
   const [activeStyle, setActiveStyle] = useState<string | null>(null);
 
@@ -225,24 +235,24 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
   const handleApply = useCallback(() => {
     switch (target) {
       case "drums":
-        applyDrumEuclidean(selectedVoice, pulses, steps, rotation);
+        applyDrumEuclidean(selectedVoice, pulses, steps, rotation, accentPulses, accentRotation);
         break;
       case "bass":
-        applyBassEuclidean(pulses, steps, rotation, noteMode, accentPulses, accentRotation);
+        applyBassEuclidean(pulses, steps, rotation, noteMode, accentPulses, accentRotation, gateMode, octaveRange);
         break;
       case "chords":
-        applyChordsEuclidean(pulses, steps, rotation, noteMode, accentPulses, accentRotation);
+        applyChordsEuclidean(pulses, steps, rotation, noteMode, accentPulses, accentRotation, gateMode, octaveRange);
         break;
       case "melody":
-        applyMelodyEuclidean(pulses, steps, rotation, noteMode, accentPulses, accentRotation);
+        applyMelodyEuclidean(pulses, steps, rotation, noteMode, accentPulses, accentRotation, gateMode, octaveRange);
         break;
       case "layers":
         applyLayerEuclidean(pulses, steps, rotation, noteMode, melodyScale, melodyRoot, accentPulses, accentRotation);
-        setLayersEnabled(true); // auto-enable so playback starts immediately
+        setLayersEnabled(true);
         break;
     }
     onClose();
-  }, [target, selectedVoice, pulses, steps, rotation, accentPulses, accentRotation, noteMode,
+  }, [target, selectedVoice, pulses, steps, rotation, accentPulses, accentRotation, noteMode, gateMode, octaveRange,
       applyDrumEuclidean, applyBassEuclidean, applyChordsEuclidean, applyMelodyEuclidean,
       applyLayerEuclidean, setLayersEnabled, melodyScale, melodyRoot, onClose]);
 
@@ -300,16 +310,23 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
   if (!isOpen) return null;
 
   // ── Polygon Visualizer ──
-  // Classic Toussaint-style circular representation
-  const polygonSize = 180;
+  const polygonSize = 228;
   const cx = polygonSize / 2;
   const cy = polygonSize / 2;
-  const r = polygonSize / 2 - 16;
+  const r = polygonSize / 2 - 18;
   const activeIndices = rhythm.map((on, i) => (on ? i : -1)).filter((i) => i >= 0);
   const polygonPoints = activeIndices.map((i) => {
     const angle = (i / steps) * Math.PI * 2 - Math.PI / 2;
     return `${cx + Math.cos(angle) * r},${cy + Math.sin(angle) * r}`;
   }).join(" ");
+  // Quarter-note markers: every steps/4 position (only when steps divisible by 4)
+  const quarterPositions = steps % 4 === 0
+    ? [0, steps/4, steps/2, 3*steps/4].map((i) => {
+        const angle = (i / steps) * Math.PI * 2 - Math.PI / 2;
+        return { x1: cx + Math.cos(angle) * (r - 10), y1: cy + Math.sin(angle) * (r - 10),
+                 x2: cx + Math.cos(angle) * (r + 4),  y2: cy + Math.sin(angle) * (r + 4) };
+      })
+    : [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -404,10 +421,30 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
         {/* Main: circular viz + sliders */}
         <div className="flex gap-4 mb-4">
           {/* Polygon viz */}
-          <div className="shrink-0">
+          <div className="shrink-0 flex flex-col items-center gap-1">
+            {/* Prominent pattern label */}
+            <div className="text-[11px] font-mono font-bold tracking-tight" style={{ color: accentColor }}>
+              E({pulses},{steps},{rotation}){accentPulses > 0 ? ` A(${accentPulses})` : ""}
+            </div>
             <svg width={polygonSize} height={polygonSize} viewBox={`0 0 ${polygonSize} ${polygonSize}`}>
               {/* Outer ring */}
               <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--ed-border-subtle)" strokeWidth="1" />
+              {/* Quarter-note tick marks */}
+              {quarterPositions.map((q, qi) => (
+                <line key={qi} x1={q.x1} y1={q.y1} x2={q.x2} y2={q.y2}
+                  stroke="rgba(255,255,255,0.18)" strokeWidth="1.5" strokeLinecap="round" />
+              ))}
+              {/* Polygon connecting active hits */}
+              {activeIndices.length >= 2 && (
+                <polygon
+                  points={polygonPoints}
+                  fill={accentColor}
+                  fillOpacity="0.09"
+                  stroke={accentColor}
+                  strokeOpacity="0.5"
+                  strokeWidth="1"
+                />
+              )}
               {/* Step dots */}
               {Array.from({ length: steps }, (_, i) => {
                 const angle = (i / steps) * Math.PI * 2 - Math.PI / 2;
@@ -418,29 +455,17 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
                 return (
                   <circle
                     key={i}
-                    cx={x}
-                    cy={y}
-                    r={on ? (acc ? 5 : 3.5) : 1.5}
-                    fill={on ? accentColor : "var(--ed-text-muted)"}
-                    opacity={on ? (acc ? 1 : 0.7) : 0.4}
+                    cx={x} cy={y}
+                    r={on ? (acc ? 6 : 4) : 1.5}
+                    fill={on ? accentColor : "var(--ed-border-subtle)"}
+                    opacity={on ? (acc ? 1 : 0.75) : 0.5}
                     stroke={acc ? "white" : "none"}
-                    strokeWidth={acc ? 1 : 0}
+                    strokeWidth={acc ? 1.5 : 0}
                   />
                 );
               })}
-              {/* Polygon connecting active hits */}
-              {activeIndices.length >= 2 && (
-                <polygon
-                  points={polygonPoints}
-                  fill={accentColor}
-                  fillOpacity="0.08"
-                  stroke={accentColor}
-                  strokeOpacity="0.55"
-                  strokeWidth="1"
-                />
-              )}
               {/* Rotation marker at step 0 */}
-              <circle cx={cx} cy={cy - r - 10} r={2.5} fill="var(--ed-accent-blue)" />
+              <circle cx={cx} cy={cy - r - 10} r={3} fill="var(--ed-accent-blue)" />
             </svg>
           </div>
 
@@ -505,34 +530,106 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
           })}
         </div>
 
-        {/* Accent section — only for synths (drums already accent on beat 1) */}
+        {/* Accent section — for all targets (drums: velocity hi/lo, synths: accent flag) */}
+        <div className="mb-4 p-2.5 rounded-lg border border-[var(--ed-border-subtle)] bg-[var(--ed-bg-surface)]/40">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-bold tracking-wider" style={{ color: accentColor }}>
+              ACCENT PATTERN
+            </span>
+            <span className="text-[8px] text-[var(--ed-text-muted)]">
+              {target === "drums" ? "Hi velocity (110) vs Lo velocity (68)" : "Second Euclidean marking velocity-accent steps"}
+            </span>
+          </div>
+          <div className="flex gap-3">
+            <SliderRow
+              label="Pulses"
+              value={accentPulses}
+              min={0}
+              max={steps}
+              color={accentColor}
+              onChange={setAccentPulses}
+            />
+            <SliderRow
+              label="Rotate"
+              value={accentRotation}
+              min={0}
+              max={Math.max(0, steps - 1)}
+              color="var(--ed-pad-hybrid)"
+              onChange={setAccentRotation}
+            />
+          </div>
+        </div>
+
+        {/* Gate Mode — only for synth targets */}
         {isSynth && (
           <div className="mb-4 p-2.5 rounded-lg border border-[var(--ed-border-subtle)] bg-[var(--ed-bg-surface)]/40">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] font-bold tracking-wider" style={{ color: accentColor }}>
-                ACCENT PATTERN
+                GATE
               </span>
               <span className="text-[8px] text-[var(--ed-text-muted)]">
-                Second Euclidean marking velocity-accent steps
+                {GATE_MODES.find((g) => g.id === gateMode)?.hint ?? ""}
               </span>
             </div>
-            <div className="flex gap-3">
-              <SliderRow
-                label="Pulses"
-                value={accentPulses}
-                min={0}
-                max={steps}
-                color={accentColor}
-                onChange={setAccentPulses}
-              />
-              <SliderRow
-                label="Rotate"
-                value={accentRotation}
-                min={0}
-                max={Math.max(0, steps - 1)}
-                color="var(--ed-pad-hybrid)"
-                onChange={setAccentRotation}
-              />
+            <div className="flex gap-1">
+              {GATE_MODES.map((g) => {
+                const active = gateMode === g.id;
+                return (
+                  <button
+                    key={g.id}
+                    onClick={() => setGateMode(g.id)}
+                    className="flex-1 py-1 rounded text-[10px] font-bold tracking-wider border transition-all"
+                    style={{
+                      background: active
+                        ? `color-mix(in srgb, ${accentColor} 18%, transparent)`
+                        : "var(--ed-bg-surface)",
+                      borderColor: active
+                        ? `color-mix(in srgb, ${accentColor} 50%, transparent)`
+                        : "var(--ed-border-subtle)",
+                      color: active ? accentColor : "var(--ed-text-secondary)",
+                    }}
+                  >
+                    {g.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Octave Range — only for synth targets */}
+        {isSynth && (
+          <div className="mb-4 p-2.5 rounded-lg border border-[var(--ed-border-subtle)] bg-[var(--ed-bg-surface)]/40">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-bold tracking-wider" style={{ color: accentColor }}>
+                RANGE
+              </span>
+              <span className="text-[8px] text-[var(--ed-text-muted)]">
+                {octaveRange === 1 ? "All notes in one octave" : octaveRange === 2 ? "Spread across 2 octaves" : "Wide spread across 3 octaves"}
+              </span>
+            </div>
+            <div className="flex gap-1">
+              {([1, 2, 3] as const).map((r) => {
+                const active = octaveRange === r;
+                return (
+                  <button
+                    key={r}
+                    onClick={() => setOctaveRange(r)}
+                    className="flex-1 py-1 rounded text-[10px] font-bold tracking-wider border transition-all"
+                    style={{
+                      background: active
+                        ? `color-mix(in srgb, ${accentColor} 18%, transparent)`
+                        : "var(--ed-bg-surface)",
+                      borderColor: active
+                        ? `color-mix(in srgb, ${accentColor} 50%, transparent)`
+                        : "var(--ed-border-subtle)",
+                      color: active ? accentColor : "var(--ed-text-secondary)",
+                    }}
+                  >
+                    {r} OCT
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}

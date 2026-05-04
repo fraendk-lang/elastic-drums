@@ -729,7 +729,7 @@ interface DrumStore {
   clearSongChain: () => void;
 
   // Euclidean generator
-  applyEuclidean: (track: number, pulses: number, steps: number, rotation?: number) => void;
+  applyEuclidean: (track: number, pulses: number, steps: number, rotation?: number, accentPulses?: number, accentRotation?: number) => void;
 
   // Ratchet
   setStepRatchet: (track: number, step: number, count: number) => void;
@@ -1080,15 +1080,22 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   clearSongChain: () => set({ songChain: [], songPosition: 0, songRepeatCount: 0 }),
 
   // ─── Euclidean Generator ─────────────────────────────────
-  applyEuclidean: (track, pulses, steps, rotation = 0) =>
+  applyEuclidean: (track, pulses, steps, rotation = 0, accentPulses = 0, accentRotation = 0) =>
     set((state) => {
       const newPattern = structuredClone(state.pattern);
       const trackData = newPattern.tracks[track]!;
       const euclid = generateEuclidean(pulses, steps, rotation);
+      const accentPat = accentPulses > 0
+        ? generateEuclidean(accentPulses, steps, accentRotation)
+        : null;
 
-      // Apply to track steps
       for (let i = 0; i < trackData.length; i++) {
-        trackData.steps[i]!.active = i < euclid.length ? euclid[i]! : false;
+        const on = i < euclid.length ? euclid[i]! : false;
+        trackData.steps[i]!.active = on;
+        if (on) {
+          const isAccent = accentPat ? (accentPat[i % accentPat.length] ?? false) : false;
+          trackData.steps[i]!.velocity = isAccent ? 110 : 68;
+        }
       }
       trackData.length = steps;
       newPattern.length = Math.max(newPattern.length, steps);

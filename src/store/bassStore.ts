@@ -482,7 +482,7 @@ interface BassStore {
   generateBassline: (strategyIndex: number) => void;
   nextStrategy: () => void;
   prevStrategy: () => void;
-  applyEuclidean: (pulses: number, eucSteps: number, rotation: number, noteMode: string, accentPulses?: number, accentRotation?: number) => void;
+  applyEuclidean: (pulses: number, eucSteps: number, rotation: number, noteMode: string, accentPulses?: number, accentRotation?: number, gateMode?: "stac"|"med"|"leg"|"tie", octaveRange?: 1|2|3) => void;
   loadPreset: (index: number) => void;
   nextPreset: () => void;
   prevPreset: () => void;
@@ -764,45 +764,71 @@ export const useBassStore = create<BassStore>((set, get) => ({
     set({ strategyIndex: prev });
   },
 
-  applyEuclidean: (pulses, eucSteps, rotation, noteMode, accentPulses = 0, accentRotation = 0) => {
+  applyEuclidean: (pulses, eucSteps, rotation, noteMode, accentPulses = 0, accentRotation = 0, gateMode = "stac", octaveRange = 1) => {
     const { length, scaleName } = get();
     const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
     const rhythm = generateEuclidean(pulses, eucSteps, rotation);
-    // Optional accent overlay: second Euclidean pattern that marks steps as accented
     const accent = accentPulses > 0
       ? generateEuclidean(accentPulses, eucSteps, accentRotation)
       : null;
     const newSteps = createEmptySteps();
     const scaleLen = Math.min(scale.length, 7);
+    const totalHits = rhythm.filter(Boolean).length;
     let walkCursor = 0;
+    let hitIndex = 0;
+
+    // Pre-compute gate lengths from rhythm
+    const gateLengths: number[] = rhythm.map((_, i) => {
+      if (!rhythm[i % rhythm.length]) return 1;
+      if (gateMode === "stac") return 1;
+      let dist = 1;
+      for (let j = 1; j <= rhythm.length; j++) {
+        if (rhythm[(i + j) % rhythm.length]) { dist = j; break; }
+      }
+      if (gateMode === "med") return Math.max(1, Math.floor(dist / 2));
+      return dist; // "leg" and "tie"
+    });
 
     for (let i = 0; i < length; i++) {
       const hit = rhythm[i % rhythm.length];
       if (hit) {
         let note = 0;
-        if (noteMode === "ascending") note = i % scaleLen;
+        if (noteMode === "ascending") note = hitIndex % scaleLen;
         else if (noteMode === "random") note = Math.floor(Math.random() * scaleLen);
         else if (noteMode === "walk") {
-          // Random-walk ±1 step — smooth melodic motion
           const dir = Math.random() < 0.5 ? -1 : 1;
           walkCursor = Math.max(0, Math.min(scaleLen - 1, walkCursor + dir));
           note = walkCursor;
         } else if (noteMode === "alternate") {
-          // Root / 5th toggle
-          note = (i % 2 === 0) ? 0 : Math.min(4, scaleLen - 1);
+          note = (hitIndex % 2 === 0) ? 0 : Math.min(4, scaleLen - 1);
         } else if (noteMode === "pentatonic") {
-          // Cycle through pentatonic degrees (0, 2, 4 out of a 7-note scale)
           const pent = [0, 2, 4, 2].filter((d) => d < scaleLen);
-          note = pent[i % pent.length] ?? 0;
+          note = pent[hitIndex % pent.length] ?? 0;
+        } else if (noteMode === "contour") {
+          // Arch: rises to top of scale then falls back across all hits
+          note = Math.round((scaleLen - 1) * Math.sin((hitIndex / Math.max(1, totalHits - 1)) * Math.PI));
         }
         // "root" → note stays 0
+
+        // Octave spread based on range setting
+        let octave = 0;
+        if (octaveRange === 2) {
+          octave = note >= Math.ceil(scaleLen / 2) ? 1 : 0;
+        } else if (octaveRange === 3) {
+          octave = note < Math.floor(scaleLen / 3) ? -1 : note < Math.floor(2 * scaleLen / 3) ? 0 : 1;
+        }
+
+        const gate = gateLengths[i % rhythm.length] ?? 1;
         const isAccent = accent ? (accent[i % accent.length] ?? false) : (i % 4 === 0);
         newSteps[i] = {
-          active: true, note, octave: 0,
+          active: true, note, octave,
           accent: isAccent,
           velocity: isAccent ? 0.96 : 0.74,
-          slide: false, tie: false, gateLength: 1,
+          slide: false,
+          tie: gateMode === "tie",
+          gateLength: gate,
         };
+        hitIndex++;
       }
     }
     set({ steps: newSteps });
