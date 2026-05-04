@@ -17,8 +17,8 @@ export type YAxisParam = "cutoff" | "resonance" | "envMod" | "decay" | "distorti
 
 export type PadTarget = "melody" | "bass";
 
-/** Pad play mode — "notes" = free-pitch via X-axis, "chords" = chord cells grid. */
-export type PadMode = "notes" | "chords";
+/** Pad play mode — "notes" = free-pitch via X-axis, "chords" = chord cells grid, "grid" = scale note grid (polyphonic chord playing). */
+export type PadMode = "notes" | "chords" | "grid";
 
 /** Chord definition — label + semitone intervals from root (incl. 0 for root). */
 export interface ChordDef {
@@ -229,6 +229,7 @@ interface PerformancePadState {
   glide: number;            // 0-1, portamento ms factor for mono-like expressiveness
   trailEnabled: boolean;    // Particle trail behind cursor
   chordFollow: boolean;     // When true, Bass + Melody auto-transpose to match pad chord root
+  gridRows: number;         // Rows in scale-grid mode (each row = one octave)
 
   // Recording
   events: PadEvent[];
@@ -255,6 +256,7 @@ interface PerformancePadState {
   setGlide: (n: number) => void;
   setTrailEnabled: (b: boolean) => void;
   setChordFollow: (b: boolean) => void;
+  setGridRows: (n: number) => void;
 
   // Recording API
   armRecording: () => void;     // Arm for recording — starts on first note
@@ -281,6 +283,7 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
   glide: 0.15,
   trailEnabled: true,
   chordFollow: true,
+  gridRows: 2,
 
   events: [],
   isArmed: false,
@@ -305,6 +308,7 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
   setGlide: (n) => set({ glide: Math.max(0, Math.min(1, n)) }),
   setTrailEnabled: (b) => set({ trailEnabled: b }),
   setChordFollow: (b) => set({ chordFollow: b }),
+  setGridRows: (n) => set({ gridRows: Math.max(1, Math.min(4, n)) }),
 
   armRecording: () => {
     const s = get();

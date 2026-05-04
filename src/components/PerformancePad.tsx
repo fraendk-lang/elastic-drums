@@ -73,9 +73,9 @@ const _padVolumeByTarget: Record<string, number> = {};
 
 export function PerformancePad({ isOpen, onClose }: Props) {
   const {
-    target, mode, chordSetIndex, yParam, scaleOctaves, scaleLowestOct, gridSnap, trailEnabled, chordFollow,
+    target, mode, chordSetIndex, yParam, scaleOctaves, scaleLowestOct, gridSnap, trailEnabled, chordFollow, gridRows,
     events, isArmed, isRecording, isStepRecording, stepCursorMs, isLooping, loopDuration, loopBars, quantize,
-    setTarget, setMode, setChordSetIndex, setYParam, setScaleOctaves, setScaleLowestOct, setGridSnap, setTrailEnabled, setChordFollow,
+    setTarget, setMode, setChordSetIndex, setYParam, setScaleOctaves, setScaleLowestOct, setGridSnap, setTrailEnabled, setChordFollow, setGridRows,
     armRecording, startStepRecording, stopRecording, clearRecording, appendEvent, setLoopBars, setQuantize,
     startLoop, stopLoop,
   } = usePerformancePadStore();
@@ -451,6 +451,17 @@ export function PerformancePad({ isOpen, onClose }: Props) {
         releases.push(r);
       });
       voice = { pointerId: e.pointerId, midi: rootMidi, startAt: performance.now(), velocity, releases, cellIndex: cellIdx };
+    } else if (mode === "grid") {
+      // Scale-grid mode: fixed cells, multi-touch chord playing
+      const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
+      const cols = scale.length;
+      const col = Math.max(0, Math.min(cols - 1, Math.floor(x * cols)));
+      const row = Math.max(0, Math.min(gridRows - 1, Math.floor(y * gridRows)));
+      const baseMidi = rootNote + scaleLowestOct * 12;
+      // Top row = highest octave
+      const midi = baseMidi + (gridRows - 1 - row) * 12 + (scale[col] ?? 0);
+      const release = fireVoice(midi, velocity, y);
+      voice = { pointerId: e.pointerId, midi, startAt: performance.now(), velocity, releases: [release] };
     } else if (arpOn && target === "melody") {
       const midi = xToMidi(x);
       arpRootRef.current = midi;
@@ -493,9 +504,9 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     if (!voice) return;  // Hover-only mode: just show trail, no audio modulation
     e.preventDefault();
 
-    if (mode === "chords") {
-      // In chord mode: Y axis still modulates params for expressiveness,
-      // but no re-pitch (chord is locked until pointer-up)
+    if (mode === "chords" || mode === "grid") {
+      // In chord/grid mode: Y axis modulates params for expressiveness,
+      // but pitch is locked to the cell until pointer-up
       modulateVoice(y);
     } else if (arpOn && target === "melody") {
       modulateVoice(y);
@@ -723,6 +734,76 @@ export function PerformancePad({ isOpen, onClose }: Props) {
             ctx.shadowBlur = 0;
           }
         }
+      } else if (mode === "grid") {
+        // ── Scale-grid mode: fixed cells, polyphonic chord playing ──
+        const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
+        const cols = scale.length;
+        const rows = gridRows;
+        const cellW = W / cols;
+        const cellH = H / rows;
+        const baseMidi = rootNote + scaleLowestOct * 12;
+
+        // Collect all active grid-voice MIDI pitches for highlight
+        const activeMidis = new Set<number>();
+        for (const v of activeVoicesRef.current.values()) {
+          activeMidis.add(v.midi);
+        }
+
+        for (let row = 0; row < rows; row++) {
+          for (let col = 0; col < cols; col++) {
+            const midi = baseMidi + (rows - 1 - row) * 12 + (scale[col] ?? 0);
+            const isRoot = (scale[col] ?? 0) === 0;
+            const isFifth = (scale[col] ?? 0) === 7;
+            const isActive = activeMidis.has(midi);
+            const cx = col * cellW;
+            const cy = row * cellH;
+
+            // Background
+            let bgAlpha = isRoot ? 0.22 : isFifth ? 0.12 : 0.07;
+            if (isActive) bgAlpha = 0.45;
+            ctx.fillStyle = isActive
+              ? "rgba(244, 114, 182, " + bgAlpha + ")"
+              : isRoot
+              ? "rgba(251, 191, 36, " + bgAlpha + ")"
+              : "rgba(167, 139, 250, " + bgAlpha + ")";
+            ctx.fillRect(cx + 1, cy + 1, cellW - 2, cellH - 2);
+
+            // Glow on active
+            if (isActive) {
+              ctx.shadowColor = "#f472b6";
+              ctx.shadowBlur = 18;
+            }
+
+            // Border
+            ctx.strokeStyle = isActive
+              ? "rgba(244, 114, 182, 0.9)"
+              : isRoot
+              ? "rgba(251, 191, 36, 0.35)"
+              : "rgba(167, 139, 250, 0.18)";
+            ctx.lineWidth = isActive ? 1.5 : 1;
+            ctx.strokeRect(cx + 1, cy + 1, cellW - 2, cellH - 2);
+            ctx.shadowBlur = 0;
+
+            // Note label
+            const noteName = (NOTE_NAMES_SHARP[midi % 12] ?? "?");
+            const fontSize = Math.min(cellH * 0.36, cellW * 0.28, 18);
+            ctx.font = `${isActive || isRoot ? "bold " : ""}${fontSize}px ui-sans-serif, system-ui, -apple-system`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillStyle = isActive ? "#fff" : isRoot ? "rgba(251,191,36,0.9)" : "rgba(200,180,255,0.6)";
+            if (isActive) { ctx.shadowColor = "#f472b6"; ctx.shadowBlur = 8; }
+            ctx.fillText(noteName, cx + cellW / 2, cy + cellH * 0.42);
+            ctx.shadowBlur = 0;
+
+            // Octave label (small, below note name)
+            if (cellH > 48) {
+              const octave = Math.floor(midi / 12) - 1;
+              ctx.font = `${Math.max(9, fontSize * 0.55)}px ui-sans-serif, system-ui`;
+              ctx.fillStyle = isActive ? "rgba(255,255,255,0.6)" : "rgba(180,160,240,0.35)";
+              ctx.fillText(`${octave}`, cx + cellW / 2, cy + cellH * 0.68);
+            }
+          }
+        }
       } else {
         // ── Pitch grid (notes mode) ──
         const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
@@ -882,7 +963,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     return () => {
       if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     };
-  }, [isOpen, scaleName, scaleOctaves, mode, chordSetIndex, trailEnabled]);
+  }, [isOpen, scaleName, scaleOctaves, mode, chordSetIndex, trailEnabled, gridRows, rootNote, scaleLowestOct]);
 
   if (!isOpen) return null;
 
@@ -897,14 +978,16 @@ export function PerformancePad({ isOpen, onClose }: Props) {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--ed-border)] bg-[var(--ed-bg-secondary)]/80 px-5 py-2.5">
         <h2 className="text-[11px] font-bold tracking-[0.18em] text-[var(--ed-accent-melody)]">XY PERFORMANCE</h2>
 
-        {/* Mode: Notes / Chords */}
+        {/* Mode: Notes / Chords / Grid */}
         <div className="flex items-center gap-1">
           <span className="text-[8px] text-[var(--ed-text-muted)] mr-1">MODE</span>
-          {(["notes", "chords"] as PadMode[]).map((m) => (
+          {(["notes", "chords", "grid"] as PadMode[]).map((m) => (
             <button key={m} onClick={() => setMode(m)}
               className={`px-2.5 h-6 text-[9px] font-bold rounded transition-all ${
                 mode === m ? "bg-[var(--ed-accent-melody)]/30 text-[var(--ed-accent-melody)]" : "text-white/35 hover:text-white/60"
-              }`}>{m === "notes" ? "NOTES" : "CHORDS"}</button>
+              }`}>
+              {m === "notes" ? "NOTES" : m === "chords" ? "CHORDS" : "GRID"}
+            </button>
           ))}
         </div>
 
@@ -1006,6 +1089,26 @@ export function PerformancePad({ isOpen, onClose }: Props) {
               }`}
               title="Snap X-position to scale notes"
             >SNAP</button>
+            <div className="mx-1 h-4 w-px bg-white/10" />
+          </>
+        )}
+
+        {/* Grid rows — only in grid mode */}
+        {mode === "grid" && (
+          <>
+            <div className="flex items-center gap-1">
+              <span className="text-[8px] text-[var(--ed-text-muted)] mr-1">OCT</span>
+              <button onClick={() => setScaleLowestOct(scaleLowestOct - 1)} className="w-5 h-5 text-[10px] text-white/50 hover:text-white/90 rounded bg-white/5">−</button>
+              <span className="text-[8px] text-white/70 font-mono w-4 text-center">{scaleLowestOct >= 0 ? "+" : ""}{scaleLowestOct}</span>
+              <button onClick={() => setScaleLowestOct(scaleLowestOct + 1)} className="w-5 h-5 text-[10px] text-white/50 hover:text-white/90 rounded bg-white/5">+</button>
+              <span className="text-[8px] text-[var(--ed-text-muted)] mx-1">ROWS</span>
+              {[1, 2, 3, 4].map((n) => (
+                <button key={n} onClick={() => setGridRows(n)}
+                  className={`w-5 h-5 text-[9px] font-bold rounded ${
+                    gridRows === n ? "bg-white/15 text-white/90" : "text-white/30 hover:text-white/60"
+                  }`}>{n}</button>
+              ))}
+            </div>
             <div className="mx-1 h-4 w-px bg-white/10" />
           </>
         )}
