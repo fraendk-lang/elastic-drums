@@ -40,6 +40,7 @@ export const Knob = memo(function Knob({
   const [showValue, setShowValue] = useState(false);
   const dragStartY = useRef(0);
   const dragStartVal = useRef(0);
+  const isDraggingRef = useRef(false);   // ref so move handler doesn't need isDragging in deps
   const knobRef = useRef<HTMLDivElement>(null);
   const lastTapRef = useRef(0);
 
@@ -58,7 +59,9 @@ export const Knob = memo(function Knob({
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    // Capture on currentTarget (the knob div) so pointermove fires on the same element
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    isDraggingRef.current = true;
     setIsDragging(true);
     setShowValue(true);
     dragStartY.current = e.clientY;
@@ -66,8 +69,7 @@ export const Knob = memo(function Knob({
   }, [value]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    if (!e.buttons && e.pointerType === "mouse") return;
-    if (!(e.currentTarget as HTMLElement).hasPointerCapture(e.pointerId)) return;
+    if (!isDraggingRef.current) return;
     const deltaY = dragStartY.current - e.clientY;
     const range  = max - min;
     const sensitivity = range / (size >= 56 ? 200 : 150);
@@ -75,8 +77,8 @@ export const Knob = memo(function Knob({
     onChange(newVal);
   }, [min, max, size, onChange]);
 
-  const handlePointerUp = useCallback((e: React.PointerEvent) => {
-    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+  const handlePointerUp = useCallback(() => {
+    isDraggingRef.current = false;
     setIsDragging(false);
     setShowValue(false);
   }, []);
