@@ -1096,6 +1096,106 @@ function makeEmptyClipData(trackId: ArrangementTrackId): import("../store/arrang
 
 // ─── PerTrackClip ─────────────────────────────────────────────────────────────
 
+// ─── ClipPreviewCanvas ────────────────────────────────────────────────────────
+// Draws mini step bars for one pattern, repeated across the full clip width.
+// Loop boundaries get dashed separator lines. Repeats are drawn at 50% alpha.
+
+interface ClipPreviewCanvasProps {
+  clip:   ArrangementClip;
+  color:  string;
+  width:  number;
+  height: number;
+}
+
+function ClipPreviewCanvas({ clip, color, width, height }: ClipPreviewCanvasProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, width, height);
+
+    // ── Build bar-height array for one pattern ───────────────────────────────
+    let bars: number[] = [];
+    let patternSteps = 16;
+
+    if (clip.data.kind === "drums") {
+      patternSteps = clip.data.pattern.length;
+      const heights = Array<number>(patternSteps).fill(0);
+      clip.data.pattern.tracks.forEach((track, ti) => {
+        track.steps.slice(0, patternSteps).forEach((step, si) => {
+          if (step.active) {
+            const seed = ((ti * 2654435761) ^ (si * 2246822519)) & 0x7fffffff;
+            const h = 0.3 + ((seed * 1664525 + 1013904223) & 0x7fffffff) / 0x7fffffff * 0.7;
+            heights[si] = Math.max(heights[si] ?? 0, h);
+          }
+        });
+      });
+      bars = heights;
+    } else if (clip.data.kind === "bass") {
+      patternSteps = clip.data.length;
+      bars = bassWaveformBars(clip.data.steps.slice(0, patternSteps));
+    } else {
+      // chords or melody
+      patternSteps = (clip.data as { length: number }).length;
+      bars = noteWaveformBars((clip.data as { steps: Array<{ active: boolean; note: number; octave: number }> }).steps.slice(0, patternSteps));
+    }
+
+    if (bars.length === 0 || width <= 0) return;
+
+    // ── Draw ─────────────────────────────────────────────────────────────────
+    const totalSteps   = clip.lengthBars * 16;
+    const patternPx    = (patternSteps / totalSteps) * width;
+    const loopCount    = Math.ceil(totalSteps / patternSteps);
+    const stepPx       = patternPx / bars.length;
+    const barW         = Math.max(1, stepPx - 0.5);
+    const usable       = (height - 4) * 0.75;
+
+    for (let loop = 0; loop < loopCount; loop++) {
+      const loopX    = loop * patternPx;
+      const baseAlpha = loop === 0 ? 0.55 : 0.28;
+
+      bars.forEach((h, i) => {
+        if (h === 0) return;
+        const x    = loopX + i * stepPx;
+        if (x > width) return;
+        const barH = Math.max(2, h * usable);
+        const y    = height - 2 - barH;
+        ctx.fillStyle = hexAlpha(color, baseAlpha);
+        ctx.beginPath();
+        ctx.roundRect(x, y, barW, barH, 0.5);
+        ctx.fill();
+      });
+
+      // Dashed loop divider (skip the very first boundary at x=0)
+      if (loop > 0) {
+        ctx.save();
+        ctx.strokeStyle = hexAlpha(color, 0.45);
+        ctx.lineWidth   = 1;
+        ctx.setLineDash([2, 3]);
+        ctx.beginPath();
+        ctx.moveTo(Math.round(loopX), 0);
+        ctx.lineTo(Math.round(loopX), height);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }, [clip.data, clip.lengthBars, color, width, height]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={width}
+      height={height}
+      className="absolute inset-0 pointer-events-none"
+    />
+  );
+}
+
+// ─── PerTrackClipProps ────────────────────────────────────────────────────────
+
 interface PerTrackClipProps {
   clip:            ArrangementClip;
   barPx:           number;
@@ -1119,6 +1219,12 @@ function PerTrackClip({
 }: PerTrackClipProps) {
   const x = clip.startBar * barPx;
   const w = Math.max(8, clip.lengthBars * barPx - 1);
+  const h = ARR_TRACK_H - 2; // clip height (top-0.5 + bottom-0.5 margin)
+
+  // How many loop repeats fit?
+  const patternSteps = clip.data.kind === "drums" ? clip.data.pattern.length : clip.data.length;
+  const patternBars  = Math.max(1, patternSteps / 16);
+  const loopCount    = Math.ceil(clip.lengthBars / patternBars);
 
   return (
     <div
@@ -1137,6 +1243,12 @@ function PerTrackClip({
       onContextMenu={onContextMenu}
       onPointerDown={onMoveStart}
     >
+      {/* Mini waveform + loop dividers */}
+      {w > 12 && (
+        <ClipPreviewCanvas clip={clip} color={color} width={w} height={h} />
+      )}
+
+      {/* Name label */}
       {isRenaming ? (
         <input
           ref={renameInputRef}
@@ -1146,15 +1258,18 @@ function PerTrackClip({
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") onRenameCommit(); }}
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
-          className="w-full bg-black/60 border-0 outline-none text-white px-1 text-[8px]"
-          style={{ height: "100%" }}
+          className="absolute top-0 left-0 right-6 bg-black/60 border-0 outline-none text-white px-1 text-[8px] z-10"
+          style={{ height: 14 }}
         />
       ) : (
         <span
-          className="text-[8px] font-bold px-1 truncate block leading-none pt-1"
-          style={{ color: hexAlpha(color, 0.9) }}
+          className="absolute top-0.5 left-1 right-6 text-[8px] font-bold truncate block leading-none z-10 pointer-events-none"
+          style={{ color: hexAlpha(color, 0.95), textShadow: "0 1px 2px rgba(0,0,0,0.7)" }}
         >
           {clip.name}
+          {loopCount > 1 && (
+            <span className="ml-1 opacity-50 font-normal">×{loopCount}</span>
+          )}
         </span>
       )}
 
