@@ -136,12 +136,20 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   const arpOnRef = useRef(arpOn);
   const arpLatchRef = useRef(arpLatch);
   const scaleNameRef = useRef(scaleName);
+  const gridRowsRef = useRef(gridRows);
+  const rootNoteRef = useRef(rootNote);
+  const scaleLowestOctRef = useRef(scaleLowestOct);
+  const modeRef = useRef(mode);
   arpModeRef.current = arpMode;
   arpRateRef.current = arpRate;
   arpOctavesRef.current = arpOctaves;
   arpOnRef.current = arpOn;
   arpLatchRef.current = arpLatch;
   scaleNameRef.current = scaleName;
+  gridRowsRef.current = gridRows;
+  rootNoteRef.current = rootNote;
+  scaleLowestOctRef.current = scaleLowestOct;
+  modeRef.current = mode;
 
   const padRef = useRef<HTMLDivElement | null>(null);
   const activeVoicesRef = useRef<Map<number, ActiveVoice>>(new Map());
@@ -678,7 +686,8 @@ export function PerformancePad({ isOpen, onClose }: Props) {
       const W = rect.width;
       const H = rect.height;
 
-      if (mode === "chords") {
+      const currentMode = modeRef.current;
+      if (currentMode === "chords") {
         // ── Chord grid cells ──
         const cellW = W / chordSet.cols;
         const cellH = H / chordSet.rows;
@@ -734,14 +743,14 @@ export function PerformancePad({ isOpen, onClose }: Props) {
             ctx.shadowBlur = 0;
           }
         }
-      } else if (mode === "grid") {
+      } else if (currentMode === "grid") {
         // ── Scale-grid mode: fixed cells, polyphonic chord playing ──
-        const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
-        const cols = scale.length;
-        const rows = gridRows;
+        const scale = SCALES[scaleNameRef.current] ?? SCALES["Chromatic"] ?? [];
+        const cols = Math.max(1, scale.length);
+        const rows = Math.max(1, gridRowsRef.current);
         const cellW = W / cols;
         const cellH = H / rows;
-        const baseMidi = rootNote + scaleLowestOct * 12;
+        const baseMidi = rootNoteRef.current + scaleLowestOctRef.current * 12;
 
         // Collect all active grid-voice MIDI pitches for highlight
         const activeMidis = new Set<number>();
@@ -873,7 +882,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
         const px = latest.x * W;
         const py = latest.y * H;
 
-        const chordColor = mode === "chords" && voice.cellIndex !== undefined
+        const chordColor = currentMode === "chords" && voice.cellIndex !== undefined
           ? (chordSet.cells[voice.cellIndex]?.hue ?? "#f472b6")
           : "#f472b6";
 
@@ -947,7 +956,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
         ctx.stroke();
 
         // Label
-        const label = mode === "chords" && voice.cellIndex !== undefined
+        const label = currentMode === "chords" && voice.cellIndex !== undefined
           ? (chordSet.cells[voice.cellIndex]?.label ?? midiToName(voice.midi))
           : midiToName(voice.midi);
         const labelFontSize = Math.min(28, Math.max(14, R * 0.55));
@@ -967,7 +976,8 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     return () => {
       if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     };
-  }, [isOpen, scaleName, scaleOctaves, mode, chordSetIndex, trailEnabled, gridRows, rootNote, scaleLowestOct]);
+  // gridRows / rootNote / scaleLowestOct are read via refs — no loop restart needed for those.
+  }, [isOpen, scaleName, scaleOctaves, mode, chordSetIndex, trailEnabled]);
 
   if (!isOpen) return null;
 
