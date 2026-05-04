@@ -1226,39 +1226,46 @@ function PerTrackClip({
   const patternBars  = Math.max(1, patternSteps / 16);
   const loopCount    = Math.ceil(clip.lengthBars / patternBars);
 
-  // Long-press (touch alternative to double-click) — fires edit after 500ms hold
-  const lpTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lpStartX = useRef(0);
-  const lpStartY = useRef(0);
-  const lpFired  = useRef(false);
+  // Double-tap detection for touch (native dblclick handles mouse)
+  const lastTapTime = useRef(0);
+  const lastTapX    = useRef(0);
+  const lastTapY    = useRef(0);
+  const dtFired     = useRef(false);   // suppress click after double-tap
 
   const handleCombinedPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.pointerType === "touch") {
+      const now = Date.now();
+      const dt  = now - lastTapTime.current;
+      const dx  = Math.abs(e.clientX - lastTapX.current);
+      const dy  = Math.abs(e.clientY - lastTapY.current);
+
+      if (dt < 400 && dx < 24 && dy < 24) {
+        // Double-tap → open editor
+        e.stopPropagation();
+        dtFired.current = true;
+        lastTapTime.current = 0;
+        if (navigator.vibrate) navigator.vibrate(30);
+        onDoubleClick(e as unknown as React.MouseEvent);
+        return;              // don't start drag
+      }
+      lastTapTime.current = now;
+      lastTapX.current    = e.clientX;
+      lastTapY.current    = e.clientY;
+      dtFired.current     = false;
+    }
     onMoveStart(e);
-    lpFired.current = false;
-    lpStartX.current = e.clientX;
-    lpStartY.current = e.clientY;
-    lpTimer.current = setTimeout(() => {
-      lpTimer.current = null;
-      lpFired.current = true;
-      onDoubleClick(e as unknown as React.MouseEvent);
-      if (navigator.vibrate) navigator.vibrate(30);
-    }, 500);
   }, [onMoveStart, onDoubleClick]);
 
-  const handleCombinedPointerMove = useCallback((e: React.PointerEvent) => {
-    if (!lpTimer.current) return;
-    if (Math.abs(e.clientX - lpStartX.current) > 8 || Math.abs(e.clientY - lpStartY.current) > 8) {
-      clearTimeout(lpTimer.current);
-      lpTimer.current = null;
-    }
+  const handleCombinedPointerMove = useCallback((_e: React.PointerEvent) => {
+    // no-op — drag is handled by global window listener
   }, []);
 
   const handleCombinedPointerUp = useCallback(() => {
-    if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null; }
+    // no-op
   }, []);
 
   const handleCombinedClick = useCallback((e: React.MouseEvent) => {
-    if (lpFired.current) { lpFired.current = false; return; }
+    if (dtFired.current) { dtFired.current = false; return; }
     onSelect(e);
   }, [onSelect]);
 
@@ -1371,6 +1378,7 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
   // ── Clip editing (double-click) ──────────────────────────────────────────────
   const editingClipRef = useRef<{ id: string; trackId: ArrangementTrackId } | null>(null);
   const openOverlay    = useOverlayStore((s) => s.openOverlay);
+  const closeOverlay   = useOverlayStore((s) => s.closeOverlay);
   const openSet        = useOverlayStore((s) => s.open);
   const prevOpenRef    = useRef<Set<string>>(new Set());
 
@@ -1412,8 +1420,9 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
     editingClipRef.current = { id: clipId, trackId: clip.trackId };
 
     if (clip.data.kind === "drums") {
-      // Load pattern into the drum store — no dedicated overlay
+      // Load pattern then close arrangement — step-sequencer becomes visible
       useDrumStore.setState({ pattern: structuredClone(clip.data.pattern) });
+      closeOverlay("arrangement");
     } else if (clip.data.kind === "bass") {
       const st = useBassStore.getState();
       st.loadBassPattern({
