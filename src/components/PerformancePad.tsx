@@ -759,47 +759,51 @@ export function PerformancePad({ isOpen, onClose }: Props) {
             const cy = row * cellH;
 
             // Background
-            let bgAlpha = isRoot ? 0.22 : isFifth ? 0.12 : 0.07;
-            if (isActive) bgAlpha = 0.45;
+            const bgAlpha = isActive ? 0.55 : isRoot ? 0.32 : isFifth ? 0.18 : 0.10;
             ctx.fillStyle = isActive
-              ? "rgba(244, 114, 182, " + bgAlpha + ")"
+              ? `rgba(244,114,182,${bgAlpha})`
               : isRoot
-              ? "rgba(251, 191, 36, " + bgAlpha + ")"
-              : "rgba(167, 139, 250, " + bgAlpha + ")";
+              ? `rgba(251,191,36,${bgAlpha})`
+              : `rgba(167,139,250,${bgAlpha})`;
             ctx.fillRect(cx + 1, cy + 1, cellW - 2, cellH - 2);
 
-            // Glow on active
+            // Active: inner radial glow
             if (isActive) {
+              const g = ctx.createRadialGradient(cx + cellW/2, cy + cellH/2, 0, cx + cellW/2, cy + cellH/2, Math.max(cellW, cellH) * 0.6);
+              g.addColorStop(0, "rgba(255,200,240,0.35)");
+              g.addColorStop(1, "rgba(244,114,182,0)");
+              ctx.fillStyle = g;
+              ctx.fillRect(cx + 1, cy + 1, cellW - 2, cellH - 2);
               ctx.shadowColor = "#f472b6";
-              ctx.shadowBlur = 18;
+              ctx.shadowBlur = 20;
             }
 
             // Border
             ctx.strokeStyle = isActive
-              ? "rgba(244, 114, 182, 0.9)"
+              ? "rgba(244,114,182,1.0)"
               : isRoot
-              ? "rgba(251, 191, 36, 0.35)"
-              : "rgba(167, 139, 250, 0.18)";
-            ctx.lineWidth = isActive ? 1.5 : 1;
+              ? "rgba(251,191,36,0.7)"
+              : "rgba(167,139,250,0.38)";
+            ctx.lineWidth = isActive ? 2 : 1;
             ctx.strokeRect(cx + 1, cy + 1, cellW - 2, cellH - 2);
             ctx.shadowBlur = 0;
 
             // Note label
             const noteName = (NOTE_NAMES_SHARP[midi % 12] ?? "?");
-            const fontSize = Math.min(cellH * 0.36, cellW * 0.28, 18);
+            const fontSize = Math.min(cellH * 0.38, cellW * 0.32, 22);
             ctx.font = `${isActive || isRoot ? "bold " : ""}${fontSize}px ui-sans-serif, system-ui, -apple-system`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            ctx.fillStyle = isActive ? "#fff" : isRoot ? "rgba(251,191,36,0.9)" : "rgba(200,180,255,0.6)";
-            if (isActive) { ctx.shadowColor = "#f472b6"; ctx.shadowBlur = 8; }
+            ctx.fillStyle = isActive ? "#fff" : isRoot ? "rgba(251,191,36,1.0)" : "rgba(210,195,255,0.85)";
+            if (isActive) { ctx.shadowColor = "#f472b6"; ctx.shadowBlur = 10; }
             ctx.fillText(noteName, cx + cellW / 2, cy + cellH * 0.42);
             ctx.shadowBlur = 0;
 
             // Octave label (small, below note name)
-            if (cellH > 48) {
+            if (cellH > 40) {
               const octave = Math.floor(midi / 12) - 1;
-              ctx.font = `${Math.max(9, fontSize * 0.55)}px ui-sans-serif, system-ui`;
-              ctx.fillStyle = isActive ? "rgba(255,255,255,0.6)" : "rgba(180,160,240,0.35)";
+              ctx.font = `${Math.max(10, fontSize * 0.5)}px ui-sans-serif, system-ui`;
+              ctx.fillStyle = isActive ? "rgba(255,255,255,0.65)" : "rgba(180,160,240,0.55)";
               ctx.fillText(`${octave}`, cx + cellW / 2, cy + cellH * 0.68);
             }
           }
