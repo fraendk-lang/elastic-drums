@@ -30,6 +30,13 @@ import {
   type AutoPoint,
   type AutoParam,
 } from "../store/arrangementAutoStore";
+import { useBassStore } from "../store/bassStore";
+import { useChordsStore } from "../store/chordsStore";
+import { useMelodyStore } from "../store/melodyStore";
+import { useOverlayStore } from "../store/overlayStore";
+import { DEFAULT_BASS_PARAMS } from "../audio/BassEngine";
+import { DEFAULT_CHORDS_PARAMS } from "../audio/ChordsEngine";
+import { DEFAULT_MELODY_PARAMS } from "../audio/MelodyEngine";
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 
@@ -1100,6 +1107,7 @@ interface PerTrackClipProps {
   onRenameChange:  (v: string) => void;
   onRenameCommit:  () => void;
   onSelect:        (e: React.MouseEvent) => void;
+  onDoubleClick:   (e: React.MouseEvent) => void;
   onContextMenu:   (e: React.MouseEvent) => void;
   onMoveStart:     (e: React.PointerEvent) => void;
   onResizeStart:   (e: React.PointerEvent) => void;
@@ -1107,7 +1115,7 @@ interface PerTrackClipProps {
 
 function PerTrackClip({
   clip, barPx, color, isSelected, isRenaming, renameValue, renameInputRef,
-  onRenameChange, onRenameCommit, onSelect, onContextMenu, onMoveStart, onResizeStart,
+  onRenameChange, onRenameCommit, onSelect, onDoubleClick, onContextMenu, onMoveStart, onResizeStart,
 }: PerTrackClipProps) {
   const x = clip.startBar * barPx;
   const w = Math.max(8, clip.lengthBars * barPx - 1);
@@ -1125,6 +1133,7 @@ function PerTrackClip({
         cursor:          "grab",
       }}
       onClick={onSelect}
+      onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
       onPointerDown={onMoveStart}
     >
@@ -1168,7 +1177,7 @@ interface PerTrackArrangementProps {
 
 function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
   const { clips, totalBars, addClip, moveClip, resizeClip, removeClip, renameClip,
-          loopRegion, setLoopRegion } =
+          updateClipData, loopRegion, setLoopRegion } =
     useArrangementStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -1204,6 +1213,88 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
       window.removeEventListener("pointerup", onUp);
     };
   }, [barPx, setLoopRegion]);
+
+  // ── Clip editing (double-click) ──────────────────────────────────────────────
+  const editingClipRef = useRef<{ id: string; trackId: ArrangementTrackId } | null>(null);
+  const openOverlay    = useOverlayStore((s) => s.openOverlay);
+  const openSet        = useOverlayStore((s) => s.open);
+  const prevOpenRef    = useRef<Set<string>>(new Set());
+
+  // When a piano-roll overlay closes, write the current engine state back to the clip
+  useEffect(() => {
+    const ec = editingClipRef.current;
+    if (ec) {
+      const OVERLAY: Partial<Record<ArrangementTrackId, string>> = {
+        bass:   "pianoRoll",
+        chords: "chordPianoRoll",
+        melody: "pianoRoll",
+      };
+      const ov = OVERLAY[ec.trackId] as Parameters<typeof openOverlay>[0] | undefined;
+      if (ov) {
+        const wasOpen = prevOpenRef.current.has(ov);
+        const isOpen  = openSet.has(ov);
+        if (wasOpen && !isOpen) {
+          // Overlay just closed — save current engine state back to clip
+          if (ec.trackId === "bass") {
+            const { steps, length, params } = useBassStore.getState();
+            updateClipData(ec.id, { kind: "bass", steps, length, params: params ?? DEFAULT_BASS_PARAMS });
+          } else if (ec.trackId === "chords") {
+            const { steps, length, params } = useChordsStore.getState();
+            updateClipData(ec.id, { kind: "chords", steps, length, params: params ?? DEFAULT_CHORDS_PARAMS });
+          } else if (ec.trackId === "melody") {
+            const { steps, length, params } = useMelodyStore.getState();
+            updateClipData(ec.id, { kind: "melody", steps, length, params: params ?? DEFAULT_MELODY_PARAMS });
+          }
+          editingClipRef.current = null;
+        }
+      }
+    }
+    prevOpenRef.current = new Set(Array.from(openSet) as string[]);
+  }, [openSet, updateClipData]);
+
+  function handleEditClip(clipId: string) {
+    const clip = clips.find((c) => c.id === clipId);
+    if (!clip) return;
+    editingClipRef.current = { id: clipId, trackId: clip.trackId };
+
+    if (clip.data.kind === "drums") {
+      // Load pattern into the drum store — no dedicated overlay
+      useDrumStore.setState({ pattern: structuredClone(clip.data.pattern) });
+    } else if (clip.data.kind === "bass") {
+      const st = useBassStore.getState();
+      st.loadBassPattern({
+        steps:     clip.data.steps,
+        length:    clip.data.length,
+        params:    clip.data.params ?? DEFAULT_BASS_PARAMS,
+        rootNote:  st.rootNote,
+        rootName:  st.rootName,
+        scaleName: st.scaleName,
+      });
+      openOverlay("pianoRoll");
+    } else if (clip.data.kind === "chords") {
+      const st = useChordsStore.getState();
+      st.loadChordsPattern({
+        steps:     clip.data.steps,
+        length:    clip.data.length,
+        params:    clip.data.params ?? DEFAULT_CHORDS_PARAMS,
+        rootNote:  st.rootNote,
+        rootName:  st.rootName,
+        scaleName: st.scaleName,
+      });
+      openOverlay("chordPianoRoll");
+    } else if (clip.data.kind === "melody") {
+      const st = useMelodyStore.getState();
+      st.loadMelodyPattern({
+        steps:     clip.data.steps,
+        length:    clip.data.length,
+        params:    clip.data.params ?? DEFAULT_MELODY_PARAMS,
+        rootNote:  st.rootNote,
+        rootName:  st.rootName,
+        scaleName: st.scaleName,
+      });
+      openOverlay("pianoRoll");
+    }
+  }
 
   const rulerTicks = useMemo(
     () =>
@@ -1437,6 +1528,7 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
                   onRenameChange={setRenameValue}
                   onRenameCommit={commitRename}
                   onSelect={(e) => { e.stopPropagation(); setSelectedId(clip.id); setContextMenu(null); }}
+                  onDoubleClick={(e) => { e.stopPropagation(); handleEditClip(clip.id); }}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1499,12 +1591,19 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
         >
           <button
             className="w-full text-left px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+            onClick={() => { handleEditClip(contextMenu.clipId); setContextMenu(null); }}
+          >
+            ✏ Edit
+          </button>
+          <div className="border-t border-white/8 my-0.5" />
+          <button
+            className="w-full text-left px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
             onClick={() => startRename(contextMenu.clipId)}
           >
             Rename
           </button>
           <button
-            className="w-full text-left px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+            className="w-full text-left px-3 py-1 text-[11px] text-red-400/70 hover:bg-red-500/10 hover:text-red-400"
             onClick={() => { removeClip(contextMenu.clipId); setContextMenu(null); setSelectedId(null); }}
           >
             Delete
