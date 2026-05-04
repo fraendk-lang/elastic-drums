@@ -36,15 +36,60 @@ interface StepButtonProps {
   onContextMenu: (e: React.MouseEvent) => void;
   onMouseDown: (e: React.MouseEvent) => void;
   onPointerDown: (e: React.PointerEvent) => void;
+  onLongPress: () => void;
   stepRef: (el: HTMLButtonElement | null) => void;
 }
+
+const LONG_PRESS_MS = 480;
 
 const StepButton = React.memo(function StepButton({
   track, absoluteStep, isActive, isCurrent, trackColor, velocity,
   ratchetCount, condition, gateLength, hasLocks, isHeld, isTiedStep,
   isInGateDragRange, isBeat, onClick, onContextMenu, onMouseDown, onPointerDown,
-  stepRef,
+  onLongPress, stepRef,
 }: StepButtonProps) {
+  // ── Long-press detection (touch-friendly context menu) ──
+  const lpTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lpStartX = React.useRef(0);
+  const lpStartY = React.useRef(0);
+  const lpFired = React.useRef(false);
+
+  const lpCancel = React.useCallback(() => {
+    if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null; }
+  }, []);
+
+  const handleCombinedPointerDown = React.useCallback((e: React.PointerEvent) => {
+    // Pass to gate-drag handler first (only activates near right edge)
+    onPointerDown(e);
+    // Start long-press timer for touch/stylus (skip for mouse right/middle button)
+    if (e.pointerType !== "mouse" || e.button === 0) {
+      lpFired.current = false;
+      lpStartX.current = e.clientX;
+      lpStartY.current = e.clientY;
+      lpTimer.current = setTimeout(() => {
+        lpTimer.current = null;
+        lpFired.current = true;
+        onLongPress();
+      }, LONG_PRESS_MS);
+    }
+  }, [onPointerDown, onLongPress]);
+
+  const handleCombinedPointerMove = React.useCallback((e: React.PointerEvent) => {
+    if (!lpTimer.current) return;
+    const dx = e.clientX - lpStartX.current;
+    const dy = e.clientY - lpStartY.current;
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) lpCancel();
+  }, [lpCancel]);
+
+  const handleCombinedPointerUp = React.useCallback(() => {
+    lpCancel();
+  }, [lpCancel]);
+
+  // Prevent toggle-on-tap after long-press fired
+  const handleCombinedClick = React.useCallback((e: React.MouseEvent) => {
+    if (lpFired.current) { lpFired.current = false; return; }
+    onClick(e);
+  }, [onClick]);
   const velNorm = velocity / 127;
   const hasRatchet = isActive && ratchetCount > 1;
   const hasCondition = isActive && condition !== "always";
@@ -55,10 +100,13 @@ const StepButton = React.memo(function StepButton({
   return (
     <button
       ref={stepRef}
-      onClick={onClick}
+      onClick={handleCombinedClick}
       onContextMenu={onContextMenu}
       onMouseDown={onMouseDown}
-      onPointerDown={onPointerDown}
+      onPointerDown={handleCombinedPointerDown}
+      onPointerMove={handleCombinedPointerMove}
+      onPointerUp={handleCombinedPointerUp}
+      onPointerCancel={handleCombinedPointerUp}
       aria-label={`Step ${absoluteStep + 1}, ${VOICE_LABELS[track]}, ${activeText}${velText ? ", " + velText : ""}`}
       className={`ed-step-btn h-[28px] rounded-[3px] relative ${hasGate ? "overflow-visible z-20" : "overflow-hidden"} ${
         isHeld ? "ring-2 ring-[var(--ed-accent-green)] z-10" : ""
@@ -168,6 +216,7 @@ interface TrackRowProps {
   onContextMenu: (e: React.MouseEvent, track: number, absStep: number) => void;
   onStepMouseDown: (e: React.MouseEvent, track: number, absStep: number) => void;
   onGateDragStart: (e: React.PointerEvent, track: number, absStep: number) => void;
+  onStepLongPress: (track: number, absStep: number) => void;
 }
 
 const SWING_CYCLE = [undefined, 55, 60, 65, 70, 75] as const;
@@ -175,7 +224,7 @@ const SWING_CYCLE = [undefined, 55, 60, 65, 70, 75] as const;
 const TrackRow = React.memo(function TrackRow({
   track, label, color, pageOffset, selectedVoice, isPlaying, heldStep,
   pattern, gateDrag, gateDragEnd, stepRefs, onSelectTrack, onToggleStep,
-  onSetStepVelocity, onContextMenu, onStepMouseDown, onGateDragStart,
+  onSetStepVelocity, onContextMenu, onStepMouseDown, onGateDragStart, onStepLongPress,
 }: TrackRowProps) {
   const currentStep = useSyncExternalStore(drumCurrentStepStore.subscribe, drumCurrentStepStore.getSnapshot);
   const isSelectedTrack = selectedVoice === track;
@@ -290,6 +339,7 @@ const TrackRow = React.memo(function TrackRow({
             onContextMenu={(e) => onContextMenu(e, track, absoluteStep)}
             onMouseDown={(e) => onStepMouseDown(e, track, absoluteStep)}
             onPointerDown={(e) => onGateDragStart(e, track, absoluteStep)}
+            onLongPress={() => onStepLongPress(track, absoluteStep)}
             stepRef={(el) => {
               if (el) stepRefs.current.set(`${track}-${stepIdx}`, el);
               else stepRefs.current.delete(`${track}-${stepIdx}`);
@@ -417,6 +467,18 @@ export function StepSequencer() {
     if (!step?.active || e.button !== 0) return;
     holdStepRef.current(track, absStep);
     setSelectedVoiceRef.current(track);
+  }, []);
+
+  // Long-press on a step (touch alternative to right-click) → cycle velocity
+  const handleStepLongPress = useCallback((track: number, absStep: number) => {
+    const step = patternRef.current.tracks[track]?.steps[absStep];
+    if (!step?.active) return;
+    const levels = [127, 100, 70, 40];
+    const idx = levels.findIndex((v) => v <= step.velocity);
+    const next = levels[(idx + 1) % levels.length]!;
+    setStepVelocityRef.current(track, absStep, next);
+    // Light haptic feedback on devices that support it
+    if (navigator.vibrate) navigator.vibrate(30);
   }, []);
 
   // ─── Gate-Length Drag Handlers ──────────────────────────
@@ -769,6 +831,7 @@ export function StepSequencer() {
                 onContextMenu={handleContextMenu}
                 onStepMouseDown={handleStepMouseDown}
                 onGateDragStart={handleGateDragStart}
+                onStepLongPress={handleStepLongPress}
               />
             );
           })}
