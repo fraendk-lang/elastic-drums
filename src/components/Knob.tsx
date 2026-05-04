@@ -1,14 +1,17 @@
 /**
- * Rotary Knob Component
+ * Rotary Knob Component — Premium hardware style
  *
- * Hardware-feel rotary encoder with:
+ * Features:
  * - Drag up/down to change value
  * - Double-click to reset to default
- * - Visual arc indicator with glow
- * - Value display on hover
+ * - Value arc with glow (purple default for macros, or custom color)
+ * - Tick marks around the perimeter
+ * - Outer metallic bezel ring
+ * - 3D-depth knob body gradient
+ * - Glowing indicator dot at end of needle
  */
 
-import { useState, useCallback, useRef, memo } from "react";
+import React, { useState, useCallback, useRef, memo } from "react";
 
 interface KnobProps {
   value: number;
@@ -18,12 +21,20 @@ interface KnobProps {
   label: string;
   color?: string;
   size?: number;
+  /** Number of tick marks (default 11) */
+  ticks?: number;
+  /** Show the outer bezel ring (default true for size >= 56) */
+  bezel?: boolean;
   onChange: (value: number) => void;
 }
 
 export const Knob = memo(function Knob({
-  value, min, max, defaultValue, label, color = "var(--ed-accent-orange)",
-  size = 40, onChange,
+  value, min, max, defaultValue, label,
+  color = "var(--ed-accent-orange)",
+  size = 40,
+  ticks,
+  bezel,
+  onChange,
 }: KnobProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [showValue, setShowValue] = useState(false);
@@ -32,7 +43,17 @@ export const Knob = memo(function Knob({
   const knobRef = useRef<HTMLDivElement>(null);
 
   const normalized = (value - min) / (max - min); // 0..1
-  const angle = -135 + normalized * 270; // -135° to +135°
+  const angle = -135 + normalized * 270;            // -135° … +135°
+
+  const showBezel = bezel ?? size >= 56;
+  const tickCount = ticks ?? (size >= 56 ? 13 : 11);
+
+  // Layout
+  const cx = size / 2;
+  const cy = size / 2;
+  const outerR    = size / 2 - 1;              // outermost bezel ring
+  const trackR    = size / 2 - (showBezel ? 5 : 3); // arc track
+  const bodyR     = trackR - (showBezel ? 5 : 4);   // knob body
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -42,40 +63,61 @@ export const Knob = memo(function Knob({
 
     const handleMove = (me: MouseEvent) => {
       const deltaY = dragStartY.current - me.clientY;
-      const range = max - min;
-      const sensitivity = range / 150;
+      const range  = max - min;
+      const sensitivity = range / (size >= 56 ? 200 : 150);
       const newVal = Math.max(min, Math.min(max, dragStartVal.current + deltaY * sensitivity));
       onChange(Math.round(newVal));
     };
-
     const handleUp = () => {
       setIsDragging(false);
       window.removeEventListener("mousemove", handleMove);
       window.removeEventListener("mouseup", handleUp);
     };
-
     window.addEventListener("mousemove", handleMove);
     window.addEventListener("mouseup", handleUp);
-  }, [value, min, max, onChange]);
+  }, [value, min, max, size, onChange]);
 
   const handleDoubleClick = useCallback(() => {
     onChange(defaultValue);
   }, [defaultValue, onChange]);
 
-  const radius = size / 2 - 4;
-  const arcRadius = radius + 2;
+  // ── Arc geometry ────────────────────────────────────────────────
+  const toRad = (deg: number) => deg * (Math.PI / 180);
+  const startAngleDeg = -135;
+  const endAngleDeg   = angle;
 
-  // SVG arc for value indicator
-  const startAngle = -135 * (Math.PI / 180);
-  const endAngle = angle * (Math.PI / 180);
-  const cx = size / 2;
-  const cy = size / 2;
+  const arcStartX = cx + trackR * Math.cos(toRad(startAngleDeg));
+  const arcStartY = cy + trackR * Math.sin(toRad(startAngleDeg));
+  const arcEndX   = cx + trackR * Math.cos(toRad(endAngleDeg));
+  const arcEndY   = cy + trackR * Math.sin(toRad(endAngleDeg));
+  const largeArc  = normalized > 0.5 ? 1 : 0;
 
-  const arcStartX = cx + arcRadius * Math.cos(startAngle);
-  const arcStartY = cy + arcRadius * Math.sin(startAngle);
-  const arcEndX = cx + arcRadius * Math.cos(endAngle);
-  const arcEndY = cy + arcRadius * Math.sin(endAngle);
-  const largeArc = normalized > 0.5 ? 1 : 0;
+  // ── Tick marks ──────────────────────────────────────────────────
+  const tickR = showBezel ? outerR - 1 : trackR + 3;
+  const tickLen = size >= 56 ? 4 : 2.5;
+  const tickWidth = size >= 56 ? 1.5 : 1;
+  const tickMarks: React.ReactElement[] = [];
+  for (let i = 0; i < tickCount; i++) {
+    const t = i / (tickCount - 1);
+    const tickDeg = -135 + t * 270;
+    const tickRad = toRad(tickDeg);
+    const x1 = cx + tickR * Math.cos(tickRad);
+    const y1 = cy + tickR * Math.sin(tickRad);
+    const x2 = cx + (tickR - tickLen) * Math.cos(tickRad);
+    const y2 = cy + (tickR - tickLen) * Math.sin(tickRad);
+    // Active ticks (covered by value arc) glow in accent color
+    const isActive = t <= normalized + 0.001;
+    tickMarks.push(
+      <line
+        key={i}
+        x1={x1} y1={y1} x2={x2} y2={y2}
+        stroke={isActive ? color : "rgba(255,255,255,0.18)"}
+        strokeWidth={tickWidth}
+        strokeLinecap="round"
+        opacity={isActive ? (i === 0 || t <= normalized ? 1 : 0.5) : 0.6}
+      />
+    );
+  }
 
   return (
     <div
@@ -83,9 +125,12 @@ export const Knob = memo(function Knob({
       onMouseEnter={() => setShowValue(true)}
       onMouseLeave={() => setShowValue(false)}
     >
-      {/* Value tooltip */}
-      <span className={`text-[9px] font-mono tabular-nums h-3 transition-opacity duration-100 ${showValue || isDragging ? "opacity-100" : "opacity-0"}`}
-        style={{ color }}
+      {/* Value readout */}
+      <span
+        className={`font-mono tabular-nums h-3 transition-opacity duration-100 ${
+          showValue || isDragging ? "opacity-100" : "opacity-0"
+        }`}
+        style={{ color, fontSize: size >= 56 ? 10 : 8 }}
       >
         {Math.round(value)}
       </span>
@@ -98,67 +143,119 @@ export const Knob = memo(function Knob({
         onMouseDown={handleMouseDown}
         onDoubleClick={handleDoubleClick}
       >
-        <svg width={size} height={size} className="absolute inset-0">
-          {/* Background track */}
-          <circle cx={cx} cy={cy} r={arcRadius} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={2.5}
-            strokeDasharray={`${arcRadius * 2 * Math.PI * 0.75} ${arcRadius * 2 * Math.PI * 0.25}`}
-            strokeDashoffset={arcRadius * 2 * Math.PI * 0.375}
+        <svg width={size} height={size} className="absolute inset-0 overflow-visible">
+          {/* ── Outer bezel ring ────────────────────────────────── */}
+          {showBezel && (
+            <circle
+              cx={cx} cy={cy} r={outerR}
+              fill="none"
+              stroke="url(#bezel-gradient)"
+              strokeWidth={1.5}
+            />
+          )}
+
+          {/* ── Gradient defs ─────────────────────────────────── */}
+          <defs>
+            <linearGradient id="bezel-gradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%"   stopColor="rgba(255,255,255,0.18)" />
+              <stop offset="50%"  stopColor="rgba(255,255,255,0.06)" />
+              <stop offset="100%" stopColor="rgba(255,255,255,0.03)" />
+            </linearGradient>
+          </defs>
+
+          {/* ── Background arc track ───────────────────────────── */}
+          <circle
+            cx={cx} cy={cy} r={trackR}
+            fill="none"
+            stroke="rgba(255,255,255,0.07)"
+            strokeWidth={showBezel ? 3 : 2.5}
+            strokeDasharray={`${trackR * 2 * Math.PI * 0.75} ${trackR * 2 * Math.PI * 0.25}`}
+            strokeDashoffset={trackR * 2 * Math.PI * 0.375}
             strokeLinecap="round"
           />
 
-          {/* Value arc with glow */}
+          {/* ── Tick marks ─────────────────────────────────────── */}
+          {tickMarks}
+
+          {/* ── Value arc ──────────────────────────────────────── */}
           {normalized > 0.005 && (<>
-            {/* Glow layer */}
+            {/* Wide glow */}
             <path
-              d={`M ${arcStartX} ${arcStartY} A ${arcRadius} ${arcRadius} 0 ${largeArc} 1 ${arcEndX} ${arcEndY}`}
-              fill="none" stroke={color} strokeWidth={4} strokeLinecap="round"
-              opacity={isDragging ? 0.2 : 0.08}
+              d={`M ${arcStartX} ${arcStartY} A ${trackR} ${trackR} 0 ${largeArc} 1 ${arcEndX} ${arcEndY}`}
+              fill="none" stroke={color}
+              strokeWidth={showBezel ? 10 : 6}
+              strokeLinecap="round"
+              opacity={0.15}
             />
-            {/* Crisp line */}
+            {/* Main arc */}
             <path
-              d={`M ${arcStartX} ${arcStartY} A ${arcRadius} ${arcRadius} 0 ${largeArc} 1 ${arcEndX} ${arcEndY}`}
-              fill="none" stroke={color} strokeWidth={2.5} strokeLinecap="round"
+              d={`M ${arcStartX} ${arcStartY} A ${trackR} ${trackR} 0 ${largeArc} 1 ${arcEndX} ${arcEndY}`}
+              fill="none" stroke={color}
+              strokeWidth={showBezel ? 3.5 : 2.5}
+              strokeLinecap="round"
             />
           </>)}
         </svg>
 
-        {/* Knob body */}
+        {/* ── Knob body ─────────────────────────────────────────── */}
         <div
-          className="absolute rounded-full shadow-inner transition-shadow duration-100"
+          className="absolute rounded-full"
           style={{
-            width: radius * 2,
-            height: radius * 2,
-            top: (size - radius * 2) / 2,
-            left: (size - radius * 2) / 2,
+            width:  bodyR * 2,
+            height: bodyR * 2,
+            top:    (size - bodyR * 2) / 2,
+            left:   (size - bodyR * 2) / 2,
             background: isDragging
-              ? "linear-gradient(180deg, #2a2a32 0%, #1e1e26 100%)"
-              : "linear-gradient(180deg, #252530 0%, #1a1a22 100%)",
-            border: `1px solid ${isDragging ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.05)"}`,
+              ? "linear-gradient(145deg, #2e2e3e 0%, #1e1e2c 55%, #161622 100%)"
+              : "linear-gradient(145deg, #292939 0%, #1d1d2b 55%, #141420 100%)",
+            border: `1px solid ${isDragging ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.07)"}`,
             boxShadow: isDragging
-              ? `inset 0 1px 0 rgba(255,255,255,0.05), 0 2px 8px rgba(0,0,0,0.4)`
-              : `inset 0 1px 0 rgba(255,255,255,0.03), 0 1px 4px rgba(0,0,0,0.3)`,
+              ? `inset 0 2px 4px rgba(0,0,0,0.5), inset 0 -1px 0 rgba(255,255,255,0.04), 0 4px 16px rgba(0,0,0,0.6)`
+              : `inset 0 2px 3px rgba(0,0,0,0.4), inset 0 -1px 0 rgba(255,255,255,0.03), 0 2px 8px rgba(0,0,0,0.5)`,
           }}
         >
-          {/* Indicator line */}
+          {/* Indicator needle */}
           <div
             className="absolute w-0.5 rounded-full"
             style={{
-              height: radius * 0.45,
-              backgroundColor: color,
-              top: 3,
-              left: radius - 1,
-              transformOrigin: `center ${radius - 3}px`,
-              transform: `rotate(${angle}deg)`,
-              boxShadow: isDragging ? `0 0 6px ${color}` : "none",
+              height: bodyR * 0.4,
+              top:    bodyR * 0.1,
+              left:   bodyR - 1,
+              transformOrigin: `1px ${bodyR * 0.9}px`,
+              transform:       `rotate(${angle + 90}deg)`,
+              background: `linear-gradient(to bottom, ${color}, ${color}88)`,
+              boxShadow: isDragging ? `0 0 5px ${color}` : `0 0 3px ${color}88`,
             }}
           />
+
+          {/* Indicator dot at tip */}
+          {size >= 56 && (
+            <div
+              className="absolute rounded-full"
+              style={{
+                width:  4,
+                height: 4,
+                background: color,
+                top:    bodyR * 0.1 + 1,
+                left:   bodyR - 2,
+                transformOrigin: `2px ${bodyR * 0.9 - 1}px`,
+                transform:       `rotate(${angle + 90}deg)`,
+                boxShadow: `0 0 6px ${color}, 0 0 12px ${color}66`,
+              }}
+            />
+          )}
         </div>
       </div>
 
       {/* Label */}
-      <span className={`text-[8px] font-semibold transition-colors duration-100 ${
-        isDragging ? "text-[var(--ed-text-secondary)]" : "text-[var(--ed-text-muted)]"
-      }`}>{label}</span>
+      <span
+        className={`font-semibold uppercase tracking-wider transition-colors duration-100 ${
+          isDragging ? "text-[var(--ed-text-secondary)]" : "text-[var(--ed-text-muted)]"
+        }`}
+        style={{ fontSize: size >= 56 ? 9 : 8 }}
+      >
+        {label}
+      </span>
     </div>
   );
 });

@@ -3,6 +3,7 @@
  */
 
 import { audioEngine } from "../audio/AudioEngine";
+import { sampleManager } from "../audio/SampleManager";
 import type { PatternData } from "../store/drumStore";
 
 export interface VoiceKitParams {
@@ -37,6 +38,9 @@ export interface DrumKit {
   bpmRange: [number, number];
   description?: string;
   voices: Record<number, VoiceKitParams>;
+  /** Optional sample URLs per voice (voice index → public URL).
+   *  When present, the voice plays the sample instead of VA synthesis. */
+  samples?: Record<number, string>;
   mix?: Record<number, VoiceMixParams>;
   masterFx?: {
     reverbLevel?: number;   // 0..1
@@ -61,6 +65,22 @@ export interface DrumKit {
 
 // Apply a kit to the audio engine
 export function applyKit(kit: DrumKit): void {
+  // Clear all voice samples first so a kit with no samples falls back to VA synthesis,
+  // and leftover samples from a previous kit don't bleed through.
+  for (let v = 0; v < 12; v++) {
+    sampleManager.clearSample(v);
+  }
+
+  // Load new samples (fire-and-forget; audio engine falls back to VA while loading)
+  if (kit.samples) {
+    for (const [voiceStr, url] of Object.entries(kit.samples)) {
+      const voice = Number(voiceStr);
+      sampleManager
+        .loadFromUrl(url, `${kit.id}-v${voiceStr}`, voice)
+        .catch((err) => console.warn(`[KitManager] Sample load failed for voice ${voice}:`, err));
+    }
+  }
+
   // Voice params
   for (const [voiceStr, params] of Object.entries(kit.voices)) {
     const voice = Number(voiceStr);

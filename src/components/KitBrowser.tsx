@@ -39,6 +39,7 @@ const SOUNDSET_COLORS: Record<string, string> = {
   "Acoustic":  "#84cc16",
   "Ambient":   "#8b5cf6",
   "Cinematic": "#64748b",
+  "Samples":   "#22d3ee",
 };
 
 const SOUNDSET_DESCRIPTIONS: Record<string, string> = {
@@ -52,6 +53,7 @@ const SOUNDSET_DESCRIPTIONS: Record<string, string> = {
   "Acoustic":  "Natural drum kits — jazz brush, acoustic, organic",
   "Ambient":   "Ambient textures, IDM, glitch, experimental",
   "Cinematic": "Film scoring — impacts, tension, atmospheric",
+  "Samples":   "100% real drum samples from the library — no synthesis",
 };
 
 function buildSoundsets(kits: DrumKit[]): Soundset[] {

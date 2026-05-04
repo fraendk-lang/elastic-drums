@@ -17,6 +17,13 @@ export const FACTORY_KITS: DrumKit[] = [
     id: "808-classic", name: "808 Classic", category: "808",
     tags: ["boom-bap", "hip-hop", "classic"], author: "Factory", bpmRange: [80, 100],
     description: "The original 808 sound — deep kick, snappy snare, crisp hats",
+    samples: {
+      0: "/samples/library/boom-kicks/eq-boom-eq-sub001-smokers2-dm.ogg",
+      1: "/samples/library/snares/eq-snare-eq-snr020-smokers2-gm.ogg",
+      2: "/samples/library/claps/clap-03.ogg",
+      6: "/samples/library/hats-closed/eq-hhc-eq-hhc010-smokers2-gm.ogg",
+      7: "/samples/library/hats-open/eq-hho-eq-ohh005-smokers2-gm.ogg",
+    },
     voices: {
       0: { tune: 48, decay: 600, click: 40, drive: 25, sub: 70, pitch: 45 },
       1: { tune: 180, decay: 200, tone: 50, snap: 65, body: 55 },
@@ -47,6 +54,12 @@ export const FACTORY_KITS: DrumKit[] = [
     id: "808-deep", name: "808 Deep Sub", category: "808",
     tags: ["sub", "bass", "deep"], author: "Factory", bpmRange: [70, 90],
     description: "Ultra-deep 808 sub bass — perfect for trap and hip-hop",
+    samples: {
+      0: "/samples/library/boom-kicks/eq-boom-eq-sub015-smokers2-gm.ogg",
+      1: "/samples/library/snares/eq-snare-eq-snr040-smokers2-gm.ogg",
+      2: "/samples/library/claps/clap-07.ogg",
+      6: "/samples/library/hats-closed/eq-hhc-eq-hhc020-smokers2-gm.ogg",
+    },
     voices: {
       0: { tune: 38, decay: 900, click: 20, drive: 15, sub: 90, pitch: 40 },
       1: { tune: 160, decay: 180, tone: 40, snap: 50, body: 70 },
@@ -74,6 +87,12 @@ export const FACTORY_KITS: DrumKit[] = [
   {
     id: "808-distorted", name: "808 Distorted", category: "808",
     tags: ["distorted", "hard", "aggressive"], author: "Factory", bpmRange: [60, 80],
+    samples: {
+      0: "/samples/library/boom-kicks/eq-boom-eq-sub030-smokers2-am-or-a.ogg",
+      1: "/samples/library/snares/eq-snare-eq-snr060-smokers2-gm.ogg",
+      2: "/samples/library/claps/clap-05.ogg",
+      6: "/samples/library/hats-closed/eq-hhc-eq-hhc025-smokers2-gm.ogg",
+    },
     voices: {
       0: { tune: 42, decay: 1100, click: 60, drive: 80, sub: 60, pitch: 50 },
       1: { tune: 200, decay: 150, tone: 60, snap: 80, body: 40 },
@@ -92,6 +111,13 @@ export const FACTORY_KITS: DrumKit[] = [
   {
     id: "909-house", name: "909 House", category: "909",
     tags: ["house", "classic", "four-on-floor"], author: "Factory", bpmRange: [118, 128],
+    samples: {
+      0: "/samples/library/kicks/eq-kick-eq-kik020-smokers2-gm.ogg",
+      1: "/samples/library/snares/eq-snare-eq-snr020-smokers2-gm.ogg",
+      2: "/samples/library/claps/clap-01.ogg",
+      6: "/samples/library/hats-closed/eq-hhc-eq-hhc001-smokers2-gm.ogg",
+      7: "/samples/library/hats-open/eq-hho-eq-ohh001-smokers2-gm.ogg",
+    },
     voices: {
       0: { tune: 55, decay: 450, click: 55, drive: 30, sub: 40, pitch: 48 },
       1: { tune: 190, decay: 220, tone: 55, snap: 70, body: 50 },
@@ -112,6 +138,13 @@ export const FACTORY_KITS: DrumKit[] = [
   {
     id: "909-techno", name: "909 Techno", category: "909",
     tags: ["techno", "minimal", "hard"], author: "Factory", bpmRange: [128, 140],
+    samples: {
+      0: "/samples/library/kicks/eq-kick-eq-kik010-smokers2-gm.ogg",
+      1: "/samples/library/snares/eq-snare-eq-snr080-smokers2-gm.ogg",
+      2: "/samples/library/claps/clap-04.ogg",
+      6: "/samples/library/hats-closed/eq-hhc-eq-hhc050-smokers2-gm.ogg",
+      7: "/samples/library/hats-open/eq-hho-eq-ohh015-smokers2-gm.ogg",
+    },
     voices: {
       0: { tune: 58, decay: 380, click: 65, drive: 45, sub: 30, pitch: 52 },
       1: { tune: 200, decay: 180, tone: 60, snap: 80, body: 35 },
@@ -155,6 +188,12 @@ export const FACTORY_KITS: DrumKit[] = [
   {
     id: "trap-hard", name: "Trap Hard", category: "Trap",
     tags: ["trap", "808", "hard", "sub-bass"], author: "Factory", bpmRange: [130, 160],
+    samples: {
+      0: "/samples/library/boom-kicks/eq-boom-eq-sub040-smokers2-dm.ogg",
+      1: "/samples/library/snares/eq-snare-eq-snr100-smokers2-fm.ogg",
+      2: "/samples/library/claps/clap-10.ogg",
+      6: "/samples/library/hats-closed/eq-hhc-eq-hhc060-smokers2-gm.ogg",
+    },
     voices: {
       0: { tune: 35, decay: 1200, click: 50, drive: 60, sub: 85, pitch: 38 },
       1: { tune: 210, decay: 170, tone: 65, snap: 85, body: 30 },
@@ -1072,9 +1111,195 @@ export const FACTORY_KITS: DrumKit[] = [
       8: { steps: [0], vel: [55] },
     }},
   },
+  // ═══════════════════════════════════════════════════════
+  // SAMPLES — Pure sample-based kits from the drum library
+  // ═══════════════════════════════════════════════════════
+
+  {
+    id: "samples-deep-house", name: "Deep House Samples", category: "Samples",
+    tags: ["house", "deep", "samples", "organic"], author: "Factory", bpmRange: [118, 128],
+    description: "Classic deep house feel — real boom kick, warm snare, tight hats",
+    samples: {
+      0: "/samples/library/boom-kicks/eq-boom-eq-sub001-smokers2-dm.ogg",
+      1: "/samples/library/snares/eq-snare-eq-snr030-smokers2-dm.ogg",
+      2: "/samples/library/claps/clap-02.ogg",
+      3: "/samples/library/toms/tom-01.ogg",
+      4: "/samples/library/toms/tom-04.ogg",
+      6: "/samples/library/hats-closed/eq-hhc-eq-hhc001-smokers2-gm.ogg",
+      7: "/samples/library/hats-open/eq-hho-eq-ohh001-smokers2-gm.ogg",
+      8: "/samples/library/cymbals/cymbal-01.ogg",
+      9: "/samples/library/cymbals/cymbal-05.ogg",
+    },
+    voices: {
+      0: { tune: 50, decay: 600 }, 1: { tune: 180, decay: 200 },
+      2: { decay: 300 }, 3: { tune: 100, decay: 250 }, 4: { tune: 140, decay: 200 },
+      6: { tune: 330, decay: 50 }, 7: { tune: 330, decay: 260 },
+      8: { tune: 380, decay: 900 }, 9: { tune: 480, decay: 900 },
+    },
+    mix: {
+      0: { pan: 0, reverbSend: 0.05 },
+      1: { pan: 0, reverbSend: 0.2 },
+      2: { pan: 0.1, reverbSend: 0.25 },
+      6: { pan: -0.2 }, 7: { pan: 0.2, reverbSend: 0.1 },
+      8: { pan: -0.3, reverbSend: 0.25 }, 9: { pan: 0.3, reverbSend: 0.2 },
+    },
+    masterFx: { reverbLevel: 0.3, saturation: 0.08, eqLow: 2, eqHigh: 0 },
+    pattern: { length: 16, swing: 52, tracks: {
+      0: { steps: [0, 4, 8, 12], vel: [127, 120, 127, 120] },
+      2: { steps: [4, 12], vel: [110, 100] },
+      6: { steps: [0, 2, 4, 6, 8, 10, 12, 14], vel: [100, 60, 85, 60, 100, 60, 85, 60] },
+      7: { steps: [2, 10], vel: [70, 65] },
+    }},
+  },
+
+  {
+    id: "samples-boom-bap", name: "Boom Bap Samples", category: "Samples",
+    tags: ["hip-hop", "boom-bap", "samples", "classic"], author: "Factory", bpmRange: [85, 100],
+    description: "Real sample boom bap — gritty kick, cracking snare, dusty hats",
+    samples: {
+      0: "/samples/library/kicks/eq-kick-eq-kik050-smokers2-gm.ogg",
+      1: "/samples/library/snares/eq-snare-eq-snr040-smokers2-gm.ogg",
+      2: "/samples/library/claps/clap-08.ogg",
+      3: "/samples/library/toms/tom-02.ogg",
+      4: "/samples/library/toms/tom-06.ogg",
+      5: "/samples/library/toms/tom-10.ogg",
+      6: "/samples/library/hats-closed/eq-hhc-eq-hhc080-smokers2-em.ogg",
+      7: "/samples/library/hats-open/eq-hho-eq-ohh020-smokers2-gm.ogg",
+      8: "/samples/library/cymbals/cymbal-07.ogg",
+      10: "/samples/library/percussions/perc-01.ogg",
+    },
+    voices: {
+      0: { tune: 50, decay: 500 }, 1: { tune: 180, decay: 180 },
+      2: { decay: 280 }, 3: { tune: 95, decay: 220 }, 4: { tune: 135, decay: 190 }, 5: { tune: 190, decay: 160 },
+      6: { tune: 330, decay: 45 }, 7: { tune: 330, decay: 240 },
+      8: { tune: 380, decay: 700 }, 10: { tune: 800, decay: 100 },
+    },
+    mix: {
+      0: { pan: 0 }, 1: { pan: 0, reverbSend: 0.1 }, 2: { pan: 0.1 },
+      3: { pan: -0.3 }, 4: { pan: 0 }, 5: { pan: 0.3 },
+      6: { pan: -0.15 }, 7: { pan: 0.15, reverbSend: 0.1 },
+    },
+    masterFx: { reverbLevel: 0.2, saturation: 0.12, eqLow: 3, eqMid: 1, eqHigh: -1 },
+    pattern: { length: 16, swing: 58, tracks: {
+      0: { steps: [0, 6, 10], vel: [127, 95, 112] },
+      1: { steps: [4, 12], vel: [118, 108] },
+      2: { steps: [4], vel: [85] },
+      6: { steps: [0, 2, 4, 6, 8, 10, 12, 14], vel: [100, 55, 75, 55, 100, 55, 75, 55] },
+      7: { steps: [3, 11], vel: [65, 55] },
+    }},
+  },
+
+  {
+    id: "samples-trap-banger", name: "Trap Banger Samples", category: "Samples",
+    tags: ["trap", "808", "samples", "hard"], author: "Factory", bpmRange: [140, 160],
+    description: "Massive sample-based trap — sub boom kick, slapping snare, rapid hi-hats",
+    samples: {
+      0: "/samples/library/boom-kicks/eq-boom-eq-sub055-smokers2-cm.ogg",
+      1: "/samples/library/snares/eq-snare-eq-snr120-smokers2-fm.ogg",
+      2: "/samples/library/claps/clap-09.ogg",
+      6: "/samples/library/hats-closed/eq-hhc-eq-hhc100-smokers2-gm.ogg",
+      7: "/samples/library/hats-open/eq-hho-eq-ohh040-smokers2-gm.ogg",
+      9: "/samples/library/cymbals/cymbal-10.ogg",
+      10: "/samples/library/percussions/perc-05.ogg",
+    },
+    voices: {
+      0: { tune: 40, decay: 1000 }, 1: { tune: 200, decay: 160 },
+      2: { decay: 240 }, 6: { tune: 350, decay: 28 }, 7: { tune: 350, decay: 180 },
+      9: { tune: 480, decay: 500 }, 10: { tune: 900, decay: 80 },
+    },
+    mix: {
+      0: { pan: 0, insertDrive: 0.1 },
+      1: { pan: 0, reverbSend: 0.08 }, 2: { pan: 0 },
+      6: { pan: -0.1 }, 7: { pan: 0.1, reverbSend: 0.05 },
+    },
+    masterFx: { reverbLevel: 0.15, saturation: 0.18, eqLow: 4, eqMid: -1, eqHigh: 2 },
+    pattern: { length: 16, swing: 50, tracks: {
+      0: { steps: [0, 3, 7, 10, 14], vel: [127, 100, 112, 90, 102] },
+      1: { steps: [4, 12], vel: [120, 110] },
+      2: { steps: [12], vel: [90] },
+      6: { steps: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+           vel: [100, 45, 60, 45, 100, 45, 60, 45, 100, 45, 60, 45, 100, 45, 60, 45] },
+    }},
+  },
+
+  {
+    id: "samples-funk-break", name: "Funk Break Samples", category: "Samples",
+    tags: ["funk", "break", "samples", "organic", "soul"], author: "Factory", bpmRange: [90, 110],
+    description: "Full live-feel breakbeat — real kicks, snappy snare, riding cymbal, toms",
+    samples: {
+      0: "/samples/library/kicks/eq-kick-eq-kik060-smokers2-gm.ogg",
+      1: "/samples/library/snares/eq-snare-eq-snr060-smokers2-gm.ogg",
+      2: "/samples/library/claps/clap-06.ogg",
+      3: "/samples/library/toms/tom-03.ogg",
+      4: "/samples/library/toms/tom-07.ogg",
+      5: "/samples/library/toms/tom-11.ogg",
+      6: "/samples/library/hats-closed/eq-hhc-eq-hhc010-smokers2-gm.ogg",
+      7: "/samples/library/hats-open/eq-hho-eq-ohh010-smokers2-gm.ogg",
+      8: "/samples/library/cymbals/cymbal-03.ogg",
+      9: "/samples/library/cymbals/cymbal-12.ogg",
+      10: "/samples/library/rims/eq-rim-eq-rim001-smokers2-gm.ogg",
+      11: "/samples/library/percussions/perc-03.ogg",
+    },
+    voices: {
+      0: { tune: 50, decay: 450 }, 1: { tune: 175, decay: 190 },
+      2: { decay: 270 }, 3: { tune: 95, decay: 210 }, 4: { tune: 130, decay: 180 }, 5: { tune: 185, decay: 150 },
+      6: { tune: 330, decay: 55 }, 7: { tune: 330, decay: 280 },
+      8: { tune: 375, decay: 1200 }, 9: { tune: 460, decay: 800 },
+      10: { tune: 700, decay: 90 }, 11: { tune: 1100, decay: 110 },
+    },
+    mix: {
+      0: { pan: 0 }, 1: { pan: 0.05, reverbSend: 0.12 },
+      3: { pan: -0.4 }, 4: { pan: 0 }, 5: { pan: 0.4 },
+      6: { pan: -0.2 }, 7: { pan: 0.2, reverbSend: 0.15 },
+      8: { pan: -0.35, reverbSend: 0.3 }, 9: { pan: 0.35, reverbSend: 0.25 },
+    },
+    masterFx: { reverbLevel: 0.25, saturation: 0.1, eqLow: 1, eqMid: 2, eqHigh: 1 },
+    pattern: { length: 16, swing: 55, tracks: {
+      0: { steps: [0, 6, 8, 14], vel: [127, 100, 90, 110] },
+      1: { steps: [4, 10, 12], vel: [118, 85, 105] },
+      6: { steps: [0, 2, 4, 6, 8, 10, 12, 14], vel: [100, 65, 85, 65, 100, 65, 85, 65] },
+      7: { steps: [2, 6, 14], vel: [75, 80, 70] },
+      8: { steps: [0, 4, 8, 12], vel: [50, 45, 50, 45] },
+    }},
+  },
+
+  {
+    id: "samples-minimal-techno", name: "Minimal Techno Samples", category: "Samples",
+    tags: ["techno", "minimal", "samples", "hypnotic"], author: "Factory", bpmRange: [130, 145],
+    description: "Stripped-back sample techno — punchy kick, crisp clap, metallic hats",
+    samples: {
+      0: "/samples/library/kicks/eq-kick-eq-kik020-smokers2-gm.ogg",
+      1: "/samples/library/snares/eq-snare-eq-snr080-smokers2-gm.ogg",
+      2: "/samples/library/claps/clap-04.ogg",
+      6: "/samples/library/hats-closed/eq-hhc-eq-hhc060-smokers2-gm.ogg",
+      7: "/samples/library/hats-open/eq-hho-eq-ohh030-smokers2-gm.ogg",
+      8: "/samples/library/cymbals/cymbal-16.ogg",
+      10: "/samples/library/percussions/perc-08.ogg",
+      11: "/samples/library/rims/eq-rim-eq-rim004-smokers2-gm.ogg",
+    },
+    voices: {
+      0: { tune: 55, decay: 350 }, 1: { tune: 190, decay: 170 },
+      2: { decay: 260 }, 6: { tune: 340, decay: 38 }, 7: { tune: 340, decay: 200 },
+      8: { tune: 400, decay: 800 }, 10: { tune: 1000, decay: 70 }, 11: { tune: 1400, decay: 60 },
+    },
+    mix: {
+      0: { pan: 0, insertDrive: 0.05 },
+      1: { pan: 0, reverbSend: 0.12 }, 2: { pan: 0 },
+      6: { pan: -0.15 }, 7: { pan: 0.15, reverbSend: 0.08 },
+      8: { pan: 0, reverbSend: 0.4 },
+    },
+    masterFx: { reverbLevel: 0.2, saturation: 0.12, eqLow: 2, eqMid: -1, eqHigh: 3 },
+    pattern: { length: 16, swing: 50, tracks: {
+      0: { steps: [0, 4, 8, 12], vel: [127, 127, 127, 127] },
+      2: { steps: [4, 12], vel: [110, 105] },
+      6: { steps: [0, 2, 4, 6, 8, 10, 12, 14], vel: [100, 55, 90, 55, 100, 55, 90, 55] },
+      7: { steps: [6, 14], vel: [80, 75] },
+    }},
+  },
+
 ];
 
 // Categories for the kit browser
 export const KIT_CATEGORIES = [
-  "All", "808", "909", "Trap", "DnB", "Electro", "World", "Ambient", "Retro", "Acoustic", "Cinematic", "Garage", "Footwork", "Club", "Grime",
+  "All", "808", "909", "Trap", "DnB", "Electro", "World", "Ambient", "Retro", "Acoustic", "Cinematic", "Garage", "Footwork", "Club", "Grime", "Samples",
 ];
