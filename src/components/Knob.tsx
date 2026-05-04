@@ -41,6 +41,7 @@ export const Knob = memo(function Knob({
   const dragStartY = useRef(0);
   const dragStartVal = useRef(0);
   const knobRef = useRef<HTMLDivElement>(null);
+  const lastTapRef = useRef(0);
 
   const normalized = (value - min) / (max - min); // 0..1
   const angle = -135 + normalized * 270;            // -135° … +135°
@@ -55,30 +56,38 @@ export const Knob = memo(function Knob({
   const trackR    = size / 2 - (showBezel ? 5 : 3); // arc track
   const bodyR     = trackR - (showBezel ? 5 : 4);   // knob body
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
     setIsDragging(true);
+    setShowValue(true);
     dragStartY.current = e.clientY;
     dragStartVal.current = value;
+  }, [value]);
 
-    const handleMove = (me: MouseEvent) => {
-      const deltaY = dragStartY.current - me.clientY;
-      const range  = max - min;
-      const sensitivity = range / (size >= 56 ? 200 : 150);
-      const newVal = Math.max(min, Math.min(max, dragStartVal.current + deltaY * sensitivity));
-      onChange(Math.round(newVal));
-    };
-    const handleUp = () => {
-      setIsDragging(false);
-      window.removeEventListener("mousemove", handleMove);
-      window.removeEventListener("mouseup", handleUp);
-    };
-    window.addEventListener("mousemove", handleMove);
-    window.addEventListener("mouseup", handleUp);
-  }, [value, min, max, size, onChange]);
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!e.buttons && e.pointerType === "mouse") return;
+    if (!(e.currentTarget as HTMLElement).hasPointerCapture(e.pointerId)) return;
+    const deltaY = dragStartY.current - e.clientY;
+    const range  = max - min;
+    const sensitivity = range / (size >= 56 ? 200 : 150);
+    const newVal = Math.max(min, Math.min(max, dragStartVal.current + deltaY * sensitivity));
+    onChange(newVal);
+  }, [min, max, size, onChange]);
 
-  const handleDoubleClick = useCallback(() => {
-    onChange(defaultValue);
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    setIsDragging(false);
+    setShowValue(false);
+  }, []);
+
+  // Double-tap on touch, double-click on mouse → reset to default
+  const handleClick = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 400) {
+      onChange(defaultValue);
+    }
+    lastTapRef.current = now;
   }, [defaultValue, onChange]);
 
   // ── Arc geometry ────────────────────────────────────────────────
@@ -120,11 +129,7 @@ export const Knob = memo(function Knob({
   }
 
   return (
-    <div
-      className="flex flex-col items-center gap-0.5 select-none"
-      onMouseEnter={() => setShowValue(true)}
-      onMouseLeave={() => setShowValue(false)}
-    >
+    <div className="flex flex-col items-center gap-0.5 select-none">
       {/* Value readout */}
       <span
         className={`font-mono tabular-nums h-3 transition-opacity duration-100 ${
@@ -140,8 +145,12 @@ export const Knob = memo(function Knob({
         ref={knobRef}
         className={`relative cursor-grab ${isDragging ? "cursor-grabbing" : ""}`}
         style={{ width: size, height: size }}
-        onMouseDown={handleMouseDown}
-        onDoubleClick={handleDoubleClick}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onClick={handleClick}
+        onDoubleClick={() => onChange(defaultValue)}
       >
         <svg width={size} height={size} className="absolute inset-0 overflow-visible">
           {/* ── Outer bezel ring ────────────────────────────────── */}
