@@ -37,7 +37,6 @@ export const Knob = memo(function Knob({
   onChange,
 }: KnobProps) {
   const [isDragging, setIsDragging] = useState(false);
-  const [showValue, setShowValue] = useState(false);
   const dragStartY = useRef(0);
   const dragStartVal = useRef(0);
   const isDraggingRef = useRef(false);   // ref so move handler doesn't need isDragging in deps
@@ -64,7 +63,6 @@ export const Knob = memo(function Knob({
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     isDraggingRef.current = true;
     setIsDragging(true);
-    setShowValue(true);
     dragStartY.current = e.clientY;
     dragStartVal.current = value;
   }, [value]);
@@ -81,7 +79,6 @@ export const Knob = memo(function Knob({
   const handlePointerUp = useCallback(() => {
     isDraggingRef.current = false;
     setIsDragging(false);
-    setShowValue(false);
   }, []);
 
   const handleMouseEnter = useCallback(() => {
@@ -91,6 +88,16 @@ export const Knob = memo(function Knob({
   const handleMouseLeave = useCallback(() => {
     if (!isDraggingRef.current) setIsHovered(false);
   }, []);
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const range = max - min;
+    // Normal scroll: 1% of range per tick; Shift: 0.1% (fine)
+    const step = e.shiftKey ? range * 0.001 : range * 0.01;
+    const delta = e.deltaY < 0 ? step : -step;
+    const newVal = Math.max(min, Math.min(max, value + delta));
+    onChange(newVal);
+  }, [min, max, value, onChange]);
 
   // Double-tap on touch, double-click on mouse → reset to default
   const handleClick = useCallback(() => {
@@ -146,7 +153,7 @@ export const Knob = memo(function Knob({
       {/* Value readout */}
       <span
         className={`font-mono tabular-nums h-3 transition-opacity duration-100 ${
-          showValue || isDragging || isHovered ? "opacity-100" : "opacity-0"
+          isDragging || isHovered ? "opacity-100" : "opacity-0"
         }`}
         style={{ color, fontSize: size >= 56 ? 10 : 8 }}
       >
@@ -166,6 +173,7 @@ export const Knob = memo(function Knob({
         onDoubleClick={() => onChange(defaultValue)}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
+        onWheel={handleWheel}
       >
         <svg width={size} height={size} className="absolute inset-0 overflow-visible">
           {/* ── Gradient defs ─────────────────────────────────── */}
