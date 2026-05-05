@@ -188,15 +188,6 @@ export const Knob = memo(function Knob({
           {/* ── Tick marks ─────────────────────────────────────── */}
           {tickMarks}
 
-          {/* ── Inner highlight arc (top) — 3D depth ─────────────── */}
-          <path
-            d={`M ${cx - bodyR * 0.65} ${cy - bodyR * 0.55} A ${bodyR} ${bodyR} 0 0 1 ${cx + bodyR * 0.65} ${cy - bodyR * 0.55}`}
-            fill="none"
-            stroke="rgba(255,255,255,0.06)"
-            strokeWidth={1}
-            strokeLinecap="round"
-          />
-
           {/* ── Value arc ──────────────────────────────────────── */}
           {normalized > 0.005 && (<>
             {/* Wide glow */}
@@ -234,6 +225,21 @@ export const Knob = memo(function Knob({
               : `inset 0 2px 3px rgba(0,0,0,0.5), inset 0 -1px 0 rgba(255,255,255,0.04), 0 2px 10px rgba(0,0,0,0.6)`,
           }}
         >
+          {/* Inner highlight arc — top rim glow for 3D depth */}
+          <svg
+            width={bodyR * 2}
+            height={bodyR * 2}
+            className="absolute inset-0 pointer-events-none overflow-visible"
+          >
+            <path
+              d={`M ${bodyR * 0.35} ${bodyR * 0.45} A ${bodyR} ${bodyR} 0 0 1 ${bodyR * 1.65} ${bodyR * 0.45}`}
+              fill="none"
+              stroke="rgba(255,255,255,0.06)"
+              strokeWidth={1}
+              strokeLinecap="round"
+            />
+          </svg>
+
           {/* Indicator needle */}
           <div
             className="absolute w-0.5 rounded-full"
