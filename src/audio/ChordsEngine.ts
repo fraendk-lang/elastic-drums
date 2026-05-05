@@ -40,6 +40,7 @@ export interface ChordsParams {
   brightness: number;  // High-shelf boost (0-1), default 0.3
   synthType: "subtractive" | "wavetable";  // Default: "subtractive"
   wavetable?: WavetableName;               // Default: "harmonic"
+  filterLfoDepth: number;  // 0-1 — slow filter "breathing" LFO depth
 }
 
 export const DEFAULT_CHORDS_PARAMS: ChordsParams = {
@@ -62,6 +63,7 @@ export const DEFAULT_CHORDS_PARAMS: ChordsParams = {
   brightness: 0.38,   // more air (was 0.3)
   synthType: "subtractive",
   wavetable: "harmonic",
+  filterLfoDepth: 0.35,  // subtle pad breathing
 };
 
 export const CHORD_TYPES: Record<string, number[]> = {
@@ -122,6 +124,11 @@ export class ChordsEngine {
   private chorusLfo: OscillatorNode | null = null;
   private chorusLfoGain: GainNode | null = null;
   private chorusMix: GainNode | null = null;
+
+  // Slow filter-breathe LFO (peaking EQ ±dB sweep → organic "breathing")
+  private breatheFilter: BiquadFilterNode | null = null;
+  private breatheLfoOsc: OscillatorNode | null = null;
+  private breatheLfoGain: GainNode | null = null;
 
   // Modern cleanup / air contour
   private lowCutFilter: BiquadFilterNode | null = null;
@@ -213,6 +220,24 @@ export class ChordsEngine {
     this.chorusLfoGain.connect(this.chorusDelay.delayTime);
     this.chorusLfo.start();
 
+    // --- Breathe LFO: slow peaking EQ sweep → warm organic "breathing" ---
+    this.breatheFilter = audioCtx.createBiquadFilter();
+    this.breatheFilter.type = "peaking";
+    this.breatheFilter.frequency.value = 700;   // center ~700Hz for warmth
+    this.breatheFilter.Q.value = 1.2;
+    this.breatheFilter.gain.value = 0;           // starts flat
+
+    this.breatheLfoOsc = audioCtx.createOscillator();
+    this.breatheLfoOsc.type = "triangle";
+    this.breatheLfoOsc.frequency.value = 0.12;  // ~0.12Hz → one breathe cycle every ~8s
+
+    this.breatheLfoGain = audioCtx.createGain();
+    this.breatheLfoGain.gain.value = this.params.filterLfoDepth * 3.5; // ±0–3.5dB
+
+    this.breatheLfoOsc.connect(this.breatheLfoGain);
+    this.breatheLfoGain.connect(this.breatheFilter.gain);
+    this.breatheLfoOsc.start();
+
     // --- Low-cut cleanup to keep modern chords out of the bass lane ---
     this.lowCutFilter = audioCtx.createBiquadFilter();
     this.lowCutFilter.type = "highpass";
@@ -286,34 +311,55 @@ export class ChordsEngine {
   }
 
   private rewirePostFilterChain(): void {
-    if (!this.filterChain || !this.lowCutFilter || !this.chorusDelay || !this.chorusMix || !this.brightnessFilter || !this.vca) return;
+    if (!this.filterChain || !this.lowCutFilter || !this.chorusDelay || !this.chorusMix || !this.brightnessFilter || !this.breatheFilter || !this.vca) return;
 
     try { this.filterChain.output.disconnect(); } catch { /* noop */ }
     try { this.lowCutFilter.disconnect(); } catch { /* noop */ }
     try { this.chorusDelay.disconnect(); } catch { /* noop */ }
     try { this.chorusMix.disconnect(); } catch { /* noop */ }
     try { this.brightnessFilter.disconnect(); } catch { /* noop */ }
+    try { this.breatheFilter.disconnect(); } catch { /* noop */ }
 
-    // Signal: filter → lowCut → dry + chorus wet → brightness → VCA
+    // Signal: filter → lowCut → dry + chorus wet → brightness → breathe → VCA
     this.filterChain.output.connect(this.lowCutFilter);
     this.lowCutFilter.connect(this.brightnessFilter); // Dry path
     this.lowCutFilter.connect(this.chorusDelay);       // Chorus wet
     this.chorusDelay.connect(this.chorusMix);
     this.chorusMix.connect(this.brightnessFilter);
-    this.brightnessFilter.connect(this.vca);
+    this.brightnessFilter.connect(this.breatheFilter);  // breathe EQ
+    this.breatheFilter.connect(this.vca);
+  }
+
+  /**
+   * Humanize per-voice detune via Gaussian random walk (±1.5¢ per trigger).
+   * Makes each chord trigger sound slightly different — eliminates mechanical sterility.
+   */
+  private humanizeDetune(time: number): void {
+    const SPREAD = [-1, -0.6, -0.2, 0.2, 0.6, 1];
+    for (let i = 0; i < this.voices.length; i++) {
+      const voice = this.voices[i];
+      if (!voice) continue;
+      voice.driftCents += (Math.random() - 0.5) * 3.0;
+      voice.driftCents  = Math.max(-6, Math.min(6, voice.driftCents));
+      const baseDetune = this.params.detune * SPREAD[i]!;
+      voice.osc.detune.setValueAtTime(baseDetune + voice.driftCents, time);
+      voice.subOsc.detune.setValueAtTime(baseDetune + voice.driftCents * 0.6, time);
+    }
   }
 
   /**
    * Schedule the filter envelope via the filter chain.
    * Uses configurable attack time (not fixed 3ms like the 303).
-   * Accent boosts envelope depth.
+   * Accent boosts envelope depth. Velocity scales envMod (louder = more filter sweep).
    */
-  private scheduleFilterEnvelope(time: number, accent: boolean, glide: boolean): void {
+  private scheduleFilterEnvelope(time: number, accent: boolean, glide: boolean, velocity = 1.0): void {
     if (!this.filterChain) return;
 
     const p = this.params;
     const accentAmount = accent ? 2.0 : 1.0;
-    const envDepth = p.envMod * accentAmount;
+    // Velocity-sensitive envMod: soft playing = subtle sweep, hard = full sweep
+    const velFactor = Math.pow(Math.max(0.1, Math.min(1.0, velocity)), 0.65);
+    const envDepth = p.envMod * accentAmount * velFactor;
 
     // Filter peak: cutoff + envelope sweep range
     const filterPeak = Math.min(p.cutoff + envDepth * 8000, 18000);
@@ -389,9 +435,12 @@ export class ChordsEngine {
     }
 
     // --- VCA ---
+    // Humanize per-voice detune on every trigger (Gaussian walk ±1.5¢)
+    this.humanizeDetune(time);
+
     if (tie && this.chordIsOn) {
-      // Tie: do NOT re-trigger VCA -- keep it open, just glide pitch + filter
-      this.scheduleFilterEnvelope(time, accent, true);
+      // Tie: do NOT re-trigger VCA — keep it open, just glide pitch + filter
+      this.scheduleFilterEnvelope(time, accent, true, velocity);
     } else {
       // Normal trigger with exponential attack for smooth pad entry
       const attackSec = p.attack / 1000;
@@ -402,8 +451,8 @@ export class ChordsEngine {
       this.vca.gain.setValueAtTime(0.001, time);
       this.vca.gain.exponentialRampToValueAtTime(level, time + attackSec);
 
-      // Filter envelope
-      this.scheduleFilterEnvelope(time, accent, false);
+      // Filter envelope with velocity sensitivity
+      this.scheduleFilterEnvelope(time, accent, false, velocity);
     }
 
     this.chordIsOn = true;
@@ -493,6 +542,9 @@ export class ChordsEngine {
     if (normalized.chorus !== undefined && this.chorusMix) {
       this.chorusMix.gain.value = normalized.chorus;
     }
+    if (normalized.filterLfoDepth !== undefined && this.breatheLfoGain) {
+      this.breatheLfoGain.gain.value = normalized.filterLfoDepth * 3.5;
+    }
     if (normalized.brightness !== undefined) {
       this.updateBrightness();
     }
@@ -562,6 +614,14 @@ export class ChordsEngine {
       try { this.chorusLfo.stop(); } catch { /* ok */ }
       this.chorusLfo = null;
     }
+    if (this.breatheLfoOsc) {
+      try { this.breatheLfoOsc.stop(); } catch { /* ok */ }
+      this.breatheLfoOsc = null;
+    }
+    try { this.breatheFilter?.disconnect(); } catch { /* ok */ }
+    try { this.breatheLfoGain?.disconnect(); } catch { /* ok */ }
+    this.breatheFilter = null;
+    this.breatheLfoGain = null;
     try { this.mixer?.disconnect(); } catch { /* ok */ }
     try { this.filterChain?.input.disconnect(); } catch { /* ok */ }
     try { this.vca?.disconnect(); } catch { /* ok */ }

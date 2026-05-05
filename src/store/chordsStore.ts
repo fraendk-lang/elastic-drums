@@ -52,6 +52,12 @@ function ensureFilterModel(p: ChordsParams): ChordsParams {
 }
 
 export const CHORDS_PRESETS: ChordsPreset[] = [
+  // ── ★ Signature Pads — Wavetable + Filter LFO ──
+  { name: "★ Warm Strings",  params: cp({ synthType: "wavetable", wavetable: "warm-stack",  filterModel: "ladder",     cutoff: 1400, resonance: 3,  envMod: 0.18, attack: 120,  release: 900,  detune: 28, distortion: 0.05, volume: 0.50, subOsc: 0.18, chorus: 0.50, spread: 0.88, brightness: 0.32, filterLfoDepth: 0.55 }) },
+  { name: "★ Choir",         params: cp({ synthType: "wavetable", wavetable: "vocal",        filterModel: "lpf",        cutoff: 2800, resonance: 2,  envMod: 0.10, attack: 200,  release: 1200, detune: 12, distortion: 0.02, volume: 0.48, subOsc: 0.08, chorus: 0.70, spread: 0.90, brightness: 0.28, filterLfoDepth: 0.40 }) },
+  { name: "★ Glass Shimmer", params: cp({ synthType: "wavetable", wavetable: "glass",        filterModel: "steiner-lp", cutoff: 4000, resonance: 5,  envMod: 0.08, attack: 350,  release: 2000, detune:  6, distortion: 0.00, volume: 0.42, subOsc: 0.00, chorus: 0.40, spread: 0.70, brightness: 0.65, filterLfoDepth: 0.30 }) },
+  { name: "★ Deep Evolving", params: cp({ synthType: "subtractive", waveform: "square",      filterModel: "ladder",     cutoff: 800,  resonance: 4,  envMod: 0.22, attack: 400,  release: 1500, detune: 18, distortion: 0.04, volume: 0.50, subOsc: 0.38, chorus: 0.35, spread: 0.65, brightness: 0.12, filterLfoDepth: 0.75 }) },
+  { name: "★ Brass Pad",     params: cp({ synthType: "wavetable", wavetable: "bright-saw",   filterModel: "lpf",        cutoff: 3200, resonance: 6,  envMod: 0.30, attack:  40,  release: 600,  detune: 10, distortion: 0.30, volume: 0.50, subOsc: 0.10, chorus: 0.25, spread: 0.60, brightness: 0.40, filterLfoDepth: 0.20 }) },
   // ── Professional Pads ──
   { name: "Neo Soul Velvet", params: cp({ waveform: "triangle", filterModel: "ladder", cutoff: 1850, resonance: 2, envMod: 0.1, attack: 24, release: 420, detune: 5, distortion: 0.03, volume: 0.54, subOsc: 0.08, chorus: 0.14, spread: 0.34, brightness: 0.34 }) },
   { name: "Wide Cinema Pad", params: cp({ waveform: "sawtooth", filterModel: "ladder", cutoff: 1600, resonance: 3, envMod: 0.22, attack: 280, release: 1800, detune: 28, distortion: 0.06, volume: 0.48, subOsc: 0.18, chorus: 0.78, spread: 0.96, brightness: 0.58 }) },

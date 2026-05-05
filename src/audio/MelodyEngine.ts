@@ -302,12 +302,14 @@ export class MelodyEngine {
    * Fast attack (~5ms for lead character) and sharp exponential decay.
    * Accent dramatically increases the envelope depth and peak.
    */
-  private scheduleFilterEnvelope(time: number, accent: boolean, slide: boolean): void {
+  private scheduleFilterEnvelope(time: number, accent: boolean, slide: boolean, velocity = 1.0): void {
     if (!this.filterChain) return;
 
     const p = this.params;
     const accentAmount = accent ? (1.0 + p.accent * 2.5) : 1.0; // Accent up to 3.5x
-    const envDepth = p.envMod * accentAmount;
+    // Velocity-sensitive filter: soft playing → subtle sweep, hard → full sweep
+    const velFactor = Math.pow(Math.max(0.1, Math.min(1.0, velocity)), 0.65);
+    const envDepth = p.envMod * accentAmount * velFactor;
 
     // Filter peak: cutoff + envelope sweep range
     // Sweeps from high freq down to cutoff
@@ -457,7 +459,7 @@ export class MelodyEngine {
         if (tie && this.noteIsOn) {
           // Tie: do NOT re-trigger VCA -- keep it open, just glide pitch + filter
           // Only re-trigger the filter envelope mildly for squelch
-          this.scheduleFilterEnvelope(time, accent, true);
+          this.scheduleFilterEnvelope(time, accent, true, velocity);
         } else {
           // Normal trigger or first note
           // VCA: attack from params (default 5ms), with optional decay+sustain
@@ -474,8 +476,8 @@ export class MelodyEngine {
             this.vca.gain.linearRampToValueAtTime(sustainLevel, time + attackSec + decaySec);
           }
 
-          // Filter envelope: the heart of the lead sound
-          this.scheduleFilterEnvelope(time, accent, useSlide);
+          // Filter envelope: the heart of the lead sound (velocity-sensitive)
+          this.scheduleFilterEnvelope(time, accent, useSlide, velocity);
         }
 
         this.noteIsOn = true;
@@ -887,7 +889,9 @@ export class MelodyEngine {
     dist.oversample = p.distortion > 0.01 ? "2x" : "none";
 
     // ── Filter envelope ─────────────────────────────────────────────────────
-    const envAmount = p.envMod * (accent ? 1 + p.accent * 2 : 1);
+    // Velocity-sensitive envMod: soft notes get subtle filter sweep
+    const velFactor = Math.pow(Math.max(0.1, Math.min(1.0, velocity)), 0.65);
+    const envAmount = p.envMod * (accent ? 1 + p.accent * 2 : 1) * velFactor;
     const filterPeak = Math.min(p.cutoff + envAmount * 10000, 18000);
     const filterBase = Math.max(p.cutoff, 40);
     const fAttack = 0.005;

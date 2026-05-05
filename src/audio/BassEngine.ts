@@ -311,12 +311,14 @@ export class BassEngine {
    * This eliminates the click/dropout artefacts on Safari that the old
    * setInterval(16ms) approach caused when the main thread stalled.
    */
-  private scheduleFilterEnvelope(time: number, accent: boolean, slide: boolean): void {
+  private scheduleFilterEnvelope(time: number, accent: boolean, slide: boolean, velocity = 1.0): void {
     if (!this.filterChain || !this.ctx) return;
 
     const p = this.params;
     const accentMul = accent ? (1.0 + p.accent * 2.5) : 1.0;
-    const envDepth = p.envMod * accentMul;
+    // Velocity-sensitive envMod: accent notes always open fully; non-accent scales by velocity
+    const velFactor = accent ? 1.0 : Math.pow(Math.max(0.1, Math.min(1.0, velocity)), 0.65);
+    const envDepth = p.envMod * accentMul * velFactor;
     const filterPeak = Math.min(p.cutoff + envDepth * 8000, 18000);
     const filterBase = Math.max(p.cutoff, 20);
     const decaySec = (p.decay / 1000) * (accent ? 0.4 : 1.0);
@@ -369,7 +371,7 @@ export class BassEngine {
     if (tie && this.noteIsOn) {
       // Tie: do NOT re-trigger VCA -- keep it open, just glide pitch + filter
       // Only re-trigger the filter envelope mildly for squelch
-      this.scheduleFilterEnvelope(time, accent, true);
+      this.scheduleFilterEnvelope(time, accent, true, velocity);
     } else {
       // Normal trigger or first note
       // VCA: fast attack with transient punch for percussive character
@@ -383,8 +385,8 @@ export class BassEngine {
       this.vca.gain.linearRampToValueAtTime(level + punchAmount, time + 0.002); // 2ms overshoot
       this.vca.gain.linearRampToValueAtTime(level, time + 0.008); // 6ms settle to sustain level
 
-      // Filter envelope: the heart of the 303 sound
-      this.scheduleFilterEnvelope(time, accent, useSlide);
+      // Filter envelope: the heart of the 303 sound (velocity-sensitive)
+      this.scheduleFilterEnvelope(time, accent, useSlide, velocity);
     }
 
     this.noteIsOn = true;

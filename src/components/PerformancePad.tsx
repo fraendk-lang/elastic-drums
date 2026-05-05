@@ -78,12 +78,13 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     setTarget, setMode, setChordSetIndex, setYParam, setScaleOctaves, setScaleLowestOct, setGridSnap, setTrailEnabled, setChordFollow, setGridRows,
     armRecording, startStepRecording, stopRecording, clearRecording, appendEvent, setLoopBars, setQuantize,
     startLoop, stopLoop,
+    customChordSets, setChordIntervals, resetChordCell,
   } = usePerformancePadStore();
 
   const setBassLiveTranspose = useBassStore((s) => s.setLiveTransposeOffset);
   const setMelodyLiveTranspose = useMelodyStore((s) => s.setLiveTransposeOffset);
 
-  const chordSet = CHORD_SETS[chordSetIndex] ?? CHORD_SETS[0]!;
+  const chordSet = customChordSets[chordSetIndex] ?? customChordSets[0] ?? CHORD_SETS[0]!;
 
   // Pull current scale/root from melody or bass store based on target
   const melodyRoot = useMelodyStore((s) => s.rootNote);
@@ -129,6 +130,16 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     arpSchedulerRef.current = new ArpScheduler();
   }
   const arpRootRef = useRef<number>(60);
+
+  // ── Chord Editor ──────────────────────────────────────────────────────────
+  const [editTarget, setEditTarget] = useState<{ setIdx: number; cellIdx: number } | null>(null);
+  /** Long-press tracking: timer + pointerId + pointer position at press start */
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressPointerId = useRef<number | null>(null);
+  const longPressOrigin = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  /** Derived editor state — resolved from customChordSets when editTarget is set */
+  const [editIntervals, setEditIntervals] = useState<boolean[]>(Array(12).fill(false));
+  const [editLabel, setEditLabel] = useState("");
 
   const arpModeRef = useRef(arpMode);
   const arpRateRef = useRef(arpRate);
@@ -402,6 +413,30 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     const { x, y } = getXY(e);
 
+    // ── Long-press detection for chord editor (chord mode only) ──────────
+    if (mode === "chords") {
+      const col = Math.max(0, Math.min(chordSet.cols - 1, Math.floor(x * chordSet.cols)));
+      const row = Math.max(0, Math.min(chordSet.rows - 1, Math.floor(y * chordSet.rows)));
+      const cellIdx = row * chordSet.cols + col;
+      longPressPointerId.current = e.pointerId;
+      longPressOrigin.current = { x: e.clientX, y: e.clientY };
+      if (longPressTimer.current) clearTimeout(longPressTimer.current);
+      longPressTimer.current = setTimeout(() => {
+        // Only fire if same pointer and it hasn't moved much (< 12px)
+        if (longPressPointerId.current === e.pointerId) {
+          const cell = customChordSets[chordSetIndex]?.cells[cellIdx];
+          if (cell) {
+            const bools = Array(12).fill(false) as boolean[];
+            cell.intervals.forEach((iv) => { if (iv >= 0 && iv < 12) bools[iv] = true; });
+            setEditIntervals(bools);
+            setEditLabel(cell.label);
+            setEditTarget({ setIdx: chordSetIndex, cellIdx });
+            if (navigator.vibrate) navigator.vibrate(40);
+          }
+        }
+      }, 500);
+    }
+
     // Snapshot FX levels for spring-back params on FIRST pointer down only
     if (activeVoicesRef.current.size === 0) {
       const paramDef = Y_PARAMS.find((p) => p.id === yParam);
@@ -508,6 +543,16 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     trailRef.current.push({ x, y, t: performance.now(), pointerId: e.pointerId });
     if (trailRef.current.length > 120) trailRef.current.shift();
 
+    // Cancel long-press if pointer moves more than 12px
+    if (longPressPointerId.current === e.pointerId) {
+      const dx = Math.abs(e.clientX - longPressOrigin.current.x);
+      const dy = Math.abs(e.clientY - longPressOrigin.current.y);
+      if (dx > 12 || dy > 12) {
+        if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+        longPressPointerId.current = null;
+      }
+    }
+
     const voice = activeVoicesRef.current.get(e.pointerId);
     if (!voice) return;  // Hover-only mode: just show trail, no audio modulation
     e.preventDefault();
@@ -530,6 +575,11 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Cancel long-press timer on finger lift
+    if (longPressPointerId.current === e.pointerId) {
+      if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+      longPressPointerId.current = null;
+    }
     const voice = activeVoicesRef.current.get(e.pointerId);
     if (!voice) return;
     activeVoicesRef.current.delete(e.pointerId);
@@ -1385,7 +1435,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
                 : isStepRecording
                   ? <span className="text-blue-300 font-bold tracking-[0.3em]">⏵ STEP MODE — each tap advances one {quantize === "off" ? "1/16" : quantize} step</span>
                   : mode === "chords"
-                    ? `${chordSet.name} · ${chordSet.cells.length} CHORDS · MULTI-TOUCH`
+                    ? `${chordSet.name} · ${chordSet.cells.length} CHORDS · HOLD TO EDIT`
                     : "BERÜHREN · HALTEN · BEWEGEN — MULTI-TOUCH"}
           </div>
 
@@ -1397,6 +1447,109 @@ export function PerformancePad({ isOpen, onClose }: Props) {
               <span>{gridSnap ? scaleName : "CHROMATIC"}</span>
             </div>
           )}
+
+          {/* ── Chord Editor Modal ─────────────────────────────────────────── */}
+          {editTarget !== null && (() => {
+            const NOTE_LABELS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+            const factoryCell = CHORD_SETS[editTarget.setIdx]?.cells[editTarget.cellIdx];
+            return (
+              <div
+                className="absolute inset-0 flex items-center justify-center z-50"
+                style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(4px)" }}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <div
+                  className="rounded-xl border border-[var(--ed-accent-melody)]/30 p-4 w-72 flex flex-col gap-3"
+                  style={{ background: "#12090f", boxShadow: "0 0 32px rgba(244,114,182,0.18)" }}
+                >
+                  {/* Header */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold tracking-widest text-[var(--ed-accent-melody)]/70 uppercase">Edit Chord</span>
+                    <div className="flex items-center gap-2">
+                      {factoryCell && (
+                        <button
+                          className="px-2 h-5 text-[8px] font-bold rounded bg-white/5 text-white/40 hover:text-white/70 transition-colors"
+                          onClick={() => {
+                            resetChordCell(editTarget.setIdx, editTarget.cellIdx);
+                            const bools = Array(12).fill(false) as boolean[];
+                            factoryCell.intervals.forEach((iv) => { if (iv >= 0 && iv < 12) bools[iv] = true; });
+                            setEditIntervals(bools);
+                            setEditLabel(factoryCell.label);
+                          }}
+                        >RESET</button>
+                      )}
+                      <button
+                        className="w-5 h-5 text-[10px] rounded bg-white/5 text-white/50 hover:text-white transition-colors flex items-center justify-center"
+                        onClick={() => setEditTarget(null)}
+                      >✕</button>
+                    </div>
+                  </div>
+
+                  {/* Semitone toggles */}
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[8px] text-white/30 uppercase tracking-widest">Intervals (relative to root)</span>
+                    <div className="grid grid-cols-12 gap-0.5">
+                      {NOTE_LABELS.map((noteName, i) => {
+                        const active = editIntervals[i] ?? false;
+                        const isRoot = i === 0;
+                        return (
+                          <button
+                            key={i}
+                            title={`${noteName} (${i === 0 ? "Root" : "+" + i + " st"})`}
+                            onClick={() => {
+                              if (isRoot) return; // root is always on
+                              setEditIntervals((prev) => {
+                                const next = [...prev];
+                                next[i] = !next[i];
+                                return next;
+                              });
+                            }}
+                            className={`flex flex-col items-center py-1 rounded text-[7px] font-bold transition-all select-none ${
+                              isRoot
+                                ? "bg-[var(--ed-accent-melody)]/80 text-black cursor-default"
+                                : active
+                                  ? "bg-[var(--ed-accent-melody)]/50 text-white"
+                                  : "bg-white/5 text-white/25 hover:bg-white/10 hover:text-white/50"
+                            }`}
+                          >
+                            <span>{noteName}</span>
+                            <span className="text-[6px] opacity-60">{i}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Label input */}
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[8px] text-white/30 uppercase tracking-widest">Label (max 6 chars)</span>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={editLabel}
+                      onChange={(e) => setEditLabel(e.target.value.slice(0, 6))}
+                      className="w-full px-3 py-1.5 rounded bg-white/5 border border-white/10 text-white text-[11px] font-mono outline-none focus:border-[var(--ed-accent-melody)]/40"
+                      placeholder="Am7"
+                    />
+                  </div>
+
+                  {/* Save button */}
+                  <button
+                    className="w-full h-8 rounded font-bold text-[10px] tracking-widest transition-all bg-[var(--ed-accent-melody)]/25 text-[var(--ed-accent-melody)] hover:bg-[var(--ed-accent-melody)]/40"
+                    onClick={() => {
+                      // Convert boolean[] to interval numbers (always include 0 = root)
+                      const intervals: number[] = [];
+                      editIntervals.forEach((on, i) => { if (on || i === 0) intervals.push(i); });
+                      setChordIntervals(editTarget.setIdx, editTarget.cellIdx, intervals, editLabel || "?");
+                      setEditTarget(null);
+                    }}
+                  >
+                    SAVE
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Volume slider */}

@@ -217,6 +217,19 @@ export interface PadEvent {
   velocity: number;     // 0-1 (used on "down")
 }
 
+// ── localStorage persistence for custom chord sets ─────────────────────────
+const LS_KEY = "eg_custom_chord_sets";
+function loadCustomChordSets(): ChordSet[] {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) return JSON.parse(raw) as ChordSet[];
+  } catch { /* ignore */ }
+  return JSON.parse(JSON.stringify(CHORD_SETS)) as ChordSet[];
+}
+function saveCustomChordSets(sets: ChordSet[]): void {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(sets)); } catch { /* ignore */ }
+}
+
 interface PerformancePadState {
   // Config
   target: PadTarget;
@@ -230,6 +243,9 @@ interface PerformancePadState {
   trailEnabled: boolean;    // Particle trail behind cursor
   chordFollow: boolean;     // When true, Bass + Melody auto-transpose to match pad chord root
   gridRows: number;         // Rows in scale-grid mode (each row = one octave)
+
+  // Editable chord sets (deep-clone of CHORD_SETS, persisted in localStorage)
+  customChordSets: ChordSet[];
 
   // Recording
   events: PadEvent[];
@@ -258,6 +274,10 @@ interface PerformancePadState {
   setChordFollow: (b: boolean) => void;
   setGridRows: (n: number) => void;
 
+  // Chord editor actions
+  setChordIntervals: (setIdx: number, cellIdx: number, intervals: number[], label: string) => void;
+  resetChordCell: (setIdx: number, cellIdx: number) => void;
+
   // Recording API
   armRecording: () => void;     // Arm for recording — starts on first note
   startStepRecording: (bpm: number) => void;
@@ -284,6 +304,7 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
   trailEnabled: true,
   chordFollow: true,
   gridRows: 2,
+  customChordSets: loadCustomChordSets(),
 
   events: [],
   isArmed: false,
@@ -309,6 +330,39 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
   setTrailEnabled: (b) => set({ trailEnabled: b }),
   setChordFollow: (b) => set({ chordFollow: b }),
   setGridRows: (n) => set({ gridRows: Math.max(1, Math.min(4, n)) }),
+
+  setChordIntervals: (setIdx, cellIdx, intervals, label) => {
+    const prev = get().customChordSets;
+    const next: ChordSet[] = prev.map((cs, si) => {
+      if (si !== setIdx) return cs;
+      return {
+        ...cs,
+        cells: cs.cells.map((cell, ci) =>
+          ci === cellIdx ? { ...cell, intervals, label } : cell
+        ),
+      };
+    });
+    saveCustomChordSets(next);
+    set({ customChordSets: next });
+  },
+
+  resetChordCell: (setIdx, cellIdx) => {
+    const factory = CHORD_SETS[setIdx];
+    const factoryCell = factory?.cells[cellIdx];
+    if (!factoryCell) return;
+    const prev = get().customChordSets;
+    const next: ChordSet[] = prev.map((cs, si) => {
+      if (si !== setIdx) return cs;
+      return {
+        ...cs,
+        cells: cs.cells.map((cell, ci) =>
+          ci === cellIdx ? { ...factoryCell } : cell
+        ),
+      };
+    });
+    saveCustomChordSets(next);
+    set({ customChordSets: next });
+  },
 
   armRecording: () => {
     const s = get();
