@@ -130,6 +130,8 @@ export const Knob = memo(function Knob({
     );
   }
 
+  const arcPath = `M ${arcStartX} ${arcStartY} A ${trackR} ${trackR} 0 ${largeArc} 1 ${arcEndX} ${arcEndY}`;
+
   return (
     <div className="flex flex-col items-center gap-0.5 select-none">
       {/* Value readout */}
@@ -155,6 +157,15 @@ export const Knob = memo(function Knob({
         onDoubleClick={() => onChange(defaultValue)}
       >
         <svg width={size} height={size} className="absolute inset-0 overflow-visible">
+          {/* ── Gradient defs ─────────────────────────────────── */}
+          <defs>
+            <linearGradient id="bezel-gradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%"   stopColor="rgba(255,255,255,0.25)" />
+              <stop offset="50%"  stopColor="rgba(255,255,255,0.06)" />
+              <stop offset="100%" stopColor="rgba(255,255,255,0.03)" />
+            </linearGradient>
+          </defs>
+
           {/* ── Outer bezel ring ────────────────────────────────── */}
           {showBezel && (
             <circle
@@ -164,15 +175,6 @@ export const Knob = memo(function Knob({
               strokeWidth={1.5}
             />
           )}
-
-          {/* ── Gradient defs ─────────────────────────────────── */}
-          <defs>
-            <linearGradient id="bezel-gradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%"   stopColor="rgba(255,255,255,0.25)" />
-              <stop offset="50%"  stopColor="rgba(255,255,255,0.06)" />
-              <stop offset="100%" stopColor="rgba(255,255,255,0.03)" />
-            </linearGradient>
-          </defs>
 
           {/* ── Background arc track ───────────────────────────── */}
           <circle
@@ -192,7 +194,7 @@ export const Knob = memo(function Knob({
           {normalized > 0.005 && (<>
             {/* Wide outer glow */}
             <path
-              d={`M ${arcStartX} ${arcStartY} A ${trackR} ${trackR} 0 ${largeArc} 1 ${arcEndX} ${arcEndY}`}
+              d={arcPath}
               fill="none" stroke={color}
               strokeWidth={showBezel ? 14 : 8}
               strokeLinecap="round"
@@ -200,7 +202,7 @@ export const Knob = memo(function Knob({
             />
             {/* Mid glow */}
             <path
-              d={`M ${arcStartX} ${arcStartY} A ${trackR} ${trackR} 0 ${largeArc} 1 ${arcEndX} ${arcEndY}`}
+              d={arcPath}
               fill="none" stroke={color}
               strokeWidth={showBezel ? 7 : 4}
               strokeLinecap="round"
@@ -208,7 +210,7 @@ export const Knob = memo(function Knob({
             />
             {/* Main arc */}
             <path
-              d={`M ${arcStartX} ${arcStartY} A ${trackR} ${trackR} 0 ${largeArc} 1 ${arcEndX} ${arcEndY}`}
+              d={arcPath}
               fill="none" stroke={color}
               strokeWidth={showBezel ? 3.5 : 2.5}
               strokeLinecap="round"
