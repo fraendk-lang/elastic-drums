@@ -188,6 +188,15 @@ export const Knob = memo(function Knob({
           {/* ── Tick marks ─────────────────────────────────────── */}
           {tickMarks}
 
+          {/* ── Inner highlight arc (top) — 3D depth ─────────────── */}
+          <path
+            d={`M ${cx - bodyR * 0.65} ${cy - bodyR * 0.55} A ${bodyR} ${bodyR} 0 0 1 ${cx + bodyR * 0.65} ${cy - bodyR * 0.55}`}
+            fill="none"
+            stroke="rgba(255,255,255,0.06)"
+            strokeWidth={1}
+            strokeLinecap="round"
+          />
+
           {/* ── Value arc ──────────────────────────────────────── */}
           {normalized > 0.005 && (<>
             {/* Wide glow */}
@@ -217,12 +226,12 @@ export const Knob = memo(function Knob({
             top:    (size - bodyR * 2) / 2,
             left:   (size - bodyR * 2) / 2,
             background: isDragging
-              ? "linear-gradient(145deg, #2e2e3e 0%, #1e1e2c 55%, #161622 100%)"
-              : "linear-gradient(145deg, #292939 0%, #1d1d2b 55%, #141420 100%)",
-            border: `1px solid ${isDragging ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.07)"}`,
+              ? "linear-gradient(145deg, #282836 0%, #181826 55%, #100e1c 100%)"
+              : "linear-gradient(145deg, #222232 0%, #141422 55%, #0e0c18 100%)",
+            border: `1px solid ${isDragging ? "rgba(255,255,255,0.13)" : "rgba(255,255,255,0.09)"}`,
             boxShadow: isDragging
-              ? `inset 0 2px 4px rgba(0,0,0,0.5), inset 0 -1px 0 rgba(255,255,255,0.04), 0 4px 16px rgba(0,0,0,0.6)`
-              : `inset 0 2px 3px rgba(0,0,0,0.4), inset 0 -1px 0 rgba(255,255,255,0.03), 0 2px 8px rgba(0,0,0,0.5)`,
+              ? `inset 0 2px 4px rgba(0,0,0,0.6), inset 0 -1px 0 rgba(255,255,255,0.05), 0 4px 20px rgba(0,0,0,0.7)`
+              : `inset 0 2px 3px rgba(0,0,0,0.5), inset 0 -1px 0 rgba(255,255,255,0.04), 0 2px 10px rgba(0,0,0,0.6)`,
           }}
         >
           {/* Indicator needle */}
