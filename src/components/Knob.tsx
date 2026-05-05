@@ -43,6 +43,7 @@ export const Knob = memo(function Knob({
   const isDraggingRef = useRef(false);   // ref so move handler doesn't need isDragging in deps
   const knobRef = useRef<HTMLDivElement>(null);
   const lastTapRef = useRef(0);
+  const [isHovered, setIsHovered] = useState(false);
 
   const normalized = (value - min) / (max - min); // 0..1
   const angle = -135 + normalized * 270;            // -135° … +135°
@@ -81,6 +82,14 @@ export const Knob = memo(function Knob({
     isDraggingRef.current = false;
     setIsDragging(false);
     setShowValue(false);
+  }, []);
+
+  const handleMouseEnter = useCallback(() => {
+    setIsHovered(true);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    if (!isDraggingRef.current) setIsHovered(false);
   }, []);
 
   // Double-tap on touch, double-click on mouse → reset to default
@@ -137,7 +146,7 @@ export const Knob = memo(function Knob({
       {/* Value readout */}
       <span
         className={`font-mono tabular-nums h-3 transition-opacity duration-100 ${
-          showValue || isDragging ? "opacity-100" : "opacity-0"
+          showValue || isDragging || isHovered ? "opacity-100" : "opacity-0"
         }`}
         style={{ color, fontSize: size >= 56 ? 10 : 8 }}
       >
@@ -155,6 +164,8 @@ export const Knob = memo(function Knob({
         onPointerCancel={handlePointerUp}
         onClick={handleClick}
         onDoubleClick={() => onChange(defaultValue)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
       >
         <svg width={size} height={size} className="absolute inset-0 overflow-visible">
           {/* ── Gradient defs ─────────────────────────────────── */}
@@ -173,6 +184,7 @@ export const Knob = memo(function Knob({
               fill="none"
               stroke="url(#bezel-gradient)"
               strokeWidth={1.5}
+              opacity={isHovered || isDragging ? 1 : 0.75}
             />
           )}
 
