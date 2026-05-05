@@ -16,6 +16,20 @@ const TRACK_COLORS = [
   "#8b5cf6", "#8b5cf6",
 ];
 
+// Lighter highlight variants for the radial gradient top-center
+const STEP_BRIGHT: Record<string, string> = {
+  "#f59e0b": "#fcd34d",
+  "#3b82f6": "#93c5fd",
+  "#8b5cf6": "#c4b5fd",
+};
+
+// Darker shadow variants for the radial gradient bottom
+const STEP_DARK: Record<string, string> = {
+  "#f59e0b": "#d97706",
+  "#3b82f6": "#2563eb",
+  "#8b5cf6": "#7c3aed",
+};
+
 // ─── StepButton Component (memoized) ─────────────────────────────
 interface StepButtonProps {
   track: number;
@@ -91,6 +105,8 @@ const StepButton = React.memo(function StepButton({
     onClick(e);
   }, [onClick]);
   const velNorm = velocity / 127;
+  const bright = STEP_BRIGHT[trackColor] ?? trackColor;
+  const dark   = STEP_DARK[trackColor]   ?? trackColor;
   const hasRatchet = isActive && ratchetCount > 1;
   const hasCondition = isActive && condition !== "always";
   const hasGate = isActive && gateLength > 1;
@@ -118,9 +134,10 @@ const StepButton = React.memo(function StepButton({
             : "bg-[var(--ed-bg-surface)]/50 hover:bg-[var(--ed-bg-surface)]"
       }`}
       style={isActive ? {
-        backgroundColor: trackColor,
+        background: `radial-gradient(circle at 50% 38%, ${bright} 0%, ${trackColor} 55%, ${dark} 100%)`,
+        borderColor: `${bright}55`,
         opacity: 0.35 + velNorm * 0.65,
-        boxShadow: isCurrent ? `0 0 8px ${trackColor}40` : "none",
+        boxShadow: `0 0 10px ${trackColor}60, 0 0 20px ${trackColor}22, inset 0 1px 0 rgba(255,255,255,0.25)`,
       } : (isTiedStep || isInGateDragRange) ? {
         backgroundColor: trackColor,
         opacity: 0.2,
@@ -138,12 +155,6 @@ const StepButton = React.memo(function StepButton({
       )}
       {isCurrent && (
         <div className="absolute inset-0 bg-white/15 rounded-[3px]" />
-      )}
-      {isActive && (
-        <div
-          className="absolute bottom-0 left-0 right-0 bg-black/20"
-          style={{ height: `${100 - velNorm * 100}%` }}
-        />
       )}
       {hasGate && (
         <div
