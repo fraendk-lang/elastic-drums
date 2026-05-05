@@ -1,14 +1,13 @@
 @import "tailwindcss";
 
 :root {
-  /* Elastic Groove Color Palette – Dark Theme with Warm Accents */
-  /* Lifted slightly for MacBook/Retina readability */
-  --ed-bg-primary: #1c1c22;
-  --ed-bg-secondary: #242428;
-  --ed-bg-surface: #2c2c34;
-  --ed-bg-elevated: #36363e;
-  --ed-border: #484854;
-  --ed-border-subtle: #333340;
+  /* Elastic Groove Color Palette – Deeper Dark Theme */
+  --ed-bg-primary: #0a0a0d;
+  --ed-bg-secondary: #0f0f14;
+  --ed-bg-surface: #15151e;
+  --ed-bg-elevated: #1e1e28;
+  --ed-border: #252535;
+  --ed-border-subtle: #1a1a26;
   --ed-text-primary: #ededf0;
   --ed-text-secondary: #ababc0;
   --ed-text-muted: #828294;
@@ -25,10 +24,11 @@
   --ed-accent-melody: #f472b6;
 
   /* Glow intensities */
-  --ed-glow-orange: rgba(245, 158, 11, 0.15);
-  --ed-glow-blue: rgba(59, 130, 246, 0.15);
-  --ed-glow-green: rgba(34, 197, 94, 0.15);
-  --ed-glow-red: rgba(239, 68, 68, 0.12);
+  --ed-glow-orange: rgba(245, 158, 11, 0.22);
+  --ed-glow-blue: rgba(59, 130, 246, 0.22);
+  --ed-glow-green: rgba(34, 197, 94, 0.22);
+  --ed-glow-red: rgba(239, 68, 68, 0.18);
+  --ed-glow-depth: rgba(0, 0, 0, 0.60);
 }
 
 /* ─── Grey / Studio Mode ──────────────────────────────────────
