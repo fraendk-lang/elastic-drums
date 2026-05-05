@@ -168,7 +168,7 @@ export const Knob = memo(function Knob({
           {/* ── Gradient defs ─────────────────────────────────── */}
           <defs>
             <linearGradient id="bezel-gradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%"   stopColor="rgba(255,255,255,0.18)" />
+              <stop offset="0%"   stopColor="rgba(255,255,255,0.25)" />
               <stop offset="50%"  stopColor="rgba(255,255,255,0.06)" />
               <stop offset="100%" stopColor="rgba(255,255,255,0.03)" />
             </linearGradient>
@@ -178,7 +178,7 @@ export const Knob = memo(function Knob({
           <circle
             cx={cx} cy={cy} r={trackR}
             fill="none"
-            stroke="rgba(255,255,255,0.07)"
+            stroke="rgba(255,255,255,0.05)"
             strokeWidth={showBezel ? 3 : 2.5}
             strokeDasharray={`${trackR * 2 * Math.PI * 0.75} ${trackR * 2 * Math.PI * 0.25}`}
             strokeDashoffset={trackR * 2 * Math.PI * 0.375}
@@ -190,13 +190,21 @@ export const Knob = memo(function Knob({
 
           {/* ── Value arc ──────────────────────────────────────── */}
           {normalized > 0.005 && (<>
-            {/* Wide glow */}
+            {/* Wide outer glow */}
             <path
               d={`M ${arcStartX} ${arcStartY} A ${trackR} ${trackR} 0 ${largeArc} 1 ${arcEndX} ${arcEndY}`}
               fill="none" stroke={color}
-              strokeWidth={showBezel ? 10 : 6}
+              strokeWidth={showBezel ? 14 : 8}
               strokeLinecap="round"
-              opacity={0.15}
+              opacity={0.22}
+            />
+            {/* Mid glow */}
+            <path
+              d={`M ${arcStartX} ${arcStartY} A ${trackR} ${trackR} 0 ${largeArc} 1 ${arcEndX} ${arcEndY}`}
+              fill="none" stroke={color}
+              strokeWidth={showBezel ? 7 : 4}
+              strokeLinecap="round"
+              opacity={0.10}
             />
             {/* Main arc */}
             <path
