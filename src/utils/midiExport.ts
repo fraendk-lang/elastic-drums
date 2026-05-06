@@ -1,12 +1,18 @@
 /**
  * MIDI File Export
  *
- * Converts a pattern to a Standard MIDI File (Type 0, single track).
- * Uses GM Drum Map note mapping on Channel 10.
+ * Converts a pattern to a Standard MIDI File (Format 1, multi-track).
+ * Track 0: Tempo + time signature meta events only
+ * Track 1: Drums (channel 10) — GM Drum Map
+ * Track 2: Bass (channel 1)
+ * Track 3: Chords (channel 2)
+ * Track 4: Melody (channel 3)
  * Generates a downloadable .mid file.
  */
 
 import type { PatternData } from "../store/drumStore";
+import type { PianoRollNote } from "../components/PianoRoll/types";
+import { _persistedNotes } from "../components/PianoRoll/persistedState";
 
 // GM Drum Map: voice index → MIDI note
 const VOICE_TO_NOTE = [
@@ -52,13 +58,47 @@ function write32(val: number): number[] {
   return [(val >> 24) & 0xff, (val >> 16) & 0xff, (val >> 8) & 0xff, val & 0xff];
 }
 
-export function patternToMidi(pattern: PatternData, bpm: number): Uint8Array {
-  // Collect all note events
+/** Wrap a raw bytes array into an MTrk chunk (header + length + data). */
+function buildMTrk(trackBytes: number[]): number[] {
+  return [
+    ...Array.from(new TextEncoder().encode("MTrk")),
+    ...write32(trackBytes.length),
+    ...trackBytes,
+  ];
+}
+
+/** Build the tempo-only Track 0. */
+function buildTempoTrack(bpm: number, patternName: string): number[] {
+  const trackBytes: number[] = [];
+
+  // Tempo meta event
+  const usPerBeat = Math.round(60_000_000 / bpm);
+  trackBytes.push(0x00); // delta=0
+  trackBytes.push(0xff, 0x51, 0x03); // Tempo
+  trackBytes.push((usPerBeat >> 16) & 0xff, (usPerBeat >> 8) & 0xff, usPerBeat & 0xff);
+
+  // Time signature: 4/4
+  trackBytes.push(0x00); // delta=0
+  trackBytes.push(0xff, 0x58, 0x04, 0x04, 0x02, 0x18, 0x08);
+
+  // Track name (pattern name)
+  const nameBytes = Array.from(new TextEncoder().encode(patternName));
+  trackBytes.push(0x00); // delta=0
+  trackBytes.push(0xff, 0x03, nameBytes.length, ...nameBytes);
+
+  // End of track
+  trackBytes.push(0x00, 0xff, 0x2f, 0x00);
+
+  return buildMTrk(trackBytes);
+}
+
+/** Build drum track (channel 10). */
+function buildDrumTrack(pattern: PatternData): number[] {
   interface NoteEvent {
     tick: number;
     note: number;
     velocity: number;
-    duration: number; // in ticks
+    duration: number;
   }
 
   const events: NoteEvent[] = [];
@@ -93,34 +133,24 @@ export function patternToMidi(pattern: PatternData, bpm: number): Uint8Array {
     }
   }
 
-  // Sort by tick
   events.sort((a, b) => a.tick - b.tick);
 
-  // Build MIDI track data
   const trackBytes: number[] = [];
 
-  // Tempo meta event
-  const usPerBeat = Math.round(60_000_000 / bpm);
-  trackBytes.push(0x00); // delta=0
-  trackBytes.push(0xff, 0x51, 0x03); // Tempo
-  trackBytes.push((usPerBeat >> 16) & 0xff, (usPerBeat >> 8) & 0xff, usPerBeat & 0xff);
-
   // Track name
-  const nameBytes = Array.from(new TextEncoder().encode(pattern.name));
-  trackBytes.push(0x00); // delta=0
+  const nameBytes = Array.from(new TextEncoder().encode("Drums"));
+  trackBytes.push(0x00);
   trackBytes.push(0xff, 0x03, nameBytes.length, ...nameBytes);
 
   // Note events (Channel 10 = 0x99 for note on, 0x89 for note off)
   let lastTick = 0;
 
   for (const evt of events) {
-    // Note On
     const deltaOn = evt.tick - lastTick;
     trackBytes.push(...writeVLQ(deltaOn));
     trackBytes.push(0x99, evt.note, evt.velocity); // Ch10 Note On
     lastTick = evt.tick;
 
-    // Note Off
     trackBytes.push(...writeVLQ(evt.duration));
     trackBytes.push(0x89, evt.note, 0); // Ch10 Note Off
     lastTick = evt.tick + evt.duration;
@@ -129,26 +159,101 @@ export function patternToMidi(pattern: PatternData, bpm: number): Uint8Array {
   // End of track
   trackBytes.push(0x00, 0xff, 0x2f, 0x00);
 
-  // Build complete MIDI file
+  return buildMTrk(trackBytes);
+}
+
+/** Build a piano roll track for bass/chords/melody. channel is 0-indexed (0=ch1, 1=ch2, 2=ch3). */
+function buildPianoRollTrack(
+  allNotes: PianoRollNote[],
+  targetTrack: "bass" | "chords" | "melody",
+  channel: number,
+  trackName: string,
+): number[] {
+  interface TimedEvent {
+    tick: number;
+    isNoteOn: boolean;
+    note: number;
+    velocity: number;
+  }
+
+  const notes = allNotes
+    .filter((n) => n.track === targetTrack)
+    .sort((a, b) => a.start - b.start);
+
+  const timedEvents: TimedEvent[] = [];
+
+  for (const n of notes) {
+    const startTick = Math.round(n.start * TICKS_PER_QUARTER);
+    const durationTicks = Math.max(1, Math.round(n.duration * TICKS_PER_QUARTER));
+    const vel = Math.max(1, Math.min(127, Math.round(n.velocity * 127)));
+
+    timedEvents.push({ tick: startTick, isNoteOn: true, note: n.midi, velocity: vel });
+    timedEvents.push({ tick: startTick + durationTicks, isNoteOn: false, note: n.midi, velocity: 0 });
+  }
+
+  // Sort by tick; note-offs before note-ons at the same tick to avoid stuck notes
+  timedEvents.sort((a, b) => {
+    if (a.tick !== b.tick) return a.tick - b.tick;
+    return a.isNoteOn ? 1 : -1;
+  });
+
+  const noteOnStatus = 0x90 | channel;
+  const noteOffStatus = 0x80 | channel;
+
+  const trackBytes: number[] = [];
+
+  // Track name
+  const nameBytes = Array.from(new TextEncoder().encode(trackName));
+  trackBytes.push(0x00);
+  trackBytes.push(0xff, 0x03, nameBytes.length, ...nameBytes);
+
+  let lastTick = 0;
+
+  for (const evt of timedEvents) {
+    const delta = evt.tick - lastTick;
+    trackBytes.push(...writeVLQ(delta));
+    if (evt.isNoteOn) {
+      trackBytes.push(noteOnStatus, evt.note, evt.velocity);
+    } else {
+      trackBytes.push(noteOffStatus, evt.note, 0);
+    }
+    lastTick = evt.tick;
+  }
+
+  // End of track
+  trackBytes.push(0x00, 0xff, 0x2f, 0x00);
+
+  return buildMTrk(trackBytes);
+}
+
+export function patternToMidi(
+  pattern: PatternData,
+  bpm: number,
+  pianoRollNotes?: PianoRollNote[],
+): Uint8Array {
+  const notes = pianoRollNotes ?? [];
+
+  const track0 = buildTempoTrack(bpm, pattern.name);
+  const track1 = buildDrumTrack(pattern);
+  const track2 = buildPianoRollTrack(notes, "bass",   0, "Bass");
+  const track3 = buildPianoRollTrack(notes, "chords", 1, "Chords");
+  const track4 = buildPianoRollTrack(notes, "melody", 2, "Melody");
+
+  // Format 1 header: 5 tracks, 480 ticks/quarter
   const header = [
     ...Array.from(new TextEncoder().encode("MThd")),
     ...write32(6),           // Header length
-    ...write16(0),           // Format 0
-    ...write16(1),           // 1 track
+    ...write16(1),           // Format 1
+    ...write16(5),           // 5 tracks
     ...write16(TICKS_PER_QUARTER),
   ];
 
-  const trackHeader = [
-    ...Array.from(new TextEncoder().encode("MTrk")),
-    ...write32(trackBytes.length),
-  ];
-
-  return new Uint8Array([...header, ...trackHeader, ...trackBytes]);
+  return new Uint8Array([...header, ...track0, ...track1, ...track2, ...track3, ...track4]);
 }
 
 /** Download pattern as .mid file */
 export function downloadMidi(pattern: PatternData, bpm: number): void {
-  const midi = patternToMidi(pattern, bpm);
+  const midi = patternToMidi(pattern, bpm, _persistedNotes);
   const blob = new Blob([midi.buffer as ArrayBuffer], { type: "audio/midi" });
   const url = URL.createObjectURL(blob);
 
