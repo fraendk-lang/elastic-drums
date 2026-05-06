@@ -128,10 +128,10 @@ const StepButton = React.memo(function StepButton({
         isHeld ? "ring-2 ring-[var(--ed-accent-green)] z-10" : ""
       } ${
         isActive
-          ? "hover:brightness-125"
+          ? "border hover:brightness-110"
           : isBeat
-            ? "bg-[var(--ed-bg-elevated)] hover:bg-[var(--ed-bg-surface)]"
-            : "bg-[var(--ed-bg-surface)]/50 hover:bg-[var(--ed-bg-surface)]"
+            ? "bg-[var(--ed-bg-surface)] border border-[var(--ed-border-subtle)] hover:bg-[var(--ed-bg-elevated)]"
+            : "bg-[var(--ed-bg-secondary)] border border-[var(--ed-border-subtle)]/60 hover:bg-[var(--ed-bg-surface)]"
       }`}
       style={isActive ? {
         background: `radial-gradient(circle at 50% 38%, ${bright} 0%, ${trackColor} 55%, ${dark} 100%)`,
@@ -154,7 +154,7 @@ const StepButton = React.memo(function StepButton({
         />
       )}
       {isCurrent && (
-        <div className="absolute inset-0 bg-white/15 rounded-[3px]" />
+        <div className="absolute inset-0 bg-white/25 rounded-[3px]" />
       )}
       {hasGate && (
         <div
