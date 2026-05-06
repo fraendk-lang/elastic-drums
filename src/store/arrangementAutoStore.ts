@@ -153,8 +153,15 @@ export function interpolateAuto(points: AutoPoint[], bar: number, def = 0.75): n
   if (points.length === 0) return def;
   const sorted = [...points].sort((a, b) => a.bar - b.bar);
   if (bar <= sorted[0]!.bar) return sorted[0]!.value;
-  for (let i = sorted.length - 1; i >= 0; i--) {
-    if (sorted[i]!.bar <= bar) return sorted[i]!.value;
+  if (bar >= sorted[sorted.length - 1]!.bar) return sorted[sorted.length - 1]!.value;
+  // Linear interpolation between adjacent points for smooth automation
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const a = sorted[i]!;
+    const b = sorted[i + 1]!;
+    if (bar >= a.bar && bar <= b.bar) {
+      const t = (bar - a.bar) / (b.bar - a.bar);
+      return a.value + t * (b.value - a.value);
+    }
   }
   return def;
 }

@@ -410,6 +410,10 @@ function initScheduler(): void {
     if (!useDrumStore.getState().isPlaying) return;
 
     _stepsElapsed++;
+
+    // Apply automation on every step using fractional bar position for smooth interpolation
+    applyAutoLanes(_stepsElapsed / 16);
+
     if (_stepsElapsed % 16 === 0) {
       _arrangementBar = Math.floor(_stepsElapsed / 16);
 
@@ -422,7 +426,6 @@ function initScheduler(): void {
 
       notifyBarListeners();
       applyArrangementBar(_arrangementBar);
-      applyAutoLanes(_arrangementBar);
     }
   });
 }

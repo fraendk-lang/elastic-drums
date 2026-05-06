@@ -9,7 +9,7 @@ import { create } from "zustand";
 import { bassEngine, scaleNote, SCALES, type BassStep, type BassParams, DEFAULT_BASS_PARAMS } from "../audio/BassEngine";
 import { audioEngine } from "../audio/AudioEngine";
 import { soundFontEngine } from "../audio/SoundFontEngine";
-import { generateEuclidean, useDrumStore, getDrumNextStepTime } from "./drumStore";
+import { generateEuclidean, useDrumStore, getDrumTransportStartTime } from "./drumStore";
 import { schedulerClock } from "../audio/SchedulerClock";
 import { generateArpNotes, DEFAULT_ARP_SETTINGS, type ArpSettings } from "../audio/Arpeggiator";
 
@@ -518,8 +518,10 @@ let _removeBassSchedulerClock: (() => void) | null = null;
 let nextBassStepTime = 0;
 
 export function startBassScheduler() {
-  const drumNextStep = getDrumNextStepTime();
-  nextBassStepTime = drumNextStep > audioEngine.currentTime ? drumNextStep : audioEngine.currentTime + 0.05;
+  // Sync to exact transport start time (step 0) rather than the lookahead cursor,
+  // which could be up to ~300ms ahead and cause bass to start late.
+  const transportStart = getDrumTransportStartTime();
+  nextBassStepTime = transportStart > audioEngine.currentTime ? transportStart : audioEngine.currentTime + 0.01;
   _removeBassSchedulerClock?.();
   _removeBassSchedulerClock = schedulerClock.addListener(() => {
     const drumState = useDrumStore.getState();

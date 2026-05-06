@@ -97,6 +97,8 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const [midiRecord, setMidiRecord] = useState(false);
   // Track held MIDI notes: midi → { startBeat, velocity, id }
   const heldMidiNotes = useRef<Map<number, { startBeat: number; velocity: number; id: string }>>(new Map());
+  // Cache MIDIAccess to avoid requesting it multiple times (prevents duplicate listeners)
+  const midiAccessRef = useRef<MIDIAccess | null>(null);
   // ─── Sync initial persisted state into scheduler on mount ───
   useEffect(() => {
     setPianoRollNotes(initialPersistedNotes);
@@ -210,7 +212,6 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   // ─── MIDI Record: listen for external Note On/Off events ──────
   useEffect(() => {
     if (!isOpen || !midiRecord || !navigator.requestMIDIAccess) return;
-    let access: MIDIAccess | null = null;
     const inputs: MIDIInput[] = [];
 
     const onMessage = (e: MIDIMessageEvent) => {
@@ -247,20 +248,29 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
       }
     };
 
-    navigator.requestMIDIAccess({ sysex: false }).then((acc) => {
-      access = acc;
+    const attachListeners = (acc: MIDIAccess) => {
       for (const input of acc.inputs.values()) {
+        // Remove before adding to prevent duplicates on re-render
+        input.removeEventListener("midimessage", onMessage as EventListener);
         input.addEventListener("midimessage", onMessage as EventListener);
         inputs.push(input);
       }
-    }).catch(() => { /* no MIDI */ });
+    };
+
+    if (midiAccessRef.current) {
+      attachListeners(midiAccessRef.current);
+    } else {
+      navigator.requestMIDIAccess({ sysex: false }).then((acc) => {
+        midiAccessRef.current = acc;
+        attachListeners(acc);
+      }).catch(() => { /* no MIDI */ });
+    }
 
     return () => {
       for (const input of inputs) {
         input.removeEventListener("midimessage", onMessage as EventListener);
       }
       heldMidiNotes.current.clear();
-      void access; // reference kept
     };
   }, [isOpen, midiRecord, target, gridRes, snap, setNotes]);
 
@@ -1081,12 +1091,18 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         return;
       }
       const playheadBeat = (getPianoRollCurrentStep() * 0.25) % totalBeats;
-      if (type === "harmonize-3rds" || type === "harmonize-5ths") {
+      if (type === "harmonize-3rds" || type === "harmonize-5ths" || type === "harmonize-octave") {
         const selected = notes.filter((n) => selectedNoteIds.has(n.id));
         if (selected.length === 0) return;
-        const interval = type === "harmonize-3rds" ? 2 : 4;
-        const newNotes = harmonizeNotes(selected, interval, rootNote, scaleName);
-        setNotes((prev) => [...prev, ...newNotes]);
+        if (type === "harmonize-octave") {
+          // Duplicate selected notes one octave up
+          const newNotes = selected.map((n) => ({ ...n, id: uid(), midi: n.midi + 12, velocity: n.velocity * 0.9 }));
+          setNotes((prev) => [...prev, ...newNotes]);
+        } else {
+          const interval = type === "harmonize-3rds" ? 2 : 4;
+          const newNotes = harmonizeNotes(selected, interval, rootNote, scaleName);
+          setNotes((prev) => [...prev, ...newNotes]);
+        }
       } else {
         const newNotes = generateHarmony(type, rootNote, scaleName, playheadBeat, gridRes);
         setNotes((prev) => [...prev, ...newNotes]);

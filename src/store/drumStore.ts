@@ -153,13 +153,15 @@ function evaluateCondition(
     case "pre": return prevStepTriggered[track] ?? false;
     case "!pre": return !(prevStepTriggered[track] ?? false);
     case "nei": {
-      const above = track > 0 ? (prevStepTriggered[track - 1] ?? false) : false;
-      const below = track < 11 ? (prevStepTriggered[track + 1] ?? false) : false;
+      // Use _trigState for current-step accuracy — tracks processed before this one
+      // already have their state set; tracks processed after fall back to prevStep.
+      const above = track > 0 ? (_trigState[track - 1] ?? false) : false;
+      const below = track < 11 ? (_trigState[track + 1] ?? prevStepTriggered[track + 1] ?? false) : false;
       return above || below;
     }
     case "!nei": {
-      const above = track > 0 ? (prevStepTriggered[track - 1] ?? false) : false;
-      const below = track < 11 ? (prevStepTriggered[track + 1] ?? false) : false;
+      const above = track > 0 ? (_trigState[track - 1] ?? false) : false;
+      const below = track < 11 ? (_trigState[track + 1] ?? prevStepTriggered[track + 1] ?? false) : false;
       return !above && !below;
     }
     case "1st": return cycleCount === 0;
