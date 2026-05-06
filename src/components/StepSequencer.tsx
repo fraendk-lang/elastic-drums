@@ -320,7 +320,7 @@ const TrackRow = React.memo(function TrackRow({
 
         return (
           <React.Fragment key={`${track}-${stepIdx}`}>
-            {stepIdx > 0 && stepIdx % 4 === 0 && <div />}
+            {stepIdx > 0 && stepIdx % 4 === 0 && <div aria-hidden="true" />}
             <StepButton
               track={track}
               absoluteStep={absoluteStep}
@@ -791,8 +791,8 @@ export function StepSequencer() {
             const absIdx = pageOffset + i;
             const isCurrent = isPlaying && currentStep === absIdx;
             return (
-              <React.Fragment key={i}>
-                {i > 0 && i % 4 === 0 && <div />}
+              <React.Fragment key={`hdr-${i}`}>
+                {i > 0 && i % 4 === 0 && <div aria-hidden="true" />}
                 <div
                   className={`text-center text-[9px] font-mono pb-0.5 transition-colors border-b ${
                     isCurrent
@@ -817,7 +817,7 @@ export function StepSequencer() {
             const isCurrent = isPlaying && currentStep === pageOffset + i;
             return (
               <React.Fragment key={`ph-${i}`}>
-                {i > 0 && i % 4 === 0 && <div />}
+                {i > 0 && i % 4 === 0 && <div aria-hidden="true" />}
                 <div className={`h-[3px] rounded-full mx-0.5 transition-all duration-[40ms] ${isCurrent ? "ed-playhead-glow" : ""}`} style={{
                   backgroundColor: isCurrent ? "var(--ed-accent-orange)" : "transparent",
                 }} />
