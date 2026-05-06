@@ -131,7 +131,7 @@ export function getRecordingTime(): number {
   return (performance.now() - _startTime) / 1000;
 }
 
-// ─── WAV Encoder (24-bit for higher quality) ─────────────
+// ─── WAV Encoder (16-bit PCM) ────────────────────────────
 
 function encodeWav(buffer: AudioBuffer): ArrayBuffer {
   const numChannels = buffer.numberOfChannels;

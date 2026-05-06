@@ -157,16 +157,12 @@ Plugin (plugin/)
 - JUCE WebView with ResourceProvider (matching Elastic Synth M4 pattern)
 
 ### Known Issues
-- Rollup ARM64 native module error may affect production builds on some environments
-- BassScheduler uses window.__drumStore (functional but hacky)
-- WASM DSP not yet active (Phase 1 pure Web Audio)
+- WASM DSP not yet active (`shouldUseWasmWorklet()` returns false) — pure Web Audio API only
 
 ### Suggested Next Steps
-1. Fix production build pipeline (rollup ARM64 dependency)
-2. More factory kits + bass presets
-3. WASM DSP migration (AudioWorklet with real C++ core)
-4. Visual P-Lock indicators in step grid
-5. Error boundaries for audio context failures
+1. WASM DSP migration (AudioWorklet with real C++ core)
+2. More factory kits + bass presets + chord presets
+3. UX onboarding (first-start tooltips, keyboard shortcut modal)
 
 ## Build Commands
 
