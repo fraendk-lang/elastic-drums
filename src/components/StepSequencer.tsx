@@ -263,6 +263,10 @@ const TrackRow = React.memo(function TrackRow({
             ? "text-[var(--ed-text-primary)]"
             : "text-[var(--ed-text-muted)] hover:text-[var(--ed-text-secondary)]"
         }`}
+        style={{
+          borderLeft: `2px solid ${isSelectedTrack ? color : "transparent"}`,
+          paddingLeft: "4px",
+        }}
       >
         {/* Color bar — turns amber + grows when per-track swing is set */}
         <div
