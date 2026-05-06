@@ -319,43 +319,45 @@ const TrackRow = React.memo(function TrackRow({
           && absoluteStep <= gateDragEnd;
 
         return (
-          <StepButton
-            key={`${track}-${stepIdx}`}
-            track={track}
-            absoluteStep={absoluteStep}
-            isActive={isActive}
-            isCurrent={isCurrent}
-            trackColor={color}
-            velocity={velocity}
-            ratchetCount={ratchetCount}
-            condition={condition}
-            gateLength={gateLength}
-            hasLocks={hasLocks}
-            isHeld={isHeld}
-            isTiedStep={isTiedStep}
-            isInGateDragRange={isInGateDragRange}
-            isBeat={isBeat}
-            onClick={(e) => {
-              if (gateDrag) return;
-              if (e.shiftKey && step?.active) {
-                const levels = [127, 100, 70, 40];
-                const current = step.velocity;
-                const idx = levels.findIndex((v) => v <= current);
-                const next = levels[(idx + 1) % levels.length]!;
-                onSetStepVelocity(track, absoluteStep, next);
-              } else {
-                onToggleStep(track, absoluteStep);
-              }
-            }}
-            onContextMenu={(e) => onContextMenu(e, track, absoluteStep)}
-            onMouseDown={(e) => onStepMouseDown(e, track, absoluteStep)}
-            onPointerDown={(e) => onGateDragStart(e, track, absoluteStep)}
-            onLongPress={() => onStepLongPress(track, absoluteStep)}
-            stepRef={(el) => {
-              if (el) stepRefs.current.set(`${track}-${stepIdx}`, el);
-              else stepRefs.current.delete(`${track}-${stepIdx}`);
-            }}
-          />
+          <React.Fragment key={`${track}-${stepIdx}`}>
+            {stepIdx > 0 && stepIdx % 4 === 0 && <div />}
+            <StepButton
+              track={track}
+              absoluteStep={absoluteStep}
+              isActive={isActive}
+              isCurrent={isCurrent}
+              trackColor={color}
+              velocity={velocity}
+              ratchetCount={ratchetCount}
+              condition={condition}
+              gateLength={gateLength}
+              hasLocks={hasLocks}
+              isHeld={isHeld}
+              isTiedStep={isTiedStep}
+              isInGateDragRange={isInGateDragRange}
+              isBeat={isBeat}
+              onClick={(e) => {
+                if (gateDrag) return;
+                if (e.shiftKey && step?.active) {
+                  const levels = [127, 100, 70, 40];
+                  const current = step.velocity;
+                  const idx = levels.findIndex((v) => v <= current);
+                  const next = levels[(idx + 1) % levels.length]!;
+                  onSetStepVelocity(track, absoluteStep, next);
+                } else {
+                  onToggleStep(track, absoluteStep);
+                }
+              }}
+              onContextMenu={(e) => onContextMenu(e, track, absoluteStep)}
+              onMouseDown={(e) => onStepMouseDown(e, track, absoluteStep)}
+              onPointerDown={(e) => onGateDragStart(e, track, absoluteStep)}
+              onLongPress={() => onStepLongPress(track, absoluteStep)}
+              stepRef={(el) => {
+                if (el) stepRefs.current.set(`${track}-${stepIdx}`, el);
+                else stepRefs.current.delete(`${track}-${stepIdx}`);
+              }}
+            />
+          </React.Fragment>
         );
       })}
     </React.Fragment>
@@ -779,7 +781,7 @@ export function StepSequencer() {
 
       {/* Step Grid */}
       <div className="flex-1 overflow-auto">
-        <div className="grid gap-[2px]" style={{ gridTemplateColumns: "72px repeat(16, 1fr)" }}>
+        <div className="grid gap-[2px]" style={{ gridTemplateColumns: "72px repeat(4, 1fr) 5px repeat(4, 1fr) 5px repeat(4, 1fr) 5px repeat(4, 1fr)" }}>
 
           {/* Header: step numbers */}
           <div className="flex items-end pb-0.5">
@@ -789,21 +791,23 @@ export function StepSequencer() {
             const absIdx = pageOffset + i;
             const isCurrent = isPlaying && currentStep === absIdx;
             return (
-              <div
-                key={i}
-                className={`text-center text-[9px] font-mono pb-0.5 transition-colors border-b ${
-                  isCurrent
-                    ? "text-[var(--ed-accent-orange)] font-bold"
-                    : i % 4 === 0
-                      ? "text-[var(--ed-text-secondary)]"
-                      : "text-[var(--ed-text-muted)]/60"
-                } ${i % 4 === 0 ? "border-white/10" : "border-white/5"}`}
-              >
-                <div className="text-[6px] font-black tracking-[0.18em] text-white/20">
-                  {Math.floor(i / 4) + 1}.{(i % 4) + 1}
+              <React.Fragment key={i}>
+                {i > 0 && i % 4 === 0 && <div />}
+                <div
+                  className={`text-center text-[9px] font-mono pb-0.5 transition-colors border-b ${
+                    isCurrent
+                      ? "text-[var(--ed-accent-orange)] font-bold"
+                      : i % 4 === 0
+                        ? "text-[var(--ed-text-secondary)]"
+                        : "text-[var(--ed-text-muted)]/60"
+                  } ${i % 4 === 0 ? "border-white/10" : "border-white/5"}`}
+                >
+                  <div className="text-[6px] font-black tracking-[0.18em] text-white/20">
+                    {Math.floor(i / 4) + 1}.{(i % 4) + 1}
+                  </div>
+                  {absIdx + 1}
                 </div>
-                {absIdx + 1}
-              </div>
+              </React.Fragment>
             );
           })}
 
@@ -812,9 +816,12 @@ export function StepSequencer() {
           {Array.from({ length: 16 }, (_, i) => {
             const isCurrent = isPlaying && currentStep === pageOffset + i;
             return (
-              <div key={`ph-${i}`} className={`h-[3px] rounded-full mx-0.5 transition-all duration-[40ms] ${isCurrent ? "ed-playhead-glow" : ""}`} style={{
-                backgroundColor: isCurrent ? "var(--ed-accent-orange)" : "transparent",
-              }} />
+              <React.Fragment key={`ph-${i}`}>
+                {i > 0 && i % 4 === 0 && <div />}
+                <div className={`h-[3px] rounded-full mx-0.5 transition-all duration-[40ms] ${isCurrent ? "ed-playhead-glow" : ""}`} style={{
+                  backgroundColor: isCurrent ? "var(--ed-accent-orange)" : "transparent",
+                }} />
+              </React.Fragment>
             );
           })}
 
