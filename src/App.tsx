@@ -42,7 +42,8 @@ import { melodyLayerEngines } from "./audio/melodyLayerEngines";
 import { initMelodyLayerFx, melodyLayerFxChains, initMelodyEngineFx } from "./audio/MelodyLayerFx";
 // Activate melody-layer scheduler at app start (not tied to tab visibility)
 import "./components/MelodyLayers/melodyLayerScheduler";
-import "./audio/arrangementScheduler";
+import { ensureArrangementSchedulerInit } from "./audio/arrangementScheduler";
+ensureArrangementSchedulerInit();
 import { initAudioClipEngine } from "./audio/audioClipEngine";
 import { samplerEngine } from "./audio/SamplerEngine";
 import { loopPlayerEngine } from "./audio/LoopPlayerEngine";

@@ -430,8 +430,24 @@ function initScheduler(): void {
   });
 }
 
-// Defer initialization to ensure all chunks are fully evaluated before
-// subscribing. Prevents "Cannot read properties of undefined" errors
-// caused by circular chunk dependencies in production Rollup bundles.
-// (chunk-audio → chunk-stores → chunk-audio circular reference)
-setTimeout(initScheduler, 0);
+// ─── Lazy-safe initialization ────────────────────────────────────────────────
+// Defer with queueMicrotask to ensure all chunks are fully evaluated before
+// subscribing (prevents "Cannot read properties of undefined" from circular
+// chunk-audio → chunk-stores → chunk-audio Rollup dependency).
+// queueMicrotask runs before any I/O or user interaction, eliminating the
+// race condition of setTimeout(fn, 0) where fast autoplay could miss step 0.
+let _initialized = false;
+
+export function ensureArrangementSchedulerInit(): void {
+  if (!_initialized) {
+    _initialized = true;
+    initScheduler();
+  }
+}
+
+queueMicrotask(() => {
+  if (!_initialized) {
+    _initialized = true;
+    initScheduler();
+  }
+});
