@@ -800,9 +800,12 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
       // startScheduler() must run BEFORE set() — it sets transportStartTime synchronously.
       // The loopPlayerStore subscriber fires inside set(), so it must see the correct
       // transportStartTime already in place or loops always launch 1+ bars late.
+      // isPlaying must be set BEFORE setDrumStep(0,0) so the piano roll scheduler
+      // subscriber enters pianoRollTick() on step 0 instead of the reset branch —
+      // otherwise the piano roll starts 1 step (1/16th note) behind the drum transport.
       startScheduler();
-      setDrumStep(0, 0);
       set({ isPlaying: true });
+      setDrumStep(0, 0);
     }
   },
 
