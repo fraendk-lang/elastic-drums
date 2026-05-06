@@ -215,16 +215,16 @@ export function PadGrid() {
                 }`}
               style={{
                 background: isTriggered
-                  ? `linear-gradient(135deg, ${color}20, ${color}10)`
+                  ? `linear-gradient(135deg, ${color}28, ${color}14)`
                   : isSelected
-                    ? `linear-gradient(180deg, var(--ed-bg-elevated) 0%, var(--ed-bg-surface) 100%)`
-                    : `linear-gradient(180deg, var(--ed-bg-surface) 0%, #151519 100%)`,
+                    ? `linear-gradient(180deg, ${color}14 0%, ${color}08 60%, #0a0a0d 100%)`
+                    : `linear-gradient(180deg, var(--ed-bg-surface) 0%, #0a0a0d 100%)`,
                 boxShadow: isDragTarget
                   ? `0 0 20px rgba(34,197,94,0.3), inset 0 1px 0 rgba(255,255,255,0.03)`
                   : isTriggered
-                    ? `0 0 24px ${color}30, inset 0 0 20px ${color}15`
+                    ? `0 0 32px ${color}45, 0 0 16px ${color}25, inset 0 0 20px ${color}18`
                     : isSelected
-                      ? `0 0 12px ${color}15, inset 0 1px 0 rgba(255,255,255,0.04)`
+                      ? `0 0 20px ${color}28, inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(0,0,0,0.3)`
                       : `inset 0 1px 0 rgba(255,255,255,0.03), inset 0 -1px 0 rgba(0,0,0,0.3)`,
                 borderColor: isDragTarget ? "var(--ed-accent-green)" : isSelected ? color + "80" : "var(--ed-border)",
                 borderWidth: "1px",
