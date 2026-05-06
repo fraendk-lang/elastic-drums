@@ -17,7 +17,59 @@ const BASS_PATTERNS_STORE = "bass-patterns";
 export interface StoredPattern {
   id: string;          // e.g. "user-001"
   name: string;
+  schemaVersion?: number;
   pattern: PatternData;
+  bpm?: number;
+  // Full session state (all optional — legacy patterns load fine)
+  drumVoiceParams?: Record<string, number>[];  // 12 entries, index = voice number
+  bass?: {
+    steps: unknown[];
+    length: number;
+    params: unknown;
+    rootNote: number;
+    rootName: string;
+    scaleName: string;
+    globalOctave?: number;
+    automationData?: Record<string, Array<number | undefined>>;
+    instrument?: string;
+    arp?: unknown;
+  };
+  chords?: {
+    steps: unknown[];
+    length: number;
+    params: unknown;
+    rootNote: number;
+    rootName: string;
+    scaleName: string;
+    globalOctave?: number;
+    automationData?: Record<string, Array<number | undefined>>;
+    instrument?: string;
+    arp?: unknown;
+  };
+  melody?: {
+    steps: unknown[];
+    length: number;
+    params: unknown;
+    rootNote: number;
+    rootName: string;
+    scaleName: string;
+    globalOctave?: number;
+    automationData?: Record<string, Array<number | undefined>>;
+    instrument?: string;
+    arp?: unknown;
+    humanize?: unknown;
+    layerMode?: string;
+    layerVelocity?: number;
+    stepNoteValue?: string;
+  };
+  pianoRoll?: {
+    notes: unknown[];
+    loop: { start: number; end: number; enabled: boolean };
+  };
+  mixer?: {
+    channels: unknown[];
+    groupBuses: Record<string, unknown>;
+  };
   createdAt: number;
   updatedAt: number;
 }
@@ -73,7 +125,11 @@ function openDB(): Promise<IDBDatabase> {
 
 // ─── Pattern CRUD ────────────────────────────────────────
 
-export async function savePattern(name: string, pattern: PatternData): Promise<StoredPattern> {
+export async function savePattern(
+  name: string,
+  pattern: PatternData,
+  fullState?: Omit<StoredPattern, 'id' | 'name' | 'pattern' | 'createdAt' | 'updatedAt'>,
+): Promise<StoredPattern> {
   const db = await openDB();
   const now = Date.now();
   const id = `user-${now}`;
@@ -82,6 +138,7 @@ export async function savePattern(name: string, pattern: PatternData): Promise<S
     id,
     name,
     pattern: structuredClone(pattern),
+    ...fullState,
     createdAt: now,
     updatedAt: now,
   };
@@ -94,12 +151,19 @@ export async function savePattern(name: string, pattern: PatternData): Promise<S
   });
 }
 
-export async function updatePattern(id: string, pattern: PatternData): Promise<void> {
+export async function updatePattern(
+  id: string,
+  pattern: PatternData,
+  fullState?: Omit<StoredPattern, 'id' | 'name' | 'pattern' | 'createdAt' | 'updatedAt'>,
+): Promise<void> {
   const db = await openDB();
   const existing = await getPattern(id);
   if (!existing) return;
 
   existing.pattern = structuredClone(pattern);
+  if (fullState) {
+    Object.assign(existing, fullState);
+  }
   existing.updatedAt = Date.now();
 
   return new Promise((resolve, reject) => {

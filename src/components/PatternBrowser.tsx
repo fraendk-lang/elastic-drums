@@ -4,6 +4,7 @@ import {
   listPatterns, savePattern, deletePattern,
   type StoredPattern,
 } from "../storage/patternStorage";
+import { captureFullState, restoreFullState } from "../storage/sessionCapture";
 
 interface PatternBrowserProps {
   isOpen: boolean;
@@ -28,15 +29,15 @@ export function PatternBrowser({ isOpen, onClose }: PatternBrowserProps) {
     if (isOpen) refreshList();
   }, [isOpen, refreshList]);
 
-  // Save current pattern
+  // Save current pattern with full session state
   const handleSave = useCallback(async () => {
     const name = saveName.trim() || `Pattern ${new Date().toLocaleTimeString()}`;
-    await savePattern(name, { ...pattern, name });
+    await savePattern(name, { ...pattern, name }, captureFullState());
     setSaveName("");
     await refreshList();
   }, [saveName, pattern, refreshList]);
 
-  // Load a pattern
+  // Load a pattern with full session state
   const handleLoad = useCallback((stored: StoredPattern) => {
     const wasPlaying = useDrumStore.getState().isPlaying;
     if (wasPlaying) useDrumStore.getState().togglePlay();
@@ -45,6 +46,8 @@ export function PatternBrowser({ isOpen, onClose }: PatternBrowserProps) {
       pattern: structuredClone(stored.pattern),
       currentPatternIndex: -1,
     });
+
+    restoreFullState(stored);
     onClose();
   }, [onClose]);
 
