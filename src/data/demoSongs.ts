@@ -2,49 +2,57 @@
  * Demo Songs — curated genre starter projects.
  *
  * Each demo song is a complete musical idea: drum kit + drum pattern (from
- * the kit) + bass preset + bass pattern + chords preset + chord progression
- * + melody (optional). Loading a demo populates every engine's state and
- * leaves the user with a playable groove.
+ * the kit) + bass preset + bass pattern + chords preset + chord progression.
  *
- * The "Wow Effect" — first-launch experience picks one of these so the user
- * hears something musical immediately.
+ * Critical conventions:
+ *   - rootName is "C", "C#", "D", ... (display)
+ *   - The loader derives bass MIDI root  = 36 + noteClass (C2 base octave)
+ *   - The loader derives chord MIDI root = 48 + noteClass (C3 base octave)
+ *   - Step "octave" field shifts ±1 from there
+ *
+ * Patterns kept INTENTIONALLY sparse: clean root-note bass on downbeats,
+ * one chord per bar, no overlapping melodies. Better musical hygiene than
+ * dense first attempt.
  */
 
 import type { BassStep } from "../audio/BassEngine";
 import type { ChordsStep } from "../audio/ChordsEngine";
-import type { MelodyStep } from "../audio/MelodyEngine";
 
 export interface DemoSong {
   id: string;
-  name: string;          // Marketing name e.g. "Velvet Stairs"
-  genre: string;         // "Lo-Fi Hip Hop"
-  description: string;   // 1-line tagline
+  name: string;
+  genre: string;
+  description: string;
   bpm: number;
-  swing?: number;        // 50-75 (50 = none, 67 = 2:1 triplet shuffle)
+  swing?: number;
 
-  // Sound selection (must match existing IDs/names in the project)
-  kitId: string;                    // factoryKits.ts id
-  bassPresetName: string | null;    // BASS_PRESETS .name (null = silent)
+  kitId: string;
+  bassPresetName: string | null;
   chordsPresetName: string | null;
-  melodyPresetName: string | null;
 
   // Music key
-  rootNote: number;       // 0..11 (0 = C)
-  rootName: string;       // Display name "C", "C#", ...
+  rootName: string;       // "C", "C#", "D", ...
   scaleName: string;      // Key in SCALES map
 
-  // Patterns — undefined = engine stays silent
+  // Patterns
   bassSteps?: BassStep[];
   bassLength?: number;
   chordsSteps?: ChordsStep[];
   chordsLength?: number;
-  melodySteps?: MelodyStep[];
-  melodyLength?: number;
+
+  // Mix overrides — voiceIndex to fader 0..1000 (750 = unity)
+  // Channels 12 = bass, 13 = chords
+  faderOverrides?: Record<number, number>;
 }
 
-// ─── Compact step builders ──────────────────────────────────────────────────
-// Use these to keep step arrays terse and readable.
+// ─── Map note name → semitone class 0..11 ────────────────────────────────────
+export const NOTE_CLASS: Record<string, number> = {
+  "C": 0, "C#": 1, "Db": 1, "D": 2, "D#": 3, "Eb": 3,
+  "E": 4, "F": 5, "F#": 6, "Gb": 6, "G": 7, "G#": 8, "Ab": 8,
+  "A": 9, "A#": 10, "Bb": 10, "B": 11,
+};
 
+// ─── Step builders ───────────────────────────────────────────────────────────
 const X = (): BassStep => ({ active: false, note: 0, octave: 0, accent: false, slide: false, tie: false });
 const B = (note: number, opts: Partial<BassStep> = {}): BassStep => ({
   active: true, note, octave: 0, accent: false, slide: false, tie: false, ...opts,
@@ -55,210 +63,177 @@ const C = (note: number, type: string, opts: Partial<ChordsStep> = {}): ChordsSt
   active: true, note, chordType: type, octave: 0, accent: false, tie: false, ...opts,
 });
 
-const XM = (): MelodyStep => ({ active: false, note: 0, octave: 0, accent: false, slide: false, tie: false });
-const M = (note: number, opts: Partial<MelodyStep> = {}): MelodyStep => ({
-  active: true, note, octave: 0, accent: false, slide: false, tie: false, ...opts,
-});
-
-// Pad an array out to `len` with empties of the given builder
-function pad<T>(arr: T[], len: number, empty: () => T): T[] {
-  while (arr.length < len) arr.push(empty());
-  return arr.slice(0, len);
+// Repeat a single chord pulse for `bars` bars (16 steps each), with rests after attack
+function holdChord(degree: number, type: string, bars: number): ChordsStep[] {
+  const out: ChordsStep[] = [C(degree, type)];
+  for (let i = 1; i < bars * 16; i++) out.push(XC());
+  return out;
 }
 
-// ─── 1. Velvet Stairs — Lo-Fi Hip Hop ────────────────────────────────────────
-// Key: A minor. Progression: Am7 - Dm7 - Fmaj7 - E7 (one chord per bar, 4 bars)
+// Bass on every quarter note (steps 0, 4, 8, 12) for one bar
+function bassPulseBar(degree: number): BassStep[] {
+  const out: BassStep[] = [];
+  for (let i = 0; i < 16; i++) {
+    out.push(i % 4 === 0 ? B(degree) : X());
+  }
+  return out;
+}
+
+// Bass single hit on step 0 only, rest hold for one bar
+function bassHitBar(degree: number, octave = 0): BassStep[] {
+  const out: BassStep[] = [B(degree, { octave })];
+  for (let i = 1; i < 16; i++) out.push(X());
+  return out;
+}
+
+// ─── 1. VELVET STAIRS — Lo-Fi Hip Hop in C minor ─────────────────────────────
+// Progression: Cm - Ab - Eb - G  (i - VI - III - V), one chord per bar
+// Scale degrees in C minor [0=C, 1=D, 2=Eb, 3=F, 4=G, 5=Ab, 6=Bb]:
+//   Cm  = root 0, Min
+//   Ab  = root 5, Maj
+//   Eb  = root 2, Maj
+//   G   = root 4, Maj  (V chord — major in minor key for tension/release)
 const velvetStairs: DemoSong = {
   id: "velvet-stairs",
   name: "Velvet Stairs",
   genre: "Lo-Fi Hip Hop",
-  description: "Dusty drums, warm Rhodes chords and a soft pluck bass",
+  description: "Dusty drums under a slow, soft chord descent",
   bpm: 78,
-  swing: 62,
+  swing: 60,
   kitId: "lofi-tape",
   bassPresetName: "Lo-Fi Tape Sub",
   chordsPresetName: "Lo-Fi Velvet",
-  melodyPresetName: null,
-  rootNote: 9, rootName: "A", scaleName: "Minor",
-  // 32 steps = 2 bars of 16ths × 2 (chord changes every bar)
-  // Scale degrees in A Minor: 0=A, 1=B, 2=C, 3=D, 4=E, 5=F, 6=G
-  chordsSteps: pad([
-    // Bar 1: Am7
-    C(0, "Min7"), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-    XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-    // Bar 2: Dm7
-    C(3, "Min7"), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-    XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-    // Bar 3: Fmaj7
-    C(5, "Maj7"), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-    XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-    // Bar 4: E7
-    C(4, "7th"), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-    XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-  ], 64, XC),
+  rootName: "C",
+  scaleName: "Minor",
+  // 4-bar progression × 16 = 64 steps
+  chordsSteps: [
+    ...holdChord(0, "Min", 1),
+    ...holdChord(5, "Maj", 1),
+    ...holdChord(2, "Maj", 1),
+    ...holdChord(4, "Maj", 1),
+  ],
   chordsLength: 64,
-  bassSteps: pad([
-    // Bar 1: Am root, walking
-    B(0, { octave: -1 }), X(), X(), X(), B(0), X(), X(), B(2),
-    X(), X(), X(), X(), B(0), X(), X(), X(),
-    // Bar 2: Dm
-    B(3, { octave: -1 }), X(), X(), X(), B(3), X(), X(), B(5),
-    X(), X(), X(), X(), B(3), X(), X(), X(),
-    // Bar 3: F (= 5)
-    B(5, { octave: -1 }), X(), X(), X(), B(5), X(), X(), B(0, { octave: 0 }),
-    X(), X(), X(), X(), B(5), X(), X(), X(),
-    // Bar 4: E (= 4)
-    B(4, { octave: -1 }), X(), X(), X(), B(4), X(), X(), B(6, { octave: -1 }),
-    X(), X(), X(), X(), B(4), X(), X(), X(),
-  ], 64, X),
+  // Bass on beat 1 of each bar only — let the kit's groove breathe
+  bassSteps: [
+    ...bassHitBar(0),
+    ...bassHitBar(5, -1), // Ab below root
+    ...bassHitBar(2, -1), // Eb below root
+    ...bassHitBar(4, -1), // G below root
+  ],
   bassLength: 64,
+  faderOverrides: { 12: 680, 13: 700 }, // bass + chords slightly under unity
 };
 
-// ─── 2. Sunset Drive — Synthwave ─────────────────────────────────────────────
-// Key: D minor. Progression: i-VI-III-VII (Dm-Bb-F-C). Classic 80s.
+// ─── 2. SUNSET DRIVE — Synthwave in A minor ─────────────────────────────────
+// Progression: Am - F - C - G  (i - VI - III - VII), classic 80s
+// Scale degrees in A minor: [0=A, 1=B, 2=C, 3=D, 4=E, 5=F, 6=G]
 const sunsetDrive: DemoSong = {
   id: "sunset-drive",
   name: "Sunset Drive",
   genre: "Synthwave",
-  description: "80s analog drive — gated snare, supersaw chords, octave bass",
+  description: "Pulsing octave bass, gated snare, neon pads",
   bpm: 108,
-  swing: 50,
   kitId: "synthwave-80s",
   bassPresetName: "Synthwave Drive",
   chordsPresetName: "Synthwave Pad",
-  melodyPresetName: "★ Glass Bells",
-  rootNote: 2, rootName: "D", scaleName: "Minor",
-  // Scale degrees in D Minor: 0=D, 1=E, 2=F, 3=G, 4=A, 5=Bb, 6=C
-  chordsSteps: pad([
-    // Bar 1: Dm
-    C(0, "Min"),  XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-    // Bar 2: Bb (= 5, octave above)
-    C(5, "Maj"),  XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-    // Bar 3: F (= 2)
-    C(2, "Maj"),  XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-    // Bar 4: C (= 6)
-    C(6, "Maj"),  XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-  ], 64, XC),
+  rootName: "A",
+  scaleName: "Minor",
+  chordsSteps: [
+    ...holdChord(0, "Min", 1),
+    ...holdChord(5, "Maj", 1),
+    ...holdChord(2, "Maj", 1),
+    ...holdChord(6, "Maj", 1),
+  ],
   chordsLength: 64,
-  // Octave-driven 80s bass (up-down 8th notes)
-  bassSteps: pad([
-    // Bar 1: Dm root + octave alternation
-    B(0), B(0, { octave: 1 }), B(0), B(0, { octave: 1 }),
-    B(0), B(0, { octave: 1 }), B(0), B(0, { octave: 1 }),
-    B(0), B(0, { octave: 1 }), B(0), B(0, { octave: 1 }),
-    B(0), B(0, { octave: 1 }), B(0), B(0, { octave: 1 }),
-    // Bar 2: Bb root
-    B(5, { octave: -1 }), B(5), B(5, { octave: -1 }), B(5),
-    B(5, { octave: -1 }), B(5), B(5, { octave: -1 }), B(5),
-    B(5, { octave: -1 }), B(5), B(5, { octave: -1 }), B(5),
-    B(5, { octave: -1 }), B(5), B(5, { octave: -1 }), B(5),
-    // Bar 3: F
-    B(2), B(2, { octave: 1 }), B(2), B(2, { octave: 1 }),
-    B(2), B(2, { octave: 1 }), B(2), B(2, { octave: 1 }),
-    B(2), B(2, { octave: 1 }), B(2), B(2, { octave: 1 }),
-    B(2), B(2, { octave: 1 }), B(2), B(2, { octave: 1 }),
-    // Bar 4: C
-    B(6, { octave: -1 }), B(6), B(6, { octave: -1 }), B(6),
-    B(6, { octave: -1 }), B(6), B(6, { octave: -1 }), B(6),
-    B(6, { octave: -1 }), B(6), B(6, { octave: -1 }), B(6),
-    B(6, { octave: -1 }), B(6), B(6, { octave: -1 }), B(6),
-  ], 64, X),
+  // Steady quarter-note bass — typical synthwave drive
+  bassSteps: [
+    ...bassPulseBar(0),
+    ...bassPulseBar(5),
+    ...bassPulseBar(2),
+    ...bassPulseBar(6),
+  ],
   bassLength: 64,
-  // Sparse glass-bell melody hits — emphasize 5th of each chord
-  melodySteps: pad([
-    XM(), XM(), XM(), XM(), XM(), XM(), XM(), XM(), M(4, { octave: 1 }), XM(), XM(), XM(), XM(), XM(), XM(), XM(),
-    XM(), XM(), XM(), XM(), XM(), XM(), XM(), XM(), M(2, { octave: 1 }), XM(), XM(), XM(), XM(), XM(), XM(), XM(),
-    XM(), XM(), XM(), XM(), XM(), XM(), XM(), XM(), M(6), XM(), XM(), XM(), XM(), XM(), XM(), XM(),
-    XM(), XM(), XM(), XM(), XM(), XM(), XM(), XM(), M(3, { octave: 1 }), XM(), XM(), XM(), XM(), XM(), XM(), XM(),
-  ], 64, XM),
-  melodyLength: 64,
+  faderOverrides: { 12: 700, 13: 680 },
 };
 
-// ─── 3. Liquid Hours — DnB Liquid ───────────────────────────────────────────
-// Key: F minor. Progression: i-VII-VI-V (Fm-Eb-Db-C7)
+// ─── 3. LIQUID HOURS — Liquid DnB in F minor ────────────────────────────────
+// Progression: Fm - Db - Bbm - Eb  (i - VI - iv - VII)
+// Scale degrees in F minor: [0=F, 1=G, 2=Ab, 3=Bb, 4=C, 5=Db, 6=Eb]
 const liquidHours: DemoSong = {
   id: "liquid-hours",
   name: "Liquid Hours",
   genre: "Liquid DnB",
-  description: "Rolling break with deep sub and warm string pads",
+  description: "Rolling break with deep sub and warm pads",
   bpm: 174,
   kitId: "dnb-liquid",
   bassPresetName: "Liquid DnB",
   chordsPresetName: "Lush Pad",
-  melodyPresetName: null,
-  rootNote: 5, rootName: "F", scaleName: "Minor",
-  // Scale degrees in F Minor: 0=F, 1=G, 2=Ab, 3=Bb, 4=C, 5=Db, 6=Eb
-  chordsSteps: pad([
-    // Bar 1: Fm
-    C(0, "Min"),  XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-    // Bar 2: Eb (= 6)
-    C(6, "Maj"),  XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-    // Bar 3: Db (= 5)
-    C(5, "Maj7"), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-    // Bar 4: C (= 4)
-    C(4, "7th"),  XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-  ], 64, XC),
+  rootName: "F",
+  scaleName: "Minor",
+  chordsSteps: [
+    ...holdChord(0, "Min", 1),
+    ...holdChord(5, "Maj", 1),
+    ...holdChord(3, "Min", 1),
+    ...holdChord(6, "Maj", 1),
+  ],
   chordsLength: 64,
-  // Liquid bassline — root + 5th, sliding
-  bassSteps: pad([
-    B(0, { octave: -1 }), X(), X(), X(), X(), X(), X(), X(),
-    B(0, { octave: -1 }), X(), X(), B(4, { octave: -1, slide: true }), X(), X(), X(), X(),
-    B(6, { octave: -1 }), X(), X(), X(), X(), X(), X(), X(),
-    B(6, { octave: -1 }), X(), X(), B(3, { octave: -1, slide: true }), X(), X(), X(), X(),
-    B(5, { octave: -1 }), X(), X(), X(), X(), X(), X(), X(),
-    B(5, { octave: -1 }), X(), X(), B(2, { octave: -1, slide: true }), X(), X(), X(), X(),
-    B(4, { octave: -1 }), X(), X(), X(), X(), X(), X(), X(),
-    B(4, { octave: -1 }), X(), X(), B(1, { octave: -1, slide: true }), X(), X(), X(), X(),
-  ], 64, X),
+  // Single deep sub per bar — DnB lets the break do the work
+  bassSteps: [
+    ...bassHitBar(0, -1),
+    ...bassHitBar(5, -1),
+    ...bassHitBar(3, -1),
+    ...bassHitBar(6, -1),
+  ],
   bassLength: 64,
+  faderOverrides: { 12: 720, 13: 660 },
 };
 
-// ─── 4. Night Bloom — Deep House ────────────────────────────────────────────
-// Key: G minor. Progression: i-VII-VI-V (Gm-F-Eb-D)
+// ─── 4. NIGHT BLOOM — Deep House in A minor ─────────────────────────────────
+// Progression: Am - F - G - Em  (i - VI - VII - v)
+// Off-beat Rhodes stabs are the signature deep-house sound
 const nightBloom: DemoSong = {
   id: "night-bloom",
   name: "Night Bloom",
   genre: "Deep House",
-  description: "Four-on-the-floor with Rhodes stabs and round bass",
+  description: "Four-on-the-floor with off-beat Rhodes stabs",
   bpm: 122,
   kitId: "deep-house",
   bassPresetName: "DH Moog Bass",
   chordsPresetName: "DH Rhodes Warm",
-  melodyPresetName: null,
-  rootNote: 7, rootName: "G", scaleName: "Minor",
-  // Scale degrees in G Minor: 0=G, 1=A, 2=Bb, 3=C, 4=D, 5=Eb, 6=F
-  // Off-beat Rhodes stabs (the classic deep house "skank")
-  chordsSteps: pad([
-    // Bar 1: Gm9 — stabs on 2-and, 4-and
-    XC(), XC(), C(0, "Min7"), XC(), XC(), XC(), C(0, "Min7"), XC(),
-    XC(), XC(), C(0, "Min7"), XC(), XC(), XC(), C(0, "Min7"), XC(),
-    // Bar 2: F (= 6)
-    XC(), XC(), C(6, "Maj7"), XC(), XC(), XC(), C(6, "Maj7"), XC(),
-    XC(), XC(), C(6, "Maj7"), XC(), XC(), XC(), C(6, "Maj7"), XC(),
-    // Bar 3: Eb (= 5)
-    XC(), XC(), C(5, "Maj7"), XC(), XC(), XC(), C(5, "Maj7"), XC(),
-    XC(), XC(), C(5, "Maj7"), XC(), XC(), XC(), C(5, "Maj7"), XC(),
-    // Bar 4: D (= 4)
-    XC(), XC(), C(4, "7th"),  XC(), XC(), XC(), C(4, "7th"),  XC(),
-    XC(), XC(), C(4, "7th"),  XC(), XC(), XC(), C(4, "7th"),  XC(),
-  ], 64, XC),
+  rootName: "A",
+  scaleName: "Minor",
+  // Off-beat stabs (steps 2, 6, 10, 14) — the "and" of every beat
+  chordsSteps: (function buildChords() {
+    const stab = (deg: number, type: string): ChordsStep[] => {
+      const arr: ChordsStep[] = [];
+      for (let i = 0; i < 16; i++) {
+        // Stab on the &'s of each beat (steps 2, 6, 10, 14)
+        arr.push((i === 2 || i === 6 || i === 10 || i === 14) ? C(deg, type) : XC());
+      }
+      return arr;
+    };
+    return [
+      ...stab(0, "Min"),
+      ...stab(5, "Maj"),
+      ...stab(6, "Maj"),
+      ...stab(4, "Min"),
+    ];
+  })(),
   chordsLength: 64,
-  // Bouncing bassline — root and 5th
-  bassSteps: pad([
-    B(0), X(), X(), B(4, { octave: -1 }), X(), X(), B(0), X(),
-    X(), B(0), X(), X(), B(4, { octave: -1 }), X(), B(0), X(),
-    B(6, { octave: -1 }), X(), X(), B(3, { octave: -1 }), X(), X(), B(6, { octave: -1 }), X(),
-    X(), B(6, { octave: -1 }), X(), X(), B(3, { octave: -1 }), X(), B(6, { octave: -1 }), X(),
-    B(5, { octave: -1 }), X(), X(), B(2, { octave: -1 }), X(), X(), B(5, { octave: -1 }), X(),
-    X(), B(5, { octave: -1 }), X(), X(), B(2, { octave: -1 }), X(), B(5, { octave: -1 }), X(),
-    B(4, { octave: -1 }), X(), X(), B(1, { octave: -1 }), X(), X(), B(4, { octave: -1 }), X(),
-    X(), B(4, { octave: -1 }), X(), X(), B(1, { octave: -1 }), X(), B(4, { octave: -1 }), X(),
-  ], 64, X),
+  // Quarter-note bouncing bass on each bar's chord root
+  bassSteps: [
+    ...bassPulseBar(0),
+    ...bassPulseBar(5),
+    ...bassPulseBar(6),
+    ...bassPulseBar(4),
+  ],
   bassLength: 64,
+  faderOverrides: { 12: 700, 13: 680 },
 };
 
-// ─── 5. Cosmic Drift — Ambient / Cinematic ──────────────────────────────────
-// Key: C minor. Progression: i-iv-VI-VII (Cm-Fm-Ab-Bb), 2 bars per chord = 8 bars total
+// ─── 5. COSMIC DRIFT — Ambient in D minor ───────────────────────────────────
+// Progression: Dm - Bb - F - C  (i - VI - III - VII), 2 bars per chord
+// Just held drone bass; pad does all the harmony
 const cosmicDrift: DemoSong = {
   id: "cosmic-drift",
   name: "Cosmic Drift",
@@ -268,33 +243,24 @@ const cosmicDrift: DemoSong = {
   kitId: "ambient-organic",
   bassPresetName: "Ambient Drone",
   chordsPresetName: "Cinematic Sweep",
-  melodyPresetName: "★ Vocal Lead",
-  rootNote: 0, rootName: "C", scaleName: "Minor",
-  // Scale degrees in C Minor: 0=C, 1=D, 2=Eb, 3=F, 4=G, 5=Ab, 6=Bb
-  // 2 bars per chord, 4 chords = 8 bars × 16 = 128 steps. Use 64 → 1 bar each.
-  chordsSteps: pad([
-    C(0, "Min7"), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-    C(3, "Min7"), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-    C(5, "Maj7"), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-    C(6, "Maj"),  XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(), XC(),
-  ], 64, XC),
-  chordsLength: 64,
-  // Slow drone bass — held root through each chord
-  bassSteps: pad([
-    B(0, { octave: -1 }), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(),
-    B(3, { octave: -1 }), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(),
-    B(5, { octave: -1 }), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(),
-    B(6, { octave: -1 }), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(), X(),
-  ], 64, X),
-  bassLength: 64,
-  // Sparse melody — single notes drifting through the chord changes
-  melodySteps: pad([
-    XM(), XM(), XM(), XM(), M(4, { octave: 1 }), XM(), XM(), XM(), XM(), XM(), M(2, { octave: 1 }), XM(), XM(), XM(), XM(), XM(),
-    XM(), XM(), XM(), XM(), M(0, { octave: 1 }), XM(), XM(), XM(), XM(), XM(), M(5), XM(), XM(), XM(), XM(), XM(),
-    XM(), XM(), XM(), XM(), M(2, { octave: 1 }), XM(), XM(), XM(), XM(), XM(), M(0, { octave: 1 }), XM(), XM(), XM(), XM(), XM(),
-    XM(), XM(), XM(), XM(), M(3, { octave: 1 }), XM(), XM(), XM(), XM(), XM(), M(6), XM(), XM(), XM(), XM(), XM(),
-  ], 64, XM),
-  melodyLength: 64,
+  rootName: "D",
+  scaleName: "Minor",
+  // 8 bars total = 128 steps. 2 bars per chord.
+  chordsSteps: [
+    ...holdChord(0, "Min", 2),
+    ...holdChord(5, "Maj", 2),
+    ...holdChord(2, "Maj", 2),
+    ...holdChord(6, "Maj", 2),
+  ],
+  chordsLength: 128,
+  bassSteps: [
+    ...bassHitBar(0, -1), ...new Array(16).fill(null).map(X),
+    ...bassHitBar(5, -1), ...new Array(16).fill(null).map(X),
+    ...bassHitBar(2, -1), ...new Array(16).fill(null).map(X),
+    ...bassHitBar(6, -1), ...new Array(16).fill(null).map(X),
+  ],
+  bassLength: 128,
+  faderOverrides: { 12: 650, 13: 720 }, // pad louder, drone bass quieter
 };
 
 export const DEMO_SONGS: DemoSong[] = [
