@@ -268,8 +268,9 @@ export function Transport({
 
         <button
           onClick={onToggleHelp}
-          aria-label="Help"
-          className="w-6 h-6 rounded-md text-[10px] text-white/20 hover:text-white/50 hover:bg-white/5 transition-all"
+          aria-label="Help (User Guide)"
+          title="User Guide"
+          className="w-6 h-6 rounded-md text-[10px] font-bold text-white/40 hover:text-[var(--ed-accent-orange)] hover:bg-[var(--ed-accent-orange)]/10 border border-white/10 hover:border-[var(--ed-accent-orange)]/30 transition-all"
         >
           ?
         </button>
