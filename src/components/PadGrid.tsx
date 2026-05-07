@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, lazy, Suspense } from "react";
 import { useDrumStore } from "../store/drumStore";
 import { useOverlayStore } from "../store/overlayStore";
 import { useCustomKitStore } from "../store/customKitStore";
+import { useMixerBarStore, faderToGain } from "../store/mixerBarStore";
 import { sampleManager, type LoopData } from "../audio/SampleManager";
 import { WaveformPreview } from "./WaveformPreview";
 import { LoopEditor } from "./LoopEditor";
@@ -40,6 +41,9 @@ export function PadGrid() {
   );
   const [browserVoiceIndex, setBrowserVoiceIndex] = useState<number | null>(null);
   const [loopEditorVoice, setLoopEditorVoice] = useState<number | null>(null);
+  const [volumeKnobVoice, setVolumeKnobVoice] = useState<number | null>(null);
+  const channelFaders = useMixerBarStore((s) => s.channels.map((c) => c.fader));
+  const setMixerFader = useMixerBarStore((s) => s.setFader);
   const [loopData, setLoopData] = useState<Map<number, LoopData>>(
     () => {
       const map = new Map<number, LoopData>();
@@ -92,6 +96,41 @@ export function PadGrid() {
       return next;
     });
   }, []);
+
+  // Per-pad volume quick-knob: vertical drag adjusts the channel fader.
+  // Uses pointer-capture on the knob element so the drag works even past
+  // the original click point.
+  const handleVolumeKnobPointerDown = useCallback((e: React.PointerEvent, voiceIndex: number) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const startY = e.clientY;
+    const startFader = channelFaders[voiceIndex] ?? 750;
+    const target = e.currentTarget as HTMLElement;
+    target.setPointerCapture(e.pointerId);
+    setVolumeKnobVoice(voiceIndex);
+
+    const onMove = (ev: PointerEvent) => {
+      const dy = startY - ev.clientY; // up = positive
+      // 100px drag = full range (0..1000)
+      const next = Math.max(0, Math.min(1000, startFader + dy * 5));
+      setMixerFader(voiceIndex, Math.round(next));
+    };
+    const onUp = () => {
+      target.removeEventListener("pointermove", onMove);
+      target.removeEventListener("pointerup", onUp);
+      target.removeEventListener("pointercancel", onUp);
+      try { target.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+      setVolumeKnobVoice(null);
+    };
+    target.addEventListener("pointermove", onMove);
+    target.addEventListener("pointerup", onUp);
+    target.addEventListener("pointercancel", onUp);
+  }, [channelFaders, setMixerFader]);
+
+  const handleVolumeKnobDoubleClick = useCallback((e: React.MouseEvent, voiceIndex: number) => {
+    e.stopPropagation();
+    setMixerFader(voiceIndex, 750); // unity
+  }, [setMixerFader]);
 
   const handleDrop = useCallback(async (e: React.DragEvent, voiceIndex: number) => {
     e.preventDefault();
@@ -330,11 +369,40 @@ export function PadGrid() {
                 </button>
               )}
 
+              {/* Per-pad volume quick-knob — vertical bar at right edge */}
+              {(() => {
+                const fader = channelFaders[i] ?? 750;
+                const pct = fader / 1000;
+                const isActive = volumeKnobVoice === i;
+                const dbApprox = Math.round(20 * Math.log10(Math.max(0.001, faderToGain(fader))));
+                return (
+                  <div
+                    onPointerDown={(e) => handleVolumeKnobPointerDown(e, i)}
+                    onDoubleClick={(e) => handleVolumeKnobDoubleClick(e, i)}
+                    title={`Volume · ${dbApprox > 0 ? "+" : ""}${dbApprox} dB · drag to adjust · double-click to reset`}
+                    className={`absolute top-0.5 bottom-0.5 right-0.5 w-1 rounded-full overflow-hidden cursor-ns-resize transition-opacity ${
+                      isActive ? "opacity-100" : "opacity-40 group-hover:opacity-80"
+                    }`}
+                    style={{ touchAction: "none", background: "rgba(255,255,255,0.06)" }}
+                  >
+                    <div
+                      className="absolute bottom-0 left-0 right-0 rounded-full"
+                      style={{
+                        height: `${pct * 100}%`,
+                        background: isActive
+                          ? "linear-gradient(to top, var(--ed-accent-orange), var(--ed-accent-orange))"
+                          : "linear-gradient(to top, rgba(245,158,11,0.6), rgba(245,158,11,0.4))",
+                      }}
+                    />
+                  </div>
+                );
+              })()}
+
               {/* Sample Browser button (folder icon) */}
               <button
                 onClick={(e) => handleBrowseClick(e, i)}
                 aria-label={`Browse samples for ${label}`}
-                className="absolute top-1 right-1 p-1 rounded opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity bg-black/40 hover:bg-black/60"
+                className="absolute top-1 right-2.5 p-1 rounded opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity bg-black/40 hover:bg-black/60"
                 title="Open stock sample library (Shift-click for local file)"
               >
                 <svg className="w-3 h-3 text-[var(--ed-accent-green)]" fill="currentColor" viewBox="0 0 16 16">

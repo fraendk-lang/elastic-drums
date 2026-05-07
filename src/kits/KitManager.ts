@@ -18,6 +18,12 @@ export interface VoiceKitParams {
   body?: number;
   level?: number;
   spread?: number;
+  /** Perc-voice (10/11) sub-type 0..7: Conga/Bongo/Rim/Cowbell/Shaker/Claves/Tambourine/Triangle */
+  type?: number;
+  fm?: number;
+  fmRatio?: number;
+  /** Sample transpose in semitones */
+  sampleTune?: number;
 }
 
 export interface VoiceMixParams {

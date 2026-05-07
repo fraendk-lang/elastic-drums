@@ -153,6 +153,12 @@ export const BASS_PRESETS: BassPreset[] = [
   { name: "Club Sub Hit",     params: bp({ waveform: "square",   cutoff: 170, resonance:  1, envMod: 0.03, decay: 130, accent: 0.10, slideTime:  0, distortion: 0.05, volume: 0.90, subOsc: 0.95, filterModel: "ladder", punch: 0.20, subFilter: 38 }) },
   { name: "Grime Dark Sub",   params: bp({ waveform: "square",   cutoff: 140, resonance:  1, envMod: 0.02, decay: 750, accent: 0.06, slideTime:  0, distortion: 0.08, volume: 0.90, subOsc: 1.00, filterModel: "ladder", punch: 0.08, subFilter: 32 }) },
   { name: "Grime Stab",       params: bp({ waveform: "sawtooth", cutoff: 520, resonance: 16, envMod: 0.72, decay:  85, accent: 0.65, slideTime: 15, distortion: 0.55, volume: 0.58, subOsc: 0.15, filterModel: "ladder", punch: 0.45, harmonics: 0.22 }) },
+
+  // ── New (May 2026): Synthwave / Detroit / Liquid Pluck / Ambient Drone ─────
+  { name: "Synthwave Drive",  params: bp({ waveform: "sawtooth", cutoff: 480, resonance:  9, envMod: 0.40, decay: 240, accent: 0.40, slideTime: 30, distortion: 0.22, volume: 0.68, subOsc: 0.50, filterModel: "ladder", punch: 0.28, harmonics: 0.20, subFilter: 65, lfoEnabled: true, lfoTarget: "filter", lfoShape: "sine", lfoRate: 0.4, lfoDepth: 0.25, lfoSync: true, lfoSyncNote: "1" }) },
+  { name: "Detroit Auto-Wah", params: bp({ waveform: "sawtooth", cutoff: 350, resonance: 14, envMod: 0.55, decay: 220, accent: 0.45, slideTime: 25, distortion: 0.18, volume: 0.65, subOsc: 0.40, filterModel: "ladder", punch: 0.30, harmonics: 0.18, subFilter: 60, lfoEnabled: true, lfoTarget: "filter", lfoShape: "triangle", lfoRate: 1.5, lfoDepth: 0.55, lfoSync: true, lfoSyncNote: "1/4" }) },
+  { name: "Liquid Pluck",     params: bp({ waveform: "sawtooth", cutoff: 320, resonance:  6, envMod: 0.45, decay:  90, accent: 0.30, slideTime: 12, distortion: 0.05, volume: 0.70, subOsc: 0.55, filterModel: "ladder", punch: 0.32, harmonics: 0.10, subFilter: 58 }) },
+  { name: "Ambient Drone",    params: bp({ waveform: "sawtooth", cutoff: 240, resonance:  4, envMod: 0.20, decay: 1500, accent: 0.05, slideTime: 200, distortion: 0.00, volume: 0.62, subOsc: 0.75, filterModel: "ladder", punch: 0.02, harmonics: 0.08, subFilter: 50, lfoEnabled: true, lfoTarget: "filter", lfoShape: "sine", lfoRate: 0.15, lfoDepth: 0.45, lfoSync: false }) },
 ];
 
 export const BASS_CORE_PRESETS = BASS_PRESETS.filter((preset) =>

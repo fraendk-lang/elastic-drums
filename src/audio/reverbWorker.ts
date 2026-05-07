@@ -57,22 +57,59 @@ function makeRng(seed: number): () => number {
 
 /**
  * Schroeder allpass diffusion: y[n] = -g·x[n] + x[n-M] + g·y[n-M]
- * Applied to the IR buffer in-place.  Creates smooth, dense reverb tail
- * instead of grainy noise.  Four stages with mutually irrational delays.
+ * Applied to the IR buffer in-place. Creates smooth, dense reverb tail
+ * instead of grainy noise. Four stages with mutually irrational delays
+ * AND slow LFO modulation of the read tap (0.3–0.6 Hz, ±0.3 ms) to
+ * break up periodic resonances and reduce the "metallic" character of
+ * static allpass chains. This is the classic Lexicon trick.
  */
-function applyAllpass(buf: Float32Array, sampleRate: number, g: number): void {
+function applyAllpass(buf: Float32Array, sampleRate: number, g: number, seed: number): void {
   // Delay lengths in ms — mutually irrational ratios → no periodic combing
   const DELAYS_MS = [2.56, 4.07, 6.43, 10.13];
-  for (const ms of DELAYS_MS) {
-    const M   = Math.round(sampleRate * ms / 1000);
+  // Independent LFO per stage: rates between 0.3 and 0.6 Hz, depth ±0.3 ms
+  const LFO_HZ = [0.31, 0.43, 0.52, 0.59];
+  const MOD_DEPTH_SAMPLES = sampleRate * 0.0003; // 0.3 ms → ~13 samples @ 44.1k
+  for (let s = 0; s < DELAYS_MS.length; s++) {
+    const baseM = sampleRate * DELAYS_MS[s]! / 1000;
+    const lfoW = 2 * Math.PI * LFO_HZ[s]! / sampleRate;
+    const lfoPhase = ((seed >>> (s * 8)) & 0xff) / 255 * 2 * Math.PI; // decorrelate L/R
     const out = new Float32Array(buf.length);
     for (let n = 0; n < buf.length; n++) {
-      const xNow  = buf[n]!;
-      const xPast = n >= M ? buf[n - M]! : 0;
-      const yPast = n >= M ? out[n - M]! : 0;
+      const Mfloat = baseM + Math.sin(lfoW * n + lfoPhase) * MOD_DEPTH_SAMPLES;
+      const Mi = Math.floor(Mfloat);
+      const frac = Mfloat - Mi;
+      // Linear-interpolated read tap (sub-sample LFO modulation)
+      const xPastA = n - Mi >= 0 ? buf[n - Mi]! : 0;
+      const xPastB = n - Mi - 1 >= 0 ? buf[n - Mi - 1]! : 0;
+      const xPast = xPastA * (1 - frac) + xPastB * frac;
+      const yPastA = n - Mi >= 0 ? out[n - Mi]! : 0;
+      const yPastB = n - Mi - 1 >= 0 ? out[n - Mi - 1]! : 0;
+      const yPast = yPastA * (1 - frac) + yPastB * frac;
+      const xNow = buf[n]!;
       out[n] = -g * xNow + xPast + g * yPast;
     }
     buf.set(out);
+  }
+}
+
+/**
+ * Time-varying lowpass filter that progressively darkens the tail.
+ * Models the air absorption + room boundary HF loss that makes a real
+ * room's reverb tail sound warmer over time. Cutoff sweeps from
+ * `startCutoff` to `endCutoff` exponentially over the buffer length.
+ */
+function timeVaryingLowpass(buf: Float32Array, sampleRate: number, startCutoff: number, endCutoff: number): void {
+  let y = 0;
+  const len = buf.length;
+  const k = Math.log(endCutoff / startCutoff) / Math.max(1, len);
+  for (let n = 0; n < len; n++) {
+    // 1-pole LP, alpha derived from cutoff. alpha = dt / (RC + dt) where RC = 1/(2π·fc)
+    const fc = startCutoff * Math.exp(k * n);
+    const dt = 1 / sampleRate;
+    const rc = 1 / (2 * Math.PI * fc);
+    const alpha = dt / (rc + dt);
+    y = y + alpha * (buf[n]! - y);
+    buf[n] = y;
   }
 }
 
@@ -162,12 +199,21 @@ function generateIR(
     right[i]! += noiseR * wobble * (hfEnv * p.hfDamping + lfEnv * (1 - p.hfDamping * 0.5)) * rScale;
   }
 
-  // ── Schroeder Allpass Diffusion ─────────────────────────────────────────
-  // L and R get slightly different g values → wider, uncorrelated stereo
+  // ── Schroeder Allpass Diffusion (modulated) ─────────────────────────────
+  // L and R get slightly different g values + seeds → wider, uncorrelated stereo
   const gL = 0.60 + p.allpassDepth * 0.20;   // 0.60–0.80
   const gR = 0.55 + p.allpassDepth * 0.22;   // 0.55–0.77
-  applyAllpass(left,  sampleRate, gL);
-  applyAllpass(right, sampleRate, gR);
+  applyAllpass(left,  sampleRate, gL, 0x9e3779b9);
+  applyAllpass(right, sampleRate, gR, 0x517cc1b7);
+
+  // ── Time-varying spectral damping ───────────────────────────────────────
+  // Real rooms lose HF over time (air absorption + boundary losses).
+  // Sweep cutoff from a bright start down to a darker end based on hfDamping.
+  // Plate stays brighter (high startCutoff); Hall/Spring get warmer over time.
+  const hfStart = 16000 - p.hfDamping * 4000;   // 16k → 12k
+  const hfEnd   = 4000 - p.hfDamping * 2500;    // 4k → 1.5k
+  timeVaryingLowpass(left,  sampleRate, hfStart, hfEnd);
+  timeVaryingLowpass(right, sampleRate, hfStart * 1.05, hfEnd * 0.95); // slight L/R decorrelation
 
   // ── Pink-noise warmth shaping ───────────────────────────────────────────
   // Pole: 0 = flat, 0.9 = very warm.  Room/Hall get warmth; Plate stays brighter

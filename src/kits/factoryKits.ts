@@ -1297,6 +1297,101 @@ export const FACTORY_KITS: DrumKit[] = [
     }},
   },
 
+  // ═══════════════════════════════════════════════════════
+  // NEW: Lo-Fi Tape, Jazz Walker, Afrobeat Modern
+  // ═══════════════════════════════════════════════════════
+
+  {
+    id: "lofi-tape", name: "Lo-Fi Tape", category: "Trap",
+    tags: ["lofi", "tape", "warm", "saturated", "nostalgic"], author: "Factory", bpmRange: [70, 90],
+    description: "Tape-saturated lo-fi kit with soft kick, dusty snare and warm shaker shuffles",
+    voices: {
+      0: { tune: 48, decay: 580, click: 18, drive: 30, sub: 60, pitch: 38 },
+      1: { tune: 155, decay: 250, tone: 35, snap: 35, body: 80 },
+      2: { decay: 380, tone: 1300, spread: 65, level: 80 },
+      3: { tune: 88, decay: 360 }, 4: { tune: 125, decay: 320 }, 5: { tune: 175, decay: 270 },
+      6: { tune: 270, decay: 55 }, 7: { tune: 270, decay: 320 },
+      8: { tune: 330, decay: 1100 }, 9: { tune: 420, decay: 1100 },
+      10: { tune: 580, decay: 180, type: 4 }, 11: { tune: 880, decay: 130, type: 4 }, // shakers
+    },
+    mix: {
+      0: { insertDrive: 0.35, filterType: "lowpass", filterFreq: 5500 },
+      1: { reverbSend: 0.22 },
+      6: { filterType: "lowpass", filterFreq: 7000 },
+      10: { pan: -0.25, reverbSend: 0.18 }, 11: { pan: 0.25, reverbSend: 0.18 },
+    },
+    masterFx: { reverbLevel: 0.32, saturation: 0.28, eqLow: 1, eqMid: -2, eqHigh: -3 },
+    pattern: { length: 16, swing: 62, tracks: {
+      0: { steps: [0, 6, 10], vel: [115, 75, 95] },
+      1: { steps: [4, 12], vel: [105, 95] },
+      6: { steps: [0, 2, 4, 6, 8, 10, 12, 14], vel: [85, 50, 75, 50, 85, 50, 75, 50] },
+      10: { steps: [1, 3, 5, 7, 9, 11, 13, 15], vel: [55, 40, 55, 40, 55, 40, 55, 40] },
+    }},
+  },
+
+  {
+    id: "jazz-walker", name: "Jazz Walker", category: "Acoustic",
+    tags: ["jazz", "swing", "ride", "brushes", "walking"], author: "Factory", bpmRange: [110, 145],
+    description: "Acoustic jazz kit with ride-led swing pattern and brushed snare",
+    voices: {
+      0: { tune: 58, decay: 380, click: 30, drive: 12, sub: 40, pitch: 42 },
+      1: { tune: 190, decay: 280, tone: 60, snap: 30, body: 75 }, // brush snare
+      2: { decay: 280, tone: 1900, spread: 55, level: 85 },
+      3: { tune: 100, decay: 360 }, 4: { tune: 145, decay: 320 }, 5: { tune: 200, decay: 280 },
+      6: { tune: 320, decay: 60 }, 7: { tune: 320, decay: 280 },
+      8: { tune: 460, decay: 1500 }, 9: { tune: 540, decay: 1800 }, // ride
+      10: { tune: 700, decay: 220, type: 4 }, 11: { tune: 1100, decay: 60, type: 5 }, // shaker + claves
+    },
+    mix: {
+      0: { reverbSend: 0.18 },
+      1: { reverbSend: 0.30 }, // brushes get more room
+      8: { pan: -0.35, reverbSend: 0.40 },
+      9: { pan: 0.35, reverbSend: 0.35 },
+      10: { pan: -0.25 }, 11: { pan: 0.25 },
+    },
+    masterFx: { reverbLevel: 0.42, eqLow: 1, eqMid: 0, eqHigh: 2 },
+    pattern: { length: 16, swing: 67, tracks: {
+      0: { steps: [0, 8], vel: [110, 95] },
+      1: { steps: [4, 12], vel: [85, 80] }, // soft brush hits
+      9: { steps: [0, 3, 4, 7, 8, 11, 12, 15], vel: [110, 75, 100, 75, 105, 75, 100, 80] }, // ride pattern
+      11: { steps: [2, 6, 10, 14], vel: [60, 55, 60, 55] },
+    }},
+  },
+
+  {
+    id: "afrobeat-modern", name: "Afrobeat Modern", category: "World",
+    tags: ["afrobeat", "amapiano", "log-drum", "syncopated"], author: "Factory", bpmRange: [110, 118],
+    description: "Modern Afrobeat with warm 808-style kick, syncopated snare and log-drum tom",
+    voices: {
+      0: { tune: 44, decay: 720, click: 38, drive: 28, sub: 75, pitch: 36 },
+      1: { tune: 180, decay: 200, tone: 55, snap: 70, body: 50 },
+      2: { decay: 260, tone: 1700, spread: 48, level: 95 },
+      3: { tune: 95, decay: 380 }, // log-drum-style tom
+      4: { tune: 138, decay: 260 }, 5: { tune: 195, decay: 220 },
+      6: { tune: 340, decay: 38 }, 7: { tune: 340, decay: 220 },
+      8: { tune: 410, decay: 850 }, 9: { tune: 510, decay: 850 },
+      10: { tune: 720, decay: 110, type: 0 }, // conga
+      11: { tune: 1100, decay: 90, type: 1 }, // bongo
+    },
+    mix: {
+      0: { insertDrive: 0.22 },
+      1: { reverbSend: 0.16 },
+      3: { pan: -0.2, reverbSend: 0.2 },
+      6: { pan: 0.05, filterType: "highpass", filterFreq: 7500 },
+      10: { pan: -0.35, reverbSend: 0.18 }, 11: { pan: 0.35, reverbSend: 0.18 },
+    },
+    masterFx: { reverbLevel: 0.28, saturation: 0.18, eqLow: 3, eqMid: 0, eqHigh: 2 },
+    pattern: { length: 16, swing: 56, tracks: {
+      0: { steps: [0, 6, 10], vel: [127, 90, 110] },
+      1: { steps: [4, 12], vel: [115, 105] },
+      3: { steps: [3, 9, 11], vel: [85, 75, 95] }, // log-drum syncopation
+      6: { steps: [0, 2, 3, 4, 6, 7, 8, 10, 11, 12, 14, 15],
+           vel: [90, 55, 70, 95, 55, 70, 90, 55, 70, 95, 55, 70] },
+      10: { steps: [2, 5, 7, 13], vel: [70, 60, 80, 65] },
+      11: { steps: [1, 8, 14], vel: [55, 70, 60] },
+    }},
+  },
+
 ];
 
 // Categories for the kit browser

@@ -10,6 +10,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { sampleManager, type LoopData, type StretchMode, type WarpMarker } from "../audio/SampleManager";
+import { detectOnsets } from "../audio/OnsetDetector";
 
 interface Props {
   voiceIndex: number;
@@ -379,6 +380,49 @@ export function LoopEditor({ voiceIndex, label, onClose, onLoopDataChange }: Pro
     commit({ stretchMode: mode });
   }, [voiceIndex, commit]);
 
+  // ── Auto-place markers from transient detection ────────────
+  const handleAutoMarkers = useCallback(() => {
+    if (!buffer || loopData.nativeBpm <= 0) return;
+
+    // Detect onsets in the source buffer
+    const onsets = detectOnsets(buffer, { sensitivity: 0.5 });
+
+    // Snap each onset to the nearest 16th-note in the NATIVE BPM grid
+    // (because markers' bufferTime stays in source-time, not project-time)
+    const secondsPerBeat = 60 / loopData.nativeBpm;
+    const stepSec = secondsPerBeat / 4; // 16th-notes
+    const totalBeats = Math.max(1, loopData.bars) * 4;
+
+    // Build marker list: for each onset, snap its bufferTime to the nearest
+    // grid step and assign a beat = round(onsetTime / secondsPerBeat).
+    const seenBeats = new Set<number>();
+    const newMarkers: WarpMarker[] = [
+      { bufferTime: 0, beat: 0 }, // anchor
+    ];
+    seenBeats.add(0);
+
+    for (const onsetTime of onsets) {
+      // Snap bufferTime to nearest 16th
+      const snappedTime = Math.round(onsetTime / stepSec) * stepSec;
+      const beat = Math.round(snappedTime / secondsPerBeat);
+
+      if (beat <= 0 || beat >= totalBeats) continue;
+      if (seenBeats.has(beat)) continue;
+      if (snappedTime >= buffer.duration) continue;
+
+      seenBeats.add(beat);
+      newMarkers.push({ bufferTime: snappedTime, beat });
+    }
+
+    // Always include the end anchor
+    if (!seenBeats.has(totalBeats)) {
+      newMarkers.push({ bufferTime: buffer.duration, beat: totalBeats });
+    }
+
+    if (newMarkers.length < 2) return;
+    commitMarkers(newMarkers);
+  }, [buffer, loopData.nativeBpm, loopData.bars, commitMarkers]);
+
 
   // ── BPM manual input ──────────────────────────────────────
   const [bpmInput, setBpmInput] = useState(() => loopData.nativeBpm > 0 ? String(loopData.nativeBpm) : "");
@@ -554,31 +598,39 @@ export function LoopEditor({ voiceIndex, label, onClose, onLoopDataChange }: Pro
           ) : null}
         </div>
 
-        {showMarkers && loopData.warpMarkers && loopData.warpMarkers.length >= 2 ? (
+        {showMarkers ? (
           <>
             <div className="w-px h-4 bg-white/10" />
             <div className="flex items-center gap-1.5 text-[9px] text-[#f59e0b]/70">
               <span>WARP</span>
               <span className="font-mono">{markers.length} marker</span>
               <button
-                onClick={() => {
-                  sampleManager.setWarpMarkers(voiceIndex, []);
-                  // calling setWarpMarkers with empty array — clear via loopMeta directly
-                  const meta = sampleManager.getLoopData(voiceIndex);
-                  if (meta) {
-                    const cleared = { ...meta };
-                    delete cleared.warpMarkers;
-                    sampleManager.setLoopData(voiceIndex, cleared);
-                  }
-                  sampleManager.invalidateStretchCache(voiceIndex);
-                  setMarkers(sampleManager.getEffectiveMarkers(voiceIndex));
-                  onLoopDataChange(sampleManager.getLoopData(voiceIndex) ?? null);
-                }}
-                className="ml-1 text-[#f59e0b]/50 hover:text-[#f59e0b]/90 text-[8px]"
-                title="Reset warp markers to default 2-marker (start/end)"
+                onClick={handleAutoMarkers}
+                disabled={loopData.nativeBpm <= 0}
+                title="Auto-place warp markers at detected transients (snap to 16th-grid)"
+                className="ml-1 px-1.5 py-0.5 rounded text-[8px] font-bold bg-[#f59e0b]/15 text-[#f59e0b] border border-[#f59e0b]/35 hover:bg-[#f59e0b]/25 hover:border-[#f59e0b]/55 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
               >
-                RESET
+                AUTO
               </button>
+              {loopData.warpMarkers && loopData.warpMarkers.length >= 2 ? (
+                <button
+                  onClick={() => {
+                    const meta = sampleManager.getLoopData(voiceIndex);
+                    if (meta) {
+                      const cleared = { ...meta };
+                      delete cleared.warpMarkers;
+                      sampleManager.setLoopData(voiceIndex, cleared);
+                    }
+                    sampleManager.invalidateStretchCache(voiceIndex);
+                    setMarkers(sampleManager.getEffectiveMarkers(voiceIndex));
+                    onLoopDataChange(sampleManager.getLoopData(voiceIndex) ?? null);
+                  }}
+                  className="text-[#f59e0b]/50 hover:text-[#f59e0b]/90 text-[8px]"
+                  title="Reset warp markers to default 2-marker (start/end)"
+                >
+                  RESET
+                </button>
+              ) : null}
             </div>
           </>
         ) : null}

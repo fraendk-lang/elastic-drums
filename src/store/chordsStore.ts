@@ -152,6 +152,11 @@ export const CHORDS_PRESETS: ChordsPreset[] = [
   { name: "Techno Chord",    params: cp({ synthType: "subtractive", waveform: "square",    cutoff: 2800, resonance: 10, envMod: 0.55, attack:   3, release:  100, detune:  6, distortion: 0.22, volume: 0.54, subOsc: 0.20, chorus: 0.08, spread: 0.38, brightness: 0.35 }) },
   { name: "Funk Stab",       params: cp({ synthType: "subtractive", waveform: "sawtooth",  cutoff: 3500, resonance: 12, envMod: 0.60, attack:   8, release:  200, detune:  8, distortion: 0.10, volume: 0.56, subOsc: 0.10, chorus: 0.42, spread: 0.60, brightness: 0.48 }) },
   { name: "Jazz Voicing",    params: cp({ synthType: "subtractive", waveform: "triangle",  cutoff: 1800, resonance: 3,  envMod: 0.12, attack:  22, release:  650, detune:  6, distortion: 0.02, volume: 0.50, subOsc: 0.08, chorus: 0.22, spread: 0.44, brightness: 0.32 }) },
+
+  // ── New (May 2026): Ambient Float / Cinematic Sweep / Lo-Fi Velvet ──────────
+  { name: "Ambient Float",   params: cp({ synthType: "wavetable",   wavetable: "vocal",       filterModel: "lpf",        cutoff: 1900, resonance: 2,  envMod: 0.05, attack: 800, release: 2500, detune: 18, distortion: 0.00, volume: 0.42, subOsc: 0.18, chorus: 0.85, spread: 1.00, brightness: 0.30, filterLfoDepth: 0.55 }) },
+  { name: "Cinematic Sweep", params: cp({ synthType: "wavetable",   wavetable: "strings",     filterModel: "ladder",     cutoff: 1100, resonance: 4,  envMod: 0.40, attack: 600, release: 2200, detune: 26, distortion: 0.03, volume: 0.50, subOsc: 0.30, chorus: 0.55, spread: 0.95, brightness: 0.45, filterLfoDepth: 0.70 }) },
+  { name: "Lo-Fi Velvet",    params: cp({ synthType: "subtractive", waveform: "triangle",     filterModel: "ladder",     cutoff: 1300, resonance: 3,  envMod: 0.08, attack:  35, release:  500, detune: 12, distortion: 0.30, volume: 0.55, subOsc: 0.15, chorus: 0.20, spread: 0.50, brightness: 0.10, filterLfoDepth: 0.18 }) },
 ];
 
 export const CHORDS_CORE_PRESETS = CHORDS_PRESETS.filter((preset) =>
