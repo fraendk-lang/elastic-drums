@@ -52,9 +52,19 @@ const STEPS: Step[] = [
     title: "Everything Auto-Saves",
     body: "Your work saves automatically to IndexedDB. Use EXPORT to download WAV, MIDI or stems, or Share URL to send your pattern to someone else.",
   },
+  {
+    emoji: "🎧",
+    title: "Hear Something Now",
+    body: "Pick one of 5 demo songs to start with — Lo-Fi Hip Hop, Synthwave, Liquid DnB, Deep House or Ambient. Each one loads kit, bass, chords and melody on a single click. Open later via the DEMOS button.",
+  },
 ];
 
-export function OnboardingModal() {
+interface OnboardingProps {
+  /** Called when user completes onboarding (clicks the final CTA). Used to launch the demo picker. */
+  onComplete?: () => void;
+}
+
+export function OnboardingModal({ onComplete }: OnboardingProps = {}) {
   const [visible, setVisible] = useState(() => !hasOnboarded());
   const [page, setPage] = useState(0);
 
@@ -66,6 +76,12 @@ export function OnboardingModal() {
   function dismiss() {
     markOnboarded();
     setVisible(false);
+  }
+
+  function complete() {
+    markOnboarded();
+    setVisible(false);
+    onComplete?.();
   }
 
   return (
@@ -141,10 +157,10 @@ export function OnboardingModal() {
           )}
           {isLast && (
             <button
-              onClick={dismiss}
+              onClick={complete}
               className="flex-1 py-2.5 rounded-lg text-[11px] font-black tracking-wider bg-[var(--ed-accent-orange)] text-black hover:brightness-110 transition-all"
             >
-              START MAKING BEATS
+              PICK A DEMO SONG →
             </button>
           )}
         </div>

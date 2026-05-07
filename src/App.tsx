@@ -35,6 +35,7 @@ const MelodyGenerator = lazy(() => import("./components/MelodyGenerator").then((
 import { BeatFxPanel } from "./components/BeatFxPanel";
 import { ShortcutOverlay } from "./components/ShortcutOverlay";
 import { OnboardingModal } from "./components/OnboardingModal";
+import { DemoSongPicker } from "./components/DemoSongPicker";
 import { getMidiClockMode, subscribeMidiClockMode } from "./store/midiClockMode";
 import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
@@ -71,6 +72,7 @@ export function App() {
   const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saved" | "restored">("idle");
   const [fxRackOpen, setFxRackOpen] = useState(false);
   const [sceneMiniOpen, setSceneMiniOpen] = useState(false);
+  const [demoPickerOpen, setDemoPickerOpen] = useState(false);
   const [bottomPanelHeight, setBottomPanelHeight] = useState(360);
   const resizeStateRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const appShellRef = useRef<HTMLDivElement>(null);
@@ -438,6 +440,7 @@ export function App() {
         onOpenFx={() => overlay.openOverlay("fxPanel")}
         onOpenMixer={() => overlay.openOverlay("mixer")}
         onOpenKits={() => overlay.openOverlay("kitBrowser")}
+        onOpenDemos={() => setDemoPickerOpen(true)}
         onOpenMidi={() => overlay.openOverlay("midiPlayer")}
         onToggleHelp={() => overlay.openOverlay("userGuide")}
         onOpenPad={() => overlay.openOverlay("performancePad")}
@@ -581,7 +584,8 @@ export function App() {
         {overlay.isOpen("melodyGen") && <MelodyGenerator isOpen onClose={() => overlay.closeOverlay("melodyGen")} />}
       </Suspense>
       <ShortcutOverlay />
-      <OnboardingModal />
+      <OnboardingModal onComplete={() => setDemoPickerOpen(true)} />
+      <DemoSongPicker isOpen={demoPickerOpen} onClose={() => setDemoPickerOpen(false)} />
       {sceneMiniOpen && <SceneMini onClose={() => setSceneMiniOpen(false)} />}
     </div>
     </ErrorBoundary>
