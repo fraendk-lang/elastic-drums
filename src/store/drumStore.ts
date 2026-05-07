@@ -785,7 +785,12 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   barCycle: 0,
   pattern: createEmptyPattern(),
 
-  setBpm: (bpm) => set({ bpm: Math.max(30, Math.min(300, bpm)) }),
+  setBpm: (bpm) => {
+    set({ bpm: Math.max(30, Math.min(300, bpm)) });
+    // Time-stretched loop buffers depend on project BPM — invalidate so the
+    // next trigger re-renders at the new tempo.
+    sampleManager.invalidateStretchCache();
+  },
 
   setSwing: (swing) => {
     const clamped = Math.max(50, Math.min(75, swing));

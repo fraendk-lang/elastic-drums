@@ -122,6 +122,7 @@ export interface LoopData {
   bars: number;
   loopStart: number;  // seconds into buffer
   loopEnd: number;    // seconds into buffer (0 = buffer end)
+  stretchMode?: "repitch" | "beats";
 }
 
 export class VoiceRenderer {
@@ -129,7 +130,7 @@ export class VoiceRenderer {
   private noiseBuffer: AudioBuffer | null = null;
   private lastHHClosedGain: GainNode | null = null;
   private lastHHOpenGain: GainNode | null = null;
-  private sampleLookup: ((voice: number, velocity?: number) => AudioBuffer | null) | null = null;
+  private sampleLookup: ((voice: number, velocity?: number, projectBpm?: number) => AudioBuffer | null) | null = null;
   private loopLookup: ((voice: number) => LoopData | null) | null = null;
   // Track active looping sources per voice so we can stop them on re-trigger
   private activeLoopSources = new Map<number, { src: AudioBufferSourceNode; gain: GainNode }>();
@@ -172,7 +173,7 @@ export class VoiceRenderer {
 
   // ─── Synthesis Setup ──────────────────────────────────────
 
-  setSampleLookup(fn: (voice: number, velocity?: number) => AudioBuffer | null): void {
+  setSampleLookup(fn: (voice: number, velocity?: number, projectBpm?: number) => AudioBuffer | null): void {
     this.sampleLookup = fn;
   }
 
@@ -215,8 +216,11 @@ export class VoiceRenderer {
     // Base pitch ratio from semitone transpose
     let rateMultiplier = tune !== 0 ? Math.pow(2, tune / 12) : 1.0;
 
-    // BPM stretch: scale playbackRate so the loop tempo matches the project
-    if (loopData?.isLoop && loopData.nativeBpm > 0 && projectBpm > 0) {
+    // BPM stretch: only in re-pitch mode (changes pitch with tempo).
+    // In "beats" mode the lookup already returned a pre-stretched buffer at
+    // project tempo, so we leave playbackRate at the pitch-only value.
+    if (loopData?.isLoop && loopData.nativeBpm > 0 && projectBpm > 0
+        && (loopData.stretchMode ?? "repitch") === "repitch") {
       rateMultiplier *= loopData.nativeBpm / projectBpm;
     }
     src.playbackRate.value = rateMultiplier;
@@ -309,7 +313,7 @@ export class VoiceRenderer {
 
     // Check if this voice has a sample loaded — play sample instead of synth
     if (this.sampleLookup) {
-      const buffer = this.sampleLookup(voice, velocity);
+      const buffer = this.sampleLookup(voice, velocity, projectBpm);
       if (buffer) {
         const loopData = this.loopLookup ? this.loopLookup(voice) : null;
         this.playSampleAtTime(ctx, buffer, voice, velocity, t, out, p.sampleTune ?? 0, loopData, projectBpm, transportStart);

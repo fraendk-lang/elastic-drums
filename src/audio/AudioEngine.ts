@@ -258,7 +258,7 @@ export class AudioEngine {
   setVoiceParam(voice: number, paramId: string, value: number): void { voiceRenderer.setVoiceParam(voice, paramId, value); }
   getVoiceParam(voice: number, paramId: string): number { return voiceRenderer.getVoiceParam(voice, paramId); }
   getVoiceParams(voice: number): Record<string, number> { return voiceRenderer.getVoiceParams(voice); }
-  setSampleLookup(fn: (voice: number, velocity?: number) => AudioBuffer | null): void { voiceRenderer.setSampleLookup(fn); }
+  setSampleLookup(fn: (voice: number, velocity?: number, projectBpm?: number) => AudioBuffer | null): void { voiceRenderer.setSampleLookup(fn); }
   setLoopLookup(fn: (voice: number) => import("./VoiceRenderer").LoopData | null): void { voiceRenderer.setLoopLookup(fn); }
   stopAllLoops(): void { voiceRenderer.stopAllLoops(this.getContext()); }
 

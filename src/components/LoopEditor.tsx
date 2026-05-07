@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { sampleManager, type LoopData } from "../audio/SampleManager";
+import { sampleManager, type LoopData, type StretchMode } from "../audio/SampleManager";
 
 interface Props {
   voiceIndex: number;
@@ -37,7 +37,7 @@ export function LoopEditor({ voiceIndex, label, onClose, onLoopDataChange }: Pro
   const initialData = sampleManager.getLoopData(voiceIndex) ?? null;
 
   const [loopData, setLoopDataLocal] = useState<LoopData>(() => initialData ?? {
-    isLoop: false, nativeBpm: 0, bars: 1, loopStart: 0, loopEnd: 0,
+    isLoop: false, nativeBpm: 0, bars: 1, loopStart: 0, loopEnd: 0, stretchMode: "repitch",
   });
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -240,6 +240,12 @@ export function LoopEditor({ voiceIndex, label, onClose, onLoopDataChange }: Pro
     commit({ bars, nativeBpm: bpm });
   }, [buffer, voiceIndex, loopData.nativeBpm, commit]);
 
+  // ── Stretch mode toggle ───────────────────────────────────
+  const handleSetMode = useCallback((mode: StretchMode) => {
+    sampleManager.invalidateStretchCache(voiceIndex);
+    commit({ stretchMode: mode });
+  }, [voiceIndex, commit]);
+
   // ── BPM manual input ──────────────────────────────────────
   const [bpmInput, setBpmInput] = useState(() => loopData.nativeBpm > 0 ? String(loopData.nativeBpm) : "");
   useEffect(() => {
@@ -278,6 +284,33 @@ export function LoopEditor({ voiceIndex, label, onClose, onLoopDataChange }: Pro
           <span className="text-[9px] text-white/30">
             {loopDurationSec.toFixed(2)}s
           </span>
+
+          {/* Stretch mode segmented toggle */}
+          <div className="flex items-center rounded border border-white/15 overflow-hidden">
+            <button
+              onClick={() => handleSetMode("repitch")}
+              title="Re-Pitch: pitch shifts with tempo (free, instant)"
+              className={`px-2 py-0.5 text-[9px] font-bold transition-all ${
+                (loopData.stretchMode ?? "repitch") === "repitch"
+                  ? "bg-white/20 text-white"
+                  : "bg-transparent text-white/40 hover:text-white/65"
+              }`}
+            >
+              RE-PITCH
+            </button>
+            <button
+              onClick={() => handleSetMode("beats")}
+              title="Beats: time-stretch without pitch change (SoundTouch)"
+              className={`px-2 py-0.5 text-[9px] font-bold border-l border-white/15 transition-all ${
+                loopData.stretchMode === "beats"
+                  ? "bg-[var(--ed-accent-orange)]/25 text-[var(--ed-accent-orange)]"
+                  : "bg-transparent text-white/40 hover:text-white/65"
+              }`}
+            >
+              BEATS
+            </button>
+          </div>
+
           {/* WARP toggle */}
           <button
             onClick={() => commit({ isLoop: !loopData.isLoop })}

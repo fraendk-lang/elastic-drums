@@ -12,6 +12,7 @@
 
 import { audioEngine } from "./AudioEngine";
 import { applyMuLaw } from "./MuLaw";
+import { stretchBuffer } from "./SampleStretcher";
 
 export interface LoadedSample {
   name: string;
@@ -22,12 +23,15 @@ export interface LoadedSample {
   muLawEnabled: boolean;
 }
 
+export type StretchMode = "repitch" | "beats";
+
 export interface LoopData {
   isLoop: boolean;
-  nativeBpm: number;  // 0 = unknown / not a BPM-locked loop
-  bars: number;       // how many bars the loop covers (auto-detected or user-set)
-  loopStart: number;  // seconds into the buffer (0 = beginning)
-  loopEnd: number;    // seconds into the buffer (0 = use buffer end)
+  nativeBpm: number;          // 0 = unknown / not a BPM-locked loop
+  bars: number;               // how many bars the loop covers (auto-detected or user-set)
+  loopStart: number;          // seconds into the buffer (0 = beginning)
+  loopEnd: number;            // seconds into the buffer (0 = use buffer end)
+  stretchMode: StretchMode;   // "repitch" (default, free) or "beats" (pitch-preserving)
 }
 
 /**
@@ -66,6 +70,10 @@ class SampleManagerClass {
 
   // Per-voice loop metadata (voice index → loop settings)
   private loopMeta = new Map<number, LoopData>();
+
+  // Per-voice cached stretched buffer (voice → { sourceBuffer, ratio, stretchedBuffer })
+  // Invalidated when sourceBuffer changes or ratio changes by > 0.5%.
+  private stretchCache = new Map<number, { source: AudioBuffer; ratio: number; buffer: AudioBuffer }>();
 
   /** Load a sample from a File. Replaces full-range single layer by default. */
   async loadFromFile(file: File, voiceIndex: number, opts?: { velMin?: number; velMax?: number; append?: boolean }): Promise<LoadedSample> {
@@ -114,12 +122,14 @@ class SampleManagerClass {
     // Only run detection when not appending — appended layers are usually
     // velocity variants of the same sample and share the same loop setting.
     if (!opts?.append) {
+      // Stretched buffer is tied to the previous source — invalidate
+      this.stretchCache.delete(voiceIndex);
       const detectedBpm = detectNativeBpm(buffer.duration);
       if (detectedBpm > 0) {
         const bars = Math.max(1, Math.round(buffer.duration / (60 / detectedBpm * 4)));
         // isLoop defaults to FALSE — user must explicitly enable via LOOP badge or editor.
         // We only store nativeBpm as a suggestion shown in the badge.
-        this.loopMeta.set(voiceIndex, { isLoop: false, nativeBpm: detectedBpm, bars, loopStart: 0, loopEnd: 0 });
+        this.loopMeta.set(voiceIndex, { isLoop: false, nativeBpm: detectedBpm, bars, loopStart: 0, loopEnd: 0, stretchMode: "repitch" });
       } else {
         // New sample replaces old — clear stale loop data
         this.loopMeta.delete(voiceIndex);
@@ -231,6 +241,7 @@ class SampleManagerClass {
   clearSample(voiceIndex: number): void {
     this.layers.delete(voiceIndex);
     this.loopMeta.delete(voiceIndex);
+    this.stretchCache.delete(voiceIndex);
   }
 
   // ─── Loop metadata ─────────────────────────────────────────
@@ -250,7 +261,7 @@ class SampleManagerClass {
     const existing = this.loopMeta.get(voiceIndex);
     if (!existing) {
       // Enable loop with unknown BPM — user will set BPM manually
-      this.loopMeta.set(voiceIndex, { isLoop: true, nativeBpm: 0, bars: 1, loopStart: 0, loopEnd: 0 });
+      this.loopMeta.set(voiceIndex, { isLoop: true, nativeBpm: 0, bars: 1, loopStart: 0, loopEnd: 0, stretchMode: "repitch" });
       return true;
     }
     const next: LoopData = { ...existing, isLoop: !existing.isLoop };
@@ -260,7 +271,7 @@ class SampleManagerClass {
 
   /** Set the native BPM for a voice's loop, recalculate bars from duration */
   setNativeBpm(voiceIndex: number, bpm: number): void {
-    const existing = this.loopMeta.get(voiceIndex) ?? { isLoop: false, nativeBpm: 0, bars: 1, loopStart: 0, loopEnd: 0 };
+    const existing = this.loopMeta.get(voiceIndex) ?? { isLoop: false, nativeBpm: 0, bars: 1, loopStart: 0, loopEnd: 0, stretchMode: "repitch" };
     const buffer = this.layers.get(voiceIndex)?.[0]?.sample.buffer;
     const bars = buffer && bpm > 0 ? Math.max(1, Math.round(buffer.duration / (60 / bpm * 4))) : existing.bars;
     this.loopMeta.set(voiceIndex, { ...existing, nativeBpm: bpm, bars });
@@ -268,12 +279,70 @@ class SampleManagerClass {
 
   /** Set bars count for a voice's loop and recalculate BPM from buffer duration */
   setBars(voiceIndex: number, bars: number): void {
-    const existing = this.loopMeta.get(voiceIndex) ?? { isLoop: false, nativeBpm: 0, bars: 1, loopStart: 0, loopEnd: 0 };
+    const existing = this.loopMeta.get(voiceIndex) ?? { isLoop: false, nativeBpm: 0, bars: 1, loopStart: 0, loopEnd: 0, stretchMode: "repitch" };
     const buffer = this.layers.get(voiceIndex)?.[0]?.sample.buffer;
     const nativeBpm = buffer && bars > 0
       ? Math.round((bars * 4 * 60 / buffer.duration) * 10) / 10
       : existing.nativeBpm;
     this.loopMeta.set(voiceIndex, { ...existing, bars, nativeBpm });
+  }
+
+  // ─── Time-stretch cache ─────────────────────────────────────
+
+  /**
+   * Return the buffer that should be played for this voice at the given project BPM.
+   * If the voice is in "beats" stretch mode and a tempo difference exists, returns
+   * a pre-rendered, time-stretched buffer (cached). Otherwise returns the source.
+   *
+   * @param voice       Voice index
+   * @param velocity    Velocity 0..1 (selects velocity layer)
+   * @param projectBpm  Current project BPM (0 = no transport tempo known)
+   * @returns           Buffer to play, or null if no sample loaded
+   */
+  getPlaybackBuffer(voice: number, velocity: number, projectBpm: number): AudioBuffer | null {
+    const layers = this.layers.get(voice);
+    if (!layers || layers.length === 0) return null;
+
+    // Find layer matching velocity (same logic as getBufferForVelocity)
+    let chosen = layers[0]!;
+    for (const layer of layers) {
+      if (velocity >= layer.velMin && velocity <= layer.velMax) { chosen = layer; break; }
+    }
+    const sourceBuffer = chosen.sample.buffer;
+
+    const meta = this.loopMeta.get(voice);
+    if (!meta || !meta.isLoop || meta.stretchMode !== "beats" || meta.nativeBpm <= 0 || projectBpm <= 0) {
+      return sourceBuffer; // re-pitch path or no stretch needed
+    }
+
+    // ratio: how much faster the output should play vs. source
+    // e.g. native 120, project 140 → ratio 140/120 = 1.166 (output is shorter)
+    const ratio = projectBpm / meta.nativeBpm;
+    if (Math.abs(ratio - 1) < 0.005) return sourceBuffer; // <0.5% ≈ no stretch needed
+
+    // Check cache
+    const cached = this.stretchCache.get(voice);
+    if (cached && cached.source === sourceBuffer && Math.abs(cached.ratio - ratio) < 0.005) {
+      return cached.buffer;
+    }
+
+    // Re-render (synchronous; SoundTouch is fast enough for typical loops)
+    const ctx = audioEngine.getAudioContext();
+    if (!ctx) return sourceBuffer;
+    try {
+      const stretched = stretchBuffer(sourceBuffer, ratio, ctx);
+      this.stretchCache.set(voice, { source: sourceBuffer, ratio, buffer: stretched });
+      return stretched;
+    } catch (err) {
+      console.warn("Time-stretch failed, falling back to re-pitch:", err);
+      return sourceBuffer;
+    }
+  }
+
+  /** Invalidate cached stretched buffer for a voice (e.g., when project BPM changes) */
+  invalidateStretchCache(voice?: number): void {
+    if (voice === undefined) this.stretchCache.clear();
+    else this.stretchCache.delete(voice);
   }
 
   /** Get a flat map of first layer samples (backward-compat) */
@@ -288,9 +357,10 @@ class SampleManagerClass {
 
 export const sampleManager = new SampleManagerClass();
 
-// Register velocity-aware sample lookup with audio engine
-audioEngine.setSampleLookup((voice: number, velocity = 0.8) => {
-  return sampleManager.getBufferForVelocity(voice, velocity);
+// Register velocity-aware sample lookup with audio engine.
+// Now also returns time-stretched buffer when voice is in "beats" mode.
+audioEngine.setSampleLookup((voice: number, velocity = 0.8, projectBpm = 0) => {
+  return sampleManager.getPlaybackBuffer(voice, velocity, projectBpm);
 });
 
 // Register loop-data lookup with audio engine

@@ -304,8 +304,8 @@ export function PadGrid() {
               </span>
               </button>
 
-              {/* LOOP badge — 3 states: active(green), detected(dim), hidden */}
-              {hasSample && (padLoopData?.nativeBpm || padLoopData?.isLoop) && (
+              {/* LOOP badge — visible on ALL sample pads, opens Loop Editor */}
+              {hasSample && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -320,8 +320,10 @@ export function PadGrid() {
                   }
                   className={`absolute bottom-1 left-1 px-1 py-px rounded text-[7px] font-bold leading-none transition-all ${
                     isLooping
-                      ? "bg-[var(--ed-accent-green)]/20 text-[var(--ed-accent-green)] border border-[var(--ed-accent-green)]/40"
-                      : "bg-white/5 text-white/25 border border-white/10 hover:text-white/40 hover:border-white/20"
+                      ? "bg-[var(--ed-accent-green)]/25 text-[var(--ed-accent-green)] border border-[var(--ed-accent-green)]/50"
+                      : padLoopData?.nativeBpm
+                        ? "bg-white/8 text-white/60 border border-white/20 hover:text-white/90 hover:border-white/35"
+                        : "bg-white/5 text-white/35 border border-white/10 hover:text-white/65 hover:border-white/25"
                   }`}
                 >
                   {padLoopData?.nativeBpm ? `↻${padLoopData.nativeBpm}` : "LOOP"}
