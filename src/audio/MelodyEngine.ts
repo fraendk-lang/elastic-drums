@@ -54,6 +54,8 @@ export interface MelodyParams {
   ampDecay: number;    // VCA decay time ms (1-500)
   ampSustain: number;  // VCA sustain level 0-1
   ampRelease: number;  // VCA release time ms (1-2000)
+  // Slow filter breathe (organic movement on held notes)
+  filterLfoDepth: number; // 0-1, default 0 — slow peaking-EQ sweep on the VCF output
 }
 
 export const DEFAULT_MELODY_PARAMS: MelodyParams = {
@@ -81,6 +83,7 @@ export const DEFAULT_MELODY_PARAMS: MelodyParams = {
   ampDecay: 50,
   ampSustain: 1.0,
   ampRelease: 80,
+  filterLfoDepth: 0,
 };
 
 // MIDI note to frequency
@@ -135,6 +138,11 @@ export class MelodyEngine {
 
   // VCF: filter chain (replaces manual cascaded biquads) — used for subtractive only
   private filterChain: FilterChain | null = null;
+
+  // Slow filter-breathe LFO (peaking EQ ±dB sweep — same as ChordsEngine)
+  private breatheFilter: BiquadFilterNode | null = null;
+  private breatheLfoOsc: OscillatorNode | null = null;
+  private breatheLfoGain: GainNode | null = null;
 
   // VCA + output
   private vca: GainNode | null = null;
@@ -223,6 +231,24 @@ export class MelodyEngine {
       this.filterChain = createFilterChain(audioCtx, this.params.filterModel);
     }
 
+    // --- Breathe LFO: slow peaking-EQ sweep → warm organic "breathing" on held notes ---
+    this.breatheFilter = audioCtx.createBiquadFilter();
+    this.breatheFilter.type = "peaking";
+    this.breatheFilter.frequency.value = 800;   // center ~800Hz for mid warmth
+    this.breatheFilter.Q.value = 1.0;
+    this.breatheFilter.gain.value = 0;           // starts flat
+
+    this.breatheLfoOsc = audioCtx.createOscillator();
+    this.breatheLfoOsc.type = "triangle";
+    this.breatheLfoOsc.frequency.value = 0.10;  // ~0.10Hz → one breathe cycle every ~10s
+
+    this.breatheLfoGain = audioCtx.createGain();
+    this.breatheLfoGain.gain.value = this.params.filterLfoDepth * 3.5; // ±0–3.5 dB
+
+    this.breatheLfoOsc.connect(this.breatheLfoGain);
+    this.breatheLfoGain.connect(this.breatheFilter.gain);
+    this.breatheLfoOsc.start();
+
     // --- VCA ---
     this.vca = audioCtx.createGain();
     this.vca.gain.value = 0; // Start silent
@@ -253,14 +279,15 @@ export class MelodyEngine {
     this.unisonOsc2.connect(this.unisonGain2);
     this.unisonGain2.connect(this.oscMix);
 
-    // Mixer → filterChain → VCA → distortion → output
+    // Mixer → filterChain → breatheFilter → VCA → distortion → output
     if (this.filterChain) {
       this.oscMix.connect(this.filterChain.input);
-      this.filterChain.output.connect(this.vca);
+      this.filterChain.output.connect(this.breatheFilter!);
     } else {
       // Fallback if filterChain not initialized (for non-subtractive synths)
-      this.oscMix.connect(this.vca);
+      this.oscMix.connect(this.breatheFilter!);
     }
+    this.breatheFilter!.connect(this.vca);
     this.vca.connect(this.distNode);
     this.distNode.connect(this.output);
 
@@ -549,21 +576,21 @@ export class MelodyEngine {
     if (p.synthType && p.synthType !== prevSynthType) {
       const switchingToSubtractive = p.synthType === "subtractive";
 
-      if (switchingToSubtractive && !this.filterChain && this.ctx && this.oscMix && this.vca) {
+      if (switchingToSubtractive && !this.filterChain && this.ctx && this.oscMix && this.breatheFilter) {
         // Switching TO subtractive: create and wire filter chain
         this.filterChain = createFilterChain(this.ctx, this.params.filterModel);
-        this.oscMix.disconnect(this.vca);
+        try { this.oscMix.disconnect(this.breatheFilter); } catch { /* noop */ }
         this.oscMix.connect(this.filterChain.input);
-        this.filterChain.output.connect(this.vca);
+        this.filterChain.output.connect(this.breatheFilter);
         // Apply current params to new filter
         const cutoff = this.params.cutoff;
         const res = Math.min(this.params.resonance / 30, 1.0);
         this.filterChain.update(cutoff, res, this.ctx.currentTime);
-      } else if (!switchingToSubtractive && this.filterChain && this.oscMix && this.vca) {
-        // Switching FROM subtractive: disconnect filter chain, bypass to VCA
-        this.oscMix.disconnect(this.filterChain.input);
-        this.filterChain.output.disconnect(this.vca);
-        this.oscMix.connect(this.vca);
+      } else if (!switchingToSubtractive && this.filterChain && this.oscMix && this.breatheFilter) {
+        // Switching FROM subtractive: disconnect filter chain, bypass breatheFilter directly
+        try { this.oscMix.disconnect(this.filterChain.input); } catch { /* noop */ }
+        try { this.filterChain.output.disconnect(this.breatheFilter); } catch { /* noop */ }
+        this.oscMix.connect(this.breatheFilter);
         // Keep filterChain for potential future use
       }
     }
@@ -576,17 +603,17 @@ export class MelodyEngine {
       }
       // Hot-swap filter chain when filterModel changes (only matters for subtractive)
       if (p.filterModel && p.filterModel !== prevFilterModel && this.params.synthType === "subtractive") {
-        if (this.ctx && this.oscMix && this.vca) {
+        if (this.ctx && this.oscMix && this.breatheFilter) {
           // Disconnect old filter chain from signal path
-          this.oscMix.disconnect(this.filterChain.input);
-          this.filterChain.output.disconnect(this.vca);
+          try { this.oscMix.disconnect(this.filterChain.input); } catch { /* noop */ }
+          try { this.filterChain.output.disconnect(this.breatheFilter); } catch { /* noop */ }
 
           // Create new filter chain
           this.filterChain = createFilterChain(this.ctx, p.filterModel);
 
-          // Reconnect new filter chain to signal path
+          // Reconnect new filter chain to signal path (through breatheFilter)
           this.oscMix.connect(this.filterChain.input);
-          this.filterChain.output.connect(this.vca);
+          this.filterChain.output.connect(this.breatheFilter);
 
           // Apply current cutoff/resonance to new filter
           const cutoff = this.params.cutoff;
@@ -598,6 +625,9 @@ export class MelodyEngine {
     if (this.subGain && p.subOsc !== undefined) this.subGain.gain.value = p.subOsc;
     if (this.output && p.volume !== undefined) this.output.gain.value = p.volume;
     if (p.distortion !== undefined) this.updateDistortion();
+    if (p.filterLfoDepth !== undefined && this.breatheLfoGain) {
+      this.breatheLfoGain.gain.value = p.filterLfoDepth * 3.5;
+    }
   }
 
   /**
@@ -686,7 +716,7 @@ export class MelodyEngine {
       this._autoReleaseTimer = null;
     }
     this.destroyPool();
-    for (const osc of [this.osc, this.subOsc, this.unisonOsc1, this.unisonOsc2, this.vibratoLfo]) {
+    for (const osc of [this.osc, this.subOsc, this.unisonOsc1, this.unisonOsc2, this.vibratoLfo, this.breatheLfoOsc]) {
       if (osc) {
         try { osc.stop(); } catch { /* already stopped */ }
       }
@@ -696,6 +726,11 @@ export class MelodyEngine {
     this.unisonOsc1 = null;
     this.unisonOsc2 = null;
     this.vibratoLfo = null;
+    try { this.breatheFilter?.disconnect(); } catch { /* ok */ }
+    try { this.breatheLfoGain?.disconnect(); } catch { /* ok */ }
+    this.breatheLfoOsc = null;
+    this.breatheFilter = null;
+    this.breatheLfoGain = null;
     this.isRunning = false;
     this.ctx = null;
   }

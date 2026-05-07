@@ -92,6 +92,11 @@ export interface MelodyPreset {
 }
 
 export const MELODY_SIGNATURE_PRESET_NAMES = [
+  "★ Organ Lead",
+  "★ Strings Lead",
+  "★ Glass Bells",
+  "★ Vocal Lead",
+  "★ Piano Keys",
   "FM Bell",
   "Crystal Bell",
   "Vinyl Keys",
@@ -107,6 +112,12 @@ function ensureSynthParams(p: MelodyParams): MelodyParams {
 }
 
 export const MELODY_PRESETS: MelodyPreset[] = [
+  // ── ★ Featured Wavetable Leads ──
+  { name: "★ Organ Lead",    params: mp({ synthType: "subtractive", waveform: "wavetable", wavetable: "organ",      filterModel: "lpf",    cutoff: 4500, resonance:  2, envMod: 0.08, decay: 200, accent: 0.25, slideTime:  8, legato: false, distortion: 0.08, volume: 0.52, subOsc: 0.15, unison: 0.10, vibratoRate: 6,   vibratoDepth: 0.04, filterLfoDepth: 0.15 }) },
+  { name: "★ Strings Lead",  params: mp({ synthType: "subtractive", waveform: "wavetable", wavetable: "strings",    filterModel: "ladder", cutoff: 2200, resonance:  3, envMod: 0.12, decay: 400, accent: 0.18, slideTime: 60, legato: true,  distortion: 0.04, volume: 0.50, subOsc: 0.12, unison: 0.45, vibratoRate: 4.5, vibratoDepth: 0.12, filterLfoDepth: 0.35 }) },
+  { name: "★ Glass Bells",   params: mp({ synthType: "subtractive", waveform: "wavetable", wavetable: "glass",      filterModel: "lpf",    cutoff: 5500, resonance:  6, envMod: 0.10, decay:  90, accent: 0.28, slideTime:  0, legato: false, distortion: 0.00, volume: 0.46, subOsc: 0.00, unison: 0.00, vibratoRate: 3,   vibratoDepth: 0.00, ampDecay: 80, ampSustain: 0.4, ampRelease: 400, filterLfoDepth: 0.10 }) },
+  { name: "★ Vocal Lead",    params: mp({ synthType: "subtractive", waveform: "wavetable", wavetable: "vocal",      filterModel: "ladder", cutoff: 1800, resonance:  4, envMod: 0.15, decay: 350, accent: 0.20, slideTime: 80, legato: true,  distortion: 0.02, volume: 0.48, subOsc: 0.05, unison: 0.25, vibratoRate: 5,   vibratoDepth: 0.15, filterLfoDepth: 0.40 }) },
+  { name: "★ Piano Keys",    params: mp({ synthType: "subtractive", waveform: "wavetable", wavetable: "piano",      filterModel: "lpf",    cutoff: 3800, resonance:  2, envMod: 0.18, decay: 120, accent: 0.35, slideTime:  0, legato: false, distortion: 0.04, volume: 0.54, subOsc: 0.08, unison: 0.00, vibratoRate: 3,   vibratoDepth: 0.00, ampDecay: 60, ampSustain: 0.6, ampRelease: 300, filterLfoDepth: 0.05 }) },
   // ── Professional Leads ──
   { name: "Classic Lead", params: mp({ synthType: "subtractive", waveform: "sawtooth", filterModel: "ladder", cutoff: 2000, resonance: 8, envMod: 0.4, decay: 150, accent: 0.4, slideTime: 40, legato: false, distortion: 0.15, volume: 0.5, subOsc: 0.1, pulseWidth: 0.5, unison: 0.3, vibratoRate: 4, vibratoDepth: 0.1, fmHarmonicity: 3, fmModIndex: 10 }) },
   { name: "PWM String", params: mp({ synthType: "subtractive", waveform: "square", filterModel: "ladder", cutoff: 1200, resonance: 6, envMod: 0.3, decay: 180, accent: 0.3, slideTime: 80, legato: true, distortion: 0.1, volume: 0.48, subOsc: 0.2, pulseWidth: 0.3, unison: 0.2, vibratoRate: 5, vibratoDepth: 0.25, fmHarmonicity: 3, fmModIndex: 10 }) },
