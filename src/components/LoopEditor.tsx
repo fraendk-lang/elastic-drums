@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { sampleManager, type LoopData, type StretchMode } from "../audio/SampleManager";
+import { sampleManager, type LoopData, type StretchMode, type WarpMarker } from "../audio/SampleManager";
 
 interface Props {
   voiceIndex: number;
@@ -31,6 +31,9 @@ const BEAT_GRID_COLOR = "rgba(255,255,255,0.12)";
 const BAR_GRID_COLOR = "rgba(255,255,255,0.28)";
 const LOOP_FILL = "rgba(29,181,132,0.10)";
 const LOOP_BORDER = "#1db584";
+const MARKER_COLOR = "#f59e0b";        // amber — distinct from loop region green
+const MARKER_GUTTER_HEIGHT = 14;       // px reserved at top of canvas for marker handles
+const MARKER_HIT_PX = 10;              // pointer hit-zone around a marker line
 
 export function LoopEditor({ voiceIndex, label, onClose, onLoopDataChange }: Props) {
   const buffer = sampleManager.getSample(voiceIndex)?.buffer ?? null;
@@ -47,11 +50,20 @@ export function LoopEditor({ voiceIndex, label, onClose, onLoopDataChange }: Pro
   const tapTimesRef = useRef<number[]>([]);
   const lastTapRef = useRef(0);
 
-  // Drag state for loop handles
-  type DragTarget = "start" | "end" | null;
+  // Drag state for loop handles + warp markers
+  type DragTarget =
+    | { kind: "loopStart" }
+    | { kind: "loopEnd" }
+    | { kind: "marker"; index: number }
+    | null;
   const dragging = useRef<DragTarget>(null);
   const dragStartX = useRef(0);
   const dragStartSec = useRef(0);
+
+  // Warp markers — mirrored from SampleManager so we can re-render UI on change
+  const [markers, setMarkers] = useState<WarpMarker[]>(() =>
+    sampleManager.getEffectiveMarkers(voiceIndex)
+  );
 
   // ── Commit a change and propagate up ───────────────────────
   const commit = useCallback((patch: Partial<LoopData>) => {
@@ -63,7 +75,16 @@ export function LoopEditor({ voiceIndex, label, onClose, onLoopDataChange }: Pro
     });
   }, [voiceIndex, onLoopDataChange]);
 
-  // ── Draw waveform + beat grid + loop region ─────────────────
+  // ── Warp marker helpers (used by canvas + pointer events) ──
+  const commitMarkers = useCallback((next: WarpMarker[]) => {
+    sampleManager.setWarpMarkers(voiceIndex, next);
+    setMarkers([...next].sort((a, b) => a.bufferTime - b.bufferTime));
+    onLoopDataChange(sampleManager.getLoopData(voiceIndex) ?? null);
+  }, [voiceIndex, onLoopDataChange]);
+
+  const showMarkers = loopData.stretchMode === "beats" && loopData.isLoop;
+
+  // ── Draw waveform + beat grid + loop region + warp markers ─
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !buffer) return;
@@ -73,6 +94,9 @@ export function LoopEditor({ voiceIndex, label, onClose, onLoopDataChange }: Pro
 
     const W = canvas.width;
     const H = canvas.height;
+    const gutter = showMarkers ? MARKER_GUTTER_HEIGHT : 0;
+    const waveTop = gutter;
+    const waveH = H - gutter;
     const data = buffer.getChannelData(0);
     const duration = buffer.duration;
 
@@ -81,6 +105,12 @@ export function LoopEditor({ voiceIndex, label, onClose, onLoopDataChange }: Pro
     // ── Background ────────────────────────────────────────────
     ctx.fillStyle = "#0d1117";
     ctx.fillRect(0, 0, W, H);
+
+    // Marker gutter background (slightly different shade)
+    if (gutter > 0) {
+      ctx.fillStyle = "#0a0d12";
+      ctx.fillRect(0, 0, W, gutter);
+    }
 
     // ── Amplitude waveform (RMS per pixel column) ─────────────
     ctx.fillStyle = WAVEFORM_COLOR;
@@ -93,14 +123,13 @@ export function LoopEditor({ voiceIndex, label, onClose, onLoopDataChange }: Pro
         sum += (data[s] ?? 0) ** 2;
       }
       const rms = Math.sqrt(sum / (end - start));
-      const barH = Math.max(2, rms * H * 1.6);
-      ctx.fillRect(x, (H - barH) / 2, 1, barH);
+      const barH = Math.max(2, rms * waveH * 1.6);
+      ctx.fillRect(x, waveTop + (waveH - barH) / 2, 1, barH);
     }
 
     // ── Beat grid ─────────────────────────────────────────────
     if (loopData.nativeBpm > 0) {
       const secondsPerBeat = 60 / loopData.nativeBpm;
-      const secondsPerBar = secondsPerBeat * 4;
       let t = 0;
       let beat = 0;
       while (t <= duration + 0.001) {
@@ -109,21 +138,19 @@ export function LoopEditor({ voiceIndex, label, onClose, onLoopDataChange }: Pro
         ctx.strokeStyle = isBar ? BAR_GRID_COLOR : BEAT_GRID_COLOR;
         ctx.lineWidth = isBar ? 1.5 : 0.75;
         ctx.beginPath();
-        ctx.moveTo(x, 0);
+        ctx.moveTo(x, waveTop);
         ctx.lineTo(x, H);
         ctx.stroke();
-        // Beat number label on bar lines
+        // Bar number label on bar lines (in the waveform area, not gutter)
         if (isBar && beat > 0) {
           ctx.fillStyle = "rgba(255,255,255,0.35)";
           ctx.font = "9px monospace";
-          ctx.fillText(`${beat / 4 + 1}`, x + 3, 10);
+          ctx.fillText(`${beat / 4 + 1}`, x + 3, waveTop + 10);
         }
         t += secondsPerBeat;
         beat++;
         if (beat > 256) break; // safety
       }
-      // Suppress unused variable
-      void secondsPerBar;
     }
 
     // ── Loop region overlay ───────────────────────────────────
@@ -131,29 +158,56 @@ export function LoopEditor({ voiceIndex, label, onClose, onLoopDataChange }: Pro
     const lx0 = (loopData.loopStart / duration) * W;
     const lx1 = (loopEnd / duration) * W;
     ctx.fillStyle = LOOP_FILL;
-    ctx.fillRect(lx0, 0, lx1 - lx0, H);
-    // Loop boundary lines
+    ctx.fillRect(lx0, waveTop, lx1 - lx0, waveH);
     ctx.strokeStyle = LOOP_BORDER;
     ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(lx0, 0); ctx.lineTo(lx0, H); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(lx1, 0); ctx.lineTo(lx1, H); ctx.stroke();
-    // Start handle triangle (pointing right)
+    ctx.beginPath(); ctx.moveTo(lx0, waveTop); ctx.lineTo(lx0, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(lx1, waveTop); ctx.lineTo(lx1, H); ctx.stroke();
+    // Start/End triangles centered in waveform area
+    const handleY = waveTop + waveH / 2;
     ctx.fillStyle = LOOP_BORDER;
     ctx.beginPath();
-    ctx.moveTo(lx0, H / 2 - 7);
-    ctx.lineTo(lx0 + 8, H / 2);
-    ctx.lineTo(lx0, H / 2 + 7);
-    ctx.closePath();
-    ctx.fill();
-    // End handle triangle (pointing left)
+    ctx.moveTo(lx0, handleY - 7); ctx.lineTo(lx0 + 8, handleY); ctx.lineTo(lx0, handleY + 7); ctx.closePath(); ctx.fill();
     ctx.beginPath();
-    ctx.moveTo(lx1, H / 2 - 7);
-    ctx.lineTo(lx1 - 8, H / 2);
-    ctx.lineTo(lx1, H / 2 + 7);
-    ctx.closePath();
-    ctx.fill();
+    ctx.moveTo(lx1, handleY - 7); ctx.lineTo(lx1 - 8, handleY); ctx.lineTo(lx1, handleY + 7); ctx.closePath(); ctx.fill();
 
-  }, [buffer, loopData]);
+    // ── Warp markers ──────────────────────────────────────────
+    if (showMarkers) {
+      ctx.font = "8px monospace";
+      for (let i = 0; i < markers.length; i++) {
+        const m = markers[i]!;
+        const x = (m.bufferTime / duration) * W;
+        // Vertical guideline through whole canvas
+        ctx.strokeStyle = MARKER_COLOR;
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(x, gutter);
+        ctx.lineTo(x, H);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Diamond handle in gutter
+        const cy = gutter / 2;
+        ctx.fillStyle = MARKER_COLOR;
+        ctx.beginPath();
+        ctx.moveTo(x, cy - 5);
+        ctx.lineTo(x + 5, cy);
+        ctx.lineTo(x, cy + 5);
+        ctx.lineTo(x - 5, cy);
+        ctx.closePath();
+        ctx.fill();
+
+        // Beat label (B0, B1, ...) — alternate above/below to avoid overlap
+        const label = `B${m.beat}`;
+        const labelW = ctx.measureText(label).width;
+        ctx.fillStyle = "rgba(245,158,11,0.95)";
+        const labelX = Math.max(2, Math.min(W - labelW - 2, x + 6));
+        ctx.fillText(label, labelX, cy + 3);
+      }
+    }
+
+  }, [buffer, loopData, markers, showMarkers]);
 
   // ── Pointer events for dragging loop handles ───────────────
   const getSecondsFromX = useCallback((clientX: number): number => {
@@ -164,7 +218,7 @@ export function LoopEditor({ voiceIndex, label, onClose, onLoopDataChange }: Pro
     return (x / rect.width) * buffer.duration;
   }, [buffer]);
 
-  const HIT_ZONE = 12; // px on each side of handle
+  const HIT_ZONE = 12; // px on each side of loop handle
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     if (!buffer) return;
@@ -172,48 +226,127 @@ export function LoopEditor({ voiceIndex, label, onClose, onLoopDataChange }: Pro
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
     const W = rect.width;
+    const H = rect.height;
+    const gutterScreenH = showMarkers ? (MARKER_GUTTER_HEIGHT * (H / canvas.height)) : 0;
     const duration = buffer.duration;
     const loopEnd = loopData.loopEnd > 0 ? loopData.loopEnd : duration;
+
+    // Marker hit-test first (priority over loop handles when in gutter)
+    if (showMarkers) {
+      for (let i = 0; i < markers.length; i++) {
+        const mx = (markers[i]!.bufferTime / duration) * W;
+        if (Math.abs(x - mx) < MARKER_HIT_PX) {
+          dragging.current = { kind: "marker", index: i };
+          dragStartX.current = x;
+          dragStartSec.current = markers[i]!.bufferTime;
+          canvas.setPointerCapture(e.pointerId);
+          e.preventDefault();
+          return;
+        }
+      }
+      // If click was in the gutter and didn't hit a marker, do nothing
+      if (y < gutterScreenH) return;
+    }
 
     const startX = (loopData.loopStart / duration) * W;
     const endX = (loopEnd / duration) * W;
 
     if (Math.abs(x - startX) < HIT_ZONE) {
-      dragging.current = "start";
+      dragging.current = { kind: "loopStart" };
       dragStartX.current = x;
       dragStartSec.current = loopData.loopStart;
       canvas.setPointerCapture(e.pointerId);
       e.preventDefault();
     } else if (Math.abs(x - endX) < HIT_ZONE) {
-      dragging.current = "end";
+      dragging.current = { kind: "loopEnd" };
       dragStartX.current = x;
       dragStartSec.current = loopEnd;
       canvas.setPointerCapture(e.pointerId);
       e.preventDefault();
     }
-  }, [buffer, loopData]);
+  }, [buffer, loopData, markers, showMarkers]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    if (!dragging.current || !buffer) return;
+    const target = dragging.current;
+    if (!target || !buffer) return;
     const sec = getSecondsFromX(e.clientX);
     const duration = buffer.duration;
     const loopEnd = loopData.loopEnd > 0 ? loopData.loopEnd : duration;
 
-    if (dragging.current === "start") {
+    if (target.kind === "loopStart") {
       const clamped = Math.max(0, Math.min(sec, loopEnd - 0.05));
       commit({ loopStart: clamped });
-    } else if (dragging.current === "end") {
+    } else if (target.kind === "loopEnd") {
       const clamped = Math.max(loopData.loopStart + 0.05, Math.min(sec, duration));
-      // 0 means "use buffer end" — snap to 0 if within 0.02s of buffer end
       const snapped = Math.abs(clamped - duration) < 0.02 ? 0 : clamped;
       commit({ loopEnd: snapped });
+    } else if (target.kind === "marker") {
+      // Drag marker bufferTime; clamp between neighbors (or buffer bounds)
+      const i = target.index;
+      const prev = i > 0 ? markers[i - 1]!.bufferTime + 0.01 : 0;
+      const next = i < markers.length - 1 ? markers[i + 1]!.bufferTime - 0.01 : duration;
+      const clamped = Math.max(prev, Math.min(sec, next));
+      const updated = markers.map((m, idx) => idx === i ? { ...m, bufferTime: clamped } : m);
+      commitMarkers(updated);
     }
-  }, [buffer, loopData, commit, getSecondsFromX]);
+  }, [buffer, loopData, markers, commit, commitMarkers, getSecondsFromX]);
 
   const handlePointerUp = useCallback(() => {
     dragging.current = null;
   }, []);
+
+  // Double-click in gutter → add a new marker, snapped to the nearest available beat
+  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+    if (!buffer || !showMarkers) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const H = rect.height;
+    const gutterScreenH = MARKER_GUTTER_HEIGHT * (H / canvas.height);
+    if (y > gutterScreenH * 1.5) return; // only respond near gutter
+
+    const sec = (x / rect.width) * buffer.duration;
+    // Pick a sensible beat: linearly interpolate between neighboring markers
+    const sorted = [...markers].sort((a, b) => a.bufferTime - b.bufferTime);
+    let beat = 0;
+    for (let i = 0; i < sorted.length - 1; i++) {
+      if (sec >= sorted[i]!.bufferTime && sec <= sorted[i + 1]!.bufferTime) {
+        const t = (sec - sorted[i]!.bufferTime) / (sorted[i + 1]!.bufferTime - sorted[i]!.bufferTime);
+        beat = Math.round(sorted[i]!.beat + t * (sorted[i + 1]!.beat - sorted[i]!.beat));
+        // Avoid duplicate beats — nudge if neighbour already uses this beat
+        if (beat === sorted[i]!.beat) beat = sorted[i]!.beat + 1;
+        if (beat === sorted[i + 1]!.beat) beat = sorted[i + 1]!.beat - 1;
+        break;
+      }
+    }
+    if (beat <= 0) return;
+    commitMarkers([...markers, { bufferTime: sec, beat }]);
+  }, [buffer, markers, commitMarkers, showMarkers]);
+
+  // Right-click on a marker → delete (except first/last)
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    if (!buffer || !showMarkers) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const W = rect.width;
+    const duration = buffer.duration;
+
+    for (let i = 0; i < markers.length; i++) {
+      const mx = (markers[i]!.bufferTime / duration) * W;
+      if (Math.abs(x - mx) < MARKER_HIT_PX) {
+        if (i === 0 || i === markers.length - 1) return; // can't remove anchors
+        e.preventDefault();
+        commitMarkers(markers.filter((_, idx) => idx !== i));
+        return;
+      }
+    }
+  }, [buffer, markers, showMarkers, commitMarkers]);
 
   // ── TAP tempo ─────────────────────────────────────────────
   const handleTap = useCallback(() => {
@@ -245,6 +378,7 @@ export function LoopEditor({ voiceIndex, label, onClose, onLoopDataChange }: Pro
     sampleManager.invalidateStretchCache(voiceIndex);
     commit({ stretchMode: mode });
   }, [voiceIndex, commit]);
+
 
   // ── BPM manual input ──────────────────────────────────────
   const [bpmInput, setBpmInput] = useState(() => loopData.nativeBpm > 0 ? String(loopData.nativeBpm) : "");
@@ -337,14 +471,21 @@ export function LoopEditor({ voiceIndex, label, onClose, onLoopDataChange }: Pro
         <canvas
           ref={canvasRef}
           width={600}
-          height={72}
-          className="w-full block cursor-crosshair"
-          style={{ imageRendering: "pixelated" }}
+          height={showMarkers ? 86 : 72}
+          className="w-full block cursor-crosshair select-none"
+          style={{ imageRendering: "pixelated", touchAction: "none" }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
+          onDoubleClick={handleDoubleClick}
+          onContextMenu={handleContextMenu}
         />
+        {showMarkers && (
+          <div className="absolute top-1 right-2 text-[8px] text-[#f59e0b]/60 pointer-events-none font-mono">
+            doppelklick = marker · rechtsklick = entfernen
+          </div>
+        )}
       </div>
 
       {/* Controls bar */}
@@ -412,6 +553,35 @@ export function LoopEditor({ voiceIndex, label, onClose, onLoopDataChange }: Pro
             </button>
           ) : null}
         </div>
+
+        {showMarkers && loopData.warpMarkers && loopData.warpMarkers.length >= 2 ? (
+          <>
+            <div className="w-px h-4 bg-white/10" />
+            <div className="flex items-center gap-1.5 text-[9px] text-[#f59e0b]/70">
+              <span>WARP</span>
+              <span className="font-mono">{markers.length} marker</span>
+              <button
+                onClick={() => {
+                  sampleManager.setWarpMarkers(voiceIndex, []);
+                  // calling setWarpMarkers with empty array — clear via loopMeta directly
+                  const meta = sampleManager.getLoopData(voiceIndex);
+                  if (meta) {
+                    const cleared = { ...meta };
+                    delete cleared.warpMarkers;
+                    sampleManager.setLoopData(voiceIndex, cleared);
+                  }
+                  sampleManager.invalidateStretchCache(voiceIndex);
+                  setMarkers(sampleManager.getEffectiveMarkers(voiceIndex));
+                  onLoopDataChange(sampleManager.getLoopData(voiceIndex) ?? null);
+                }}
+                className="ml-1 text-[#f59e0b]/50 hover:text-[#f59e0b]/90 text-[8px]"
+                title="Reset warp markers to default 2-marker (start/end)"
+              >
+                RESET
+              </button>
+            </div>
+          </>
+        ) : null}
 
       </div>
     </div>

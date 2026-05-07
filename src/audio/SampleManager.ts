@@ -12,7 +12,7 @@
 
 import { audioEngine } from "./AudioEngine";
 import { applyMuLaw } from "./MuLaw";
-import { stretchBuffer } from "./SampleStretcher";
+import { stretchBuffer, stretchSegmented } from "./SampleStretcher";
 
 export interface LoadedSample {
   name: string;
@@ -25,6 +25,17 @@ export interface LoadedSample {
 
 export type StretchMode = "repitch" | "beats";
 
+/**
+ * A warp marker maps a position in the source buffer to a beat in the
+ * project timeline. Adjacent markers define a segment whose stretch ratio
+ * equals (sourceDuration / targetDuration). Used in BEATS mode to align
+ * off-time content to the project grid.
+ */
+export interface WarpMarker {
+  bufferTime: number; // seconds into the source buffer (0..buffer.duration)
+  beat: number;       // beat in the project (0 = loop start; integer or fractional)
+}
+
 export interface LoopData {
   isLoop: boolean;
   nativeBpm: number;          // 0 = unknown / not a BPM-locked loop
@@ -32,6 +43,7 @@ export interface LoopData {
   loopStart: number;          // seconds into the buffer (0 = beginning)
   loopEnd: number;            // seconds into the buffer (0 = use buffer end)
   stretchMode: StretchMode;   // "repitch" (default, free) or "beats" (pitch-preserving)
+  warpMarkers?: WarpMarker[]; // optional; when 2+ markers present, segmented stretch is used
 }
 
 /**
@@ -71,9 +83,10 @@ class SampleManagerClass {
   // Per-voice loop metadata (voice index → loop settings)
   private loopMeta = new Map<number, LoopData>();
 
-  // Per-voice cached stretched buffer (voice → { sourceBuffer, ratio, stretchedBuffer })
-  // Invalidated when sourceBuffer changes or ratio changes by > 0.5%.
-  private stretchCache = new Map<number, { source: AudioBuffer; ratio: number; buffer: AudioBuffer }>();
+  // Per-voice cached stretched buffer.
+  // Invalidated on sample swap, project-BPM change, marker drag, mode toggle.
+  // `key` is a monotonic version that changes whenever any input changes.
+  private stretchCache = new Map<number, { source: AudioBuffer; key: string; buffer: AudioBuffer }>();
 
   /** Load a sample from a File. Replaces full-range single layer by default. */
   async loadFromFile(file: File, voiceIndex: number, opts?: { velMin?: number; velMax?: number; append?: boolean }): Promise<LoadedSample> {
@@ -287,6 +300,38 @@ class SampleManagerClass {
     this.loopMeta.set(voiceIndex, { ...existing, bars, nativeBpm });
   }
 
+  // ─── Warp markers ───────────────────────────────────────────
+
+  /**
+   * Get the effective warp markers for a voice. Returns user-defined markers
+   * if at least 2 exist, otherwise generates a default 2-marker pair spanning
+   * the entire buffer at native BPM.
+   */
+  getEffectiveMarkers(voice: number): WarpMarker[] {
+    const meta = this.loopMeta.get(voice);
+    const buffer = this.layers.get(voice)?.[0]?.sample.buffer;
+    if (!meta || !buffer) return [];
+
+    if (meta.warpMarkers && meta.warpMarkers.length >= 2) {
+      return [...meta.warpMarkers].sort((a, b) => a.bufferTime - b.bufferTime);
+    }
+
+    // Default: 2 markers spanning the buffer, beats based on bars*4
+    const totalBeats = Math.max(1, meta.bars) * 4;
+    return [
+      { bufferTime: 0, beat: 0 },
+      { bufferTime: buffer.duration, beat: totalBeats },
+    ];
+  }
+
+  /** Replace the warp markers for a voice (sorted by bufferTime). Invalidates cache. */
+  setWarpMarkers(voice: number, markers: WarpMarker[]): void {
+    const existing = this.loopMeta.get(voice) ?? { isLoop: false, nativeBpm: 0, bars: 1, loopStart: 0, loopEnd: 0, stretchMode: "repitch" as const };
+    const sorted = [...markers].sort((a, b) => a.bufferTime - b.bufferTime);
+    this.loopMeta.set(voice, { ...existing, warpMarkers: sorted });
+    this.stretchCache.delete(voice);
+  }
+
   // ─── Time-stretch cache ─────────────────────────────────────
 
   /**
@@ -315,23 +360,35 @@ class SampleManagerClass {
       return sourceBuffer; // re-pitch path or no stretch needed
     }
 
-    // ratio: how much faster the output should play vs. source
-    // e.g. native 120, project 140 → ratio 140/120 = 1.166 (output is shorter)
-    const ratio = projectBpm / meta.nativeBpm;
-    if (Math.abs(ratio - 1) < 0.005) return sourceBuffer; // <0.5% ≈ no stretch needed
+    const markers = this.getEffectiveMarkers(voice);
+    const userMarkers = !!(meta.warpMarkers && meta.warpMarkers.length >= 2);
 
-    // Check cache
+    // Build a cache key including everything that affects rendered output
+    const key = userMarkers
+      ? `seg:${projectBpm}:${markers.map(m => `${m.bufferTime.toFixed(4)}@${m.beat}`).join(",")}`
+      : `uni:${projectBpm}:${meta.nativeBpm}`;
+
+    // Hit cache?
     const cached = this.stretchCache.get(voice);
-    if (cached && cached.source === sourceBuffer && Math.abs(cached.ratio - ratio) < 0.005) {
+    if (cached && cached.source === sourceBuffer && cached.key === key) {
       return cached.buffer;
     }
 
-    // Re-render (synchronous; SoundTouch is fast enough for typical loops)
     const ctx = audioEngine.getAudioContext();
     if (!ctx) return sourceBuffer;
+
     try {
-      const stretched = stretchBuffer(sourceBuffer, ratio, ctx);
-      this.stretchCache.set(voice, { source: sourceBuffer, ratio, buffer: stretched });
+      let stretched: AudioBuffer;
+      if (userMarkers) {
+        // Segmented stretch using user markers
+        stretched = stretchSegmented(sourceBuffer, markers, projectBpm, ctx);
+      } else {
+        // Uniform stretch: ratio derived from native vs project BPM
+        const ratio = projectBpm / meta.nativeBpm;
+        if (Math.abs(ratio - 1) < 0.005) return sourceBuffer;
+        stretched = stretchBuffer(sourceBuffer, ratio, ctx);
+      }
+      this.stretchCache.set(voice, { source: sourceBuffer, key, buffer: stretched });
       return stretched;
     } catch (err) {
       console.warn("Time-stretch failed, falling back to re-pitch:", err);

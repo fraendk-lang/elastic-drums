@@ -12,8 +12,10 @@
  */
 
 import { SoundTouch, SimpleFilter, WebAudioBufferSource } from "soundtouchjs";
+import type { WarpMarker } from "./SampleManager";
 
 const CHUNK = 4096;
+const CROSSFADE_SAMPLES = 32; // ~0.7ms at 44.1kHz — soften segment seams
 
 /**
  * Time-stretch an AudioBuffer by `ratio` without changing pitch.
@@ -72,6 +74,113 @@ export function stretchBuffer(
       }
     }
     written += got;
+  }
+
+  return outBuffer;
+}
+
+// ─── Segmented stretch (multi-warp-marker) ────────────────────────────────
+
+/**
+ * Slice a source buffer between two sample positions into a new AudioBuffer.
+ */
+function sliceBuffer(input: AudioBuffer, startSample: number, endSample: number, ctx: BaseAudioContext): AudioBuffer {
+  const len = Math.max(1, endSample - startSample);
+  const out = ctx.createBuffer(input.numberOfChannels, len, input.sampleRate);
+  for (let ch = 0; ch < input.numberOfChannels; ch++) {
+    const src = input.getChannelData(ch);
+    const dst = out.getChannelData(ch);
+    for (let i = 0; i < len; i++) {
+      dst[i] = src[startSample + i] ?? 0;
+    }
+  }
+  return out;
+}
+
+/**
+ * Copy a stretched segment into the output buffer at writeOffset, with a
+ * short equal-power crossfade against any audio already present at the seam.
+ */
+function blitSegment(out: AudioBuffer, segment: AudioBuffer, writeOffset: number): void {
+  const channels = out.numberOfChannels;
+  const segLen = segment.length;
+  const fade = Math.min(CROSSFADE_SAMPLES, segLen, writeOffset);
+
+  for (let ch = 0; ch < channels; ch++) {
+    const dst = out.getChannelData(ch);
+    const src = segment.getChannelData(Math.min(ch, segment.numberOfChannels - 1));
+
+    // Crossfade region: writeOffset-fade .. writeOffset
+    for (let i = 0; i < fade; i++) {
+      const t = i / fade;
+      const eqOld = Math.cos(t * Math.PI * 0.5);
+      const eqNew = Math.sin(t * Math.PI * 0.5);
+      const idx = writeOffset - fade + i;
+      if (idx >= 0 && idx < dst.length) {
+        dst[idx] = (dst[idx] ?? 0) * eqOld + (src[i] ?? 0) * eqNew;
+      }
+    }
+
+    // Main copy after crossfade region
+    for (let i = fade; i < segLen; i++) {
+      const idx = writeOffset + i - fade;
+      if (idx < dst.length) dst[idx] = src[i] ?? 0;
+    }
+  }
+}
+
+/**
+ * Time-stretch a source buffer using multiple warp markers. Each adjacent
+ * marker pair defines a segment that is stretched independently to align
+ * the source position to its target beat in the project timeline.
+ *
+ * @param input        Source buffer
+ * @param markers      Warp markers, sorted ascending by bufferTime
+ * @param projectBpm   Target project tempo in BPM
+ * @param ctx          AudioContext for buffer allocation
+ */
+export function stretchSegmented(
+  input: AudioBuffer,
+  markers: WarpMarker[],
+  projectBpm: number,
+  ctx: BaseAudioContext,
+): AudioBuffer {
+  if (markers.length < 2 || projectBpm <= 0) return input;
+
+  const sorted = [...markers].sort((a, b) => a.bufferTime - b.bufferTime);
+  const totalBeats = sorted[sorted.length - 1]!.beat - sorted[0]!.beat;
+  if (totalBeats <= 0) return input;
+
+  const secondsPerBeat = 60 / projectBpm;
+  const totalDuration = totalBeats * secondsPerBeat;
+  const outLen = Math.max(1, Math.floor(totalDuration * input.sampleRate));
+  const outBuffer = ctx.createBuffer(input.numberOfChannels, outLen, input.sampleRate);
+
+  let writeOffset = 0;
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const m1 = sorted[i]!;
+    const m2 = sorted[i + 1]!;
+
+    const sourceStart = Math.max(0, Math.floor(m1.bufferTime * input.sampleRate));
+    const sourceEnd = Math.min(input.length, Math.ceil(m2.bufferTime * input.sampleRate));
+    if (sourceEnd <= sourceStart) continue;
+
+    const sourceDuration = (sourceEnd - sourceStart) / input.sampleRate;
+    const targetBeats = m2.beat - m1.beat;
+    if (targetBeats <= 0) continue;
+    const targetDuration = targetBeats * secondsPerBeat;
+    const ratio = sourceDuration / targetDuration;
+
+    // Extract source slice
+    const slice = sliceBuffer(input, sourceStart, sourceEnd, ctx);
+
+    // Stretch (or copy directly if ratio ≈ 1)
+    const stretched = Math.abs(ratio - 1) < 0.005 ? slice : stretchBuffer(slice, ratio, ctx);
+
+    // Blit into output with crossfade at the seam
+    blitSegment(outBuffer, stretched, writeOffset);
+    writeOffset += stretched.length;
+    if (i > 0) writeOffset -= Math.min(CROSSFADE_SAMPLES, stretched.length);
   }
 
   return outBuffer;
