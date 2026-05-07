@@ -4,6 +4,7 @@ import { useOverlayStore } from "../store/overlayStore";
 import { useCustomKitStore } from "../store/customKitStore";
 import { sampleManager, type LoopData } from "../audio/SampleManager";
 import { WaveformPreview } from "./WaveformPreview";
+import { LoopEditor } from "./LoopEditor";
 import type { LibrarySample } from "../audio/SampleLibrary";
 
 // Lazy-load SampleBrowser (pulls in the 400KB sample catalog — only needed on demand)
@@ -38,6 +39,7 @@ export function PadGrid() {
     )
   );
   const [browserVoiceIndex, setBrowserVoiceIndex] = useState<number | null>(null);
+  const [loopEditorVoice, setLoopEditorVoice] = useState<number | null>(null);
   const [loopData, setLoopData] = useState<Map<number, LoopData>>(
     () => {
       const map = new Map<number, LoopData>();
@@ -90,12 +92,6 @@ export function PadGrid() {
       return next;
     });
   }, []);
-
-  const handleLoopToggle = useCallback((e: React.MouseEvent, voiceIndex: number) => {
-    e.stopPropagation();
-    sampleManager.toggleLoop(voiceIndex);
-    refreshLoopData(voiceIndex);
-  }, [refreshLoopData]);
 
   const handleDrop = useCallback(async (e: React.DragEvent, voiceIndex: number) => {
     e.preventDefault();
@@ -308,22 +304,27 @@ export function PadGrid() {
               </span>
               </button>
 
-              {/* LOOP badge — visible on sample pads */}
-              {hasSample && (
+              {/* LOOP badge — 3 states: active(green), detected(dim), hidden */}
+              {hasSample && (padLoopData?.nativeBpm || padLoopData?.isLoop) && (
                 <button
-                  onClick={(e) => handleLoopToggle(e, i)}
-                  title={isLooping
-                    ? `Loop ON${padLoopData?.nativeBpm ? ` · ${padLoopData.nativeBpm} BPM` : ""} — click to disable`
-                    : "Loop OFF — click to enable"}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLoopEditorVoice(loopEditorVoice === i ? null : i);
+                  }}
+                  title={
+                    isLooping
+                      ? `Loop aktiv${padLoopData?.nativeBpm ? ` · ${padLoopData.nativeBpm} BPM` : ""} — klicken zum Bearbeiten`
+                      : padLoopData?.nativeBpm
+                        ? `${padLoopData.nativeBpm} BPM erkannt — klicken zum Aktivieren`
+                        : "Loop-Editor öffnen"
+                  }
                   className={`absolute bottom-1 left-1 px-1 py-px rounded text-[7px] font-bold leading-none transition-all ${
                     isLooping
                       ? "bg-[var(--ed-accent-green)]/20 text-[var(--ed-accent-green)] border border-[var(--ed-accent-green)]/40"
-                      : "bg-white/5 text-white/25 border border-white/10 hover:text-white/50"
+                      : "bg-white/5 text-white/25 border border-white/10 hover:text-white/40 hover:border-white/20"
                   }`}
                 >
-                  {isLooping && padLoopData?.nativeBpm
-                    ? `↻${padLoopData.nativeBpm}`
-                    : "LOOP"}
+                  {padLoopData?.nativeBpm ? `↻${padLoopData.nativeBpm}` : "LOOP"}
                 </button>
               )}
 
@@ -345,6 +346,23 @@ export function PadGrid() {
       <p className="text-[8px] text-[var(--ed-text-muted)] mt-2 text-center opacity-60">
         folder = stock library &middot; Shift-click = file import &middot; drop audio &middot; right-click to clear
       </p>
+
+      {/* Loop Editor — inline panel below pad grid, shown when a loop badge is clicked */}
+      {loopEditorVoice !== null && (
+        <LoopEditor
+          voiceIndex={loopEditorVoice}
+          label={VOICE_LABELS[loopEditorVoice] ?? ""}
+          onClose={() => setLoopEditorVoice(null)}
+          onLoopDataChange={(data) => {
+            setLoopData((prev) => {
+              const next = new Map(prev);
+              if (data) next.set(loopEditorVoice, data);
+              else next.delete(loopEditorVoice);
+              return next;
+            });
+          }}
+        />
+      )}
 
       {/* Sample Browser Modal — lazy-loaded so the 400KB catalog doesn't block initial render */}
       <Suspense fallback={null}>

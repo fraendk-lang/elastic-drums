@@ -115,10 +115,13 @@ export const VOICE_PARAM_DEFS: Record<number, VoiceParamDef[]> = {
 
 // ─── Voice Renderer Class ──────────────────────────────────────
 
-/** Loop settings for a sample voice */
+/** Loop settings for a sample voice — kept in sync with SampleManager.LoopData */
 export interface LoopData {
   isLoop: boolean;
-  nativeBpm: number; // 0 = BPM unknown (loop without stretch)
+  nativeBpm: number;  // 0 = BPM unknown (loop without stretch)
+  bars: number;
+  loopStart: number;  // seconds into buffer
+  loopEnd: number;    // seconds into buffer (0 = buffer end)
 }
 
 export class VoiceRenderer {
@@ -128,6 +131,8 @@ export class VoiceRenderer {
   private lastHHOpenGain: GainNode | null = null;
   private sampleLookup: ((voice: number, velocity?: number) => AudioBuffer | null) | null = null;
   private loopLookup: ((voice: number) => LoopData | null) | null = null;
+  // Track active looping sources per voice so we can stop them on re-trigger
+  private activeLoopSources = new Map<number, { src: AudioBufferSourceNode; gain: GainNode }>();
 
   // ─── Anti-click: track active voice output gains for fade-out on re-trigger ───
   private activeVoiceGains: (GainNode | null)[] = [];
@@ -195,7 +200,7 @@ export class VoiceRenderer {
   playSampleAtTime(
     ctx: AudioContext,
     buffer: AudioBuffer,
-    _voice: number,
+    voice: number,
     velocity: number,
     time: number,
     out: AudioNode,
@@ -214,45 +219,75 @@ export class VoiceRenderer {
     if (loopData?.isLoop && loopData.nativeBpm > 0 && projectBpm > 0) {
       rateMultiplier *= loopData.nativeBpm / projectBpm;
     }
-
     src.playbackRate.value = rateMultiplier;
 
-    // Loop mode: phase-lock the start offset so the loop is always in sync
-    // with the transport grid regardless of when it was last triggered.
-    if (loopData?.isLoop) {
-      src.loop = true;
-      if (transportStart > 0) {
-        // Stretched loop duration at current playbackRate
-        const loopDuration = buffer.duration / rateMultiplier;
-        // How far into the loop we are at trigTime
-        const elapsed = time - transportStart;
-        const offset = ((elapsed % loopDuration) + loopDuration) % loopDuration;
-        // Convert offset in stretched time back to buffer sample time
-        const bufferOffset = offset * rateMultiplier;
-        src.start(time, bufferOffset);
-      } else {
-        src.start(time, 0);
-      }
-    } else {
-      const gain = ctx.createGain();
-      gain.gain.setValueAtTime(velocity * 0.8, time);
-
-      // Auto-fade at end to prevent clicks
-      const dur = buffer.duration / rateMultiplier;
-      gain.gain.setValueAtTime(velocity * 0.8, time + dur - 0.005);
-      gain.gain.linearRampToValueAtTime(0, time + dur);
-
-      src.connect(gain);
-      gain.connect(out);
-      src.start(time);
-      return;
-    }
-
-    // Loop mode: connect directly (no fade-out needed — loop runs until stop)
+    // ── Build gain node and wire connections BEFORE calling start() ──
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(velocity * 0.8, time);
     src.connect(gain);
     gain.connect(out);
+
+    if (loopData?.isLoop) {
+      // Stop any previously running loop on this voice (with short fade to avoid click)
+      const prev = this.activeLoopSources.get(voice);
+      if (prev) {
+        try {
+          prev.gain.gain.cancelScheduledValues(time);
+          prev.gain.gain.setValueAtTime(prev.gain.gain.value, time);
+          prev.gain.gain.linearRampToValueAtTime(0, time + 0.005);
+          prev.src.stop(time + 0.006);
+        } catch { /* already stopped */ }
+      }
+
+      // Set loop region (AudioBufferSourceNode.loopStart/loopEnd)
+      src.loop = true;
+      const loopStartSec = loopData.loopStart ?? 0;
+      const loopEndSec = (loopData.loopEnd && loopData.loopEnd > loopStartSec)
+        ? loopData.loopEnd
+        : buffer.duration;
+      src.loopStart = loopStartSec;
+      src.loopEnd = loopEndSec;
+
+      // Effective loop duration in real time (after BPM stretch)
+      const loopDuration = (loopEndSec - loopStartSec) / rateMultiplier;
+
+      if (transportStart > 0) {
+        // Phase-lock: calculate where we are within the loop at this trigger time
+        const elapsed = time - transportStart;
+        const phase = ((elapsed % loopDuration) + loopDuration) % loopDuration;
+        // Convert phase (real seconds) back to buffer sample position
+        const bufferOffset = loopStartSec + phase * rateMultiplier;
+        src.start(time, bufferOffset);
+      } else {
+        // Manual preview (pad click, no transport): play one full loop then stop
+        src.start(time, loopStartSec);
+        src.stop(time + loopDuration);
+      }
+
+      this.activeLoopSources.set(voice, { src, gain });
+
+    } else {
+      // One-shot: fade at natural end to prevent clicks
+      const dur = buffer.duration / rateMultiplier;
+      gain.gain.setValueAtTime(velocity * 0.8, time + Math.max(0, dur - 0.005));
+      gain.gain.linearRampToValueAtTime(0, time + dur);
+      src.start(time);
+    }
+  }
+
+  /** Fade out and stop all active loop nodes (called on transport stop) */
+  stopAllLoops(ctx: AudioContext): void {
+    const now = ctx.currentTime;
+    const fade = 0.02;
+    for (const [, { src, gain }] of this.activeLoopSources) {
+      try {
+        gain.gain.cancelScheduledValues(now);
+        gain.gain.setValueAtTime(gain.gain.value, now);
+        gain.gain.linearRampToValueAtTime(0, now + fade);
+        src.stop(now + fade + 0.001);
+      } catch { /* already stopped */ }
+    }
+    this.activeLoopSources.clear();
   }
 
   private getSustainedDecay(baseDecaySec: number, gateDurationSec?: number, ceilingSec = 4): number {

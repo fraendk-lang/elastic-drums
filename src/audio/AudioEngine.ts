@@ -260,6 +260,7 @@ export class AudioEngine {
   getVoiceParams(voice: number): Record<string, number> { return voiceRenderer.getVoiceParams(voice); }
   setSampleLookup(fn: (voice: number, velocity?: number) => AudioBuffer | null): void { voiceRenderer.setSampleLookup(fn); }
   setLoopLookup(fn: (voice: number) => import("./VoiceRenderer").LoopData | null): void { voiceRenderer.setLoopLookup(fn); }
+  stopAllLoops(): void { voiceRenderer.stopAllLoops(this.getContext()); }
 
   triggerVoice(voice: number, velocity = 0.8, gateDurationSec?: number): void {
     const ctx = this.getContext();

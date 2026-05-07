@@ -24,7 +24,10 @@ export interface LoadedSample {
 
 export interface LoopData {
   isLoop: boolean;
-  nativeBpm: number; // 0 = unknown / not a BPM-locked loop
+  nativeBpm: number;  // 0 = unknown / not a BPM-locked loop
+  bars: number;       // how many bars the loop covers (auto-detected or user-set)
+  loopStart: number;  // seconds into the buffer (0 = beginning)
+  loopEnd: number;    // seconds into the buffer (0 = use buffer end)
 }
 
 /**
@@ -113,7 +116,10 @@ class SampleManagerClass {
     if (!opts?.append) {
       const detectedBpm = detectNativeBpm(buffer.duration);
       if (detectedBpm > 0) {
-        this.loopMeta.set(voiceIndex, { isLoop: true, nativeBpm: detectedBpm });
+        const bars = Math.max(1, Math.round(buffer.duration / (60 / detectedBpm * 4)));
+        // isLoop defaults to FALSE — user must explicitly enable via LOOP badge or editor.
+        // We only store nativeBpm as a suggestion shown in the badge.
+        this.loopMeta.set(voiceIndex, { isLoop: false, nativeBpm: detectedBpm, bars, loopStart: 0, loopEnd: 0 });
       } else {
         // New sample replaces old — clear stale loop data
         this.loopMeta.delete(voiceIndex);
@@ -244,7 +250,7 @@ class SampleManagerClass {
     const existing = this.loopMeta.get(voiceIndex);
     if (!existing) {
       // Enable loop with unknown BPM — user will set BPM manually
-      this.loopMeta.set(voiceIndex, { isLoop: true, nativeBpm: 0 });
+      this.loopMeta.set(voiceIndex, { isLoop: true, nativeBpm: 0, bars: 1, loopStart: 0, loopEnd: 0 });
       return true;
     }
     const next: LoopData = { ...existing, isLoop: !existing.isLoop };
@@ -252,10 +258,22 @@ class SampleManagerClass {
     return next.isLoop;
   }
 
-  /** Set the native BPM for a voice's loop */
+  /** Set the native BPM for a voice's loop, recalculate bars from duration */
   setNativeBpm(voiceIndex: number, bpm: number): void {
-    const existing = this.loopMeta.get(voiceIndex) ?? { isLoop: true, nativeBpm: 0 };
-    this.loopMeta.set(voiceIndex, { ...existing, nativeBpm: bpm });
+    const existing = this.loopMeta.get(voiceIndex) ?? { isLoop: false, nativeBpm: 0, bars: 1, loopStart: 0, loopEnd: 0 };
+    const buffer = this.layers.get(voiceIndex)?.[0]?.sample.buffer;
+    const bars = buffer && bpm > 0 ? Math.max(1, Math.round(buffer.duration / (60 / bpm * 4))) : existing.bars;
+    this.loopMeta.set(voiceIndex, { ...existing, nativeBpm: bpm, bars });
+  }
+
+  /** Set bars count for a voice's loop and recalculate BPM from buffer duration */
+  setBars(voiceIndex: number, bars: number): void {
+    const existing = this.loopMeta.get(voiceIndex) ?? { isLoop: false, nativeBpm: 0, bars: 1, loopStart: 0, loopEnd: 0 };
+    const buffer = this.layers.get(voiceIndex)?.[0]?.sample.buffer;
+    const nativeBpm = buffer && bars > 0
+      ? Math.round((bars * 4 * 60 / buffer.duration) * 10) / 10
+      : existing.nativeBpm;
+    this.loopMeta.set(voiceIndex, { ...existing, bars, nativeBpm });
   }
 
   /** Get a flat map of first layer samples (backward-compat) */

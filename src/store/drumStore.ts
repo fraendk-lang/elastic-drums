@@ -664,6 +664,8 @@ function stopScheduler() {
   activePLockTimers.clear();
   cycleCount = 0;
   prevStepTriggered = new Array(12).fill(false);
+  // Stop any looping sample nodes so they don't play past transport stop
+  audioEngine.stopAllLoops();
 }
 
 // ─── Store ───────────────────────────────────────────────
