@@ -22,6 +22,33 @@ export interface LoadedSample {
   muLawEnabled: boolean;
 }
 
+export interface LoopData {
+  isLoop: boolean;
+  nativeBpm: number; // 0 = unknown / not a BPM-locked loop
+}
+
+/**
+ * Auto-detect the native BPM of a loop from its duration.
+ * Tests common BPM values (60–200) at 1, 2, 4 and 8 bar lengths.
+ * Returns 0 if no clean match is found.
+ */
+export function detectNativeBpm(duration: number): number {
+  const BAR_COUNTS = [1, 2, 4, 8];
+  const BEATS_PER_BAR = 4;
+  const TOLERANCE = 0.015; // ±1.5% — accommodates slight render offsets
+
+  for (let bpm = 60; bpm <= 200; bpm++) {
+    const secondsPerBeat = 60 / bpm;
+    for (const bars of BAR_COUNTS) {
+      const expected = secondsPerBeat * BEATS_PER_BAR * bars;
+      if (Math.abs(duration - expected) / expected < TOLERANCE) {
+        return bpm;
+      }
+    }
+  }
+  return 0;
+}
+
 export interface VelocityLayer {
   sample: LoadedSample;
   velMin: number; // 0..1
@@ -33,6 +60,9 @@ export const MAX_VELOCITY_LAYERS = 4;
 class SampleManagerClass {
   // Per-voice velocity layers (voice index → array of layers)
   private layers = new Map<number, VelocityLayer[]>();
+
+  // Per-voice loop metadata (voice index → loop settings)
+  private loopMeta = new Map<number, LoopData>();
 
   /** Load a sample from a File. Replaces full-range single layer by default. */
   async loadFromFile(file: File, voiceIndex: number, opts?: { velMin?: number; velMax?: number; append?: boolean }): Promise<LoadedSample> {
@@ -76,6 +106,19 @@ class SampleManagerClass {
       sampleRate: buffer.sampleRate,
       muLawEnabled: false,
     };
+
+    // Auto-detect loop BPM when replacing the first (or only) layer.
+    // Only run detection when not appending — appended layers are usually
+    // velocity variants of the same sample and share the same loop setting.
+    if (!opts?.append) {
+      const detectedBpm = detectNativeBpm(buffer.duration);
+      if (detectedBpm > 0) {
+        this.loopMeta.set(voiceIndex, { isLoop: true, nativeBpm: detectedBpm });
+      } else {
+        // New sample replaces old — clear stale loop data
+        this.loopMeta.delete(voiceIndex);
+      }
+    }
 
     const velMin = opts?.velMin ?? 0;
     const velMax = opts?.velMax ?? 1;
@@ -181,6 +224,38 @@ class SampleManagerClass {
   /** Remove all samples from a voice (revert to synthesis) */
   clearSample(voiceIndex: number): void {
     this.layers.delete(voiceIndex);
+    this.loopMeta.delete(voiceIndex);
+  }
+
+  // ─── Loop metadata ─────────────────────────────────────────
+
+  /** Get loop settings for a voice (undefined = no loop data set) */
+  getLoopData(voiceIndex: number): LoopData | undefined {
+    return this.loopMeta.get(voiceIndex);
+  }
+
+  /** Manually override loop settings for a voice */
+  setLoopData(voiceIndex: number, data: LoopData): void {
+    this.loopMeta.set(voiceIndex, data);
+  }
+
+  /** Toggle loop mode on/off for a voice (preserves nativeBpm) */
+  toggleLoop(voiceIndex: number): boolean {
+    const existing = this.loopMeta.get(voiceIndex);
+    if (!existing) {
+      // Enable loop with unknown BPM — user will set BPM manually
+      this.loopMeta.set(voiceIndex, { isLoop: true, nativeBpm: 0 });
+      return true;
+    }
+    const next: LoopData = { ...existing, isLoop: !existing.isLoop };
+    this.loopMeta.set(voiceIndex, next);
+    return next.isLoop;
+  }
+
+  /** Set the native BPM for a voice's loop */
+  setNativeBpm(voiceIndex: number, bpm: number): void {
+    const existing = this.loopMeta.get(voiceIndex) ?? { isLoop: true, nativeBpm: 0 };
+    this.loopMeta.set(voiceIndex, { ...existing, nativeBpm: bpm });
   }
 
   /** Get a flat map of first layer samples (backward-compat) */
@@ -198,4 +273,9 @@ export const sampleManager = new SampleManagerClass();
 // Register velocity-aware sample lookup with audio engine
 audioEngine.setSampleLookup((voice: number, velocity = 0.8) => {
   return sampleManager.getBufferForVelocity(voice, velocity);
+});
+
+// Register loop-data lookup with audio engine
+audioEngine.setLoopLookup((voice: number) => {
+  return sampleManager.getLoopData(voice) ?? null;
 });

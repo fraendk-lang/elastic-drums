@@ -259,6 +259,7 @@ export class AudioEngine {
   getVoiceParam(voice: number, paramId: string): number { return voiceRenderer.getVoiceParam(voice, paramId); }
   getVoiceParams(voice: number): Record<string, number> { return voiceRenderer.getVoiceParams(voice); }
   setSampleLookup(fn: (voice: number, velocity?: number) => AudioBuffer | null): void { voiceRenderer.setSampleLookup(fn); }
+  setLoopLookup(fn: (voice: number) => import("./VoiceRenderer").LoopData | null): void { voiceRenderer.setLoopLookup(fn); }
 
   triggerVoice(voice: number, velocity = 0.8, gateDurationSec?: number): void {
     const ctx = this.getContext();
@@ -273,11 +274,11 @@ export class AudioEngine {
     if (voice === 0 && this.sidechainEnabled) this.applySidechainDuck(ctx.currentTime);
   }
 
-  triggerVoiceAtTime(voice: number, velocity: number, time: number, gateDurationSec?: number): void {
+  triggerVoiceAtTime(voice: number, velocity: number, time: number, gateDurationSec?: number, projectBpm = 0, transportStart = 0): void {
     const ctx = this.getContext();
     if (this.wasmMode) return;
     const out = mixerRouter.getChannelOutput(voice);
-    voiceRenderer.scheduleVoice(ctx, voice, velocity, time, out, gateDurationSec);
+    voiceRenderer.scheduleVoice(ctx, voice, velocity, time, out, gateDurationSec, projectBpm, transportStart);
     // Sidechain: kick ducks bass
     if (voice === 0 && this.sidechainEnabled) this.applySidechainDuck(time);
   }

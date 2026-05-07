@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, lazy, Suspense } from "react";
 import { useDrumStore } from "../store/drumStore";
 import { useOverlayStore } from "../store/overlayStore";
 import { useCustomKitStore } from "../store/customKitStore";
-import { sampleManager } from "../audio/SampleManager";
+import { sampleManager, type LoopData } from "../audio/SampleManager";
 import { WaveformPreview } from "./WaveformPreview";
 import type { LibrarySample } from "../audio/SampleLibrary";
 
@@ -38,6 +38,16 @@ export function PadGrid() {
     )
   );
   const [browserVoiceIndex, setBrowserVoiceIndex] = useState<number | null>(null);
+  const [loopData, setLoopData] = useState<Map<number, LoopData>>(
+    () => {
+      const map = new Map<number, LoopData>();
+      for (let v = 0; v < 12; v++) {
+        const d = sampleManager.getLoopData(v);
+        if (d) map.set(v, d);
+      }
+      return map;
+    }
+  );
   const timeouts = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
   const fileInputs = useRef<Array<HTMLInputElement | null>>([]);
 
@@ -71,6 +81,22 @@ export function PadGrid() {
     setDragOver(null);
   }, []);
 
+  const refreshLoopData = useCallback((voiceIndex: number) => {
+    const d = sampleManager.getLoopData(voiceIndex);
+    setLoopData((prev) => {
+      const next = new Map(prev);
+      if (d) next.set(voiceIndex, d);
+      else next.delete(voiceIndex);
+      return next;
+    });
+  }, []);
+
+  const handleLoopToggle = useCallback((e: React.MouseEvent, voiceIndex: number) => {
+    e.stopPropagation();
+    sampleManager.toggleLoop(voiceIndex);
+    refreshLoopData(voiceIndex);
+  }, [refreshLoopData]);
+
   const handleDrop = useCallback(async (e: React.DragEvent, voiceIndex: number) => {
     e.preventDefault();
     setDragOver(null);
@@ -90,13 +116,14 @@ export function PadGrid() {
       setSampleNames((prev) => new Map(prev).set(voiceIndex, sample.name));
       setSelectedVoice(voiceIndex);
       triggerVoice(voiceIndex);
+      refreshLoopData(voiceIndex);
     } catch (err) {
       console.error("Failed to decode audio:", file.name, err);
       // Brief visual feedback — flash the pad red (reuse trigger animation)
       setDragOver(voiceIndex);
       setTimeout(() => setDragOver(null), 500);
     }
-  }, [setSelectedVoice, triggerVoice]);
+  }, [setSelectedVoice, triggerVoice, refreshLoopData]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, i: number) => {
     if (sampleManager.hasSample(i)) {
@@ -104,6 +131,11 @@ export function PadGrid() {
       sampleManager.clearSample(i);
       setVoiceSample(i, null);
       setSampleNames((prev) => {
+        const next = new Map(prev);
+        next.delete(i);
+        return next;
+      });
+      setLoopData((prev) => {
         const next = new Map(prev);
         next.delete(i);
         return next;
@@ -128,12 +160,13 @@ export function PadGrid() {
       setVoiceSample(voiceIndex, null);
       setSelectedVoice(voiceIndex);
       triggerVoice(voiceIndex);
+      refreshLoopData(voiceIndex);
     } catch (err) {
       console.error("Failed to decode audio:", file.name, err);
       setDragOver(voiceIndex);
       setTimeout(() => setDragOver(null), 500);
     }
-  }, [setSelectedVoice, setVoiceSample, triggerVoice]);
+  }, [setSelectedVoice, setVoiceSample, triggerVoice, refreshLoopData]);
 
   const handleBrowseClick = useCallback((e: React.MouseEvent, voiceIndex: number) => {
     e.stopPropagation();
@@ -170,8 +203,9 @@ export function PadGrid() {
     setVoiceSample(browserVoiceIndex, sample.id);
     setSelectedVoice(browserVoiceIndex);
     triggerVoice(browserVoiceIndex);
+    refreshLoopData(browserVoiceIndex);
     overlay.closeOverlay("sampleBrowser");
-  }, [browserVoiceIndex, overlay, setSelectedVoice, setVoiceSample, triggerVoice]);
+  }, [browserVoiceIndex, overlay, setSelectedVoice, setVoiceSample, triggerVoice, refreshLoopData]);
 
   return (
     <div className="p-3">
@@ -182,6 +216,8 @@ export function PadGrid() {
           const isDragTarget = dragOver === i;
           const hasSample = sampleNames.has(i);
           const color = VOICE_COLORS[i]!;
+          const padLoopData = loopData.get(i);
+          const isLooping = padLoopData?.isLoop ?? false;
 
           return (
             <div
@@ -271,6 +307,25 @@ export function PadGrid() {
                 {hasSample ? sampleNames.get(i) : label}
               </span>
               </button>
+
+              {/* LOOP badge — visible on sample pads */}
+              {hasSample && (
+                <button
+                  onClick={(e) => handleLoopToggle(e, i)}
+                  title={isLooping
+                    ? `Loop ON${padLoopData?.nativeBpm ? ` · ${padLoopData.nativeBpm} BPM` : ""} — click to disable`
+                    : "Loop OFF — click to enable"}
+                  className={`absolute bottom-1 left-1 px-1 py-px rounded text-[7px] font-bold leading-none transition-all ${
+                    isLooping
+                      ? "bg-[var(--ed-accent-green)]/20 text-[var(--ed-accent-green)] border border-[var(--ed-accent-green)]/40"
+                      : "bg-white/5 text-white/25 border border-white/10 hover:text-white/50"
+                  }`}
+                >
+                  {isLooping && padLoopData?.nativeBpm
+                    ? `↻${padLoopData.nativeBpm}`
+                    : "LOOP"}
+                </button>
+              )}
 
               {/* Sample Browser button (folder icon) */}
               <button

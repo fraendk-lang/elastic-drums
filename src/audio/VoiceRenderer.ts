@@ -115,12 +115,19 @@ export const VOICE_PARAM_DEFS: Record<number, VoiceParamDef[]> = {
 
 // ─── Voice Renderer Class ──────────────────────────────────────
 
+/** Loop settings for a sample voice */
+export interface LoopData {
+  isLoop: boolean;
+  nativeBpm: number; // 0 = BPM unknown (loop without stretch)
+}
+
 export class VoiceRenderer {
   private voiceParams: VoiceParams[] = [];
   private noiseBuffer: AudioBuffer | null = null;
   private lastHHClosedGain: GainNode | null = null;
   private lastHHOpenGain: GainNode | null = null;
   private sampleLookup: ((voice: number, velocity?: number) => AudioBuffer | null) | null = null;
+  private loopLookup: ((voice: number) => LoopData | null) | null = null;
 
   // ─── Anti-click: track active voice output gains for fade-out on re-trigger ───
   private activeVoiceGains: (GainNode | null)[] = [];
@@ -164,6 +171,10 @@ export class VoiceRenderer {
     this.sampleLookup = fn;
   }
 
+  setLoopLookup(fn: (voice: number) => LoopData | null): void {
+    this.loopLookup = fn;
+  }
+
   setNoiseBuffer(buffer: AudioBuffer): void {
     this.noiseBuffer = buffer;
   }
@@ -181,26 +192,67 @@ export class VoiceRenderer {
     return src;
   }
 
-  playSampleAtTime(ctx: AudioContext, buffer: AudioBuffer, _voice: number, velocity: number, time: number, out: AudioNode, tune = 0): void {
+  playSampleAtTime(
+    ctx: AudioContext,
+    buffer: AudioBuffer,
+    _voice: number,
+    velocity: number,
+    time: number,
+    out: AudioNode,
+    tune = 0,
+    loopData?: LoopData | null,
+    projectBpm = 0,
+    transportStart = 0,
+  ): void {
     const src = ctx.createBufferSource();
     src.buffer = buffer;
 
-    // Pitch via playbackRate (semitones)
-    if (tune !== 0) {
-      src.playbackRate.value = Math.pow(2, tune / 12);
+    // Base pitch ratio from semitone transpose
+    let rateMultiplier = tune !== 0 ? Math.pow(2, tune / 12) : 1.0;
+
+    // BPM stretch: scale playbackRate so the loop tempo matches the project
+    if (loopData?.isLoop && loopData.nativeBpm > 0 && projectBpm > 0) {
+      rateMultiplier *= loopData.nativeBpm / projectBpm;
     }
 
+    src.playbackRate.value = rateMultiplier;
+
+    // Loop mode: phase-lock the start offset so the loop is always in sync
+    // with the transport grid regardless of when it was last triggered.
+    if (loopData?.isLoop) {
+      src.loop = true;
+      if (transportStart > 0) {
+        // Stretched loop duration at current playbackRate
+        const loopDuration = buffer.duration / rateMultiplier;
+        // How far into the loop we are at trigTime
+        const elapsed = time - transportStart;
+        const offset = ((elapsed % loopDuration) + loopDuration) % loopDuration;
+        // Convert offset in stretched time back to buffer sample time
+        const bufferOffset = offset * rateMultiplier;
+        src.start(time, bufferOffset);
+      } else {
+        src.start(time, 0);
+      }
+    } else {
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(velocity * 0.8, time);
+
+      // Auto-fade at end to prevent clicks
+      const dur = buffer.duration / rateMultiplier;
+      gain.gain.setValueAtTime(velocity * 0.8, time + dur - 0.005);
+      gain.gain.linearRampToValueAtTime(0, time + dur);
+
+      src.connect(gain);
+      gain.connect(out);
+      src.start(time);
+      return;
+    }
+
+    // Loop mode: connect directly (no fade-out needed — loop runs until stop)
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(velocity * 0.8, time);
-
-    // Auto-fade at end to prevent clicks
-    const dur = buffer.duration / src.playbackRate.value;
-    gain.gain.setValueAtTime(velocity * 0.8, time + dur - 0.005);
-    gain.gain.linearRampToValueAtTime(0, time + dur);
-
     src.connect(gain);
     gain.connect(out);
-    src.start(time);
   }
 
   private getSustainedDecay(baseDecaySec: number, gateDurationSec?: number, ceilingSec = 4): number {
@@ -208,14 +260,24 @@ export class VoiceRenderer {
     return Math.min(ceilingSec, Math.max(baseDecaySec, gateDurationSec * 0.92));
   }
 
-  scheduleVoice(ctx: AudioContext, voice: number, velocity: number, t: number, out: AudioNode, gateDurationSec?: number): void {
+  scheduleVoice(
+    ctx: AudioContext,
+    voice: number,
+    velocity: number,
+    t: number,
+    out: AudioNode,
+    gateDurationSec?: number,
+    projectBpm = 0,
+    transportStart = 0,
+  ): void {
     const p = this.voiceParams[voice] ?? {};
 
     // Check if this voice has a sample loaded — play sample instead of synth
     if (this.sampleLookup) {
       const buffer = this.sampleLookup(voice, velocity);
       if (buffer) {
-        this.playSampleAtTime(ctx, buffer, voice, velocity, t, out, p.sampleTune ?? 0);
+        const loopData = this.loopLookup ? this.loopLookup(voice) : null;
+        this.playSampleAtTime(ctx, buffer, voice, velocity, t, out, p.sampleTune ?? 0, loopData, projectBpm, transportStart);
         return;
       }
     }

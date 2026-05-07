@@ -526,13 +526,15 @@ function startScheduler() {
         const trigTime = nextStepTime + nudge + perTrackSwingNudge;
         const ratchets = step.ratchetCount ?? 1;
         const gateDurationSec = Math.max(secondsPerStep, stepDuration * (step.gateLength ?? 1));
+        const projectBpm = state.bpm;
+        const tStart = transportStartTime;
         if (ratchets <= 1) {
-          audioEngine.triggerVoiceAtTime(track, vel, trigTime, gateDurationSec);
+          audioEngine.triggerVoiceAtTime(track, vel, trigTime, gateDurationSec, projectBpm, tStart);
         } else {
           const ratchetInterval = stepDuration / ratchets;
           for (let r = 0; r < ratchets; r++) {
             const rVel = vel * (1 - r * 0.15);
-            audioEngine.triggerVoiceAtTime(track, Math.max(rVel, 0.1), trigTime + r * ratchetInterval, Math.max(ratchetInterval, gateDurationSec / ratchets));
+            audioEngine.triggerVoiceAtTime(track, Math.max(rVel, 0.1), trigTime + r * ratchetInterval, Math.max(ratchetInterval, gateDurationSec / ratchets), projectBpm, tStart);
           }
         }
 
