@@ -16,6 +16,7 @@ import { useBassStore, BASS_PRESETS } from "../store/bassStore";
 import { useDrumStore } from "../store/drumStore";
 import { melodyEngine } from "../audio/MelodyEngine";
 import { bassEngine, SCALES } from "../audio/BassEngine";
+import { chordsEngine } from "../audio/ChordsEngine";
 import { audioEngine } from "../audio/AudioEngine";
 import { sendFxManager } from "../audio/SendFx";
 import { ArpScheduler } from "../audio/ArpScheduler";
@@ -1450,25 +1451,91 @@ export function PerformancePad({ isOpen, onClose }: Props) {
 
           {/* ── Chord Editor Modal ─────────────────────────────────────────── */}
           {editTarget !== null && (() => {
-            const NOTE_LABELS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
             const factoryCell = CHORD_SETS[editTarget.setIdx]?.cells[editTarget.cellIdx];
+
+            // Piano layout data
+            const WHITE_KEYS = [
+              { semi: 0, name: "C" }, { semi: 2, name: "D" }, { semi: 4, name: "E" },
+              { semi: 5, name: "F" }, { semi: 7, name: "G" }, { semi: 9, name: "A" },
+              { semi: 11, name: "B" },
+            ];
+            // leftPct = left edge as % of total keyboard width (7 white keys)
+            const WW = 100 / 7; // one white key width in %
+            const BLACK_KEYS = [
+              { semi: 1,  name: "C#", leftPct: 0.65 * WW },
+              { semi: 3,  name: "D#", leftPct: 1.65 * WW },
+              { semi: 6,  name: "F#", leftPct: 3.65 * WW },
+              { semi: 8,  name: "G#", leftPct: 4.65 * WW },
+              { semi: 10, name: "A#", leftPct: 5.65 * WW },
+            ];
+            const INTERVAL_NAMES = [
+              "Root", "m2", "M2", "m3", "M3", "P4", "d5", "P5", "m6", "M6", "m7", "M7",
+            ];
+
+            // Quick-select chord presets
+            const QUICK_PRESETS = [
+              { label: "Maj",  intervals: [0, 4, 7] },
+              { label: "Min",  intervals: [0, 3, 7] },
+              { label: "7",    intervals: [0, 4, 7, 10] },
+              { label: "Maj7", intervals: [0, 4, 7, 11] },
+              { label: "Min7", intervals: [0, 3, 7, 10] },
+              { label: "Sus2", intervals: [0, 2, 7] },
+              { label: "Sus4", intervals: [0, 5, 7] },
+              { label: "Dim",  intervals: [0, 3, 6] },
+              { label: "Aug",  intervals: [0, 4, 8] },
+              { label: "6th",  intervals: [0, 4, 7, 9] },
+            ];
+
+            // Live preview: play the current chord through ChordsEngine
+            const previewChord = (bools: boolean[]) => {
+              const ctx = audioEngine.getAudioContext();
+              if (!ctx || !chordsEngine.isInitialized) return;
+              const ROOT_MIDI = 60; // C4
+              const notes = bools.reduce<number[]>((acc, on, i) => {
+                if (on || i === 0) acc.push(ROOT_MIDI + i);
+                return acc;
+              }, []);
+              chordsEngine.triggerChord(notes, ctx.currentTime, false, false, 0.75);
+              setTimeout(() => chordsEngine.releaseChord(ctx.currentTime), 700);
+            };
+
+            const applyQuickPreset = (intervals: number[]) => {
+              const bools = Array(12).fill(false) as boolean[];
+              intervals.forEach((iv) => { if (iv >= 0 && iv < 12) bools[iv] = true; });
+              setEditIntervals(bools);
+              previewChord(bools);
+            };
+
+            const toggleSemitone = (i: number) => {
+              if (i === 0) return;
+              setEditIntervals((prev) => {
+                const next = [...prev] as boolean[];
+                next[i] = !next[i];
+                previewChord(next);
+                return next;
+              });
+            };
+
             return (
               <div
                 className="absolute inset-0 flex items-center justify-center z-50"
-                style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(4px)" }}
+                style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}
                 onPointerDown={(e) => e.stopPropagation()}
               >
                 <div
-                  className="rounded-xl border border-[var(--ed-accent-melody)]/30 p-4 w-72 flex flex-col gap-3"
-                  style={{ background: "#12090f", boxShadow: "0 0 32px rgba(244,114,182,0.18)" }}
+                  className="rounded-2xl border border-[var(--ed-accent-melody)]/25 p-4 w-80 flex flex-col gap-3"
+                  style={{ background: "#120a10", boxShadow: "0 0 40px rgba(244,114,182,0.20)" }}
                 >
                   {/* Header */}
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold tracking-widest text-[var(--ed-accent-melody)]/70 uppercase">Edit Chord</span>
+                    <div>
+                      <div className="text-[9px] font-black tracking-[0.2em] text-[var(--ed-accent-melody)]/60 uppercase">Edit Chord</div>
+                      <div className="text-[13px] font-black text-white/90 mt-0.5">{editLabel || "—"}</div>
+                    </div>
                     <div className="flex items-center gap-2">
                       {factoryCell && (
                         <button
-                          className="px-2 h-5 text-[8px] font-bold rounded bg-white/5 text-white/40 hover:text-white/70 transition-colors"
+                          className="px-2 h-6 text-[8px] font-bold rounded border border-white/10 text-white/40 hover:text-white/70 hover:border-white/20 transition-colors"
                           onClick={() => {
                             resetChordCell(editTarget.setIdx, editTarget.cellIdx);
                             const bools = Array(12).fill(false) as boolean[];
@@ -1479,73 +1546,122 @@ export function PerformancePad({ isOpen, onClose }: Props) {
                         >RESET</button>
                       )}
                       <button
-                        className="w-5 h-5 text-[10px] rounded bg-white/5 text-white/50 hover:text-white transition-colors flex items-center justify-center"
+                        className="w-6 h-6 text-[11px] rounded border border-white/10 text-white/40 hover:text-white hover:border-white/20 transition-colors flex items-center justify-center"
                         onClick={() => setEditTarget(null)}
                       >✕</button>
                     </div>
                   </div>
 
-                  {/* Semitone toggles */}
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[8px] text-white/30 uppercase tracking-widest">Intervals (relative to root)</span>
-                    <div className="grid grid-cols-12 gap-0.5">
-                      {NOTE_LABELS.map((noteName, i) => {
-                        const active = editIntervals[i] ?? false;
-                        const isRoot = i === 0;
+                  {/* Quick chord presets */}
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[8px] text-white/30 uppercase tracking-widest">Quick Select</span>
+                    <div className="flex flex-wrap gap-1">
+                      {QUICK_PRESETS.map((p) => (
+                        <button
+                          key={p.label}
+                          onClick={() => { applyQuickPreset(p.intervals); setEditLabel(p.label); }}
+                          className="px-2 h-6 rounded text-[9px] font-bold border border-[var(--ed-accent-melody)]/20 text-[var(--ed-accent-melody)]/60 hover:bg-[var(--ed-accent-melody)]/15 hover:text-[var(--ed-accent-melody)] transition-all"
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Piano keyboard */}
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[8px] text-white/30 uppercase tracking-widest">Intervals — tap to toggle · ♪ plays preview</span>
+                    <div className="relative w-full" style={{ height: "72px" }}>
+                      {/* White keys */}
+                      {WHITE_KEYS.map((key, idx) => {
+                        const active = editIntervals[key.semi] ?? false;
+                        const isRoot = key.semi === 0;
                         return (
                           <button
-                            key={i}
-                            title={`${noteName} (${i === 0 ? "Root" : "+" + i + " st"})`}
-                            onClick={() => {
-                              if (isRoot) return; // root is always on
-                              setEditIntervals((prev) => {
-                                const next = [...prev];
-                                next[i] = !next[i];
-                                return next;
-                              });
+                            key={key.semi}
+                            onClick={() => toggleSemitone(key.semi)}
+                            title={`${key.name} — ${INTERVAL_NAMES[key.semi]}`}
+                            style={{
+                              position: "absolute",
+                              left: `${idx * WW}%`,
+                              width: `${WW - 0.5}%`,
+                              top: 0,
+                              bottom: 0,
+                              zIndex: 1,
                             }}
-                            className={`flex flex-col items-center py-1 rounded text-[7px] font-bold transition-all select-none ${
+                            className={`rounded-b-md flex flex-col items-center justify-end pb-1 transition-all select-none border-t border-l border-r ${
                               isRoot
-                                ? "bg-[var(--ed-accent-melody)]/80 text-black cursor-default"
+                                ? "bg-[var(--ed-accent-melody)] border-[var(--ed-accent-melody)] cursor-default"
                                 : active
-                                  ? "bg-[var(--ed-accent-melody)]/50 text-white"
-                                  : "bg-white/5 text-white/25 hover:bg-white/10 hover:text-white/50"
+                                  ? "bg-[var(--ed-accent-melody)]/60 border-[var(--ed-accent-melody)]/60"
+                                  : "bg-white/85 border-white/20 hover:bg-white text-black"
                             }`}
                           >
-                            <span>{noteName}</span>
-                            <span className="text-[6px] opacity-60">{i}</span>
+                            <span className={`text-[7px] font-bold leading-none ${isRoot || active ? "text-white" : "text-black/60"}`}>
+                              {key.name}
+                            </span>
+                            <span className={`text-[6px] leading-none mt-0.5 ${isRoot || active ? "text-white/70" : "text-black/35"}`}>
+                              {INTERVAL_NAMES[key.semi]}
+                            </span>
+                          </button>
+                        );
+                      })}
+                      {/* Black keys */}
+                      {BLACK_KEYS.map((key) => {
+                        const active = editIntervals[key.semi] ?? false;
+                        return (
+                          <button
+                            key={key.semi}
+                            onClick={() => toggleSemitone(key.semi)}
+                            title={`${key.name} — ${INTERVAL_NAMES[key.semi]}`}
+                            style={{
+                              position: "absolute",
+                              left: `${key.leftPct}%`,
+                              width: `${WW * 0.62}%`,
+                              top: 0,
+                              height: "58%",
+                              zIndex: 2,
+                            }}
+                            className={`rounded-b-md flex flex-col items-center justify-end pb-0.5 transition-all select-none ${
+                              active
+                                ? "bg-[var(--ed-accent-melody)] shadow-[0_0_8px_var(--ed-accent-melody)]"
+                                : "bg-[#1a0a14] hover:bg-[#2e1224] border border-white/10"
+                            }`}
+                          >
+                            <span className={`text-[5.5px] font-bold leading-none ${active ? "text-white" : "text-white/50"}`}>
+                              {key.name}
+                            </span>
                           </button>
                         );
                       })}
                     </div>
                   </div>
 
-                  {/* Label input */}
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[8px] text-white/30 uppercase tracking-widest">Label (max 6 chars)</span>
-                    <input
-                      type="text"
-                      maxLength={6}
-                      value={editLabel}
-                      onChange={(e) => setEditLabel(e.target.value.slice(0, 6))}
-                      className="w-full px-3 py-1.5 rounded bg-white/5 border border-white/10 text-white text-[11px] font-mono outline-none focus:border-[var(--ed-accent-melody)]/40"
-                      placeholder="Am7"
-                    />
+                  {/* Label + Save row */}
+                  <div className="flex gap-2 items-end">
+                    <div className="flex flex-col gap-1 flex-1">
+                      <span className="text-[8px] text-white/30 uppercase tracking-widest">Label</span>
+                      <input
+                        type="text"
+                        maxLength={6}
+                        value={editLabel}
+                        onChange={(e) => setEditLabel(e.target.value.slice(0, 6))}
+                        className="w-full px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-[11px] font-mono outline-none focus:border-[var(--ed-accent-melody)]/50"
+                        placeholder="Am7"
+                      />
+                    </div>
+                    <button
+                      className="h-8 px-4 rounded-lg font-black text-[10px] tracking-widest transition-all bg-[var(--ed-accent-melody)]/30 text-[var(--ed-accent-melody)] hover:bg-[var(--ed-accent-melody)]/50 border border-[var(--ed-accent-melody)]/30"
+                      onClick={() => {
+                        const intervals: number[] = [];
+                        editIntervals.forEach((on, i) => { if (on || i === 0) intervals.push(i); });
+                        setChordIntervals(editTarget.setIdx, editTarget.cellIdx, intervals, editLabel || "?");
+                        setEditTarget(null);
+                      }}
+                    >
+                      SAVE
+                    </button>
                   </div>
-
-                  {/* Save button */}
-                  <button
-                    className="w-full h-8 rounded font-bold text-[10px] tracking-widest transition-all bg-[var(--ed-accent-melody)]/25 text-[var(--ed-accent-melody)] hover:bg-[var(--ed-accent-melody)]/40"
-                    onClick={() => {
-                      // Convert boolean[] to interval numbers (always include 0 = root)
-                      const intervals: number[] = [];
-                      editIntervals.forEach((on, i) => { if (on || i === 0) intervals.push(i); });
-                      setChordIntervals(editTarget.setIdx, editTarget.cellIdx, intervals, editLabel || "?");
-                      setEditTarget(null);
-                    }}
-                  >
-                    SAVE
-                  </button>
                 </div>
               </div>
             );
