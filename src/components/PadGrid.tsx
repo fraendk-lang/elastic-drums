@@ -42,7 +42,10 @@ export function PadGrid() {
   const [browserVoiceIndex, setBrowserVoiceIndex] = useState<number | null>(null);
   const [loopEditorVoice, setLoopEditorVoice] = useState<number | null>(null);
   const [volumeKnobVoice, setVolumeKnobVoice] = useState<number | null>(null);
-  const channelFaders = useMixerBarStore((s) => s.channels.map((c) => c.fader));
+  // Subscribe to the channels array directly — its reference is stable until
+  // a channel actually changes. Mapping inside the selector would create a
+  // new array every selector call → infinite re-render loop in Zustand v5.
+  const mixerChannels = useMixerBarStore((s) => s.channels);
   const setMixerFader = useMixerBarStore((s) => s.setFader);
   const [loopData, setLoopData] = useState<Map<number, LoopData>>(
     () => {
@@ -104,7 +107,8 @@ export function PadGrid() {
     e.stopPropagation();
     e.preventDefault();
     const startY = e.clientY;
-    const startFader = channelFaders[voiceIndex] ?? 750;
+    // Read fader fresh at drag start to avoid stale closure issues
+    const startFader = useMixerBarStore.getState().channels[voiceIndex]?.fader ?? 750;
     const target = e.currentTarget as HTMLElement;
     target.setPointerCapture(e.pointerId);
     setVolumeKnobVoice(voiceIndex);
@@ -125,7 +129,7 @@ export function PadGrid() {
     target.addEventListener("pointermove", onMove);
     target.addEventListener("pointerup", onUp);
     target.addEventListener("pointercancel", onUp);
-  }, [channelFaders, setMixerFader]);
+  }, [setMixerFader]);
 
   const handleVolumeKnobDoubleClick = useCallback((e: React.MouseEvent, voiceIndex: number) => {
     e.stopPropagation();
@@ -371,7 +375,7 @@ export function PadGrid() {
 
               {/* Per-pad volume quick-knob — vertical bar at right edge */}
               {(() => {
-                const fader = channelFaders[i] ?? 750;
+                const fader = mixerChannels[i]?.fader ?? 750;
                 const pct = fader / 1000;
                 const isActive = volumeKnobVoice === i;
                 const dbApprox = Math.round(20 * Math.log10(Math.max(0.001, faderToGain(fader))));
