@@ -1107,12 +1107,45 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
         ? generateEuclidean(accentPulses, steps, accentRotation)
         : null;
 
+      // ── Velocity contour by metric position ────────────────────────
+      // Real grooves accent the strong beats and lay back on weak ones.
+      // Step 0, 4, 8, 12 (downbeats) → loud
+      // Step 2, 6, 10, 14 (offbeat 8ths) → medium
+      // Step 1, 3, 5, 7, 9, 11, 13, 15 (16ths) → soft
+      // Accent overlay still wins where it fires.
+      const velocityForStep = (i: number): number => {
+        const mod = i % 4;
+        if (mod === 0) return 110;        // downbeat
+        if (mod === 2) return 88;          // offbeat 8th
+        return 68;                         // 16th in between
+      };
+
+      // ── Collect indices of active pulses for probability humanization ──
+      const activeIndices: number[] = [];
+      for (let i = 0; i < trackData.length; i++) {
+        const on = i < euclid.length ? euclid[i]! : false;
+        if (on) activeIndices.push(i);
+      }
+      // Last 1-2 pulses get sub-100% probability for organic "breathing".
+      // Skip humanization if pattern is very sparse (≤2 pulses) — every hit matters there.
+      const probMap = new Map<number, number>();
+      if (activeIndices.length >= 4) {
+        // Last pulse: 75% chance, second-to-last: 90% chance
+        probMap.set(activeIndices[activeIndices.length - 1]!, 75);
+        probMap.set(activeIndices[activeIndices.length - 2]!, 90);
+      }
+
       for (let i = 0; i < trackData.length; i++) {
         const on = i < euclid.length ? euclid[i]! : false;
         trackData.steps[i]!.active = on;
         if (on) {
           const isAccent = accentPat ? (accentPat[i % accentPat.length] ?? false) : false;
-          trackData.steps[i]!.velocity = isAccent ? 110 : 68;
+          trackData.steps[i]!.velocity = isAccent ? 120 : velocityForStep(i);
+          // Apply probability humanization to tail pulses
+          trackData.steps[i]!.probability = probMap.get(i) ?? 100;
+        } else {
+          // Reset probability when clearing — leave no stale 75% on inactive steps
+          trackData.steps[i]!.probability = 100;
         }
       }
       trackData.length = steps;

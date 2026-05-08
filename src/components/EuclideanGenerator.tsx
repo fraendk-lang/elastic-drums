@@ -210,6 +210,10 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
   const [octaveRange, setOctaveRange] = useState<1|2|3>(1);
   const [kitDensity, setKitDensity] = useState(0.5);  // 0 = sparse … 1 = dense
   const [activeStyle, setActiveStyle] = useState<string | null>(null);
+  // Bass FOLLOW mode: when set, bass takes its rhythm from the named drum
+  // track instead of running the Euclidean math. Lets you lock bass to kick
+  // (track 0) for tight unison or to snare (track 1) for off-beat phrasing.
+  const [bassFollowTrack, setBassFollowTrack] = useState<number | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -232,45 +236,65 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
   const accentColor = activeTarget.color;
   const isSynth = target !== "drums";
 
-  const handleApply = useCallback(() => {
+  // Apply current settings to the active target. Does NOT close the dialog —
+  // used by MUTATE / preset clicks for instant audible feedback.
+  const applyToTarget = useCallback((p: number, s: number, r: number, ap: number, ar: number) => {
     switch (target) {
       case "drums":
-        applyDrumEuclidean(selectedVoice, pulses, steps, rotation, accentPulses, accentRotation);
+        applyDrumEuclidean(selectedVoice, p, s, r, ap, ar);
         break;
       case "bass":
-        applyBassEuclidean(pulses, steps, rotation, noteMode, accentPulses, accentRotation, gateMode, octaveRange);
+        applyBassEuclidean(p, s, r, noteMode, ap, ar, gateMode, octaveRange, bassFollowTrack ?? undefined);
         break;
       case "chords":
-        applyChordsEuclidean(pulses, steps, rotation, noteMode, accentPulses, accentRotation, gateMode, octaveRange);
+        applyChordsEuclidean(p, s, r, noteMode, ap, ar, gateMode, octaveRange);
         break;
       case "melody":
-        applyMelodyEuclidean(pulses, steps, rotation, noteMode, accentPulses, accentRotation, gateMode, octaveRange);
+        applyMelodyEuclidean(p, s, r, noteMode, ap, ar, gateMode, octaveRange);
         break;
       case "layers":
-        applyLayerEuclidean(pulses, steps, rotation, noteMode, melodyScale, melodyRoot, accentPulses, accentRotation);
+        applyLayerEuclidean(p, s, r, noteMode, melodyScale, melodyRoot, ap, ar);
         setLayersEnabled(true);
         break;
     }
-    onClose();
-  }, [target, selectedVoice, pulses, steps, rotation, accentPulses, accentRotation, noteMode, gateMode, octaveRange,
+  }, [target, selectedVoice, noteMode, gateMode, octaveRange, bassFollowTrack,
       applyDrumEuclidean, applyBassEuclidean, applyChordsEuclidean, applyMelodyEuclidean,
-      applyLayerEuclidean, setLayersEnabled, melodyScale, melodyRoot, onClose]);
+      applyLayerEuclidean, setLayersEnabled, melodyScale, melodyRoot]);
+
+  const handleApply = useCallback(() => {
+    applyToTarget(pulses, steps, rotation, accentPulses, accentRotation);
+    onClose();
+  }, [applyToTarget, pulses, steps, rotation, accentPulses, accentRotation, onClose]);
 
   const mutate = useCallback(() => {
-    // Random lightweight mutation: rotate, +/- pulse, nudge accent
+    // Compute mutated values, then update state AND apply in one shot so the
+    // user hears the result immediately. Old behaviour just changed state and
+    // required a separate APPLY click.
+    let nextPulses = pulses;
+    let nextRotation = rotation;
+    let nextAccentPulses = accentPulses;
+    let nextAccentRotation = accentRotation;
+
     const roll = Math.random();
     if (roll < 0.35) {
-      setRotation((r) => (r + 1 + Math.floor(Math.random() * (steps - 1))) % steps);
+      nextRotation = (rotation + 1 + Math.floor(Math.random() * (steps - 1))) % steps;
     } else if (roll < 0.6 && pulses < steps) {
-      setPulses((p) => Math.min(steps, p + 1));
+      nextPulses = Math.min(steps, pulses + 1);
     } else if (roll < 0.8 && pulses > 1) {
-      setPulses((p) => Math.max(1, p - 1));
+      nextPulses = Math.max(1, pulses - 1);
     } else if (accentPulses > 0) {
-      setAccentRotation((r) => (r + 1) % steps);
+      nextAccentRotation = (accentRotation + 1) % steps;
     } else {
-      setAccentPulses(Math.max(1, Math.floor(pulses / 2)));
+      nextAccentPulses = Math.max(1, Math.floor(pulses / 2));
     }
-  }, [steps, pulses, accentPulses]);
+
+    setPulses(nextPulses);
+    setRotation(nextRotation);
+    setAccentPulses(nextAccentPulses);
+    setAccentRotation(nextAccentRotation);
+
+    applyToTarget(nextPulses, steps, nextRotation, nextAccentPulses, nextAccentRotation);
+  }, [steps, pulses, rotation, accentPulses, accentRotation, applyToTarget]);
 
   const invert = useCallback(() => {
     // Logical inverse: complement pulses within steps
@@ -399,23 +423,68 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
             </div>
           </div>
         ) : (
-          <div className="flex items-center gap-2 mb-3 flex-wrap">
-            <span className="text-[10px] text-[var(--ed-text-secondary)]">Note mode:</span>
-            <div className="flex gap-1 flex-wrap">
-              {NOTE_MODES.map((m) => (
-                <button key={m.id} onClick={() => setNoteMode(m.id)}
-                  className="px-2 py-0.5 text-[9px] font-medium rounded-md transition-all"
-                  style={{
-                    backgroundColor: noteMode === m.id
-                      ? `color-mix(in srgb, ${accentColor} 18%, transparent)`
-                      : "var(--ed-bg-surface)",
-                    color: noteMode === m.id ? accentColor : "var(--ed-text-muted)",
-                  }}>
-                  {m.label}
-                </button>
-              ))}
+          <>
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
+              <span className="text-[10px] text-[var(--ed-text-secondary)]">Note mode:</span>
+              <div className="flex gap-1 flex-wrap">
+                {NOTE_MODES.map((m) => (
+                  <button key={m.id} onClick={() => setNoteMode(m.id)}
+                    className="px-2 py-0.5 text-[9px] font-medium rounded-md transition-all"
+                    style={{
+                      backgroundColor: noteMode === m.id
+                        ? `color-mix(in srgb, ${accentColor} 18%, transparent)`
+                        : "var(--ed-bg-surface)",
+                      color: noteMode === m.id ? accentColor : "var(--ed-text-muted)",
+                    }}>
+                    {m.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+
+            {/* FOLLOW Mode: only for bass — derive rhythm from a drum track */}
+            {target === "bass" && (
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <span className="text-[10px] text-[var(--ed-text-secondary)]">Follow:</span>
+                <div className="flex gap-1 flex-wrap">
+                  <button
+                    onClick={() => setBassFollowTrack(null)}
+                    className="px-2 py-0.5 text-[9px] font-medium rounded-md transition-all"
+                    style={{
+                      backgroundColor: bassFollowTrack === null
+                        ? `color-mix(in srgb, ${accentColor} 18%, transparent)`
+                        : "var(--ed-bg-surface)",
+                      color: bassFollowTrack === null ? accentColor : "var(--ed-text-muted)",
+                    }}
+                    title="Generate via Euclidean math (default)"
+                  >
+                    EUCLID
+                  </button>
+                  {[0, 1, 6].map((idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setBassFollowTrack(idx)}
+                      className="px-2 py-0.5 text-[9px] font-medium rounded-md transition-all"
+                      style={{
+                        backgroundColor: bassFollowTrack === idx
+                          ? `color-mix(in srgb, ${accentColor} 30%, transparent)`
+                          : "var(--ed-bg-surface)",
+                        color: bassFollowTrack === idx ? accentColor : "var(--ed-text-muted)",
+                      }}
+                      title={`Bass triggers on ${VOICE_LABELS[idx]} steps`}
+                    >
+                      {VOICE_LABELS[idx]}
+                    </button>
+                  ))}
+                </div>
+                {bassFollowTrack !== null && (
+                  <span className="text-[8px] text-[var(--ed-text-muted)]">
+                    Pulses/Rotation ignored — rhythm = drum track
+                  </span>
+                )}
+              </div>
+            )}
+          </>
         )}
 
         {/* Main: circular viz + sliders */}

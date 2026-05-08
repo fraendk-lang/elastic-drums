@@ -489,7 +489,7 @@ interface BassStore {
   generateBassline: (strategyIndex: number) => void;
   nextStrategy: () => void;
   prevStrategy: () => void;
-  applyEuclidean: (pulses: number, eucSteps: number, rotation: number, noteMode: string, accentPulses?: number, accentRotation?: number, gateMode?: "stac"|"med"|"leg"|"tie", octaveRange?: 1|2|3) => void;
+  applyEuclidean: (pulses: number, eucSteps: number, rotation: number, noteMode: string, accentPulses?: number, accentRotation?: number, gateMode?: "stac"|"med"|"leg"|"tie", octaveRange?: 1|2|3, followDrumTrack?: number) => void;
   loadPreset: (index: number) => void;
   nextPreset: () => void;
   prevPreset: () => void;
@@ -788,10 +788,20 @@ export const useBassStore = create<BassStore>((set, get) => ({
     set({ strategyIndex: prev });
   },
 
-  applyEuclidean: (pulses, eucSteps, rotation, noteMode, accentPulses = 0, accentRotation = 0, gateMode = "stac", octaveRange = 1) => {
+  applyEuclidean: (pulses, eucSteps, rotation, noteMode, accentPulses = 0, accentRotation = 0, gateMode = "stac", octaveRange = 1, followDrumTrack) => {
     const { length, scaleName } = get();
     const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
-    const rhythm = generateEuclidean(pulses, eucSteps, rotation);
+    // FOLLOW MODE: derive rhythm from a drum track's pattern instead of
+    // generating it via Bjorklund. Lets the bass lock perfectly to the kick
+    // (or snare, or any voice) for tight unison grooves.
+    let rhythm: boolean[];
+    if (followDrumTrack !== undefined) {
+      const drumPattern = useDrumStore.getState().pattern;
+      const followSteps = drumPattern.tracks[followDrumTrack]?.steps ?? [];
+      rhythm = Array.from({ length: eucSteps }, (_, i) => followSteps[i]?.active ?? false);
+    } else {
+      rhythm = generateEuclidean(pulses, eucSteps, rotation);
+    }
     const accent = accentPulses > 0
       ? generateEuclidean(accentPulses, eucSteps, accentRotation)
       : null;
