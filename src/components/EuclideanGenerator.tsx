@@ -203,6 +203,26 @@ const TARGETS: { id: Target; label: string; color: string }[] = [
   { id: "layers", label: "LAYERS", color: "#a78bfa" },
 ];
 
+// ── User Style persistence ──────────────────────────────────────────────────
+// User-saved styles live alongside factory ones. Stored in localStorage so
+// they survive across sessions; not synced anywhere else.
+const USER_STYLES_KEY = "eg-euclid-user-styles";
+
+function loadUserStyles(): GrooveStyle[] {
+  try {
+    const raw = localStorage.getItem(USER_STYLES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((s) => s && typeof s === "object" && typeof s.name === "string" && s.voices);
+  } catch { return []; }
+}
+
+function saveUserStyles(styles: GrooveStyle[]): void {
+  try { localStorage.setItem(USER_STYLES_KEY, JSON.stringify(styles)); }
+  catch { /* private mode — silently no-op */ }
+}
+
 // Presets including world-music rhythms
 interface EuclidPreset { label: string; p: number; s: number; r?: number; hint?: string }
 const PRESETS: EuclidPreset[] = [
@@ -245,6 +265,14 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
   const [octaveRange, setOctaveRange] = useState<1|2|3>(1);
   const [kitDensity, setKitDensity] = useState(0.5);  // 0 = sparse … 1 = dense
   const [activeStyle, setActiveStyle] = useState<string | null>(null);
+  // Per-voice custom step count — when enabled, each voice loops its own
+  // s value, creating a polyrhythmic kit (different cycle lengths run
+  // simultaneously). Default 16 keeps current behaviour unchanged.
+  const [voiceStepsExpanded, setVoiceStepsExpanded] = useState(false);
+  const [voiceSteps, setVoiceSteps] = useState<number[]>(() => Array(12).fill(16));
+
+  // User-saved styles — captured from current per-voice kit state
+  const [userStyles, setUserStyles] = useState<GrooveStyle[]>(() => loadUserStyles());
   // Bass FOLLOW mode: when set, bass takes its rhythm from the named drum
   // track instead of running the Euclidean math. Lets you lock bass to kick
   // (track 0) for tight unison or to snare (track 1) for off-beat phrasing.
@@ -253,6 +281,14 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
   // while the transport is playing. Slow evolution without the user clicking.
   const [driftEnabled, setDriftEnabled] = useState(false);
   const [driftBars, setDriftBars] = useState<2|4|8>(4);
+
+  // MORPH — two snapshot slots (A and B) and a 0..100 slider that linearly
+  // interpolates between them. Each snapshot captures p/s/r/accent state.
+  // Live-applies on every slider change so you hear the morph in real time.
+  interface PatternSnap { p: number; s: number; r: number; ap: number; ar: number }
+  const [snapA, setSnapA] = useState<PatternSnap | null>(null);
+  const [snapB, setSnapB] = useState<PatternSnap | null>(null);
+  const [morphPct, setMorphPct] = useState(0); // 0..100
 
   useEffect(() => {
     if (!isOpen) return;
@@ -335,6 +371,38 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
     applyToTarget(nextPulses, steps, nextRotation, nextAccentPulses, nextAccentRotation);
   }, [steps, pulses, rotation, accentPulses, accentRotation, applyToTarget]);
 
+  // ── MORPH ────────────────────────────────────────────────────────────────
+  const captureSnap = useCallback((): PatternSnap => ({
+    p: pulses, s: steps, r: rotation, ap: accentPulses, ar: accentRotation,
+  }), [pulses, steps, rotation, accentPulses, accentRotation]);
+
+  const handleSnapA = useCallback(() => { setSnapA(captureSnap()); }, [captureSnap]);
+  const handleSnapB = useCallback(() => { setSnapB(captureSnap()); }, [captureSnap]);
+
+  const handleMorph = useCallback((pct: number) => {
+    setMorphPct(pct);
+    if (!snapA || !snapB) return;
+    const t = pct / 100;
+    // Linear interpolate; round to ints. Steps takes max so the longer cycle
+    // dominates and sub-step rotations still make sense.
+    const morphedSteps = Math.max(2, Math.round(snapA.s + (snapB.s - snapA.s) * t));
+    const morphedPulses = Math.max(0, Math.min(morphedSteps, Math.round(snapA.p + (snapB.p - snapA.p) * t)));
+    // Rotate via shortest direction on the modular ring
+    const rotDelta = ((snapB.r - snapA.r + morphedSteps) % morphedSteps);
+    const rotShort = rotDelta > morphedSteps / 2 ? rotDelta - morphedSteps : rotDelta;
+    const morphedRotation = ((snapA.r + rotShort * t) % morphedSteps + morphedSteps) % morphedSteps;
+    const morphedAccentPulses = Math.max(0, Math.round(snapA.ap + (snapB.ap - snapA.ap) * t));
+    const morphedAccentRotation = Math.round(snapA.ar + (snapB.ar - snapA.ar) * t);
+
+    // Update local state and live-apply
+    setPulses(morphedPulses);
+    setSteps(morphedSteps);
+    setRotation(Math.round(morphedRotation));
+    setAccentPulses(morphedAccentPulses);
+    setAccentRotation(morphedAccentRotation);
+    applyToTarget(morphedPulses, morphedSteps, Math.round(morphedRotation), morphedAccentPulses, morphedAccentRotation);
+  }, [snapA, snapB, applyToTarget]);
+
   // ── DRIFT: auto-mutate every `driftBars` bars while transport is playing ──
   // Subscribes to the drum-step external store. Each time we cross step 0
   // (start of a new bar in 16-step land), increment a bar counter; when it
@@ -381,11 +449,27 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
     // density 0 → ~25 % of base pulses, density 1 → ~175 % (clamped to steps)
     const scale = 0.25 + kitDensity * 1.5;
     KIT_FILL_BASE.forEach((base, voiceIdx) => {
-      const scaled = Math.max(1, Math.min(base.steps, Math.round(base.pulses * scale)));
-      applyDrumEuclidean(voiceIdx, scaled, base.steps, base.rotation);
+      // Use per-voice override if expanded panel is active, else default base.steps
+      const steps = voiceStepsExpanded ? (voiceSteps[voiceIdx] ?? base.steps) : base.steps;
+      // Re-scale pulses proportionally if user changed step count
+      const ratio = steps / base.steps;
+      const scaledPulses = Math.max(1, Math.min(steps, Math.round(base.pulses * scale * ratio)));
+      applyDrumEuclidean(voiceIdx, scaledPulses, steps, base.rotation);
     });
     setActiveStyle(null);
-  }, [kitDensity, applyDrumEuclidean]);
+  }, [kitDensity, voiceSteps, voiceStepsExpanded, applyDrumEuclidean]);
+
+  const cycleVoiceSteps = useCallback((voiceIdx: number) => {
+    // Cycle through musical step counts: 12 (triplet) → 16 (default) → 24 → 32 → 12
+    const CYCLE = [12, 16, 24, 32];
+    setVoiceSteps((prev) => {
+      const next = [...prev];
+      const cur = next[voiceIdx] ?? 16;
+      const i = CYCLE.indexOf(cur);
+      next[voiceIdx] = CYCLE[(i + 1) % CYCLE.length] ?? 16;
+      return next;
+    });
+  }, []);
 
   // ── Groove Style: apply one style's voice map ──
   const handleApplyStyle = useCallback((style: GrooveStyle) => {
@@ -396,6 +480,45 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
     });
     setActiveStyle(style.name);
   }, [applyDrumEuclidean]);
+
+  // ── Save current per-voice kit state as a User Style ──
+  const handleSaveUserStyle = useCallback(() => {
+    const name = window.prompt("Style name?", `My Groove ${userStyles.length + 1}`);
+    if (!name?.trim()) return;
+    // Snapshot the current drum pattern as a GrooveStyle: read each voice's
+    // current state from drumStore. We capture pulses (count of active steps),
+    // the track's length as `s`, and use rotation 0 (we don't reverse-engineer
+    // rotation — saving the rhythm pattern's first-pulse alignment is good enough
+    // for re-applying).
+    const drumPattern = useDrumStore.getState().pattern;
+    const voices: Partial<Record<number, VoicePat>> = {};
+    drumPattern.tracks.forEach((track, idx) => {
+      if (!track) return;
+      const activeCount = track.steps.slice(0, track.length).filter((st) => st.active).length;
+      if (activeCount === 0) return; // skip silent voices
+      voices[idx] = { p: activeCount, s: track.length, r: 0 };
+    });
+    if (Object.keys(voices).length === 0) {
+      window.alert("No active drum voices to save.");
+      return;
+    }
+    const newStyle: GrooveStyle = {
+      name: name.trim(),
+      hint: "User saved",
+      emoji: "💾",
+      voices,
+    };
+    const updated = [...userStyles, newStyle];
+    setUserStyles(updated);
+    saveUserStyles(updated);
+  }, [userStyles]);
+
+  const handleDeleteUserStyle = useCallback((styleName: string) => {
+    if (!window.confirm(`Delete "${styleName}"?`)) return;
+    const updated = userStyles.filter((s) => s.name !== styleName);
+    setUserStyles(updated);
+    saveUserStyles(updated);
+  }, [userStyles]);
 
   if (!isOpen) return null;
 
@@ -860,13 +983,72 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
           )}
         </div>
 
+        {/* ── User Styles ── (only shown for drum target) */}
+        {target === "drums" && (
+          <div className="mb-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[8px] font-bold text-[var(--ed-text-muted)] tracking-wider">
+                YOUR STYLES {userStyles.length > 0 && <span className="text-white/30">· {userStyles.length}</span>}
+              </span>
+              <button
+                onClick={handleSaveUserStyle}
+                className="px-2 py-0.5 text-[8px] font-bold rounded bg-[var(--ed-accent-green)]/15 text-[var(--ed-accent-green)] hover:bg-[var(--ed-accent-green)]/25 border border-[var(--ed-accent-green)]/30 transition-all"
+                title="Save current drum kit pattern as a reusable style"
+              >
+                + SAVE
+              </button>
+            </div>
+            {userStyles.length === 0 ? (
+              <div className="text-[8px] text-white/25 italic px-1 py-2">
+                Build a groove, hit SAVE — it'll appear here for one-tap recall.
+              </div>
+            ) : (
+              <div className="flex gap-1 flex-wrap">
+                {userStyles.map((style) => (
+                  <div key={style.name} className="group/userstyle relative">
+                    <button
+                      onClick={() => handleApplyStyle(style)}
+                      className="px-2 py-1 text-[9px] rounded-md border bg-[var(--ed-bg-surface)] text-[var(--ed-text-secondary)] hover:bg-[var(--ed-bg-elevated)] hover:text-[var(--ed-text-primary)] transition-colors flex items-center gap-1"
+                      style={{ borderColor: "var(--ed-border-subtle)" }}
+                      title={`Apply: ${Object.keys(style.voices).length} voices`}
+                    >
+                      <span>💾</span>
+                      <span>{style.name}</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteUserStyle(style.name)}
+                      className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-500/80 text-white text-[8px] leading-none opacity-0 group-hover/userstyle:opacity-100 transition-opacity flex items-center justify-center"
+                      title="Delete style"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── Kit Fill ── */}
         <div className="mb-3 p-2.5 rounded-lg border border-[var(--ed-border-subtle)] bg-[var(--ed-bg-surface)]/40">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[9px] font-bold tracking-wider" style={{ color: "var(--ed-accent-orange)" }}>
               KIT FILL
             </span>
-            <span className="text-[7px] text-[var(--ed-text-muted)]">Scale all voices by density</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setVoiceStepsExpanded((v) => !v)}
+                className={`px-1.5 py-0.5 text-[8px] font-bold rounded transition-all ${
+                  voiceStepsExpanded
+                    ? "bg-[var(--ed-accent-orange)]/25 text-[var(--ed-accent-orange)]"
+                    : "text-white/35 hover:text-white/65"
+                }`}
+                title="Per-voice step count: tap a voice to cycle 12 → 16 → 24 → 32 (polyrhythmic kit)"
+              >
+                {voiceStepsExpanded ? "● POLY" : "○ POLY"}
+              </button>
+              <span className="text-[7px] text-[var(--ed-text-muted)]">Scale all voices by density</span>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 flex-1">
@@ -891,17 +1073,33 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
               FILL KIT
             </button>
           </div>
-          {/* Mini density preview — shows pulse counts */}
+          {/* Mini density preview — shows pulse counts; clickable in POLY mode */}
           <div className="flex gap-0.5 mt-2 flex-wrap">
             {KIT_FILL_BASE.map((base, i) => {
-              const scale  = 0.25 + kitDensity * 1.5;
-              const scaled = Math.max(1, Math.min(base.steps, Math.round(base.pulses * scale)));
+              const scale = 0.25 + kitDensity * 1.5;
+              const stepsForVoice = voiceStepsExpanded ? (voiceSteps[i] ?? base.steps) : base.steps;
+              const ratio = stepsForVoice / base.steps;
+              const scaled = Math.max(1, Math.min(stepsForVoice, Math.round(base.pulses * scale * ratio)));
+              const isCustom = voiceStepsExpanded && stepsForVoice !== 16;
               return (
                 <div key={i} className="flex flex-col items-center gap-0.5 flex-1 min-w-[32px]">
                   <div className="text-[5px] font-bold text-white/25">{VOICE_LABELS[i]}</div>
                   <div className="text-[8px] font-bold tabular-nums" style={{ color: "var(--ed-accent-orange)" }}>
                     {scaled}
                   </div>
+                  {voiceStepsExpanded && (
+                    <button
+                      onClick={() => cycleVoiceSteps(i)}
+                      className={`text-[7px] font-mono px-1 py-px rounded transition-all ${
+                        isCustom
+                          ? "bg-[var(--ed-accent-orange)]/25 text-[var(--ed-accent-orange)] border border-[var(--ed-accent-orange)]/40"
+                          : "text-white/35 hover:text-white/65 border border-transparent"
+                      }`}
+                      title={`Step count for ${VOICE_LABELS[i]} — tap to cycle 12 → 16 → 24 → 32`}
+                    >
+                      /{stepsForVoice}
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -947,6 +1145,43 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
             title="Reset to E(4,16)"
           >
             ↺ RESET
+          </button>
+        </div>
+
+        {/* MORPH — A/B snapshots + interpolation slider */}
+        <div className="flex items-center gap-2 mb-2 px-1">
+          <span className="text-[9px] text-[var(--ed-text-muted)] font-bold">MORPH</span>
+          <button
+            onClick={handleSnapA}
+            className={`px-2 py-0.5 text-[9px] font-bold rounded transition-all ${
+              snapA
+                ? "bg-[var(--ed-accent-blue)]/25 text-[var(--ed-accent-blue)] border border-[var(--ed-accent-blue)]/40"
+                : "bg-white/5 text-white/40 border border-white/10 hover:text-white/70"
+            }`}
+            title={snapA ? `Snapshot A: E(${snapA.p},${snapA.s},${snapA.r})` : "Save current pattern as A"}
+          >
+            A {snapA ? "●" : ""}
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={morphPct}
+            onChange={(e) => handleMorph(Number(e.target.value))}
+            disabled={!snapA || !snapB}
+            className="flex-1 h-3 accent-[var(--ed-accent-orange)] disabled:opacity-30"
+            title={snapA && snapB ? `Morph A → B (${morphPct}%)` : "Save both A and B to morph between them"}
+          />
+          <button
+            onClick={handleSnapB}
+            className={`px-2 py-0.5 text-[9px] font-bold rounded transition-all ${
+              snapB
+                ? "bg-[var(--ed-accent-melody)]/25 text-[var(--ed-accent-melody)] border border-[var(--ed-accent-melody)]/40"
+                : "bg-white/5 text-white/40 border border-white/10 hover:text-white/70"
+            }`}
+            title={snapB ? `Snapshot B: E(${snapB.p},${snapB.s},${snapB.r})` : "Save current pattern as B"}
+          >
+            B {snapB ? "●" : ""}
           </button>
         </div>
 
