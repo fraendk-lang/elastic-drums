@@ -246,9 +246,10 @@ export const useMelodyLayerStore = create<MelodyLayerState>((set) => ({
       const durationBeats = Math.max(0.25, Math.round(beatsPerSlot * 4) / 4);
 
       // Root MIDI: rootNote is a full MIDI note (e.g. 36 = C2, 37 = C#2 …).
-      // We only need the pitch class (semitone within octave), anchored to C4=60
-      // so generated notes land in the middle of the 48–84 playable range.
-      const rootMidi = 60 + (rootNote % 12);
+      // We only need the pitch class (semitone within octave). Anchored to
+      // C2=36 (two octaves below C4) so the layer sits in the bass / lower-mid
+      // register and doesn't fight the main melody engine which plays around C4.
+      const rootMidi = 36 + (rootNote % 12);
       const scaleLen = scale.length;
       let walkCursor = 0;
       let noteIndex = 0;
@@ -278,10 +279,12 @@ export const useMelodyLayerStore = create<MelodyLayerState>((set) => ({
 
         noteIndex++;
 
-        // Clamp pitch to MIDI 48–84 (C3–C6), shift by octaves if needed
+        // Clamp pitch to MIDI 24–60 (C1–C4) — the lower-register window matched
+        // to the new C2 anchor. Notes land below the main melody engine, perfect
+        // for layered bass/mid harmony lines.
         let pitch = rootMidi + interval;
-        while (pitch > 84) pitch -= 12;
-        while (pitch < 48) pitch += 12;
+        while (pitch > 60) pitch -= 12;
+        while (pitch < 24) pitch += 12;
 
         const startBeat = Math.round(i * beatsPerSlot * 4) / 4;
         const isAccent = accent ? (accent[i % accent.length] ?? false) : false;
