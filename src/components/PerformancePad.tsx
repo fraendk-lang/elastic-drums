@@ -193,6 +193,33 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     return () => { sched?.stop(); };
   }, []);
 
+  // ── Wake-up handler ─────────────────────────────────────────────────────
+  // When the browser window/tab regains focus, the AudioContext may have been
+  // suspended and the SchedulerClock's main-thread message dispatch may have
+  // been throttled. If the ARP is running with LATCH on, audio appears to stop.
+  // Listen for focus + visibilitychange so we can resume the audio context and
+  // immediately re-tick the scheduler to refill its lookahead window.
+  useEffect(() => {
+    if (!isOpen) return;
+    const wakeUp = () => {
+      // Don't bother if we don't actually need audio right now
+      if (!arpOnRef.current && activeVoicesRef.current.size === 0) return;
+      audioEngine.resume();
+      // Force the scheduler to schedule notes immediately rather than wait for
+      // the next worklet tick to get unstuck on the main thread.
+      arpSchedulerRef.current?.kick();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") wakeUp();
+    };
+    window.addEventListener("focus", wakeUp);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", wakeUp);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [isOpen]);
+
   /** Apply chord-follow: transpose Bass + Melody engines to match the given chord root.
    *  Pass null to clear. Uses closest-octave diff from current bass rootNote. */
   const applyChordFollow = useCallback((chordRootMidi: number | null) => {

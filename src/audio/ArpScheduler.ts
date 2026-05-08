@@ -15,8 +15,22 @@ import { schedulerClock } from './SchedulerClock';
 import { audioEngine } from './AudioEngine';
 import { generateArpNotes, type ArpSettings } from './Arpeggiator';
 
-/** Schedule notes this many seconds ahead of ctx.currentTime to prevent audio gaps. */
-const LOOKAHEAD_SEC = 0.1;
+/**
+ * Schedule notes this many seconds ahead of ctx.currentTime.
+ *
+ * Why 1 second (not the typical 100ms): on macOS, when the browser window
+ * loses focus, main-thread message dispatch can be throttled. The audio
+ * thread keeps running, but the JS callback that schedules notes runs at
+ * reduced priority. With a small lookahead the scheduled-note buffer drains
+ * before the next tick fires and audio cuts out — exactly what users see
+ * when ARP+LATCH is on and they Cmd+Tab away.
+ *
+ * 1 second is enough headroom to survive most throttling windows while
+ * still being responsive to live parameter changes (arp rate, octaves) —
+ * those are read fresh each step, so the worst-case stale-parameter window
+ * is also 1 second.
+ */
+const LOOKAHEAD_SEC = 1.0;
 
 export interface ArpSchedulerOptions {
   getRoot: () => number;
@@ -53,6 +67,16 @@ export class ArpScheduler {
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.options = null;
+  }
+
+  /**
+   * Force a tick now. Useful after the page regains focus from background —
+   * the scheduler clock may have missed dispatches and we want to resume
+   * scheduling notes immediately rather than waiting for the next worklet
+   * message to bubble up to the main thread.
+   */
+  kick(): void {
+    if (this._running) this._tick();
   }
 
   private _tick(): void {
