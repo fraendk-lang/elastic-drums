@@ -907,7 +907,20 @@ export function PerformancePad({ isOpen, onClose }: Props) {
         // ── Pitch grid (notes mode) ──
         const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
         const cols = scale.length * scaleOctaves;
-        ctx.strokeStyle = "rgba(244, 114, 182, 0.08)";
+
+        // 1. Horizontal reference lines (cutoff/Y-axis quartiles) — very subtle
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+        ctx.lineWidth = 1;
+        for (const frac of [0.25, 0.5, 0.75]) {
+          const y = frac * H;
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(W, y);
+          ctx.stroke();
+        }
+
+        // 2. Scale-degree lines — every interval inside an octave
+        ctx.strokeStyle = "rgba(244, 114, 182, 0.18)";
         ctx.lineWidth = 1;
         for (let i = 1; i < cols; i++) {
           const x = (i / cols) * W;
@@ -916,8 +929,26 @@ export function PerformancePad({ isOpen, onClose }: Props) {
           ctx.lineTo(x, H);
           ctx.stroke();
         }
-        ctx.strokeStyle = "rgba(244, 114, 182, 0.22)";
+
+        // 3. Fifth-of-scale highlight — half-octave reference for melodic intervals
+        const fifthIdx = Math.min(scale.length - 1, Math.floor(scale.length * 0.5));
+        if (fifthIdx > 0) {
+          ctx.strokeStyle = "rgba(167, 139, 250, 0.22)"; // accent-chords violet
+          ctx.lineWidth = 1;
+          for (let o = 0; o < scaleOctaves; o++) {
+            const x = ((o * scale.length + fifthIdx) / cols) * W;
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, H);
+            ctx.stroke();
+          }
+        }
+
+        // 4. Octave dividers — bright, with a soft glow so they really land
+        ctx.strokeStyle = "rgba(244, 114, 182, 0.55)";
         ctx.lineWidth = 1.5;
+        ctx.shadowColor = "rgba(244, 114, 182, 0.4)";
+        ctx.shadowBlur = 6;
         for (let o = 1; o < scaleOctaves; o++) {
           const x = (o / scaleOctaves) * W;
           ctx.beginPath();
@@ -925,6 +956,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
           ctx.lineTo(x, H);
           ctx.stroke();
         }
+        ctx.shadowBlur = 0;
       }
 
       // ── Particle trail (hover + press) — dramatically enlarged ──
