@@ -338,12 +338,14 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   }, [yParam]);
 
   // ── Fire a voice — returns release handle ──
-  const fireVoice = useCallback((midi: number, velocity: number, y: number): (() => void) | null => {
+  const fireVoice = useCallback((midi: number, velocity: number, y: number, opts?: { startTime?: number; duration?: number }): (() => void) | null => {
     const ctx = audioEngine.getAudioContext();
     if (!ctx) return null;
-    const startTime = ctx.currentTime + 0.001;
-    // Long pseudo-sustain — actual release is triggered by pointer-up via release handle
-    const duration = 30.0;
+    // Default: trigger ~1ms ahead with 30s pseudo-sustain (released on pointer-up).
+    // Loop playback overrides startTime + duration to schedule notes exactly on
+    // the audio clock — bypasses setTimeout main-thread jitter.
+    const startTime = opts?.startTime ?? (ctx.currentTime + 0.001);
+    const duration = opts?.duration ?? 30.0;
 
     // Apply Y modulation to engine params BEFORE trigger
     const paramValue = yToParam(y);
@@ -353,7 +355,6 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     } else {
       bassEngine.setParams({ [yParam]: paramValue });
       bassEngine.triggerNote(midi, startTime, false, false, false, velocity);
-      // Bass engine is mono — release function just calls releaseNote
       return () => bassEngine.releaseNote(ctx.currentTime);
     }
   }, [target, yParam, yToParam]);
@@ -656,104 +657,149 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   };
 
   // ── Loop playback engine ──
+  // Strategy: instead of scheduling separate "down" + "up" timers (race-prone
+  // at iteration boundaries), pair every down with its matching up at SCHEDULE
+  // time and pass the resulting duration directly to the audio engine. The
+  // engine handles release on its own audio clock — no setTimeout race, no
+  // hanging notes. "move" events still use setTimeout (gestural, not timing-
+  // critical).
   useEffect(() => {
     if (!isLooping || events.length === 0) return;
-    const loopStart = performance.now();
+    const ctx = audioEngine.getAudioContext();
+    if (!ctx) return;
+
+    // Pre-compute paired note events: for each "down", find the matching "up"
+    // (same pointerId, smallest t > down.t) and combine into { startT, duration, midi, velocity, y }.
+    // This happens once per useEffect run, not per iteration.
+    interface PairedNote { startT: number; duration: number; pointerId: number; x: number; y: number; velocity: number }
+    const pairedNotes: PairedNote[] = [];
+    const moves: typeof events = [];
+    for (let i = 0; i < events.length; i++) {
+      const ev = events[i]!;
+      if (ev.type === "move") {
+        moves.push(ev);
+      } else if (ev.type === "down") {
+        // Find next "up" with same pointerId
+        let upT = ev.t + 100; // fallback 100ms if no up found
+        for (let j = i + 1; j < events.length; j++) {
+          const cand = events[j]!;
+          if (cand.type === "up" && cand.pointerId === ev.pointerId && cand.t > ev.t) {
+            upT = cand.t;
+            break;
+          }
+        }
+        const duration = Math.max(0.02, (upT - ev.t) / 1000); // seconds, min 20ms
+        pairedNotes.push({ startT: ev.t, duration, pointerId: ev.pointerId, x: ev.x, y: ev.y, velocity: ev.velocity });
+      }
+      // "up" events are handled via the duration param — no explicit scheduling
+    }
+
+    // Sort by start time so iteration scheduling fires events in order
+    pairedNotes.sort((a, b) => a.startT - b.startT);
+    const sortedMoves = [...moves].sort((a, b) => a.t - b.t);
+
     const dur = loopDuration;
     const timers: ReturnType<typeof setTimeout>[] = [];
     const playbackVoices = new Map<number, ActiveVoice>();
 
-    // Sort events by time before scheduling — events were appended in tap
-    // order during recording, so a "down" at t=900 followed by its "up" at
-    // t=1150 sits adjacent to a later "down" at t=250. Without sorting,
-    // setTimeout queue ordering depends on append order, not scheduled time,
-    // which can cause an "up" to fire AFTER a same-pointer "down" at the
-    // same scheduled time → stale-voice release.
-    const sortedEvents = [...events].sort((a, b) => a.t - b.t);
+    // Audio-clock anchor: every iteration's events are computed relative to
+    // this. setTimeout might fire late but the audio events still land at
+    // EXACT audio times.
+    let iterationAudioStart = ctx.currentTime + 0.05;
+    const wallStart = performance.now();
 
-    const scheduleIteration = (iterationStart: number) => {
-      for (const ev of sortedEvents) {
-        const delay = (iterationStart - performance.now()) + ev.t;
+    const scheduleIteration = (iterAudioStart: number, iterWallStart: number) => {
+      // Schedule paired notes — each fires triggerPolyNote with exact audio time
+      for (const note of pairedNotes) {
+        const wallDelay = (iterWallStart - performance.now()) + note.startT;
+        const audioStart = iterAudioStart + note.startT / 1000;
         const timer = setTimeout(() => {
           if (!usePerformancePadStore.getState().isLooping) return;
-          if (ev.type === "down") {
-            const midi = xToMidi(ev.x);
-            if (arpOnRef.current && target === "melody") {
-              arpRootRef.current = midi;
-              if (!arpSchedulerRef.current?.isRunning) {
-                arpSchedulerRef.current?.start({
-                  getRoot: () => arpRootRef.current,
-                  getSettings: () => ({
-                    ...DEFAULT_ARP_SETTINGS,
-                    mode: arpModeRef.current,
-                    rate: arpRateRef.current,
-                    octaves: arpOctavesRef.current,
-                    gate: "medium",
-                  }),
-                  getScaleName: () => scaleNameRef.current,
-                  onNote: (noteMidi, duration, atTime, vel) => {
-                    melodyEngine.triggerPolyNote(noteMidi, atTime, duration, vel, false);
-                  },
-                  getBpm: () => useDrumStore.getState().bpm,
-                  getLookahead: () => activeVoicesRef.current.size > 0 ? 0.1 : (arpLatchRef.current ? 1.0 : 0.1),
-                });
-              }
-              playbackVoices.set(ev.pointerId, { pointerId: ev.pointerId, midi, startAt: performance.now(), velocity: ev.velocity, releases: [] });
-            } else {
-              const release = fireVoice(midi, ev.velocity, ev.y);
-              playbackVoices.set(ev.pointerId, { pointerId: ev.pointerId, midi, startAt: performance.now(), velocity: ev.velocity, releases: [release] });
+          const midi = xToMidi(note.x);
+          if (arpOnRef.current && target === "melody") {
+            // Arp mode: just update the root — arp scheduler keeps producing notes
+            arpRootRef.current = midi;
+            if (!arpSchedulerRef.current?.isRunning) {
+              arpSchedulerRef.current?.start({
+                getRoot: () => arpRootRef.current,
+                getSettings: () => ({
+                  ...DEFAULT_ARP_SETTINGS,
+                  mode: arpModeRef.current,
+                  rate: arpRateRef.current,
+                  octaves: arpOctavesRef.current,
+                  gate: "medium",
+                }),
+                getScaleName: () => scaleNameRef.current,
+                onNote: (noteMidi, d, atTime, vel) => {
+                  melodyEngine.triggerPolyNote(noteMidi, atTime, d, vel, false);
+                },
+                getBpm: () => useDrumStore.getState().bpm,
+                getLookahead: () => activeVoicesRef.current.size > 0 ? 0.1 : (arpLatchRef.current ? 1.0 : 0.1),
+              });
             }
-          } else if (ev.type === "move") {
-            const v = playbackVoices.get(ev.pointerId);
-            if (!v) return;
-            if (arpOnRef.current && target === "melody") {
-              arpRootRef.current = xToMidi(ev.x);
-            } else {
-              modulateVoice(ev.y);
-              if (gridSnap) {
-                const newMidi = xToMidi(ev.x);
-                if (newMidi !== v.midi) repitchVoice(v, newMidi, ev.y);
-              }
-            }
-          } else if (ev.type === "up") {
-            if (arpOnRef.current && target === "melody") {
-              playbackVoices.delete(ev.pointerId);
-              if (playbackVoices.size === 0 && !arpLatchRef.current) {
-                arpSchedulerRef.current?.stop();
-              }
-            } else {
-              const v = playbackVoices.get(ev.pointerId);
-              v?.releases.forEach((r) => r?.());
-              playbackVoices.delete(ev.pointerId);
+          } else {
+            // Direct triggering with EXACT audio start + duration
+            // Pass startTime so the audio engine schedules precisely, not
+            // "whenever setTimeout decided to fire".
+            const release = fireVoice(midi, note.velocity, note.y, {
+              startTime: audioStart,
+              duration: note.duration,
+            });
+            // Track for cleanup-on-stop. Release isn't usually called (engine
+            // auto-releases at startTime + duration) but available if user
+            // hits stop mid-note.
+            playbackVoices.set(note.pointerId, { pointerId: note.pointerId, midi, startAt: performance.now(), velocity: note.velocity, releases: [release] });
+            // Auto-evict from map after note's natural end
+            const evictDelay = (note.duration * 1000) + 100;
+            setTimeout(() => playbackVoices.delete(note.pointerId), evictDelay);
+          }
+        }, Math.max(0, wallDelay));
+        timers.push(timer);
+      }
+      // Schedule "move" events for X/Y modulation during note playback
+      for (const ev of sortedMoves) {
+        const wallDelay = (iterWallStart - performance.now()) + ev.t;
+        const timer = setTimeout(() => {
+          if (!usePerformancePadStore.getState().isLooping) return;
+          const v = playbackVoices.get(ev.pointerId);
+          if (!v) return;
+          if (arpOnRef.current && target === "melody") {
+            arpRootRef.current = xToMidi(ev.x);
+          } else {
+            modulateVoice(ev.y);
+            if (gridSnap) {
+              const newMidi = xToMidi(ev.x);
+              if (newMidi !== v.midi) repitchVoice(v, newMidi, ev.y);
             }
           }
-        }, Math.max(0, delay));
+        }, Math.max(0, wallDelay));
         timers.push(timer);
       }
     };
 
-    scheduleIteration(loopStart);
-    // Loop: schedule next iteration just before this one ends
+    scheduleIteration(iterationAudioStart, wallStart);
+
+    // Schedule next iteration based on audio clock, not setInterval drift
     const loopTimer = setInterval(() => {
       if (!usePerformancePadStore.getState().isLooping) {
         clearInterval(loopTimer);
         return;
       }
-      scheduleIteration(performance.now());
+      iterationAudioStart += dur / 1000;
+      scheduleIteration(iterationAudioStart, performance.now());
     }, dur);
 
     return () => {
       timers.forEach(clearTimeout);
       clearInterval(loopTimer);
-      // CRITICAL: release every voice that was triggered but whose "up" event
-      // hasn't fired yet. Without this, stopping the loop while a note is held
-      // leaves a hanging tone forever (its up timer was just cleared above).
+      // Release any voice whose audio is still active. Most notes will have
+      // auto-released by their `duration`, but the cleanup catches the case
+      // where the user hits STOP mid-note.
       for (const v of playbackVoices.values()) {
         v.releases.forEach((r) => r?.());
       }
       playbackVoices.clear();
-      // Also stop the arp scheduler if it was started by loop playback —
-      // otherwise it keeps generating notes after stop.
+      // Stop arp if it was started by loop playback
       if (arpSchedulerRef.current?.isRunning) {
         arpSchedulerRef.current.stop();
       }
