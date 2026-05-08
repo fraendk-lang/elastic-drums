@@ -36,6 +36,7 @@ import { BeatFxPanel } from "./components/BeatFxPanel";
 import { ShortcutOverlay } from "./components/ShortcutOverlay";
 import { OnboardingModal } from "./components/OnboardingModal";
 import { DemoSongPicker } from "./components/DemoSongPicker";
+import { InstallHintIOS } from "./components/InstallHintIOS";
 import { getMidiClockMode, subscribeMidiClockMode } from "./store/midiClockMode";
 import { bassEngine } from "./audio/BassEngine";
 import { chordsEngine } from "./audio/ChordsEngine";
@@ -586,6 +587,7 @@ export function App() {
       <ShortcutOverlay />
       <OnboardingModal onComplete={() => setDemoPickerOpen(true)} />
       <DemoSongPicker isOpen={demoPickerOpen} onClose={() => setDemoPickerOpen(false)} />
+      <InstallHintIOS />
       {sceneMiniOpen && <SceneMini onClose={() => setSceneMiniOpen(false)} />}
     </div>
     </ErrorBoundary>

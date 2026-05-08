@@ -2,10 +2,24 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      viewport-fit=cover  → app paints into safe-area zones (iPad notch/rounded corners)
+      user-scalable=no    → prevents pinch-zoom that would scale the audio UI
+      maximum-scale=1     → backup for browsers that ignore user-scalable
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no, maximum-scale=1.0" />
     <title>Elastic Groove</title>
     <meta name="description" content="Browser Groovebox — VA Synth + Samples + Elektron Sequencer" />
     <meta name="theme-color" content="#f59e0b" />
+
+    <!-- iOS / iPadOS Add-to-Home-Screen support -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="format-detection" content="telephone=no" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png" />
 
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
