@@ -723,9 +723,12 @@ export function PerformancePad({ isOpen, onClose }: Props) {
         rafIdRef.current = requestAnimationFrame(draw);
         return;
       }
-      const dpr = Math.max(1, window.devicePixelRatio || 1);
-      const targetW = Math.max(2, Math.round(rect.width * dpr));
-      const targetH = Math.max(2, Math.round(rect.height * dpr));
+      const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+      // Hard upper bound — guards against pathological feedback loops.
+      // 4096 covers 4K displays at 2x DPR with margin.
+      const MAX_DIM = 4096;
+      const targetW = Math.max(2, Math.min(MAX_DIM, Math.round(rect.width * dpr)));
+      const targetH = Math.max(2, Math.min(MAX_DIM, Math.round(rect.height * dpr)));
       if (canvas.width !== targetW || canvas.height !== targetH) {
         canvas.width = targetW;
         canvas.height = targetH;
@@ -1414,7 +1417,18 @@ export function PerformancePad({ isOpen, onClose }: Props) {
               "radial-gradient(circle at 50% 50%, rgba(244,114,182,0.06) 0%, transparent 70%)",
           }}
         >
-          <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none" />
+          {/*
+            Pin the canvas DOM size to its parent. Without explicit CSS width/height,
+            setting canvas.width = rect.width * dpr in the draw loop makes the
+            intrinsic size become the layout size, which then feeds back into the
+            next read of rect.width — runaway growth (we hit 2^25 px on Retina).
+            CSS width:100%/height:100% breaks that loop.
+          */}
+          <canvas
+            ref={canvasRef}
+            className="absolute inset-0 pointer-events-none"
+            style={{ width: "100%", height: "100%" }}
+          />
 
           {/* Static X-axis ruler — only in notes mode */}
           {mode === "notes" && (
