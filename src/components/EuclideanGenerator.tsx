@@ -3,8 +3,8 @@
  * an optional second pattern used as an accent overlay.
  */
 
-import { useState, useCallback, useMemo, useEffect } from "react";
-import { useDrumStore, generateEuclidean } from "../store/drumStore";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useDrumStore, generateEuclidean, drumCurrentStepStore, getDrumCurrentStep } from "../store/drumStore";
 import { useBassStore } from "../store/bassStore";
 import { useChordsStore } from "../store/chordsStore";
 import { useMelodyStore } from "../store/melodyStore";
@@ -139,6 +139,41 @@ const GROOVE_STYLES: GrooveStyle[] = [
       9: { p: 4, s: 16, r: 2 }, // RIDE
     },
   },
+
+  // ─── Polyrhythmic styles — voices use DIFFERENT step counts ─────────────
+  // The drum pattern length stays at 16 (the global cycle), but each voice
+  // loops its own shorter cycle. Voice with s=12 over a 16-step pattern
+  // creates 3-against-4 polyrhythm. Sounds nothing like static 16-step grids.
+  {
+    name: "3:4 Cross", emoji: "🔀", hint: "Hi-hat in 3, kick in 4 — Steve Reich vibe",
+    voices: {
+      0: { p: 4,  s: 16, r: 0 }, // KICK on 4
+      1: { p: 2,  s: 16, r: 4 }, // SNARE 2/4
+      6: { p: 3,  s: 12, r: 0 }, // HH CL — 3 in 12 steps over kick's 16 → poly
+      9: { p: 3,  s: 12, r: 1 }, // RIDE — same length but offset
+      10:{ p: 2,  s: 7,  r: 0 }, // PERC1 — 2 in 7, very off-grid
+    },
+  },
+  {
+    name: "African 12/8", emoji: "🥁", hint: "Triplet-based bell + drum dialogue",
+    voices: {
+      0: { p: 3,  s: 12, r: 0 },  // KICK — three pulses across the bar
+      1: { p: 2,  s: 12, r: 6 },  // SNARE — 2-pulse off-set
+      6: { p: 12, s: 12, r: 0 },  // HH CL — every 8th note
+      9: { p: 5,  s: 12, r: 0 },  // RIDE — bell pattern (3+3+2+2+2 feel)
+      10:{ p: 7,  s: 12, r: 1 },  // PERC1 — busy counter-rhythm
+    },
+  },
+  {
+    name: "Glitch Cross", emoji: "⚡", hint: "5/13/7 polymeter — IDM rhythmic chaos",
+    voices: {
+      0: { p: 3,  s: 5,  r: 0 }, // KICK — 3 in 5
+      1: { p: 1,  s: 7,  r: 3 }, // SNARE — 1 in 7
+      6: { p: 7,  s: 13, r: 0 }, // HH CL — 7 in 13
+      10:{ p: 4,  s: 11, r: 2 }, // PERC1 — 4 in 11
+      11:{ p: 5,  s: 9,  r: 4 }, // PERC2 — 5 in 9
+    },
+  },
 ];
 
 const NOTE_MODES = [
@@ -214,6 +249,10 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
   // track instead of running the Euclidean math. Lets you lock bass to kick
   // (track 0) for tight unison or to snare (track 1) for off-beat phrasing.
   const [bassFollowTrack, setBassFollowTrack] = useState<number | null>(null);
+  // DRIFT mode — when on, the pattern auto-mutates every `driftBars` bars
+  // while the transport is playing. Slow evolution without the user clicking.
+  const [driftEnabled, setDriftEnabled] = useState(false);
+  const [driftBars, setDriftBars] = useState<2|4|8>(4);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -296,6 +335,33 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
     applyToTarget(nextPulses, steps, nextRotation, nextAccentPulses, nextAccentRotation);
   }, [steps, pulses, rotation, accentPulses, accentRotation, applyToTarget]);
 
+  // ── DRIFT: auto-mutate every `driftBars` bars while transport is playing ──
+  // Subscribes to the drum-step external store. Each time we cross step 0
+  // (start of a new bar in 16-step land), increment a bar counter; when it
+  // reaches the threshold, fire mutate() and reset.
+  const mutateRef = useRef(mutate);
+  mutateRef.current = mutate;
+  const lastSeenStepRef = useRef(getDrumCurrentStep());
+  const barCounterRef = useRef(0);
+  useEffect(() => {
+    if (!driftEnabled || !isOpen) return;
+    const unsubscribe = drumCurrentStepStore.subscribe(() => {
+      const step = getDrumCurrentStep();
+      const prev = lastSeenStepRef.current;
+      lastSeenStepRef.current = step;
+      // Bar boundary = wrap from end-of-bar back to step 0
+      // Detect via "step decreased" (e.g., 15 → 0) or "step jumped backwards"
+      if (step < prev || (step === 0 && prev !== 0)) {
+        barCounterRef.current += 1;
+        if (barCounterRef.current >= driftBars) {
+          barCounterRef.current = 0;
+          mutateRef.current();
+        }
+      }
+    });
+    return unsubscribe;
+  }, [driftEnabled, driftBars, isOpen]);
+
   const invert = useCallback(() => {
     // Logical inverse: complement pulses within steps
     const newPulses = steps - pulses;
@@ -338,6 +404,51 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
   const cx = polygonSize / 2;
   const cy = polygonSize / 2;
   const r = polygonSize / 2 - 18;
+
+  // ── Drag-to-rotate the wheel ────────────────────────────────────────────
+  // Convert pointer position relative to the SVG center into an angle, then
+  // angle → step index → rotation. Touch-friendly; works the same on mouse.
+  const wheelRef = useRef<SVGSVGElement | null>(null);
+  const dragRotationRef = useRef<{ startAngle: number; startRotation: number } | null>(null);
+
+  const angleToStep = useCallback((clientX: number, clientY: number): number => {
+    const svg = wheelRef.current;
+    if (!svg) return 0;
+    const rect = svg.getBoundingClientRect();
+    const dx = clientX - (rect.left + rect.width / 2);
+    const dy = clientY - (rect.top + rect.height / 2);
+    // atan2 returns -π..π; offset by π/2 because step 0 is at 12 o'clock
+    const angle = Math.atan2(dy, dx) + Math.PI / 2;
+    // Normalize to 0..2π
+    const normalized = (angle + Math.PI * 2) % (Math.PI * 2);
+    return Math.round((normalized / (Math.PI * 2)) * steps) % steps;
+  }, [steps]);
+
+  const handleWheelPointerDown = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    const target = e.currentTarget;
+    target.setPointerCapture(e.pointerId);
+    dragRotationRef.current = {
+      startAngle: angleToStep(e.clientX, e.clientY),
+      startRotation: rotation,
+    };
+  }, [rotation, angleToStep]);
+
+  const handleWheelPointerMove = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
+    const drag = dragRotationRef.current;
+    if (!drag) return;
+    const currentAngle = angleToStep(e.clientX, e.clientY);
+    const delta = currentAngle - drag.startAngle;
+    const next = ((drag.startRotation + delta) % steps + steps) % steps;
+    setRotation(next);
+    // Live-apply during drag — instant audible feedback
+    applyToTarget(pulses, steps, next, accentPulses, accentRotation);
+  }, [steps, pulses, accentPulses, accentRotation, applyToTarget, angleToStep]);
+
+  const handleWheelPointerUp = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
+    dragRotationRef.current = null;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+  }, []);
   const activeIndices = rhythm.map((on, i) => (on ? i : -1)).filter((i) => i >= 0);
   const polygonPoints = activeIndices.map((i) => {
     const angle = (i / steps) * Math.PI * 2 - Math.PI / 2;
@@ -495,7 +606,17 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
             <div className="text-[11px] font-mono font-bold tracking-tight" style={{ color: accentColor }}>
               E({pulses},{steps},{rotation}){accentPulses > 0 ? ` A(${accentPulses})` : ""}
             </div>
-            <svg width={polygonSize} height={polygonSize} viewBox={`0 0 ${polygonSize} ${polygonSize}`}>
+            <svg
+              ref={wheelRef}
+              width={polygonSize}
+              height={polygonSize}
+              viewBox={`0 0 ${polygonSize} ${polygonSize}`}
+              onPointerDown={handleWheelPointerDown}
+              onPointerMove={handleWheelPointerMove}
+              onPointerUp={handleWheelPointerUp}
+              onPointerCancel={handleWheelPointerUp}
+              style={{ touchAction: "none", cursor: dragRotationRef.current ? "grabbing" : "grab" }}
+            >
               {/* Outer ring */}
               <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--ed-border-subtle)" strokeWidth="1" />
               {/* Quarter-note tick marks */}
@@ -805,7 +926,7 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
         </div>
 
         {/* Action buttons */}
-        <div className="flex gap-2 mb-3">
+        <div className="flex gap-2 mb-2">
           <button
             onClick={mutate}
             className="flex-1 py-1.5 text-[10px] rounded-md bg-[var(--ed-bg-surface)] text-[var(--ed-text-secondary)] hover:bg-[var(--ed-bg-elevated)] hover:text-[var(--ed-text-primary)] transition-colors"
@@ -827,6 +948,44 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
           >
             ↺ RESET
           </button>
+        </div>
+
+        {/* DRIFT — auto-mutate while playing */}
+        <div className="flex items-center gap-2 mb-3 px-1">
+          <button
+            onClick={() => setDriftEnabled((d) => !d)}
+            className={`px-2.5 py-1 text-[10px] rounded-md font-bold transition-all ${
+              driftEnabled
+                ? "bg-[var(--ed-accent-orange)]/25 text-[var(--ed-accent-orange)] border border-[var(--ed-accent-orange)]/40"
+                : "bg-[var(--ed-bg-surface)] text-[var(--ed-text-muted)] border border-transparent hover:text-[var(--ed-text-secondary)]"
+            }`}
+            title="Auto-mutate the pattern every N bars while the transport is playing"
+          >
+            {driftEnabled ? "● DRIFT" : "○ DRIFT"}
+          </button>
+          {driftEnabled && (
+            <>
+              <span className="text-[9px] text-[var(--ed-text-muted)]">every</span>
+              <div className="flex gap-0.5">
+                {[2, 4, 8].map((b) => (
+                  <button
+                    key={b}
+                    onClick={() => setDriftBars(b as 2 | 4 | 8)}
+                    className={`px-1.5 py-0.5 text-[9px] font-bold rounded transition-all ${
+                      driftBars === b
+                        ? "bg-[var(--ed-accent-orange)]/20 text-[var(--ed-accent-orange)]"
+                        : "text-white/35 hover:text-white/65"
+                    }`}
+                  >
+                    {b}B
+                  </button>
+                ))}
+              </div>
+              <span className="text-[8px] text-[var(--ed-text-muted)] ml-auto">
+                pattern evolves on its own
+              </span>
+            </>
+          )}
         </div>
 
         {/* Apply */}
