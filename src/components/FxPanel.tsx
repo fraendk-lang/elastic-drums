@@ -5,7 +5,7 @@
  * Completely rewritten with musical parameter mapping, BPM sync, and proper audio algorithms.
  */
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { audioEngine } from "../audio/AudioEngine";
 import { useDrumStore } from "../store/drumStore";
 import { motionRecorder, type MotionRecording } from "../audio/MotionRecorder";
@@ -702,6 +702,21 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
     [bpm]
   );
 
+  // ─── ESC closes the panel ─────────────────────────────
+  // Useful on iPad with a connected keyboard, and as a safety net when the
+  // header overflows on narrow viewports.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (holdLocked) releaseHold();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, holdLocked, releaseHold, onClose]);
+
   // ─── Render ─────────────────────────────────────────
 
   if (!isOpen) return null;
@@ -712,15 +727,31 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#08080a]">
-      {/* Header */}
-      <div className="flex items-center h-10 px-4 border-b border-[var(--ed-border)]">
+      {/* Always-reachable floating CLOSE — sits above header, can't be hidden
+          by overflow when the viewport is narrow (iPad, mobile). The header
+          BACK / RESET buttons may overflow and that's fine because of this. */}
+      <button
+        onClick={() => {
+          if (holdLocked) releaseHold();
+          onClose();
+        }}
+        aria-label="Close FX panel"
+        className="fixed top-2 right-2 z-[60] w-9 h-9 flex items-center justify-center rounded-full bg-black/70 backdrop-blur text-white/80 hover:bg-black/90 hover:text-white border border-white/15 text-lg leading-none shadow-lg"
+        style={{ touchAction: "manipulation" }}
+      >
+        ✕
+      </button>
+
+      {/* Header — horizontally scrollable when content overflows so the mode
+          tiles stay reachable on narrow viewports. */}
+      <div className="flex items-center h-10 px-4 border-b border-[var(--ed-border)] overflow-x-auto overflow-y-hidden gap-3" style={{ scrollbarWidth: "none" }}>
         {/* Left: Title */}
-        <span className="font-bold text-sm tracking-wider text-[var(--ed-text-primary)]">
+        <span className="font-bold text-sm tracking-wider text-[var(--ed-text-primary)] shrink-0">
           FX PAD
         </span>
 
-        {/* Center: Mode tiles with icons */}
-        <div className="flex-1 flex items-center justify-center gap-1.5">
+        {/* Center: Mode tiles with icons (no longer flex-1 — let row scroll) */}
+        <div className="flex items-center justify-start gap-1.5 shrink-0">
           {FX_MODES.map((mode) => {
             const cfg = MODE_CONFIG[mode];
             const isActive = activeMode === mode;
@@ -759,8 +790,10 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
           })}
         </div>
 
-        {/* Right: REC + HOLD + Close */}
-        <div className="flex items-center gap-2">
+        {/* Right: REC + HOLD + RESET. In the now-scrollable header these flow
+            after the mode tiles. No ml-auto (doesn't work in scroll containers)
+            and reserved space (mr-12) on the right for the floating × close. */}
+        <div className="flex items-center gap-2 shrink-0 mr-12">
           <button
             onClick={() => {
               if (isRecording) {
@@ -802,15 +835,8 @@ export function FxPanel({ isOpen, onClose }: FxPanelProps) {
           >
             RESET
           </button>
-          <button
-            onClick={() => {
-              if (holdLocked) releaseHold();
-              onClose();
-            }}
-            className="text-xs font-bold tracking-wider text-[var(--ed-text-muted)] hover:text-[var(--ed-text-primary)] transition-colors"
-          >
-            ← BACK
-          </button>
+          {/* (BACK button removed — replaced by the always-visible floating × in the
+              top-right corner, which works at every viewport width including iPad.) */}
         </div>
       </div>
 
