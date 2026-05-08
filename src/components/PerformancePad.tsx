@@ -551,6 +551,10 @@ export function PerformancePad({ isOpen, onClose }: Props) {
             melodyEngine.triggerPolyNote(noteMidi, atTime, duration, vel, false);
           },
           getBpm: () => useDrumStore.getState().bpm,
+          // Tight 100ms while user touches the pad (immediate response to
+          // X-position changes); 1s buffer when LATCH keeps it running on
+          // its own (covers main-thread throttling on background tabs).
+          getLookahead: () => activeVoicesRef.current.size > 0 ? 0.1 : (arpLatchRef.current ? 1.0 : 0.1),
         });
       }
       voice = { pointerId: e.pointerId, midi, startAt: performance.now(), velocity, releases: [] };
@@ -683,6 +687,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
                     melodyEngine.triggerPolyNote(noteMidi, atTime, duration, vel, false);
                   },
                   getBpm: () => useDrumStore.getState().bpm,
+                  getLookahead: () => activeVoicesRef.current.size > 0 ? 0.1 : (arpLatchRef.current ? 1.0 : 0.1),
                 });
               }
               playbackVoices.set(ev.pointerId, { pointerId: ev.pointerId, midi, startAt: performance.now(), velocity: ev.velocity, releases: [] });

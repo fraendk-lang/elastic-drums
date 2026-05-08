@@ -16,21 +16,11 @@ import { audioEngine } from './AudioEngine';
 import { generateArpNotes, type ArpSettings } from './Arpeggiator';
 
 /**
- * Schedule notes this many seconds ahead of ctx.currentTime.
- *
- * Why 1 second (not the typical 100ms): on macOS, when the browser window
- * loses focus, main-thread message dispatch can be throttled. The audio
- * thread keeps running, but the JS callback that schedules notes runs at
- * reduced priority. With a small lookahead the scheduled-note buffer drains
- * before the next tick fires and audio cuts out — exactly what users see
- * when ARP+LATCH is on and they Cmd+Tab away.
- *
- * 1 second is enough headroom to survive most throttling windows while
- * still being responsive to live parameter changes (arp rate, octaves) —
- * those are read fresh each step, so the worst-case stale-parameter window
- * is also 1 second.
+ * Default lookahead window (seconds). Small for interactive responsiveness:
+ * pointer-position → audible note within ~100ms. The caller can override
+ * via getLookahead() — see the explanation below in ArpSchedulerOptions.
  */
-const LOOKAHEAD_SEC = 1.0;
+const DEFAULT_LOOKAHEAD_SEC = 0.1;
 
 export interface ArpSchedulerOptions {
   getRoot: () => number;
@@ -38,6 +28,14 @@ export interface ArpSchedulerOptions {
   getScaleName: () => string;
   onNote: (midi: number, duration: number, atTime: number, velocity: number) => void;
   getBpm: () => number;
+  /**
+   * Optional dynamic lookahead. Called on every tick — return the current
+   * desired lookahead in seconds. Use this to stay responsive (~100ms) while
+   * the user is actively touching the pad and switch to a wider window
+   * (~1000ms) when LATCH keeps the arp running without active touch, so
+   * background-tab throttling doesn't drain the scheduled buffer.
+   */
+  getLookahead?: () => number;
 }
 
 export class ArpScheduler {
@@ -60,6 +58,9 @@ export class ArpScheduler {
     this.nextStepTime = ctx.currentTime + 0.02;
 
     this.unsubscribe = schedulerClock.addListener(() => this._tick());
+    // Initial fill — schedule first batch immediately rather than waiting
+    // for the first worklet tick to come in.
+    this._tick();
   }
 
   stop(): void {
@@ -84,18 +85,20 @@ export class ArpScheduler {
     const ctx = audioEngine.getAudioContext();
     if (!ctx) return;
 
+    const { getRoot, getSettings, getScaleName, onNote, getBpm, getLookahead } = this.options;
+    const lookahead = Math.max(0.05, Math.min(2.0, getLookahead?.() ?? DEFAULT_LOOKAHEAD_SEC));
+
     // Clamp nextStepTime forward if we fell behind (tab resume, system sleep).
-    // Reset to currentTime + LOOKAHEAD_SEC (not just currentTime) to prevent a
+    // Reset to currentTime + lookahead (not just currentTime) to prevent a
     // burst of catch-up notes filling the lookahead window all at once.
     if (this.nextStepTime < ctx.currentTime - 1.0) {
-      this.nextStepTime = ctx.currentTime + LOOKAHEAD_SEC;
+      this.nextStepTime = ctx.currentTime + lookahead;
     }
 
-    const { getRoot, getSettings, getScaleName, onNote, getBpm } = this.options;
     const bpm = Math.max(20, getBpm());
     const stepDuration = 60 / bpm;
 
-    while (this.nextStepTime < ctx.currentTime + LOOKAHEAD_SEC) {
+    while (this.nextStepTime < ctx.currentTime + lookahead) {
       const rootMidi = getRoot();
       const settings = getSettings();
       const scaleName = getScaleName();
