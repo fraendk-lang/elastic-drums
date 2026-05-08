@@ -663,8 +663,16 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     const timers: ReturnType<typeof setTimeout>[] = [];
     const playbackVoices = new Map<number, ActiveVoice>();
 
+    // Sort events by time before scheduling — events were appended in tap
+    // order during recording, so a "down" at t=900 followed by its "up" at
+    // t=1150 sits adjacent to a later "down" at t=250. Without sorting,
+    // setTimeout queue ordering depends on append order, not scheduled time,
+    // which can cause an "up" to fire AFTER a same-pointer "down" at the
+    // same scheduled time → stale-voice release.
+    const sortedEvents = [...events].sort((a, b) => a.t - b.t);
+
     const scheduleIteration = (iterationStart: number) => {
-      for (const ev of events) {
+      for (const ev of sortedEvents) {
         const delay = (iterationStart - performance.now()) + ev.t;
         const timer = setTimeout(() => {
           if (!usePerformancePadStore.getState().isLooping) return;
@@ -737,7 +745,18 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     return () => {
       timers.forEach(clearTimeout);
       clearInterval(loopTimer);
+      // CRITICAL: release every voice that was triggered but whose "up" event
+      // hasn't fired yet. Without this, stopping the loop while a note is held
+      // leaves a hanging tone forever (its up timer was just cleared above).
+      for (const v of playbackVoices.values()) {
+        v.releases.forEach((r) => r?.());
+      }
       playbackVoices.clear();
+      // Also stop the arp scheduler if it was started by loop playback —
+      // otherwise it keeps generating notes after stop.
+      if (arpSchedulerRef.current?.isRunning) {
+        arpSchedulerRef.current.stop();
+      }
     };
   }, [isLooping, events, loopDuration, xToMidi, fireVoice, modulateVoice, repitchVoice, gridSnap, target]);
 

@@ -485,17 +485,28 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
 
       if (ev.type === "down") {
         const downT = s.stepCursorMs;
-        // Note dauert volle grid-Länge (legato feel) — liefert sichtbare,
-        // musikalische Noten in der Piano Roll statt winzigen Dots.
-        set((state) => ({
-          events: [
-            ...state.events,
-            { ...ev, t: downT },
-            { ...ev, t: downT + grid, type: "up" as const },
-          ],
-          // Advance cursor by one grid step, wrap at loopDuration
-          stepCursorMs: (downT + grid) % (state.loopDuration || grid * 16),
-        }));
+        // Notes end slightly BEFORE the next grid step so consecutive notes
+        // don't have their down/up events at the exact same scheduled time
+        // (which causes setTimeout-order race conditions). 92% gives a small
+        // breathing gap that's musically inaudible but technically reliable.
+        const noteOffT = downT + grid * 0.92;
+        set((state) => {
+          // Each step-recorded tap gets its OWN synthetic pointerId so that
+          // playback voices never collide on the same key (a real concern on
+          // mouse where ev.pointerId is reused across taps). Negative range
+          // ensures no clash with real pointer events (which are always >= 0).
+          const stepPointerId = -1000 - state.events.length;
+          return {
+            events: [
+              ...state.events,
+              { ...ev, t: downT, pointerId: stepPointerId },
+              { ...ev, t: noteOffT, pointerId: stepPointerId, type: "up" as const },
+            ],
+            // Advance cursor by one FULL grid step (the note is shortened to
+            // 92% but the grid spacing stays exact).
+            stepCursorMs: (downT + grid) % (state.loopDuration || grid * 16),
+          };
+        });
       }
       return;
     }
