@@ -59,12 +59,13 @@ interface PianoRollGridProps {
   onPointerDown:  (e: React.PointerEvent<HTMLDivElement>, absStep: number) => void;
   onAccent:       (absStep: number) => void;
   onCycleOctave:  (absStep: number) => void;
+  onCycleShortGate: (absStep: number) => void;
   stepElRefs:     React.MutableRefObject<Map<number, HTMLDivElement>>;
 }
 
 const MelodyPianoRollGrid = memo(function MelodyPianoRollGrid({
   steps, length, pageOffset, rootNote, scaleName, globalOctave, maxNote,
-  selectedStep, durationDrag, onMouseDown, onPointerDown, onAccent, onCycleOctave, stepElRefs,
+  selectedStep, durationDrag, onMouseDown, onPointerDown, onAccent, onCycleOctave, onCycleShortGate, stepElRefs,
 }: PianoRollGridProps) {
   return (
     <div className="flex gap-[1px] flex-1 min-w-0">
@@ -95,7 +96,12 @@ const MelodyPianoRollGrid = memo(function MelodyPianoRollGrid({
             className={`flex-1 flex flex-col justify-end min-w-0 relative ${beyondLength ? "opacity-25" : ""} ${isSelected && isActive ? "ring-1 ring-[var(--ed-accent-melody)]/55 rounded-sm" : ""}`}
             onMouseDown={(e) => { e.preventDefault(); onMouseDown(e, absStep); }}
             onPointerDown={(e) => onPointerDown(e, absStep)}
-            onContextMenu={(e) => { e.preventDefault(); if (isActive) onAccent(absStep); }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              if (!isActive) return;
+              if (e.shiftKey && (e.altKey || e.metaKey)) { onCycleShortGate(absStep); return; }
+              onAccent(absStep);
+            }}
             onAuxClick={(e) => { if (e.button === 1 && isActive) { e.preventDefault(); onCycleOctave(absStep); } }}>
             {isBeat && <div className="absolute top-0 bottom-0 left-0 w-px bg-white/[0.04]" />}
             {isActive && !isTiedFromPrev && visibleLength > 1 && (
@@ -108,8 +114,10 @@ const MelodyPianoRollGrid = memo(function MelodyPianoRollGrid({
                   boxShadow: "0 0 0 1px rgba(244,114,182,0.24) inset, 0 0 12px rgba(244,114,182,0.12)",
                 }} />
             )}
-            <div className={`w-full transition-all duration-75 flex flex-col items-center justify-end pb-0.5 select-none ${isActive ? "cursor-ns-resize" : "cursor-pointer rounded-sm"}`}
+            <div className={`transition-all duration-75 flex flex-col items-center justify-end pb-0.5 select-none ${isActive ? "cursor-ns-resize" : "cursor-pointer rounded-sm"}`}
               style={{
+                width: isActive && (step.gateLength ?? 1) < 1 ? `${(step.gateLength ?? 1) * 100}%` : "100%",
+                alignSelf: "flex-start",
                 height: isActive ? `${noteHeight}%` : "100%", minHeight: isActive ? 20 : undefined,
                 background: isActive
                   ? step.accent ? "linear-gradient(180deg, rgba(244,114,182,0.85), rgba(244,114,182,0.55))"
@@ -315,7 +323,7 @@ export function MelodySequencer() {
     steps, length, selectedPage, rootNote, rootName, scaleName, params, presetIndex, strategyIndex, instrument,
     automationData, automationParam,
     globalOctave,
-    toggleStep, setStepNote, setStepVelocity, toggleAccent, toggleSlide, toggleTie, setGateLength, setStepOctave, cycleOctave,
+    toggleStep, setStepNote, setStepVelocity, toggleAccent, toggleSlide, toggleTie, setGateLength, setStepGateLength, setStepOctave, cycleOctave,
     setRootNote, setGlobalOctave, setScale, setParam, setLength, setSelectedPage,
     clearSteps, generateMelodiline, nextStrategy, prevStrategy,
     loadPreset, setInstrument,
@@ -826,6 +834,13 @@ export function MelodySequencer() {
                 maxNote={maxNote} selectedStep={selectedStep} durationDrag={durationDrag}
                 onMouseDown={handleMouseDown} onPointerDown={handleDurationDragStart}
                 onAccent={toggleAccent} onCycleOctave={cycleOctave}
+                onCycleShortGate={(absStep) => {
+                  const SHORT_GATES = [1.0, 0.75, 0.5, 0.25, 0.125];
+                  const current = steps[absStep]?.gateLength ?? 1;
+                  let idx = SHORT_GATES.findIndex((v) => Math.abs(v - current) < 0.05);
+                  if (idx === -1) idx = 0;
+                  setStepGateLength(absStep, SHORT_GATES[(idx + 1) % SHORT_GATES.length]!);
+                }}
                 stepElRefs={stepElRefs}
               />
               <MelodyPlayheadOverlay pageOffset={pageOffset} length={length} isPlaying={isPlaying} />

@@ -110,7 +110,7 @@ export function ChordsSequencer({ onOpenPianoRoll }: { onOpenPianoRoll?: () => v
     steps, length, selectedPage, rootNote, rootName, scaleName, params, presetIndex, strategyIndex, instrument,
     automationData, automationParam,
     globalOctave,
-    toggleStep, setStepNote, setStepVelocity, toggleTie, setGateLength, setStepOctave, cycleOctave, cycleChordType, setStepChordType,
+    toggleStep, setStepNote, setStepVelocity, toggleTie, setGateLength, setStepGateLength, setStepOctave, cycleOctave, cycleChordType, setStepChordType,
     setRootNote, setGlobalOctave, setScale, setParam, setLength, setSelectedPage,
     clearSteps, generateChordline, nextStrategy, prevStrategy,
     loadPreset, setInstrument,
@@ -548,7 +548,20 @@ export function ChordsSequencer({ onOpenPianoRoll }: { onOpenPianoRoll?: () => v
               className={`flex-1 flex flex-col justify-end min-w-0 relative ${beyondLength ? "opacity-25" : ""} ${isSelected && isActive ? "ring-1 ring-[var(--ed-accent-chords)]/50 rounded-sm" : ""}`}
               onMouseDown={(e) => { e.preventDefault(); handleMouseDown(e, absStep); }}
               onPointerDown={(e) => handleDurationDragStart(e, absStep)}
-              onContextMenu={(e) => { e.preventDefault(); if (isActive) cycleChordType(absStep); }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                if (!isActive) return;
+                // Shift + Alt/Meta + right-click → cycle short-gate (staccato chord stabs)
+                if (e.shiftKey && (e.altKey || e.metaKey)) {
+                  const SHORT_GATES = [1.0, 0.75, 0.5, 0.25, 0.125];
+                  const current = steps[absStep]?.gateLength ?? 1;
+                  let idx = SHORT_GATES.findIndex((v) => Math.abs(v - current) < 0.05);
+                  if (idx === -1) idx = 0;
+                  setStepGateLength(absStep, SHORT_GATES[(idx + 1) % SHORT_GATES.length]!);
+                  return;
+                }
+                cycleChordType(absStep);
+              }}
               onAuxClick={(e) => { if (e.button === 1 && isActive) { e.preventDefault(); cycleOctave(absStep); } }}>
               {isBeat && <div className="absolute top-0 bottom-0 left-0 w-px bg-white/[0.04]" />}
               {isCurrent && (
@@ -567,8 +580,11 @@ export function ChordsSequencer({ onOpenPianoRoll }: { onOpenPianoRoll?: () => v
                   }}
                 />
               )}
-              <div className={`w-full transition-all duration-75 flex flex-col items-center justify-end pb-0.5 select-none ${isActive ? "cursor-ns-resize" : "cursor-pointer rounded-sm"}`}
+              <div className={`transition-all duration-75 flex flex-col items-center justify-end pb-0.5 select-none ${isActive ? "cursor-ns-resize" : "cursor-pointer rounded-sm"}`}
                 style={{
+                  // Short gate (< 1): shrink the colored bar from the right
+                  width: isActive && (step.gateLength ?? 1) < 1 ? `${(step.gateLength ?? 1) * 100}%` : "100%",
+                  alignSelf: "flex-start",
                   height: isActive ? `${noteHeight}%` : "100%", minHeight: isActive ? 20 : undefined,
                   background: isActive
                     ? step.accent ? "linear-gradient(180deg, rgba(167,139,250,0.85), rgba(167,139,250,0.55))"

@@ -400,6 +400,7 @@ interface ChordsStore {
   setStepChordType: (step: number, chordType: string) => void;
   toggleAccent: (step: number) => void;
   toggleTie: (step: number) => void;
+  setStepGateLength: (step: number, gateLength: number) => void;
   setGateLength: (fromStep: number, toStep: number) => void;
   cycleOctave: (step: number) => void;
   setRootNote: (midi: number, name: string) => void;
@@ -508,8 +509,11 @@ export function startChordsScheduler() {
         const rootMidi = scaleNote(rootNote, scaleName, step.note, step.octave + globalOctave);
         const intervals = CHORD_TYPES[step.chordType] ?? CHORD_TYPES["Min"]!;
         const midiNotes = intervals.map((interval) => rootMidi + interval);
-        const explicitGateLength = Math.max(1, step.gateLength ?? 1);
-        const sustainSteps = explicitGateLength > 1 ? explicitGateLength : getLegacyTieLength(steps, stepIndex, length);
+        const explicitGateLength = Math.max(0.05, step.gateLength ?? 1);
+        // Fractional gate (< 1) → use as-is for staccato. Legacy tie only kicks in at exactly 1.
+        const sustainSteps = explicitGateLength === 1
+          ? getLegacyTieLength(steps, stepIndex, length)
+          : explicitGateLength;
         const sustainDuration = secondsPerStep * sustainSteps;
 
         const { instrument, arp } = useChordsStore.getState();
@@ -538,12 +542,17 @@ export function startChordsScheduler() {
           }
         } else if (instrument !== "_synth_") {
           // Use soundfont if a non-synth instrument is selected
-          const duration = Math.max(secondsPerStep * 1.5, sustainDuration * 0.98);
+          const duration = explicitGateLength >= 1
+            ? Math.max(secondsPerStep * 1.5, sustainDuration * 0.98)
+            : Math.max(0.005, sustainDuration);
           soundFontEngine.playChord("chords", midiNotes, nextChordsStepTime, velocity, duration);
         } else {
-          // Use built-in synth
+          // Built-in synth — release earlier when gate < 1 for staccato chord stabs
           chordsEngine.triggerChord(midiNotes, nextChordsStepTime, step.accent, false, step.velocity ?? (step.accent ? 1.0 : 0.7));
-          chordsEngine.releaseChord(nextChordsStepTime + Math.max(secondsPerStep * 0.92, sustainDuration * 0.98));
+          const releaseTime = explicitGateLength >= 1
+            ? Math.max(secondsPerStep * 0.92, sustainDuration * 0.98)
+            : Math.max(0.005, sustainDuration);
+          chordsEngine.releaseChord(nextChordsStepTime + releaseTime);
         }
       } else if (!step?.active && !isHeldByPreviousGate) {
         if (steps.some(s => s.active)) {
@@ -626,6 +635,14 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
 
   toggleTie: (step) => set((s) => {
     const newSteps = [...s.steps]; newSteps[step] = { ...newSteps[step]!, tie: !newSteps[step]!.tie }; return { steps: newSteps };
+  }),
+
+  setStepGateLength: (step, gateLength) => set((s) => {
+    const newSteps = [...s.steps];
+    if (!newSteps[step]) return s;
+    const max = s.length - step;
+    newSteps[step] = { ...newSteps[step]!, gateLength: Math.max(0.05, Math.min(max, gateLength)) };
+    return { steps: newSteps };
   }),
 
   setGateLength: (fromStep, toStep) => set((s) => {

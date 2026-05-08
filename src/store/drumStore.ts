@@ -525,16 +525,20 @@ function startScheduler() {
 
         const trigTime = nextStepTime + nudge + perTrackSwingNudge;
         const ratchets = step.ratchetCount ?? 1;
-        const gateDurationSec = Math.max(secondsPerStep, stepDuration * (step.gateLength ?? 1));
+        // Gate length now supports fractional values 0..N. Values < 1 shorten
+        // the note (staccato), values > 1 sustain across steps (legato).
+        const rawGate = step.gateLength ?? 1;
+        const gateDurationSec = Math.max(0.005, stepDuration * rawGate);
         const projectBpm = state.bpm;
         const tStart = transportStartTime;
         if (ratchets <= 1) {
           audioEngine.triggerVoiceAtTime(track, vel, trigTime, gateDurationSec, projectBpm, tStart);
         } else {
           const ratchetInterval = stepDuration / ratchets;
+          const ratchetGate = Math.max(0.005, gateDurationSec / ratchets);
           for (let r = 0; r < ratchets; r++) {
             const rVel = vel * (1 - r * 0.15);
-            audioEngine.triggerVoiceAtTime(track, Math.max(rVel, 0.1), trigTime + r * ratchetInterval, Math.max(ratchetInterval, gateDurationSec / ratchets), projectBpm, tStart);
+            audioEngine.triggerVoiceAtTime(track, Math.max(rVel, 0.1), trigTime + r * ratchetInterval, ratchetGate, projectBpm, tStart);
           }
         }
 
@@ -1136,7 +1140,9 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     set((state) => {
       const newPattern = structuredClone(state.pattern);
       const maxLen = newPattern.length - step; // Can't extend past pattern end
-      newPattern.tracks[track]!.steps[step]!.gateLength = Math.max(1, Math.min(maxLen, gateLength));
+      // Allow fractional gate lengths down to 1/8 of a step (staccato).
+      // Anything >= 1 is legato/extension, < 1 is short/percussive.
+      newPattern.tracks[track]!.steps[step]!.gateLength = Math.max(0.125, Math.min(maxLen, gateLength));
       return { pattern: newPattern };
     }),
 

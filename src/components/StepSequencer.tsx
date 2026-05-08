@@ -110,6 +110,9 @@ const StepButton = React.memo(function StepButton({
   const hasRatchet = isActive && ratchetCount > 1;
   const hasCondition = isActive && condition !== "always";
   const hasGate = isActive && gateLength > 1;
+  // Short gate (staccato): gate < 1 means the note is shorter than the slot.
+  // Visually: render a smaller bar at the left of the cell.
+  const isShortGate = isActive && gateLength < 1 && gateLength > 0;
   const activeText = isActive ? "active" : "off";
   const velText = isActive ? `velocity ${velocity}` : "";
 
@@ -166,6 +169,23 @@ const StepButton = React.memo(function StepButton({
         <span className="absolute right-[8px] top-[2px] text-[6px] font-black leading-none text-black/55 pointer-events-none">
           {gateLength}
         </span>
+      )}
+      {isShortGate && (
+        <>
+          {/* Short-gate inner bar — left-aligned, narrower than the slot */}
+          <div
+            className="absolute left-[3px] top-[3px] bottom-[3px] rounded-[2px] pointer-events-none"
+            style={{
+              width: `calc(${gateLength * 100}% - 6px)`,
+              background: `linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.20) 100%)`,
+              boxShadow: "0 0 0 1px rgba(255,255,255,0.35) inset",
+            }}
+          />
+          {/* Tiny fraction label */}
+          <span className="absolute right-[3px] bottom-[1px] text-[6px] font-black leading-none text-black/65 pointer-events-none">
+            {gateLength === 0.75 ? "¾" : gateLength === 0.5 ? "½" : gateLength === 0.25 ? "¼" : gateLength === 0.125 ? "⅛" : gateLength.toFixed(2)}
+          </span>
+        </>
       )}
       {isTiedStep && (
         <div className="absolute inset-0 flex items-center justify-center">
@@ -439,16 +459,32 @@ export function StepSequencer() {
   const setStepConditionRef = useRef(setStepCondition);
   const setStepRatchetRef = useRef(setStepRatchet);
   const setStepVelocityRef = useRef(setStepVelocity);
+  const setStepGateLengthCtxRef = useRef(setStepGateLength);
 
   patternRef.current = pattern;
   setStepConditionRef.current = setStepCondition;
   setStepRatchetRef.current = setStepRatchet;
   setStepVelocityRef.current = setStepVelocity;
+  setStepGateLengthCtxRef.current = setStepGateLength;
+
+  // Cycle through short-gate values for staccato/ghost notes
+  const SHORT_GATE_LEVELS = [1.0, 0.75, 0.5, 0.25, 0.125];
 
   const handleContextMenu = useCallback((e: React.MouseEvent, track: number, absStep: number) => {
     e.preventDefault();
     const step = patternRef.current.tracks[track]?.steps[absStep];
     if (!step?.active) return;
+
+    // Shift + Alt/Meta + right-click → cycle short-gate (staccato lengths)
+    if (e.shiftKey && (e.altKey || e.metaKey)) {
+      const current = step.gateLength ?? 1;
+      // Find the closest level <= current; advance to next shorter; wrap to 1.0 after 0.125
+      let idx = SHORT_GATE_LEVELS.findIndex((v) => Math.abs(v - current) < 0.05);
+      if (idx === -1) idx = 0;
+      const next = SHORT_GATE_LEVELS[(idx + 1) % SHORT_GATE_LEVELS.length]!;
+      setStepGateLengthCtxRef.current(track, absStep, next);
+      return;
+    }
 
     if (e.altKey || e.metaKey) {
       const current = step.condition ?? "always";

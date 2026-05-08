@@ -104,7 +104,7 @@ export function BassSequencer() {
     steps, length, selectedPage, rootNote, rootName, scaleName, params, presetIndex, strategyIndex, instrument,
     automationData, automationParam,
     globalOctave,
-    toggleStep, setStepNote, setStepVelocity, toggleAccent, toggleSlide, toggleTie, setGateLength, setStepOctave, cycleOctave,
+    toggleStep, setStepNote, setStepVelocity, toggleAccent, toggleSlide, toggleTie, setGateLength, setStepGateLength, setStepOctave, cycleOctave,
     setRootNote, setGlobalOctave, setScale, setParam, setLength, setSelectedPage,
     clearSteps, generateBassline, nextStrategy, prevStrategy,
     loadPreset, loadBassPattern, setInstrument,
@@ -804,7 +804,20 @@ export function BassSequencer() {
               className={`flex-1 flex flex-col justify-end min-w-0 relative ${beyondLength ? "opacity-25" : ""} ${isSelected && isActive ? "ring-1 ring-[var(--ed-accent-bass)]/55 rounded-sm" : ""}`}
               onMouseDown={(e) => { e.preventDefault(); handleMouseDown(e, absStep); }}
               onPointerDown={(e) => handleDurationDragStart(e, absStep)}
-              onContextMenu={(e) => { e.preventDefault(); if (isActive) toggleAccent(absStep); }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                if (!isActive) return;
+                // Shift + Alt/Meta + right-click → cycle short-gate (staccato)
+                if (e.shiftKey && (e.altKey || e.metaKey)) {
+                  const SHORT_GATES = [1.0, 0.75, 0.5, 0.25, 0.125];
+                  const current = steps[absStep]?.gateLength ?? 1;
+                  let idx = SHORT_GATES.findIndex((v) => Math.abs(v - current) < 0.05);
+                  if (idx === -1) idx = 0;
+                  setStepGateLength(absStep, SHORT_GATES[(idx + 1) % SHORT_GATES.length]!);
+                  return;
+                }
+                toggleAccent(absStep);
+              }}
               onAuxClick={(e) => { if (e.button === 1 && isActive) { e.preventDefault(); cycleOctave(absStep); } }}>
               <div className={`absolute top-0 left-0 right-0 h-3 border-b ${isBeat ? "border-white/10" : "border-white/5"}`}>
                 <div className="pt-[1px] text-center text-[6px] font-black tracking-[0.15em] text-white/20">
@@ -828,9 +841,12 @@ export function BassSequencer() {
                   }}
                 />
               )}
-              <div className={`w-full transition-all duration-75 flex flex-col items-center justify-end pb-0.5 select-none ${isActive ? "cursor-ns-resize" : "cursor-pointer rounded-sm"}`}
+              <div className={`transition-all duration-75 flex flex-col items-center justify-end pb-0.5 select-none ${isActive ? "cursor-ns-resize" : "cursor-pointer rounded-sm"}`}
                 style={{
+                  // Short gate (< 1): shrink the visible bar from the right side
+                  width: isActive && (step.gateLength ?? 1) < 1 ? `${(step.gateLength ?? 1) * 100}%` : "100%",
                   height: isActive ? `${noteHeight}%` : "100%", minHeight: isActive ? 20 : undefined,
+                  alignSelf: "flex-start",
                   background: isActive
                     ? step.accent ? "linear-gradient(180deg, rgba(16,185,129,0.85), rgba(16,185,129,0.55))"
                     : step.tie ? "linear-gradient(180deg, rgba(34,211,238,0.55), rgba(34,211,238,0.35))"

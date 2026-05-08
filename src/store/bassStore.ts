@@ -473,6 +473,7 @@ interface BassStore {
   setStepOctave: (step: number, octave: number) => void;
   setStepVelocity: (step: number, velocity: number) => void;
   toggleAccent: (step: number) => void;
+  setStepGateLength: (step: number, gateLength: number) => void;
   toggleSlide: (step: number) => void;
   toggleTie: (step: number) => void;
   setGateLength: (fromStep: number, toStep: number) => void;
@@ -579,10 +580,11 @@ export function startBassScheduler() {
       if (step?.active && !isContinuationTie) {
         const { instrument, liveTransposeOffset, arp } = useBassStore.getState();
         const midiNote = scaleNote(rootNote, scaleName, step.note, step.octave + globalOctave) + (liveTransposeOffset ?? 0);
-        const explicitGateLength = Math.max(1, step.gateLength ?? 1);
+        // Gate length now supports fractional values (< 1 = staccato, > 1 = legato).
+        const explicitGateLength = Math.max(0.05, step.gateLength ?? 1);
         let sustainSteps = explicitGateLength;
 
-        // Backward compatibility for saved patterns that still store continuation ties.
+        // Backward compatibility: legacy ties only kick in when explicit gate is exactly 1.
         if (explicitGateLength === 1) {
           sustainSteps = getLegacyTieLength(steps, stepIndex, length);
         }
@@ -609,13 +611,19 @@ export function startBassScheduler() {
             }
           }
         } else if (instrument !== "_synth_") {
-          // Use soundfont if a non-synth instrument is selected
-          const duration = Math.max(secondsPerStep * 1.2, sustainDuration * 0.98);
+          // Use soundfont if a non-synth instrument is selected.
+          // Allow fractional gate (< 1) for staccato — only floor at 5ms safety margin.
+          const duration = explicitGateLength >= 1
+            ? Math.max(secondsPerStep * 1.2, sustainDuration * 0.98)
+            : Math.max(0.005, sustainDuration);
           soundFontEngine.playNote("bass", midiNote, nextBassStepTime, velocity, duration);
         } else {
-          // Use built-in synth
+          // Built-in synth: release earlier when gate < 1 for staccato character.
           bassEngine.triggerNote(midiNote, nextBassStepTime, step.accent, step.slide, false, step.velocity ?? (step.accent ? 1.0 : 0.7));
-          bassEngine.releaseNote(nextBassStepTime + Math.max(secondsPerStep * 0.92, sustainDuration * 0.98));
+          const releaseTime = explicitGateLength >= 1
+            ? Math.max(secondsPerStep * 0.92, sustainDuration * 0.98)
+            : Math.max(0.005, sustainDuration);
+          bassEngine.releaseNote(nextBassStepTime + releaseTime);
         }
       } else if (!step?.active && !isHeldByPreviousGate) {
         // Only rest if this sequencer actually had a note playing
@@ -687,6 +695,14 @@ export const useBassStore = create<BassStore>((set, get) => ({
 
   toggleSlide: (step) => set((s) => {
     const newSteps = [...s.steps]; newSteps[step] = { ...newSteps[step]!, slide: !newSteps[step]!.slide }; return { steps: newSteps };
+  }),
+
+  setStepGateLength: (step: number, gateLength: number) => set((s) => {
+    const newSteps = [...s.steps];
+    if (!newSteps[step]) return s;
+    const max = s.length - step;
+    newSteps[step] = { ...newSteps[step]!, gateLength: Math.max(0.05, Math.min(max, gateLength)) };
+    return { steps: newSteps };
   }),
 
   toggleTie: (step) => set((s) => {

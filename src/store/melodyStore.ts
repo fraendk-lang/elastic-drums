@@ -870,6 +870,7 @@ interface MelodyStore {
   toggleSlide: (step: number) => void;
   toggleTie: (step: number) => void;
   setGateLength: (fromStep: number, toStep: number) => void;
+  setStepGateLength: (step: number, gateLength: number) => void;
   cycleOctave: (step: number) => void;
   setRootNote: (midi: number, name: string) => void;
   setGlobalOctave: (oct: number) => void;
@@ -980,8 +981,11 @@ export function startMelodyScheduler() {
       if (step?.active && !isContinuationTie) {
         // All state already read at top of while-loop iteration (single getState())
         const midiNote = scaleNote(rootNote, scaleName, step.note, step.octave + globalOctave) + (melodyTranspose ?? 0);
-        const explicitGateLength = Math.max(1, step.gateLength ?? 1);
-        const sustainSteps = explicitGateLength > 1 ? explicitGateLength : getLegacyTieLength(steps, stepIndex, length);
+        // Fractional gate (< 1 = staccato, > 1 = legato).
+        const explicitGateLength = Math.max(0.05, step.gateLength ?? 1);
+        const sustainSteps = explicitGateLength === 1
+          ? getLegacyTieLength(steps, stepIndex, length)
+          : explicitGateLength;
         const sustainDuration = secondsPerStep * sustainSteps;
 
         // Humanize: probability gate (random skip)
@@ -1029,7 +1033,9 @@ export function startMelodyScheduler() {
               }
             }
           } else if (instrument !== "_synth_") {
-            const duration = Math.max(secondsPerStep * 1.2, sustainDuration * 0.98);
+            const duration = explicitGateLength >= 1
+              ? Math.max(secondsPerStep * 1.2, sustainDuration * 0.98)
+              : Math.max(0.005, sustainDuration);
             soundFontEngine.playNote("melody", midiNote, startT, humanVel, duration);
             for (const off of layerOffsets) {
               soundFontEngine.playNote("melody", midiNote + off, startT, layerVel, duration);
@@ -1037,9 +1043,14 @@ export function startMelodyScheduler() {
           } else {
             // Built-in synth (monophonic path for legato/slide/tie character)
             melodyEngine.triggerNote(midiNote, startT, step.accent, step.slide, false, humanVel);
-            melodyEngine.releaseNote(startT + Math.max(secondsPerStep * 0.92, sustainDuration * 0.98));
+            const releaseTime = explicitGateLength >= 1
+              ? Math.max(secondsPerStep * 0.92, sustainDuration * 0.98)
+              : Math.max(0.005, sustainDuration);
+            melodyEngine.releaseNote(startT + releaseTime);
             // Layers go through poly path (so mono sustain stays clean)
-            const layerDur = Math.max(secondsPerStep * 1.2, sustainDuration * 0.98);
+            const layerDur = explicitGateLength >= 1
+              ? Math.max(secondsPerStep * 1.2, sustainDuration * 0.98)
+              : Math.max(0.005, sustainDuration);
             for (const off of layerOffsets) {
               melodyEngine.triggerPolyNote(midiNote + off, startT, layerDur, layerVel, false);
             }
@@ -1127,6 +1138,14 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
 
   toggleTie: (step) => set((s) => {
     const newSteps = [...s.steps]; newSteps[step] = { ...newSteps[step]!, tie: !newSteps[step]!.tie }; return { steps: newSteps };
+  }),
+
+  setStepGateLength: (step, gateLength) => set((s) => {
+    const newSteps = [...s.steps];
+    if (!newSteps[step]) return s;
+    const max = s.length - step;
+    newSteps[step] = { ...newSteps[step]!, gateLength: Math.max(0.05, Math.min(max, gateLength)) };
+    return { steps: newSteps };
   }),
 
   setGateLength: (fromStep, toStep) => set((s) => {
