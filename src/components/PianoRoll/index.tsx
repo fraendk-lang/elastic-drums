@@ -750,9 +750,22 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
       const h = rect.height;
       const w = rect.width;
 
+      // Touch fingertips are fat — make velocity / resize hot-zones bigger.
+      // BUT: on narrow notes this would eat the whole note and you'd never
+      // be able to MOVE it. So scale the zones to the note size.
+      const isTouch = e.pointerType !== "mouse";
+      const velHot = isTouch ? Math.min(8, h * 0.25) : 5;
+      // Resize hot-zone only on notes that are wide enough that a finger
+      // can still hit the body-area for "move". Below ~44px on touch / 24px
+      // on mouse, the whole note is "move" — resize via the explicit handle
+      // on the right edge (the 12px-wide white strip when selected).
+      const minMoveWidth = isTouch ? 44 : 24;
+      const resizeHot = isTouch ? 16 : 12;
+      const canResize = w > minMoveWidth;
+
       let mode: "move" | "resize" | "velocity" = "move";
-      if (relY > h - 5) mode = "velocity";
-      else if (relX > w - 12) mode = "resize"; // 12px hotzone for easy resize grab
+      if (relY > h - velHot) mode = "velocity";
+      else if (canResize && relX > w - resizeHot) mode = "resize";
 
       if (e.altKey && mode === "move") {
         pushUndo();
@@ -1394,6 +1407,12 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                   onContextMenu={(e) => handleNoteContext(e, note.id)}
                   className="absolute rounded-[3px] touch-none select-none transition-shadow"
                   style={{
+                    // Inline touchAction prevents iOS Safari from stealing the
+                    // gesture for parent-scroll the moment the finger moves
+                    // (Tailwind's touch-none alone isn't always enough when
+                    // the parent is overflow-auto).
+                    touchAction: "none",
+                    WebkitUserSelect: "none",
                     left: x,
                     top: y + 1,
                     width: w,
@@ -1434,19 +1453,26 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                     </div>
                   )}
 
+                  {/* Velocity strip at the bottom — visual indicator + drag
+                      surface. Slightly thicker (5px) so it's a usable touch
+                      target without dominating the note. */}
                   <div
-                    className="absolute bottom-0 left-0 right-0 h-[3px] rounded-b-[2px] cursor-ns-resize"
+                    className="absolute bottom-0 left-0 right-0 h-[5px] rounded-b-[2px] cursor-ns-resize pointer-events-none"
                     style={{
                       backgroundColor: noteColor,
                       opacity: 0.4 + note.velocity * 0.6,
                     }}
                   />
 
-                  <div
-                    className={`absolute right-0 top-0 bottom-0 w-3 cursor-col-resize rounded-r-[3px] transition-colors ${
-                      isSel ? "bg-white/25" : "opacity-0 hover:opacity-100 hover:bg-white/30"
-                    }`}
-                  />
+                  {/* Right-edge resize handle. Always visible on selected
+                      (so iPad users see the affordance — there's no hover) */}
+                  {w > 24 && (
+                    <div
+                      className={`absolute right-0 top-0 bottom-0 w-3 cursor-col-resize rounded-r-[3px] transition-colors pointer-events-none ${
+                        isSel ? "bg-white/30" : "opacity-0 hover:opacity-100 hover:bg-white/30"
+                      }`}
+                    />
+                  )}
                 </div>
               );
             })}
@@ -1500,8 +1526,9 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                     }}
                     onPointerMove={handleNotePointerMove}
                     onPointerUp={handleNotePointerUp}
-                    className="absolute rounded-t-[3px] transition-opacity hover:opacity-100"
+                    className="absolute rounded-t-[3px] transition-opacity hover:opacity-100 touch-none"
                     style={{
+                      touchAction: "none",
                       left: x,
                       top: VELOCITY_LANE_HEIGHT - h,
                       width: w,
