@@ -5,6 +5,7 @@
 
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useDrumStore, generateEuclidean, drumCurrentStepStore, getDrumCurrentStep } from "../store/drumStore";
+import { HintPopover } from "./Hints";
 import { useBassStore } from "../store/bassStore";
 import { useChordsStore } from "../store/chordsStore";
 import { useMelodyStore } from "../store/melodyStore";
@@ -289,6 +290,12 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
   const [snapA, setSnapA] = useState<PatternSnap | null>(null);
   const [snapB, setSnapB] = useState<PatternSnap | null>(null);
   const [morphPct, setMorphPct] = useState(0); // 0..100
+
+  // Hint anchors — point at the rows where the feature lives so first-time
+  // users can find them.
+  const morphRowRef = useRef<HTMLDivElement>(null);
+  const driftRowRef = useRef<HTMLDivElement>(null);
+  const followRowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -678,7 +685,7 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
 
             {/* FOLLOW Mode: only for bass — derive rhythm from a drum track */}
             {target === "bass" && (
-              <div className="flex items-center gap-2 mb-3 flex-wrap">
+              <div ref={followRowRef} className="flex items-center gap-2 mb-3 flex-wrap">
                 <span className="text-[10px] text-[var(--ed-text-secondary)]">Follow:</span>
                 <div className="flex gap-1 flex-wrap">
                   <button
@@ -1149,7 +1156,7 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
         </div>
 
         {/* MORPH — A/B snapshots + interpolation slider */}
-        <div className="flex items-center gap-2 mb-2 px-1">
+        <div ref={morphRowRef} className="flex items-center gap-2 mb-2 px-1">
           <span className="text-[9px] text-[var(--ed-text-muted)] font-bold">MORPH</span>
           <button
             onClick={handleSnapA}
@@ -1186,7 +1193,7 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
         </div>
 
         {/* DRIFT — auto-mutate while playing */}
-        <div className="flex items-center gap-2 mb-3 px-1">
+        <div ref={driftRowRef} className="flex items-center gap-2 mb-3 px-1">
           <button
             onClick={() => setDriftEnabled((d) => !d)}
             className={`px-2.5 py-1 text-[10px] rounded-md font-bold transition-all ${
@@ -1230,6 +1237,33 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
           APPLY TO {!isSynth ? VOICE_LABELS[selectedVoice] : activeTarget.label}
         </button>
       </div>
+
+      {/* Contextual hints — show once, dismissable */}
+      <HintPopover
+        id="euclid-morph"
+        anchor={morphRowRef.current}
+        position="top"
+        title="MORPH between patterns"
+        body="Save snapshot A, change params, save B, then drag the slider to morph live between them."
+        triggered={!!(snapA && snapB && morphPct > 0 && morphPct < 100)}
+      />
+      <HintPopover
+        id="euclid-drift"
+        anchor={driftRowRef.current}
+        position="top"
+        title="DRIFT — pattern evolves"
+        body="Turn on DRIFT and the pattern auto-mutates every N bars while transport is playing. No babysitting."
+        triggered={driftEnabled}
+      />
+      <HintPopover
+        id="euclid-follow"
+        anchor={followRowRef.current}
+        position="bottom"
+        title="FOLLOW — bass locked to drums"
+        body="Pick KICK to make the bass trigger on the kick steps — instant tight unison without editing the bass pattern."
+        enabled={target === "bass"}
+        triggered={bassFollowTrack !== null}
+      />
     </div>
   );
 }

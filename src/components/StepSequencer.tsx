@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useDrumStore, drumCurrentStepStore } from "../store/drumStore";
 import { useArrangementStore } from "../store/arrangementStore";
+import { HintPopover } from "./Hints";
 
 const VOICE_LABELS = [
   "KICK", "SNARE", "CLAP", "TOM L",
@@ -447,6 +448,7 @@ export function StepSequencer() {
   // ─── Gate-Length Drag State ─────────────────────────────
   const [gateDrag, setGateDrag] = useState<{ track: number; startStep: number } | null>(null);
   const [gateDragEnd, setGateDragEnd] = useState<number>(0);
+  const headerRef = useRef<HTMLDivElement>(null);
   const stepRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
   const CONDITIONS: import("../store/drumStore").ConditionType[] = [
@@ -593,7 +595,7 @@ export function StepSequencer() {
 
   return (
     <div className="flex flex-col h-full p-3" onMouseUp={() => { releaseStep(); handleGateDragEnd(); }} onPointerMove={handleGateDragMove}>
-      <div className="mb-2 rounded-xl border border-white/6 bg-[linear-gradient(180deg,rgba(255,255,255,0.025),rgba(255,255,255,0.01))] px-3 py-2">
+      <div ref={headerRef} className="mb-2 rounded-xl border border-white/6 bg-[linear-gradient(180deg,rgba(255,255,255,0.025),rgba(255,255,255,0.01))] px-3 py-2">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-black tracking-[0.18em] text-[var(--ed-accent-orange)]">
@@ -895,6 +897,15 @@ export function StepSequencer() {
           })}
         </div>
       </div>
+
+      {/* Contextual hint — once per user, dismissable */}
+      <HintPopover
+        id="step-modifiers"
+        anchor={headerRef.current}
+        position="bottom"
+        title="Right-click any step"
+        body="Right-click cycles velocity. Add Shift for ratchet, Alt for condition, Shift+Alt for gate length (staccato)."
+      />
     </div>
   );
 }

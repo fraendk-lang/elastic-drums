@@ -6,6 +6,7 @@
  */
 
 import { useState } from "react";
+import { resetAllHints } from "./Hints";
 
 const STORAGE_KEY = "eg-onboarded";
 
@@ -165,11 +166,21 @@ export function OnboardingModal({ onComplete }: OnboardingProps = {}) {
           )}
         </div>
 
-        {/* Keyboard hint */}
-        <div className="px-6 pb-4 text-center">
-          <span className="text-[9px] text-[var(--ed-text-muted)]">
+        {/* Keyboard hint + replay-tour */}
+        <div className="px-6 pb-4 text-center space-y-1.5">
+          <div className="text-[9px] text-[var(--ed-text-muted)]">
             Press <kbd className="px-1 py-0.5 rounded border border-[var(--ed-border)] text-[9px] font-mono">?</kbd> anytime to see all keyboard shortcuts
-          </span>
+          </div>
+          <button
+            onClick={() => {
+              resetAllHints();
+              try { localStorage.removeItem(STORAGE_KEY); } catch { /* */ }
+            }}
+            className="text-[9px] text-[var(--ed-text-muted)] hover:text-[var(--ed-accent-orange)] underline underline-offset-2 transition-colors"
+            title="Bring back every dismissed press-here hint and re-enable this intro on next reload"
+          >
+            Replay tour & hints
+          </button>
         </div>
       </div>
     </div>

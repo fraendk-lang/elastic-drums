@@ -7,6 +7,7 @@ import { audioEngine } from "../audio/AudioEngine";
 import { sampleManager, type LoopData } from "../audio/SampleManager";
 import { WaveformPreview } from "./WaveformPreview";
 import { LoopEditor } from "./LoopEditor";
+import { HintPopover } from "./Hints";
 import type { LibrarySample } from "../audio/SampleLibrary";
 
 // Lazy-load SampleBrowser (pulls in the 400KB sample catalog — only needed on demand)
@@ -72,6 +73,10 @@ export function PadGrid() {
   );
   const timeouts = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
   const fileInputs = useRef<Array<HTMLInputElement | null>>([]);
+  // Anchors for contextual hints — populated by ref callbacks on the first pad
+  // that ends up matching each criterion.
+  const [loopBadgeAnchor, setLoopBadgeAnchor] = useState<HTMLElement | null>(null);
+  const [volumeKnobAnchor, setVolumeKnobAnchor] = useState<HTMLElement | null>(null);
 
   const handlePadDown = useCallback((i: number) => {
     triggerVoice(i);
@@ -447,6 +452,10 @@ export function PadGrid() {
               {/* LOOP badge — visible on ALL sample pads, opens Loop Editor */}
               {hasSample && (
                 <button
+                  ref={(node) => {
+                    // Pin the first sample pad's loop badge as the hint anchor
+                    if (node && !loopBadgeAnchor) setLoopBadgeAnchor(node);
+                  }}
                   onClick={(e) => {
                     e.stopPropagation();
                     setLoopEditorVoice(loopEditorVoice === i ? null : i);
@@ -478,6 +487,9 @@ export function PadGrid() {
                 const dbApprox = Math.round(20 * Math.log10(Math.max(0.001, faderToGain(fader))));
                 return (
                   <div
+                    ref={(node) => {
+                      if (node && !volumeKnobAnchor) setVolumeKnobAnchor(node);
+                    }}
                     onPointerDown={(e) => handleVolumeKnobPointerDown(e, i)}
                     onDoubleClick={(e) => handleVolumeKnobDoubleClick(e, i)}
                     title={`Volume · ${dbApprox > 0 ? "+" : ""}${dbApprox} dB · drag to adjust · double-click to reset`}
@@ -590,6 +602,23 @@ export function PadGrid() {
       <p className="text-[8px] text-[var(--ed-text-muted)] mt-2 text-center opacity-60">
         folder = stock library &middot; Shift-click = file import &middot; drop audio &middot; right-click to clear
       </p>
+
+      {/* Contextual hints — shown ONCE per user, dismissable, persisted */}
+      <HintPopover
+        id="loop-badge"
+        anchor={loopBadgeAnchor}
+        position="top"
+        title="Loop Editor"
+        body="Tap the ↻ badge on a sample pad to open the Loop Editor — set BPM, warp markers, time-stretch."
+        triggered={loopEditorVoice !== null}
+      />
+      <HintPopover
+        id="volume-knob"
+        anchor={volumeKnobAnchor}
+        position="left"
+        title="Per-Pad Quick Knobs"
+        body="Drag the right edge for volume, left edge for pan, top edge for pitch. Double-click any knob to reset."
+      />
 
       {/* Loop Editor — inline panel below pad grid, shown when a loop badge is clicked */}
       {loopEditorVoice !== null && (
