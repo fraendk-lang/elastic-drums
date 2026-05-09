@@ -84,6 +84,20 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const [target, setTarget] = useState<SoundTarget>("melody");
   const [tool, setTool] = useState<"draw" | "select">("select");
   const [dragMode, setDragMode] = useState<"none" | "move" | "resize" | "velocity">("none");
+  // Mirror dragMode in a ref so the pointermove handler reads the current
+  // value synchronously. Without this, the first pointermove after pointerdown
+  // sees the stale state-closure (dragMode === "none") and returns early —
+  // iOS Safari then commits to a scroll-gesture and steals all subsequent
+  // events away from the note. The ref is updated synchronously in
+  // pointerdown so move/resize/velocity drags start on the very first frame.
+  const dragModeRef = useRef<"none" | "move" | "resize" | "velocity">("none");
+  /** Sets BOTH the ref (sync, read by pointermove) and the React state
+   *  (drives cursor / footer rendering). Always use this — never call
+   *  setDragMode directly. */
+  const applyDragMode = useCallback((m: "none" | "move" | "resize" | "velocity") => {
+    dragModeRef.current = m;
+    setDragMode(m);
+  }, []);
   const [cellW, setCellW] = useState(DEFAULT_CELL_W);
   const [rowHeight, setRowHeight] = useState(DEFAULT_ROW_HEIGHT);
   const [scaleSnap, setScaleSnap] = useState(false);
@@ -362,7 +376,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         e.preventDefault();
         setSelectedNoteIds(new Set());
         setRubberBand(null);
-        setDragMode("none");
+        applyDragMode("none");
         dragStartRef.current = null;
         return;
       }
@@ -678,7 +692,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const handleGridPointerUp = useCallback(
     (e: React.PointerEvent) => {
       setRubberBand(null);
-      setDragMode("none");
+      applyDragMode("none");
       dragStartRef.current = null;
       gridClickStartRef.current = null;
       try {
@@ -708,7 +722,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
     if (!isOpen) return;
     const onWindowUp = () => {
       setRubberBand(null);
-      setDragMode("none");
+      applyDragMode("none");
       dragStartRef.current = null;
       gridClickStartRef.current = null;
     };
@@ -733,7 +747,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
           else next.add(noteId);
           return next;
         });
-        setDragMode("none");
+        applyDragMode("none");
         dragStartRef.current = null;
         return;
       }
@@ -781,7 +795,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
           setSelectedNoteIds(newIds);
           const originals = new Map<string, { start: number; midi: number }>();
           for (const d of dupes) originals.set(d.id, { start: d.start, midi: d.midi });
-          setDragMode("move");
+          applyDragMode("move");
           dragStartRef.current = { x: e.clientX, y: e.clientY, note: { ...dupes[0]! }, originals };
           el.setPointerCapture(e.pointerId);
           return;
@@ -789,7 +803,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
       }
 
       pushUndo();
-      setDragMode(mode);
+      applyDragMode(mode);
       const originals = new Map<string, { start: number; midi: number }>();
       const sel = selectedNoteIds.has(noteId) ? selectedNoteIds : new Set([noteId]);
       for (const id of sel) {
@@ -804,12 +818,20 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
 
   const handleNotePointerMove = useCallback(
     (e: React.PointerEvent) => {
-      if (dragMode === "none" || !dragStartRef.current) return;
+      // Read from the ref, not from React state — the state may not have
+      // committed by the time the first pointermove fires (see comment
+      // on dragModeRef declaration). On iOS that one stale frame is enough
+      // for the OS to claim the gesture for parent-scroll.
+      const mode = dragModeRef.current;
+      if (mode === "none" || !dragStartRef.current) return;
+      // Stop iOS Safari from converting the rest of this gesture into a
+      // scroll the moment we've decided we own it.
+      e.preventDefault();
       const { x: sx, y: sy, note: orig } = dragStartRef.current;
       const dx = e.clientX - sx;
       const dy = e.clientY - sy;
 
-      switch (dragMode) {
+      switch (mode) {
         case "move": {
           const { originals } = dragStartRef.current!;
           const rawBeatDelta = dx / cellW;
@@ -873,21 +895,22 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
 
   const handleNotePointerUp = useCallback(
     (e: React.PointerEvent) => {
+      const mode = dragModeRef.current;
       try {
-        if (dragMode === "move" && dragStartRef.current && selectedNoteIds.size > 0) {
+        if (mode === "move" && dragStartRef.current && selectedNoteIds.size > 0) {
           const firstNote = notes.find((n) => n.id === Array.from(selectedNoteIds)[0]);
           if (firstNote && firstNote.midi !== dragStartRef.current.note.midi) {
             previewNote(firstNote.midi, firstNote.velocity, firstNote.track);
           }
         }
         // Remember last-drawn duration from resize for inheritance
-        if (dragMode === "resize" && selectedNoteIds.size > 0) {
+        if (mode === "resize" && selectedNoteIds.size > 0) {
           const firstId = Array.from(selectedNoteIds)[0]!;
           const firstNote = notes.find((n) => n.id === firstId);
           if (firstNote) lastDrawnDurationRef.current = firstNote.duration;
         }
       } finally {
-        setDragMode("none");
+        applyDragMode("none");
         setDragInfo(null);
         dragStartRef.current = null;
         try {
@@ -1515,7 +1538,7 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                       e.preventDefault();
                       e.stopPropagation();
                       if (!selectedNoteIds.has(note.id)) setSelectedNoteIds(new Set([note.id]));
-                      setDragMode("velocity");
+                      applyDragMode("velocity");
                       dragStartRef.current = {
                         x: e.clientX,
                         y: e.clientY,
