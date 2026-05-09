@@ -43,6 +43,9 @@ export const Knob = memo(function Knob({
   const knobRef = useRef<HTMLDivElement>(null);
   const lastTapRef = useRef(0);
   const [isHovered, setIsHovered] = useState(false);
+  // Touch ergonomics: when finger is on the knob, scale up so it's easy to
+  // see the readout + needle. Mouse drags stay 1:1 — only touch/stylus zooms.
+  const [isTouchDrag, setIsTouchDrag] = useState(false);
 
   const normalized = (value - min) / (max - min); // 0..1
   const angle = -135 + normalized * 270;            // -135° … +135°
@@ -63,6 +66,7 @@ export const Knob = memo(function Knob({
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     isDraggingRef.current = true;
     setIsDragging(true);
+    setIsTouchDrag(e.pointerType !== "mouse");
     dragStartY.current = e.clientY;
     dragStartVal.current = value;
   }, [value]);
@@ -71,7 +75,10 @@ export const Knob = memo(function Knob({
     if (!isDraggingRef.current) return;
     const deltaY = dragStartY.current - e.clientY;
     const range  = max - min;
-    const sensitivity = range / (size >= 56 ? 200 : 150);
+    // Touch needs a longer travel because (a) finger is fatter than mouse and
+    // (b) the knob is scaled up — so without slowing, a small twitch = big jump.
+    const baseTravel = size >= 56 ? 200 : 150;
+    const sensitivity = range / (e.pointerType === "mouse" ? baseTravel : baseTravel * 1.6);
     const newVal = Math.max(min, Math.min(max, dragStartVal.current + deltaY * sensitivity));
     onChange(newVal);
   }, [min, max, size, onChange]);
@@ -79,6 +86,7 @@ export const Knob = memo(function Knob({
   const handlePointerUp = useCallback(() => {
     isDraggingRef.current = false;
     setIsDragging(false);
+    setIsTouchDrag(false);
   }, []);
 
   const handleMouseEnter = useCallback(() => {
@@ -150,10 +158,10 @@ export const Knob = memo(function Knob({
 
   return (
     <div className="flex flex-col items-center gap-0.5 select-none">
-      {/* Value readout */}
+      {/* Value readout — always visible during touch drag for precision */}
       <span
         className={`font-mono tabular-nums h-3 transition-opacity duration-100 ${
-          isDragging || isHovered ? "opacity-100" : "opacity-0"
+          isDragging || isHovered || isTouchDrag ? "opacity-100" : "opacity-0"
         }`}
         style={{ color, fontSize: size >= 56 ? 10 : 8 }}
       >
@@ -164,7 +172,18 @@ export const Knob = memo(function Knob({
       <div
         ref={knobRef}
         className={`relative cursor-grab ${isDragging ? "cursor-grabbing" : ""}`}
-        style={{ width: size, height: size }}
+        style={{
+          width: size,
+          height: size,
+          // Scale up while a finger is dragging so the readout/needle are
+          // readable. Origin centered, so the knob expands in place without
+          // shifting layout. Smooth transition keeps it from feeling jumpy.
+          transform: isTouchDrag ? "scale(1.7)" : "scale(1)",
+          transformOrigin: "center center",
+          transition: "transform 120ms cubic-bezier(0.2, 0.9, 0.3, 1)",
+          zIndex: isTouchDrag ? 60 : undefined,
+          touchAction: "none",
+        }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -283,6 +302,24 @@ export const Knob = memo(function Knob({
               boxShadow: isDragging ? `0 0 5px ${color}` : `0 0 3px ${color}88`,
             }}
           />
+
+          {/* Touch-drag floating readout — centered on the knob, only while
+              a finger is on it. The outer wrapper is already scaled 1.7x so
+              this small font reads big. */}
+          {isTouchDrag && (
+            <div
+              className="absolute inset-0 flex items-center justify-center pointer-events-none"
+              style={{
+                fontSize: 10,
+                fontFamily: "ui-monospace, SFMono-Regular, monospace",
+                color: "#fff",
+                fontWeight: 700,
+                textShadow: `0 0 6px ${color}, 0 1px 2px rgba(0,0,0,0.9)`,
+              }}
+            >
+              {Math.round(value)}
+            </div>
+          )}
 
           {/* Indicator dot at tip */}
           {size >= 56 && (

@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useRef, useState, useSyncExternalStore } f
 import { useDrumStore, drumCurrentStepStore } from "../store/drumStore";
 import { useArrangementStore } from "../store/arrangementStore";
 import { HintPopover } from "./Hints";
+import { StepEditPopover } from "./StepEditPopover";
 
 const VOICE_LABELS = [
   "KICK", "SNARE", "CLAP", "TOM L",
@@ -451,6 +452,9 @@ export function StepSequencer() {
   const headerRef = useRef<HTMLDivElement>(null);
   const stepRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
+  // ─── Touch step-modifier popover (long-press alternative to right-click) ──
+  const [editTarget, setEditTarget] = useState<{ track: number; step: number } | null>(null);
+
   const CONDITIONS: import("../store/drumStore").ConditionType[] = [
     "always", "prob", "fill", "!fill", "pre", "!pre", "nei", "!nei",
     "1st", "!1st", "2:2", "3:3", "4:4", "2:3", "2:4", "3:4",
@@ -524,16 +528,14 @@ export function StepSequencer() {
     setSelectedVoiceRef.current(track);
   }, []);
 
-  // Long-press on a step (touch alternative to right-click) → cycle velocity
+  // Long-press on a step (touch alternative to right-click) → open the
+  // step-modifier popover so iPad users can reach velocity / ratchet /
+  // condition / gate without needing a right-click.
   const handleStepLongPress = useCallback((track: number, absStep: number) => {
     const step = patternRef.current.tracks[track]?.steps[absStep];
     if (!step?.active) return;
-    const levels = [127, 100, 70, 40];
-    const idx = levels.findIndex((v) => v <= step.velocity);
-    const next = levels[(idx + 1) % levels.length]!;
-    setStepVelocityRef.current(track, absStep, next);
-    // Light haptic feedback on devices that support it
-    if (navigator.vibrate) navigator.vibrate(30);
+    setEditTarget({ track, step: absStep });
+    if (navigator.vibrate) navigator.vibrate(20);
   }, []);
 
   // ─── Gate-Length Drag Handlers ──────────────────────────
@@ -904,8 +906,32 @@ export function StepSequencer() {
         anchor={headerRef.current}
         position="bottom"
         title="Right-click any step"
-        body="Right-click cycles velocity. Add Shift for ratchet, Alt for condition, Shift+Alt for gate length (staccato)."
+        body="Right-click (or long-press on iPad) opens the step editor with velocity, ratchet, condition and gate-length."
       />
+
+      {/* Touch step editor — opens on long-press (iPad alternative to right-click) */}
+      {editTarget && (() => {
+        const t = pattern.tracks[editTarget.track];
+        const s = t?.steps[editTarget.step];
+        if (!s?.active) return null;
+        const anchorEl = stepRefs.current.get(`${editTarget.track}-${editTarget.step}`) ?? null;
+        return (
+          <StepEditPopover
+            anchor={anchorEl}
+            state={{
+              velocity: s.velocity,
+              ratchetCount: s.ratchetCount ?? 1,
+              condition: s.condition ?? "always",
+              gateLength: s.gateLength ?? 1,
+            }}
+            onVelocity={(v) => setStepVelocityRef.current(editTarget.track, editTarget.step, v)}
+            onRatchet={(r) => setStepRatchetRef.current(editTarget.track, editTarget.step, r)}
+            onCondition={(c) => setStepConditionRef.current(editTarget.track, editTarget.step, c)}
+            onGateLength={(g) => setStepGateLengthCtxRef.current(editTarget.track, editTarget.step, g)}
+            onClose={() => setEditTarget(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
