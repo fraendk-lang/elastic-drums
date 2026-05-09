@@ -55,11 +55,17 @@ createRoot(document.getElementById("root")!).render(
   </StrictMode>,
 );
 
-// Register Service Worker for PWA offline support
+// Register Service Worker for PWA offline support.
+// Check for updates on focus + every 30 minutes — PWAStatus pill surfaces
+// any waiting SW so the user can opt in to the reload.
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").then(
-      (reg) => console.log("SW registered:", reg.scope),
+      (reg) => {
+        const ping = () => { reg.update().catch(() => { /* offline */ }); };
+        window.addEventListener("focus", ping);
+        setInterval(ping, 30 * 60 * 1000);
+      },
       (err) => console.warn("SW registration failed:", err),
     );
   });

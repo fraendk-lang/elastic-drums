@@ -35,6 +35,7 @@ const MelodyGenerator = lazy(() => import("./components/MelodyGenerator").then((
 import { BeatFxPanel } from "./components/BeatFxPanel";
 import { ShortcutOverlay } from "./components/ShortcutOverlay";
 import { OnboardingModal } from "./components/OnboardingModal";
+import { PWAStatus } from "./components/PWAStatus";
 import { DemoSongPicker } from "./components/DemoSongPicker";
 import { InstallHintIOS } from "./components/InstallHintIOS";
 import { getMidiClockMode, subscribeMidiClockMode } from "./store/midiClockMode";
@@ -64,6 +65,7 @@ import { useKeyboard } from "./hooks/useKeyboard";
 import { useMidi } from "./hooks/useMidi";
 import { useMidiClock } from "./hooks/useMidiClock";
 import { useUndoRedo } from "./hooks/useUndoRedo";
+import { useWakeLock } from "./hooks/useWakeLock";
 import { loadSharedPattern } from "./utils/patternShare";
 import { scheduleAutoSave, loadAutoSave } from "./store/autoSave";
 
@@ -97,6 +99,20 @@ export function App() {
     document.body.classList.toggle("ed-playing", isPlaying);
     return () => document.body.classList.remove("ed-playing");
   }, [isPlaying]);
+
+  // Keep iPad / Android screen awake while transport is running so the
+  // AudioContext doesn't get suspended mid-loop on a stand.
+  useWakeLock(isPlaying);
+
+  // Manifest "shortcuts" deep-link (?demo=1) — handled once on mount.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("demo") === "1") {
+      setDemoPickerOpen(true);
+      // Clean the URL so a refresh doesn't re-trigger
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
   const setBpm = useDrumStore((s) => s.setBpm);
   const togglePlay = useDrumStore((s) => s.togglePlay);
   const midiClock = useMidiClock({
@@ -586,6 +602,7 @@ export function App() {
       </Suspense>
       <ShortcutOverlay />
       <OnboardingModal onComplete={() => setDemoPickerOpen(true)} />
+      <PWAStatus />
       <DemoSongPicker isOpen={demoPickerOpen} onClose={() => setDemoPickerOpen(false)} />
       <InstallHintIOS />
       {sceneMiniOpen && <SceneMini onClose={() => setSceneMiniOpen(false)} />}
