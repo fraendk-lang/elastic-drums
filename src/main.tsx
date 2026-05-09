@@ -1,7 +1,12 @@
 import { StrictMode, Component, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { installAudioWakeListeners } from "./audio/AudioWake";
 import "./index.css";
+
+// Install global focus/visibility handlers that resume the AudioContext +
+// nudge running schedulers when the tab/window regains focus. Idempotent.
+installAudioWakeListeners();
 
 /** Error Boundary — catches render crashes and shows a recovery UI */
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {

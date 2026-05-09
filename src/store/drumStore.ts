@@ -422,6 +422,14 @@ function startScheduler() {
     const secondsPerStep = 60.0 / state.bpm / 4;
     const swingRatio = (state.pattern.swing - 50) / 100;
 
+    // Catch-up clamp: if the scheduler fell more than 1s behind (tab suspend,
+    // system sleep, main-thread frozen), don't burst-schedule every stale
+    // step. Snap forward and stop notes that may be stuck.
+    if (nextStepTime < audioEngine.currentTime - 1.0) {
+      nextStepTime = audioEngine.currentTime + 0.05;
+      audioEngine.stopAllLoops();
+    }
+
     while (nextStepTime < audioEngine.currentTime + 0.3) { // Larger lookahead for tighter timing
       const { pattern, songMode, songChain, songPosition, songRepeatCount } =
         useDrumStore.getState();
