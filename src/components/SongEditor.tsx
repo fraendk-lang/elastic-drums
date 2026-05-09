@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useDrumStore } from "../store/drumStore";
 import { useSceneStore } from "../store/sceneStore";
 
@@ -27,6 +27,14 @@ export function SongEditor({ isOpen, onClose }: SongEditorProps) {
     setSongPosition,
     clearSongChain,
   } = useDrumStore();
+
+  // ESC closes the panel
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, onClose]);
 
   const { scenes } = useSceneStore();
 

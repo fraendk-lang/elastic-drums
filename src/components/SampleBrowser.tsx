@@ -100,6 +100,14 @@ export function SampleBrowser({
   const voiceLabel = VOICE_LABELS[voiceIndex] || "SAMPLE";
   const suggestedCategories = useMemo(() => VOICE_CATEGORIES[voiceIndex] ?? [], [voiceIndex]);
 
+  // ESC closes the panel
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, onClose]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {

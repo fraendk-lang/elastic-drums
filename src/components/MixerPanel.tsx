@@ -167,6 +167,14 @@ export function MixerPanel({ isOpen, onClose }: MixerPanelProps) {
 
   const rafRef = useRef<number>(0);
 
+  // ESC closes the panel — touch-friendly safety net.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, onClose]);
+
   // ── Meter loop ──────────────────────────────────────────
   useEffect(() => {
     if (!isOpen) return;

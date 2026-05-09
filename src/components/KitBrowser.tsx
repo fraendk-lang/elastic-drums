@@ -82,6 +82,14 @@ export function KitBrowser({ isOpen, onClose }: KitBrowserProps) {
     listKits().catch((err) => console.error("Failed to load custom kits:", err));
   }, [listKits]);
 
+  // ESC closes the panel — touch-friendly safety net plus desktop convenience.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, onClose]);
+
   const handleSaveKit = useCallback(async () => {
     const name = window.prompt("Enter a name for this kit:", "My Custom Kit");
     if (!name) return;

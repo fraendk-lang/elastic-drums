@@ -29,6 +29,14 @@ export function PatternBrowser({ isOpen, onClose }: PatternBrowserProps) {
     if (isOpen) refreshList();
   }, [isOpen, refreshList]);
 
+  // ESC closes the panel
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, onClose]);
+
   // Save current pattern with full session state
   const handleSave = useCallback(async () => {
     const name = saveName.trim() || `Pattern ${new Date().toLocaleTimeString()}`;

@@ -3,6 +3,7 @@ import { useDrumStore } from "../store/drumStore";
 import { useOverlayStore } from "../store/overlayStore";
 import { useCustomKitStore } from "../store/customKitStore";
 import { useMixerBarStore, faderToGain } from "../store/mixerBarStore";
+import { audioEngine } from "../audio/AudioEngine";
 import { sampleManager, type LoopData } from "../audio/SampleManager";
 import { WaveformPreview } from "./WaveformPreview";
 import { LoopEditor } from "./LoopEditor";
@@ -42,11 +43,23 @@ export function PadGrid() {
   const [browserVoiceIndex, setBrowserVoiceIndex] = useState<number | null>(null);
   const [loopEditorVoice, setLoopEditorVoice] = useState<number | null>(null);
   const [volumeKnobVoice, setVolumeKnobVoice] = useState<number | null>(null);
+  const [panKnobVoice, setPanKnobVoice] = useState<number | null>(null);
+  const [pitchKnobVoice, setPitchKnobVoice] = useState<number | null>(null);
   // Subscribe to the channels array directly — its reference is stable until
   // a channel actually changes. Mapping inside the selector would create a
   // new array every selector call → infinite re-render loop in Zustand v5.
   const mixerChannels = useMixerBarStore((s) => s.channels);
   const setMixerFader = useMixerBarStore((s) => s.setFader);
+  const setMixerPan = useMixerBarStore((s) => s.setPan);
+  // Per-voice sample-tune (pitch in semitones, -24..+24). Reactive local state
+  // so the bar reflects current value; engine is source of truth on change.
+  const [voicePitch, setVoicePitch] = useState<number[]>(() => {
+    const arr = new Array(12).fill(0);
+    for (let v = 0; v < 12; v++) {
+      arr[v] = audioEngine.getVoiceParam(v, "sampleTune") ?? 0;
+    }
+    return arr;
+  });
   const [loopData, setLoopData] = useState<Map<number, LoopData>>(
     () => {
       const map = new Map<number, LoopData>();
@@ -135,6 +148,90 @@ export function PadGrid() {
     e.stopPropagation();
     setMixerFader(voiceIndex, 750); // unity
   }, [setMixerFader]);
+
+  // ── Pan quick-knob (left edge): vertical drag, -1..+1 ──
+  // Up = pan right, down = pan left (matches mixer console "tilt" direction).
+  // Double-click to reset to center.
+  const handlePanKnobPointerDown = useCallback((e: React.PointerEvent, voiceIndex: number) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const startY = e.clientY;
+    const startPan = useMixerBarStore.getState().channels[voiceIndex]?.pan ?? 0;
+    const target = e.currentTarget as HTMLElement;
+    target.setPointerCapture(e.pointerId);
+    setPanKnobVoice(voiceIndex);
+
+    const onMove = (ev: PointerEvent) => {
+      const dy = startY - ev.clientY;
+      // 80px drag = full range (-1..+1)
+      const next = Math.max(-1, Math.min(1, startPan + dy / 80));
+      setMixerPan(voiceIndex, next);
+      // The MixerBar effect doesn't auto-sync pan to the audio engine — push directly.
+      audioEngine.setChannelPan(voiceIndex, next);
+    };
+    const onUp = () => {
+      target.removeEventListener("pointermove", onMove);
+      target.removeEventListener("pointerup", onUp);
+      target.removeEventListener("pointercancel", onUp);
+      try { target.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+      setPanKnobVoice(null);
+    };
+    target.addEventListener("pointermove", onMove);
+    target.addEventListener("pointerup", onUp);
+    target.addEventListener("pointercancel", onUp);
+  }, [setMixerPan]);
+
+  const handlePanKnobDoubleClick = useCallback((e: React.MouseEvent, voiceIndex: number) => {
+    e.stopPropagation();
+    setMixerPan(voiceIndex, 0); // center
+    audioEngine.setChannelPan(voiceIndex, 0);
+  }, [setMixerPan]);
+
+  // ── Pitch quick-knob (top edge): horizontal drag, -24..+24 semitones ──
+  // Right = up in pitch (intuitive piano direction).
+  // Double-click to reset to 0.
+  const handlePitchKnobPointerDown = useCallback((e: React.PointerEvent, voiceIndex: number) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const startPitch = audioEngine.getVoiceParam(voiceIndex, "sampleTune") ?? 0;
+    const target = e.currentTarget as HTMLElement;
+    target.setPointerCapture(e.pointerId);
+    setPitchKnobVoice(voiceIndex);
+
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      // 96px drag = ±24 semitones (1px per quarter-tone, snap to whole semitone)
+      const next = Math.max(-24, Math.min(24, Math.round(startPitch + dx / 4)));
+      audioEngine.setVoiceParam(voiceIndex, "sampleTune", next);
+      setVoicePitch((prev) => {
+        if (prev[voiceIndex] === next) return prev;
+        const updated = [...prev];
+        updated[voiceIndex] = next;
+        return updated;
+      });
+    };
+    const onUp = () => {
+      target.removeEventListener("pointermove", onMove);
+      target.removeEventListener("pointerup", onUp);
+      target.removeEventListener("pointercancel", onUp);
+      try { target.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+      setPitchKnobVoice(null);
+    };
+    target.addEventListener("pointermove", onMove);
+    target.addEventListener("pointerup", onUp);
+    target.addEventListener("pointercancel", onUp);
+  }, []);
+
+  const handlePitchKnobDoubleClick = useCallback((e: React.MouseEvent, voiceIndex: number) => {
+    e.stopPropagation();
+    audioEngine.setVoiceParam(voiceIndex, "sampleTune", 0);
+    setVoicePitch((prev) => {
+      const updated = [...prev];
+      updated[voiceIndex] = 0;
+      return updated;
+    });
+  }, []);
 
   const handleDrop = useCallback(async (e: React.DragEvent, voiceIndex: number) => {
     e.preventDefault();
@@ -396,6 +493,79 @@ export function PadGrid() {
                         background: isActive
                           ? "linear-gradient(to top, var(--ed-accent-orange), var(--ed-accent-orange))"
                           : "linear-gradient(to top, rgba(245,158,11,0.6), rgba(245,158,11,0.4))",
+                      }}
+                    />
+                  </div>
+                );
+              })()}
+
+              {/* Per-pad PAN quick-knob — vertical bar at left edge.
+                  Fill grows from center to top (right-pan) or to bottom (left-pan). */}
+              {(() => {
+                const pan = mixerChannels[i]?.pan ?? 0;          // -1 .. +1
+                const isActive = panKnobVoice === i;
+                const labelL = pan < -0.05 ? `L${Math.round(-pan * 100)}` : pan > 0.05 ? `R${Math.round(pan * 100)}` : "C";
+                return (
+                  <div
+                    onPointerDown={(e) => handlePanKnobPointerDown(e, i)}
+                    onDoubleClick={(e) => handlePanKnobDoubleClick(e, i)}
+                    title={`Pan · ${labelL} · drag up=R, down=L · double-click to center`}
+                    className={`absolute top-0.5 bottom-0.5 left-0.5 w-1 rounded-full overflow-hidden cursor-ns-resize transition-opacity ${
+                      isActive ? "opacity-100" : "opacity-40 group-hover:opacity-80"
+                    }`}
+                    style={{ touchAction: "none", background: "rgba(255,255,255,0.06)" }}
+                  >
+                    {/* Center tick */}
+                    <div
+                      className="absolute left-0 right-0"
+                      style={{ top: "calc(50% - 0.5px)", height: "1px", background: "rgba(255,255,255,0.18)" }}
+                    />
+                    {/* Fill from center upward (pan > 0 = R) or downward (pan < 0 = L) */}
+                    <div
+                      className="absolute left-0 right-0"
+                      style={{
+                        ...(pan >= 0
+                          ? { bottom: "50%", height: `${pan * 50}%` }
+                          : { top: "50%", height: `${-pan * 50}%` }),
+                        background: isActive
+                          ? "var(--ed-accent-blue)"
+                          : pan === 0 ? "transparent" : "rgba(59,130,246,0.55)",
+                      }}
+                    />
+                  </div>
+                );
+              })()}
+
+              {/* Per-pad PITCH quick-knob — horizontal bar at top edge.
+                  Filled from center: right = up in pitch, left = down. */}
+              {(() => {
+                const pitch = voicePitch[i] ?? 0;          // -24..+24 semitones
+                const isActive = pitchKnobVoice === i;
+                const sign = pitch === 0 ? "" : pitch > 0 ? "+" : "";
+                return (
+                  <div
+                    onPointerDown={(e) => handlePitchKnobPointerDown(e, i)}
+                    onDoubleClick={(e) => handlePitchKnobDoubleClick(e, i)}
+                    title={`Pitch · ${sign}${pitch} st · drag right=up · double-click to reset`}
+                    className={`absolute top-0.5 left-2.5 right-2.5 h-1 rounded-full overflow-hidden cursor-ew-resize transition-opacity ${
+                      isActive ? "opacity-100" : "opacity-40 group-hover:opacity-80"
+                    }`}
+                    style={{ touchAction: "none", background: "rgba(255,255,255,0.06)" }}
+                  >
+                    {/* Center tick */}
+                    <div
+                      className="absolute top-0 bottom-0"
+                      style={{ left: "calc(50% - 0.5px)", width: "1px", background: "rgba(255,255,255,0.18)" }}
+                    />
+                    <div
+                      className="absolute top-0 bottom-0"
+                      style={{
+                        ...(pitch >= 0
+                          ? { left: "50%", width: `${(pitch / 24) * 50}%` }
+                          : { right: "50%", width: `${(-pitch / 24) * 50}%` }),
+                        background: isActive
+                          ? "var(--ed-accent-melody)"
+                          : pitch === 0 ? "transparent" : "rgba(244,114,182,0.55)",
                       }}
                     />
                   </div>

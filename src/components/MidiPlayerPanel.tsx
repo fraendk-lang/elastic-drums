@@ -55,6 +55,14 @@ export function MidiPlayerPanel({ isOpen, onClose, onOpenEditor }: MidiPlayerPan
     soundFontEngine.stopAll("melody");
   }, []);
 
+  // ESC closes the panel
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, onClose]);
+
   useEffect(() => {
     // Register stop callback to release all voices when MIDI player stops internally (loop restart, end)
     midiPlayer.setOnStop(() => {
