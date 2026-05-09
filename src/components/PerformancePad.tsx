@@ -512,13 +512,14 @@ export function PerformancePad({ isOpen, onClose }: Props) {
         // Inner voices slightly softer than root
         const noteVel = velocity * (i === 0 ? 1.0 : 0.82 - i * 0.04);
         const startTime = (ctx?.currentTime ?? 0) + 0.001 + strumDelay;
-        // Fire with strum delay using direct engine calls
+        // Fire with strum delay using direct engine calls.
+        // Both engines now have a true polyphonic path (triggerPolyNote) —
+        // chord-mode in bass target previously sounded only the LAST note
+        // because the BassEngine was mono. With per-voice poly synthesis
+        // each chord-tone rings independently.
         const r = (target === "melody")
           ? melodyEngine.triggerPolyNote(noteMidi, startTime, 30.0, noteVel, false)
-          : (() => {
-              bassEngine.triggerNote(noteMidi, startTime, false, false, false, noteVel);
-              return () => bassEngine.releaseNote(ctx?.currentTime ?? 0);
-            })();
+          : bassEngine.triggerPolyNote(noteMidi, startTime, 30.0, noteVel, false);
         void yCell; // used in Y modulation callback
         releases.push(r);
       });

@@ -422,6 +422,149 @@ export class BassEngine {
     this.releaseNote(time);
   }
 
+  // ────────────────────────────────────────────────────────────────────────
+  // POLY PATH — fire-and-forget per-voice synthesis for chordal bass.
+  //
+  // The main triggerNote() path is mono (303-style — one oscillator + filter
+  // chain shared, with slide/tie semantics). triggerPolyNote() builds a
+  // self-contained voice graph for ONE note that auto-releases after the
+  // requested duration. Multiple calls produce real polyphony without
+  // stepping on the mono path.
+  //
+  // Voices are simpler than the mono path (single LP biquad, no Steiner /
+  // ladder modelling, no harmonic-enhancer side-chain) to keep CPU sane and
+  // because chordal use is typically background harmony, not lead.
+  //
+  // Returns a release callback that triggers an early release (e.g., when
+  // the user lifts their finger before the requested duration elapsed).
+  // ────────────────────────────────────────────────────────────────────────
+
+  /** Voice-stealing pool — capped at 4 simultaneous poly voices */
+  private polyVoices: { node: OscillatorNode; sub: OscillatorNode; vca: GainNode; releaseAt: number }[] = [];
+  private static readonly MAX_POLY_VOICES = 4;
+
+  triggerPolyNote(midiNote: number, startTime: number, duration: number, velocity = 0.85, accent = false): (() => void) | null {
+    if (!this.ctx || !this.output) return null;
+    const ctx = this.ctx;
+    const p = this.params;
+
+    // Voice stealing: drop the oldest voice if we're at the cap
+    if (this.polyVoices.length >= BassEngine.MAX_POLY_VOICES) {
+      const stolen = this.polyVoices.shift();
+      if (stolen) {
+        try {
+          stolen.vca.gain.cancelScheduledValues(startTime);
+          stolen.vca.gain.setTargetAtTime(0, startTime, 0.01);
+          stolen.node.stop(startTime + 0.05);
+          stolen.sub.stop(startTime + 0.05);
+        } catch { /* already stopped */ }
+      }
+    }
+
+    // Unmute the engine output bus if it's silent (matches mono path behaviour)
+    if (this.output.gain.value === 0) {
+      const t = ctx.currentTime;
+      this.output.gain.cancelScheduledValues(t);
+      this.output.gain.setValueAtTime(0.0001, t);
+      this.output.gain.linearRampToValueAtTime(p.volume, t + 0.003);
+    }
+
+    const freq = midiToFreq(midiNote);
+
+    // ── Main oscillator ──
+    const osc = ctx.createOscillator();
+    osc.type = (p.waveform === "sawtooth" ? "sawtooth" : p.waveform === "square" ? "square" : "triangle");
+    osc.frequency.setValueAtTime(freq, startTime);
+
+    // ── Sub osc one octave below ──
+    const sub = ctx.createOscillator();
+    sub.type = "sine";
+    sub.frequency.setValueAtTime(freq / 2, startTime);
+    const subGain = ctx.createGain();
+    subGain.gain.setValueAtTime(p.subOsc * 0.7, startTime);
+
+    // ── Per-voice LP filter ──
+    const filter = ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.Q.setValueAtTime(Math.max(0.7, Math.min(20, p.resonance * 0.6)), startTime);
+    // Filter envelope: cutoff sweeps from base to peak via envMod
+    const baseCutoff = Math.max(60, p.cutoff);
+    const peakCutoff = Math.min(20000, baseCutoff + (p.envMod * 2400) + (accent ? 1200 : 0));
+    filter.frequency.setValueAtTime(peakCutoff, startTime);
+    // Decay back to base over the note's "decay" param (ms)
+    const decayTau = Math.max(0.005, (p.decay / 1000) / 3);
+    filter.frequency.setTargetAtTime(baseCutoff, startTime + 0.005, decayTau);
+
+    // ── VCA envelope ──
+    const vca = ctx.createGain();
+    const velLevel = 0.45 + Math.max(0, Math.min(1, velocity)) * 0.55;
+    const level = (accent ? 1.0 : 0.75) * velLevel;
+    const punch = (accent ? p.punch * 0.4 : p.punch * 0.15);
+    const releaseTime = 0.08;
+    const releaseEnd = startTime + duration + releaseTime;
+
+    vca.gain.setValueAtTime(0.001, startTime);
+    vca.gain.linearRampToValueAtTime(level + punch, startTime + 0.002); // attack overshoot
+    vca.gain.linearRampToValueAtTime(level, startTime + 0.012);          // settle
+    vca.gain.setValueAtTime(level, startTime + duration);
+    vca.gain.exponentialRampToValueAtTime(0.001, releaseEnd);
+    vca.gain.setValueAtTime(0, releaseEnd + 0.005);
+
+    // ── Wire it up: osc + sub → filter → vca → output ──
+    osc.connect(filter);
+    sub.connect(subGain);
+    subGain.connect(filter);
+    filter.connect(vca);
+    vca.connect(this.output);
+
+    osc.start(startTime);
+    sub.start(startTime);
+    osc.stop(releaseEnd + 0.02);
+    sub.stop(releaseEnd + 0.02);
+
+    // Track in pool for voice-stealing
+    const voiceEntry = { node: osc, sub, vca, releaseAt: releaseEnd };
+    this.polyVoices.push(voiceEntry);
+
+    // Schedule cleanup from pool after note ends
+    const cleanupDelay = (releaseEnd - ctx.currentTime + 0.1) * 1000;
+    setTimeout(() => {
+      const idx = this.polyVoices.indexOf(voiceEntry);
+      if (idx >= 0) this.polyVoices.splice(idx, 1);
+    }, Math.max(50, cleanupDelay));
+
+    // Early-release handle
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const t = Math.max(ctx.currentTime, startTime + 0.012);
+      try {
+        vca.gain.cancelScheduledValues(t);
+        vca.gain.setTargetAtTime(0.001, t, releaseTime / 4);
+        const earlyEnd = t + releaseTime + 0.02;
+        vca.gain.setValueAtTime(0, earlyEnd);
+        osc.stop(earlyEnd + 0.02);
+        sub.stop(earlyEnd + 0.02);
+      } catch { /* already stopped */ }
+    };
+  }
+
+  /** Stop and remove all currently-playing poly voices (e.g., panic / engine teardown) */
+  stopAllPoly(time?: number): void {
+    if (!this.ctx) return;
+    const t = time ?? this.ctx.currentTime;
+    for (const v of this.polyVoices) {
+      try {
+        v.vca.gain.cancelScheduledValues(t);
+        v.vca.gain.setValueAtTime(0, t);
+        v.node.stop(t + 0.02);
+        v.sub.stop(t + 0.02);
+      } catch { /* already stopped */ }
+    }
+    this.polyVoices = [];
+  }
+
   /** Emergency stop for stuck notes */
   panic(time?: number): void {
     if (!this.ctx || !this.vca) return;
