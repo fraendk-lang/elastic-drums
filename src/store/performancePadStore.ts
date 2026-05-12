@@ -405,11 +405,20 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
     const now = performance.now();
     const measuredDuration = s.recordStart > 0 ? now - s.recordStart : 0;
 
-    // Compute loop duration: snap to N bars if loopBars set, else use measured
+    // Compute loop duration. ALWAYS bar-aligned — non-bar lengths look
+    // "auto" friendly but cause inevitable drift against the drum sequencer
+    // because the loop boundary doesn't coincide with a bar boundary.
+    //   - loopBars > 0: snap to that exact bar count
+    //   - loopBars = 0 ("auto"): round measured wall-clock duration UP
+    //     to the nearest bar (min 1 bar). This is what the user usually
+    //     means by "auto" — same musical length, just made loop-able.
     let finalDuration = measuredDuration;
-    if (s.loopBars > 0 && bpm > 0) {
+    if (bpm > 0) {
       const msPerBar = (60000 / bpm) * 4; // 4 beats per bar
-      finalDuration = s.loopBars * msPerBar;
+      const bars = s.loopBars > 0
+        ? s.loopBars
+        : Math.max(1, Math.ceil(measuredDuration / msPerBar));
+      finalDuration = bars * msPerBar;
     }
 
     // Apply quantization to event timings if enabled.

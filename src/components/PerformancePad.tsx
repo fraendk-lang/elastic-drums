@@ -13,7 +13,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { usePerformancePadStore, CHORD_SETS, type YAxisParam, type PadTarget, type PadMode } from "../store/performancePadStore";
 import { useMelodyStore, MELODY_PRESETS } from "../store/melodyStore";
 import { useBassStore, BASS_PRESETS } from "../store/bassStore";
-import { useDrumStore } from "../store/drumStore";
+import { useDrumStore, getDrumTransportStartTime } from "../store/drumStore";
 import { melodyEngine } from "../audio/MelodyEngine";
 import { bassEngine, SCALES } from "../audio/BassEngine";
 import { chordsEngine } from "../audio/ChordsEngine";
@@ -703,11 +703,29 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     const timers: ReturnType<typeof setTimeout>[] = [];
     const playbackVoices = new Map<number, ActiveVoice>();
 
-    // Audio-clock anchor: every iteration's events are computed relative to
-    // this. setTimeout might fire late but the audio events still land at
-    // EXACT audio times.
-    let iterationAudioStart = ctx.currentTime + 0.05;
-    const wallStart = performance.now();
+    // ── Loop-start anchor ─────────────────────────────────────────────
+    // If drums are playing, line up iteration #0 with the NEXT bar boundary
+    // so the gesture loop locks to the same grid as the sequencer. Without
+    // this the gesture wraps at "wherever the user clicked PLAY + 50ms" —
+    // any phase offset against the drums then sounds like the loop is
+    // "almost but not quite" in time. With it, the first note of the
+    // gesture lands exactly on a downbeat regardless of when STOP was hit.
+    const drumState = useDrumStore.getState();
+    const bpm = drumState.bpm;
+    const msPerBar = (60000 / bpm) * 4;
+    let iterationAudioStart: number;
+    if (drumState.isPlaying) {
+      const transportStart = getDrumTransportStartTime();
+      const barSec = msPerBar / 1000;
+      const elapsed = ctx.currentTime - transportStart;
+      const nextBar = Math.ceil(elapsed / barSec) * barSec;
+      iterationAudioStart = transportStart + nextBar;
+      // Small safety margin so we never schedule into the past on tiny stalls
+      if (iterationAudioStart < ctx.currentTime + 0.02) iterationAudioStart += barSec;
+    } else {
+      iterationAudioStart = ctx.currentTime + 0.05;
+    }
+    const wallStart = performance.now() + (iterationAudioStart - ctx.currentTime) * 1000;
 
     const scheduleIteration = (iterAudioStart: number, iterWallStart: number) => {
       // Schedule paired notes — each fires triggerPolyNote with exact audio time
@@ -780,19 +798,36 @@ export function PerformancePad({ isOpen, onClose }: Props) {
 
     scheduleIteration(iterationAudioStart, wallStart);
 
-    // Schedule next iteration based on audio clock, not setInterval drift
-    const loopTimer = setInterval(() => {
-      if (!usePerformancePadStore.getState().isLooping) {
-        clearInterval(loopTimer);
-        return;
+    // ── Audio-clock-anchored iteration rescheduler ────────────────────
+    // setInterval drifts because it's driven by setTimeout / event-loop
+    // jitter. Instead, each iteration's start time is computed by ADDING
+    // exactly `dur/1000` to the previous iteration's audio time — so over
+    // 100 loops we still land on the exact original phase. The setTimeout
+    // delay is recomputed from the absolute target audio time each tick,
+    // so even if a tick fires late it self-corrects on the next one.
+    let nextIterAudioStart = iterationAudioStart + dur / 1000;
+    let loopTickHandle: ReturnType<typeof setTimeout> | null = null;
+    const tickLoop = () => {
+      if (!usePerformancePadStore.getState().isLooping) return;
+      const nowAudio = ctx.currentTime;
+      // Schedule this iteration ~50ms before its audio start so wall-delay
+      // computations inside scheduleIteration have positive lead-time.
+      const leadSec = 0.05;
+      if (nextIterAudioStart - nowAudio <= leadSec) {
+        const iterWallStart = performance.now() + (nextIterAudioStart - nowAudio) * 1000;
+        scheduleIteration(nextIterAudioStart, iterWallStart);
+        nextIterAudioStart += dur / 1000;
       }
-      iterationAudioStart += dur / 1000;
-      scheduleIteration(iterationAudioStart, performance.now());
-    }, dur);
+      // Re-tick at the next opportunity. Use the absolute target time so
+      // we self-correct any setTimeout drift on every tick.
+      const msToNextWindow = Math.max(20, (nextIterAudioStart - ctx.currentTime - leadSec) * 1000);
+      loopTickHandle = setTimeout(tickLoop, msToNextWindow);
+    };
+    loopTickHandle = setTimeout(tickLoop, Math.max(20, (nextIterAudioStart - ctx.currentTime - 0.05) * 1000));
 
     return () => {
       timers.forEach(clearTimeout);
-      clearInterval(loopTimer);
+      if (loopTickHandle !== null) clearTimeout(loopTickHandle);
       // Release any voice whose audio is still active. Most notes will have
       // auto-released by their `duration`, but the cleanup catches the case
       // where the user hits STOP mid-note.
