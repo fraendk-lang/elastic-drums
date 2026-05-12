@@ -48,7 +48,6 @@ function panicReleaseAll(): void {
   try { melodyEngine.releaseNote(t); } catch { /* */ }
 }
 
-let _lastWakeAt = 0;
 let _lastVisibleAt = performance.now();
 
 /**
@@ -74,7 +73,6 @@ export function registerWakeHandler(fn: WakeHandler): () => void {
 export function wake(): void {
   const now = performance.now();
   const gap = now - _lastVisibleAt;
-  _lastWakeAt = now;
   _lastVisibleAt = now;
 
   // Resume the audio context if it was suspended. Returns a Promise but
@@ -120,19 +118,35 @@ export function installAudioWakeListeners(): void {
   // Pageshow fires after restore-from-bfcache (back/forward navigation)
   window.addEventListener("pageshow", () => wake());
 
-  // Periodic heartbeat (every 5s) updates _lastVisibleAt while the page is
-  // active. If the gap suddenly jumps to >2s, we know we lost time (system
-  // sleep, gc pause) even without an explicit visibility event.
+  // Periodic heartbeat (~5s). The point is to detect a stall the browser
+  // never told us about (long GC, throttle, micro-suspend). We do that by
+  // measuring how long the heartbeat itself was delayed: setInterval is
+  // expected to fire ~5s after the last tick. If 7s+ elapsed, the main
+  // thread was paused → wake() to recover.
+  //
+  // PREVIOUS (buggy) logic compared _lastWakeAt against _lastVisibleAt,
+  // but `noteStillVisible()` kept advancing _lastVisibleAt past
+  // _lastWakeAt, so wake() fired every second heartbeat (~every 10s)
+  // even when nothing was wrong — which dropped sustained bass/chord/
+  // melody notes and resumed the AudioContext for no reason. Audible as
+  // a tiny "swallow" every 4–5 bars at 120 BPM.
+  let lastHeartbeatAt = performance.now();
   setInterval(() => {
-    if (document.visibilityState === "visible" && document.hasFocus()) {
-      const now = performance.now();
-      const gap = now - _lastVisibleAt;
-      if (gap > 2000 && _lastWakeAt < _lastVisibleAt) {
-        // Time jumped without a focus / visibility event — system probably slept
-        wake();
-      } else {
-        noteStillVisible();
-      }
+    if (document.visibilityState !== "visible" || !document.hasFocus()) {
+      // Skip but still update last-tick time so we don't false-alarm when
+      // focus comes back via the explicit focus/visibilitychange handlers.
+      lastHeartbeatAt = performance.now();
+      return;
+    }
+    const now = performance.now();
+    const elapsed = now - lastHeartbeatAt;
+    lastHeartbeatAt = now;
+    if (elapsed > 7000) {
+      // Heartbeat was significantly late — main thread / OS stalled.
+      wake();
+    } else {
+      // Normal tick — just refresh the visible timestamp.
+      noteStillVisible();
     }
   }, 5000);
 
