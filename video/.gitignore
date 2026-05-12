@@ -1,0 +1,9 @@
+node_modules/
+out/
+.cache/
+.DS_Store
+# Big assets — Frank generates these locally and we don't want to bloat the repo
+public/assets/*.mp4
+public/assets/*.mov
+public/soundtrack.wav
+public/soundtrack.mp3

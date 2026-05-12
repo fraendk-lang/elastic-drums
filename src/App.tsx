@@ -36,6 +36,8 @@ import { BeatFxPanel } from "./components/BeatFxPanel";
 import { ShortcutOverlay } from "./components/ShortcutOverlay";
 import { OnboardingModal } from "./components/OnboardingModal";
 import { PWAStatus } from "./components/PWAStatus";
+import { RecordingControls } from "./components/RecordingControls";
+import { recordingOrchestrator } from "./recording/RecordingOrchestrator";
 import { DemoSongPicker } from "./components/DemoSongPicker";
 import { InstallHintIOS } from "./components/InstallHintIOS";
 import { getMidiClockMode, subscribeMidiClockMode } from "./store/midiClockMode";
@@ -76,6 +78,8 @@ export function App() {
   const [fxRackOpen, setFxRackOpen] = useState(false);
   const [sceneMiniOpen, setSceneMiniOpen] = useState(false);
   const [demoPickerOpen, setDemoPickerOpen] = useState(false);
+  // Recording mode (driven by ?demo=record URL param) — see effect below
+  const [recordMode, setRecordMode] = useState<{ audio: boolean; bars: number } | null>(null);
   const [bottomPanelHeight, setBottomPanelHeight] = useState(360);
   const resizeStateRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const appShellRef = useRef<HTMLDivElement>(null);
@@ -105,12 +109,36 @@ export function App() {
   useWakeLock(isPlaying);
 
   // Manifest "shortcuts" deep-link (?demo=1) — handled once on mount.
+  // Also handles the product-video recording mode (?demo=record).
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("demo") === "1") {
+    const demoParam = params.get("demo");
+
+    if (demoParam === "1") {
       setDemoPickerOpen(true);
-      // Clean the URL so a refresh doesn't re-trigger
       window.history.replaceState(null, "", window.location.pathname);
+      return;
+    }
+
+    if (demoParam === "record") {
+      const songIdx = parseInt(params.get("song") ?? "0", 10);
+      const bars = parseInt(params.get("bars") ?? "20", 10);
+      const hideChrome = params.get("hideChrome") === "1";
+      const audio = params.get("audio") === "1";
+
+      if (hideChrome) document.body.classList.add("ed-recording-mode");
+      setRecordMode({ audio, bars });
+
+      // Defer one frame so stores + audio engine are ready before the
+      // orchestrator drops a demo song on top.
+      // Audio mode: skip the auto-play so Frank can press the export button
+      // when he's ready. hideChrome mode: start immediately.
+      if (!audio) {
+        requestAnimationFrame(() => recordingOrchestrator.start({ songIdx, bars }));
+      }
+
+      // Keep the URL intact while the page is open so a refresh re-arms the
+      // same mode — don't strip params here.
     }
   }, []);
   const setBpm = useDrumStore((s) => s.setBpm);
@@ -443,6 +471,7 @@ export function App() {
         </div>
       )}
 
+      <div data-rec-hide="transport">
       <Transport
         onOpenBrowser={() => overlay.openOverlay("browser")}
         onOpenEuclidean={() => overlay.openOverlay("euclidean")}
@@ -463,6 +492,7 @@ export function App() {
         onOpenPad={() => overlay.openOverlay("performancePad")}
         onOpenPerformance={() => setSceneMiniOpen((o) => !o)}
       />
+      </div>
 
       {/* Keyboard Help Bar */}
       {overlay.isOpen("help") && (
@@ -511,7 +541,7 @@ export function App() {
         </div>
 
         {/* Permanent Mixer Bar — always visible below sequencer */}
-        <MixerBar />
+        <div data-rec-hide="mixerbar"><MixerBar /></div>
 
         <div className="relative shrink-0">
           <div
@@ -603,6 +633,7 @@ export function App() {
       <ShortcutOverlay />
       <OnboardingModal onComplete={() => setDemoPickerOpen(true)} />
       <PWAStatus />
+      {recordMode?.audio && <RecordingControls bars={recordMode.bars} />}
       <DemoSongPicker isOpen={demoPickerOpen} onClose={() => setDemoPickerOpen(false)} />
       <InstallHintIOS />
       {sceneMiniOpen && <SceneMini onClose={() => setSceneMiniOpen(false)} />}

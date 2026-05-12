@@ -366,3 +366,16 @@ body.ed-playing header::after {
   -webkit-text-fill-color: transparent;
   animation: ed-shimmer 3s linear infinite;
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+   Recording mode — activated by ?demo=record&hideChrome=1.
+   Hides the Transport bar, Mixer bar, resize handle, and bottom panel so
+   QuickTime captures show only the Pad Grid + Step Sequencer (the core
+   visual that "is" the app on screen).
+   ──────────────────────────────────────────────────────────────────────── */
+body.ed-recording-mode [data-rec-hide] {
+  display: none !important;
+}
+body.ed-recording-mode #root {
+  padding: 0;
+}
