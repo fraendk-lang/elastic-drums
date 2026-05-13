@@ -747,7 +747,7 @@ interface DrumStore {
   clearSongChain: () => void;
 
   // Euclidean generator
-  applyEuclidean: (track: number, pulses: number, steps: number, rotation?: number, accentPulses?: number, accentRotation?: number) => void;
+  applyEuclidean: (track: number, pulses: number, steps: number, rotation?: number, accentPulses?: number, accentRotation?: number, targetTrackLength?: number) => void;
 
   // Ratchet
   setStepRatchet: (track: number, step: number, count: number) => void;
@@ -1106,10 +1106,20 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   clearSongChain: () => set({ songChain: [], songPosition: 0, songRepeatCount: 0 }),
 
   // ─── Euclidean Generator ─────────────────────────────────
-  applyEuclidean: (track, pulses, steps, rotation = 0, accentPulses = 0, accentRotation = 0) =>
+  applyEuclidean: (track, pulses, steps, rotation = 0, accentPulses = 0, accentRotation = 0, targetTrackLength) =>
     set((state) => {
       const newPattern = structuredClone(state.pattern);
       const trackData = newPattern.tracks[track]!;
+      // Multi-bar generation: caller asks for a longer track than the
+      // current pattern. Grow the per-track length so the Euclidean fills
+      // every step we write, and also grow pattern.length if needed so the
+      // scheduler iterates the whole thing.
+      if (targetTrackLength && targetTrackLength > trackData.length) {
+        trackData.length = Math.min(64, targetTrackLength);
+        if (newPattern.length < trackData.length) {
+          newPattern.length = trackData.length;
+        }
+      }
       const euclid = generateEuclidean(pulses, steps, rotation);
       const accentPat = accentPulses > 0
         ? generateEuclidean(accentPulses, steps, accentRotation)

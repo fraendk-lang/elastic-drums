@@ -283,6 +283,10 @@ interface PerformancePadState {
   startStepRecording: (bpm: number) => void;
   stopRecording: (bpm: number) => void;  // bpm needed to compute bar-snapped loop length
   clearRecording: () => void;
+  /** Advance the step-record cursor by one grid step WITHOUT placing a note (rest). */
+  skipStep: (bpm: number) => void;
+  /** Remove the most recent step-recorded note + rewind cursor by one grid step. */
+  undoLastStep: (bpm: number) => void;
   appendEvent: (ev: Omit<PadEvent, "t">) => void;
   setLoopBars: (n: 0 | 1 | 2 | 4 | 8) => void;
   setQuantize: (q: "off" | "1/4" | "1/8" | "1/16" | "1/32") => void;
@@ -472,6 +476,59 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
     set({ events: [], loopDuration: 0, isRecording: false, isArmed: false, isStepRecording: false, stepCursorMs: 0 });
   },
 
+  /**
+   * Step mode: advance the cursor by ONE grid step without placing a note.
+   * Lets users program rhythms with rests instead of being forced to fill
+   * every step. No-op outside step-record mode.
+   */
+  skipStep: (bpm: number) => {
+    const s = get();
+    if (!s.isStepRecording || bpm <= 0) return;
+    const beatMs = 60000 / bpm;
+    const gridMap: Record<typeof s.quantize, number> = {
+      "off":  beatMs / 4,
+      "1/4":  beatMs,
+      "1/8":  beatMs / 2,
+      "1/16": beatMs / 4,
+      "1/32": beatMs / 8,
+    };
+    const grid = gridMap[s.quantize];
+    const loopMs = s.loopDuration || grid * 16;
+    set({ stepCursorMs: (s.stepCursorMs + grid) % loopMs });
+  },
+
+  /**
+   * Step mode: remove the most recently placed note and rewind cursor by
+   * one grid step. Each step-mode tap appends a down + up event pair tagged
+   * with a unique negative pointerId, so we drop the last pair whose
+   * pointerId is in the synthetic range. No-op outside step mode or with
+   * empty events.
+   */
+  undoLastStep: (bpm: number) => {
+    const s = get();
+    if (!s.isStepRecording || s.events.length === 0 || bpm <= 0) return;
+    // Find the last synthetic-pointerId pair (down + up). Both share the
+    // same negative pointerId.
+    const lastEv = s.events[s.events.length - 1];
+    if (!lastEv || lastEv.pointerId > -1000) return; // not a step-recorded event
+    const targetPid = lastEv.pointerId;
+    const trimmed = s.events.filter((e) => e.pointerId !== targetPid);
+
+    const beatMs = 60000 / bpm;
+    const gridMap: Record<typeof s.quantize, number> = {
+      "off":  beatMs / 4,
+      "1/4":  beatMs,
+      "1/8":  beatMs / 2,
+      "1/16": beatMs / 4,
+      "1/32": beatMs / 8,
+    };
+    const grid = gridMap[s.quantize];
+    const loopMs = s.loopDuration || grid * 16;
+    // Rewind cursor by one grid step (wrap-safe).
+    const newCursor = (s.stepCursorMs - grid + loopMs) % loopMs;
+    set({ events: trimmed, stepCursorMs: newCursor });
+  },
+
   appendEvent: (ev) => {
     const s = get();
 
@@ -498,7 +555,12 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
         // don't have their down/up events at the exact same scheduled time
         // (which causes setTimeout-order race conditions). 92% gives a small
         // breathing gap that's musically inaudible but technically reliable.
-        const noteOffT = downT + grid * 0.92;
+        // Also clamp the off-event to fit inside the loop — otherwise the
+        // last step's note would have its "up" past the iteration boundary
+        // and the voice would hang until auto-evict.
+        const loopMs = s.loopDuration || grid * 16;
+        const rawOffT = downT + grid * 0.92;
+        const noteOffT = Math.min(rawOffT, loopMs - 1);
         set((state) => {
           // Each step-recorded tap gets its OWN synthetic pointerId so that
           // playback voices never collide on the same key (a real concern on
@@ -513,7 +575,7 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
             ],
             // Advance cursor by one FULL grid step (the note is shortened to
             // 92% but the grid spacing stays exact).
-            stepCursorMs: (downT + grid) % (state.loopDuration || grid * 16),
+            stepCursorMs: (downT + grid) % loopMs,
           };
         });
       }

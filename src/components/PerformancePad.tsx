@@ -77,7 +77,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     target, mode, chordSetIndex, yParam, scaleOctaves, scaleLowestOct, gridSnap, trailEnabled, chordFollow, gridRows,
     events, isArmed, isRecording, isStepRecording, stepCursorMs, isLooping, loopDuration, loopBars, quantize,
     setTarget, setMode, setChordSetIndex, setYParam, setScaleOctaves, setScaleLowestOct, setGridSnap, setTrailEnabled, setChordFollow, setGridRows,
-    armRecording, startStepRecording, stopRecording, clearRecording, appendEvent, setLoopBars, setQuantize,
+    armRecording, startStepRecording, stopRecording, clearRecording, skipStep, undoLastStep, appendEvent, setLoopBars, setQuantize,
     startLoop, stopLoop,
     customChordSets, setChordIntervals, resetChordCell,
   } = usePerformancePadStore();
@@ -1515,6 +1515,15 @@ export function PerformancePad({ isOpen, onClose }: Props) {
               className="px-3 h-6 text-[9px] font-bold rounded bg-blue-500/40 text-blue-100 animate-pulse transition-all"
               title={`Step recording — cursor at ${(stepCursorMs / 1000).toFixed(2)}s`}
             >■ STOP STEP</button>
+            <button onClick={() => skipStep(bpm)}
+              className="px-2 h-6 text-[9px] font-bold rounded bg-white/10 text-white/70 hover:bg-white/20 transition-all"
+              title="Advance cursor without placing a note (rest)"
+            >↷ SKIP</button>
+            <button onClick={() => undoLastStep(bpm)}
+              disabled={events.length === 0}
+              className="px-2 h-6 text-[9px] font-bold rounded bg-white/10 text-white/70 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              title="Remove last placed note and rewind cursor one step"
+            >↶ UNDO</button>
             <span className="text-[8px] text-blue-300/70 font-mono">
               {(stepCursorMs / 1000).toFixed(2)}s / {(loopDuration / 1000).toFixed(1)}s
             </span>

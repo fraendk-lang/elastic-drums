@@ -259,6 +259,11 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
   const [pulses, setPulses] = useState(4);
   const [steps, setSteps] = useState(16);
   const [rotation, setRotation] = useState(0);
+  // Multi-bar generation: pattern spans N bars × 16 steps. When bars > 1
+  // the Euclidean math runs at the full length and the target pattern is
+  // resized to match. The pulses count stays user-controlled so density
+  // can be adjusted independently of length.
+  const [bars, setBars] = useState<1|2|4|8>(1);
   const [accentPulses, setAccentPulses] = useState(0);
   const [accentRotation, setAccentRotation] = useState(0);
   const [noteMode, setNoteMode] = useState("root");
@@ -304,10 +309,19 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
     return () => window.removeEventListener("keydown", onKey);
   }, [isOpen, onClose]);
 
-  const rhythm = useMemo(() => generateEuclidean(pulses, steps, rotation), [pulses, steps, rotation]);
+  // Total length of the rhythm to apply / preview. Pulses + accent pulses
+  // scale with bars too so the user gets the same density they'd get from
+  // a 16-step pattern, just spread across the multi-bar span.
+  const totalSteps = steps * bars;
+  const scaledPulses = pulses * bars;
+  const scaledAccentPulses = accentPulses * bars;
+  const rhythm = useMemo(
+    () => generateEuclidean(scaledPulses, totalSteps, rotation),
+    [scaledPulses, totalSteps, rotation],
+  );
   const accent = useMemo(
-    () => (accentPulses > 0 ? generateEuclidean(accentPulses, steps, accentRotation) : null),
-    [accentPulses, steps, accentRotation],
+    () => (scaledAccentPulses > 0 ? generateEuclidean(scaledAccentPulses, totalSteps, accentRotation) : null),
+    [scaledAccentPulses, totalSteps, accentRotation],
   );
 
   // For LAYERS target, reflect the active layer's color in the UI
@@ -320,26 +334,47 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
 
   // Apply current settings to the active target. Does NOT close the dialog —
   // used by MUTATE / preset clicks for instant audible feedback.
+  //
+  // Multi-bar handling: when `bars > 1`, the Euclidean math runs on
+  // `s × bars` steps and the target pattern is resized so the scheduler
+  // iterates the entire span (otherwise indices beyond the original 16
+  // would fall outside the active pattern and never play).
   const applyToTarget = useCallback((p: number, s: number, r: number, ap: number, ar: number) => {
+    // Multi-bar: pulse / accent counts the user picked are per BAR. Scale
+    // them up by `bars` so density stays constant when extending length,
+    // which matches what the rhythm preview shows.
+    const totalSteps = s * bars;
+    const scaledP = p * bars;
+    const scaledAp = ap * bars;
+    // Resize bass / chords / melody stores to fit the multi-bar pattern.
+    // Drum store resizes itself via applyEuclidean's targetTrackLength.
+    if (target === "bass" && bars > 1) {
+      useBassStore.setState({ length: totalSteps });
+    } else if (target === "chords" && bars > 1) {
+      useChordsStore.setState({ length: totalSteps });
+    } else if (target === "melody" && bars > 1) {
+      useMelodyStore.setState({ length: totalSteps });
+    }
+
     switch (target) {
       case "drums":
-        applyDrumEuclidean(selectedVoice, p, s, r, ap, ar);
+        applyDrumEuclidean(selectedVoice, scaledP, totalSteps, r, scaledAp, ar, totalSteps);
         break;
       case "bass":
-        applyBassEuclidean(p, s, r, noteMode, ap, ar, gateMode, octaveRange, bassFollowTrack ?? undefined);
+        applyBassEuclidean(scaledP, totalSteps, r, noteMode, scaledAp, ar, gateMode, octaveRange, bassFollowTrack ?? undefined);
         break;
       case "chords":
-        applyChordsEuclidean(p, s, r, noteMode, ap, ar, gateMode, octaveRange);
+        applyChordsEuclidean(scaledP, totalSteps, r, noteMode, scaledAp, ar, gateMode, octaveRange);
         break;
       case "melody":
-        applyMelodyEuclidean(p, s, r, noteMode, ap, ar, gateMode, octaveRange);
+        applyMelodyEuclidean(scaledP, totalSteps, r, noteMode, scaledAp, ar, gateMode, octaveRange);
         break;
       case "layers":
-        applyLayerEuclidean(p, s, r, noteMode, melodyScale, melodyRoot, ap, ar);
+        applyLayerEuclidean(scaledP, totalSteps, r, noteMode, melodyScale, melodyRoot, scaledAp, ar);
         setLayersEnabled(true);
         break;
     }
-  }, [target, selectedVoice, noteMode, gateMode, octaveRange, bassFollowTrack,
+  }, [target, bars, selectedVoice, noteMode, gateMode, octaveRange, bassFollowTrack,
       applyDrumEuclidean, applyBassEuclidean, applyChordsEuclidean, applyMelodyEuclidean,
       applyLayerEuclidean, setLayersEnabled, melodyScale, melodyRoot]);
 
@@ -791,6 +826,28 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
 
           {/* Sliders */}
           <div className="flex-1 flex flex-col gap-3">
+            {/* BARS — multi-bar generator (1 / 2 / 4 / 8 bars × 16 steps) */}
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-white/55 w-[60px]">Bars</span>
+              <div className="flex gap-1">
+                {([1, 2, 4, 8] as const).map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => setBars(n)}
+                    className={`px-2.5 h-6 text-[10px] font-bold rounded transition-all ${
+                      bars === n
+                        ? "bg-[var(--ed-accent-orange)] text-black"
+                        : "bg-white/5 text-white/60 hover:bg-white/10"
+                    }`}
+                  >
+                    {n}×16
+                  </button>
+                ))}
+              </div>
+              <span className="ml-auto text-[9px] font-mono text-white/40">
+                = {steps * bars} steps
+              </span>
+            </div>
             {/* Pulses */}
             <SliderRow
               label="Pulses"
