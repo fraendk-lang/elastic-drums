@@ -489,7 +489,7 @@ interface BassStore {
   generateBassline: (strategyIndex: number) => void;
   nextStrategy: () => void;
   prevStrategy: () => void;
-  applyEuclidean: (pulses: number, eucSteps: number, rotation: number, noteMode: string, accentPulses?: number, accentRotation?: number, gateMode?: "stac"|"med"|"leg"|"tie", octaveRange?: 1|2|3, followDrumTrack?: number) => void;
+  applyEuclidean: (pulses: number, eucSteps: number, rotation: number, noteMode: string, accentPulses?: number, accentRotation?: number, gateMode?: "stac"|"med"|"leg"|"tie", octaveRange?: 1|2|3, followDrumTrack?: number, progression?: number[]) => void;
   loadPreset: (index: number) => void;
   nextPreset: () => void;
   prevPreset: () => void;
@@ -788,9 +788,14 @@ export const useBassStore = create<BassStore>((set, get) => ({
     set({ strategyIndex: prev });
   },
 
-  applyEuclidean: (pulses, eucSteps, rotation, noteMode, accentPulses = 0, accentRotation = 0, gateMode = "stac", octaveRange = 1, followDrumTrack) => {
+  applyEuclidean: (pulses, eucSteps, rotation, noteMode, accentPulses = 0, accentRotation = 0, gateMode = "stac", octaveRange = 1, followDrumTrack, progression) => {
     const { length, scaleName } = get();
     const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
+    // Per-bar progression — see chordsStore.applyEuclidean. With "root"
+    // noteMode (the default) this makes the bass play the chord ROOT for
+    // each bar — tight unison with chords/melody using the same progression.
+    const STEPS_PER_BAR = 16;
+    const hasProgression = !!progression && progression.length > 0;
     // FOLLOW MODE: derive rhythm from a drum track's pattern instead of
     // generating it via Bjorklund. Lets the bass lock perfectly to the kick
     // (or snare, or any voice) for tight unison grooves.
@@ -843,6 +848,12 @@ export const useBassStore = create<BassStore>((set, get) => ({
           note = Math.round((scaleLen - 1) * Math.sin((hitIndex / Math.max(1, totalHits - 1)) * Math.PI));
         }
         // "root" → note stays 0
+
+        if (hasProgression) {
+          const barIdx = Math.floor(i / STEPS_PER_BAR);
+          const progDegree = progression![barIdx % progression!.length] ?? 0;
+          note = ((note + progDegree) % scaleLen + scaleLen) % scaleLen;
+        }
 
         // Octave spread based on range setting
         let octave = 0;

@@ -897,7 +897,7 @@ interface MelodyStore {
   generateMelodiline: (strategyIndex: number) => void;
   nextStrategy: () => void;
   prevStrategy: () => void;
-  applyEuclidean: (pulses: number, eucSteps: number, rotation: number, noteMode: string, accentPulses?: number, accentRotation?: number, gateMode?: "stac"|"med"|"leg"|"tie", octaveRange?: 1|2|3) => void;
+  applyEuclidean: (pulses: number, eucSteps: number, rotation: number, noteMode: string, accentPulses?: number, accentRotation?: number, gateMode?: "stac"|"med"|"leg"|"tie", octaveRange?: 1|2|3, progression?: number[]) => void;
   loadPreset: (index: number) => void;
   nextPreset: () => void;
   prevPreset: () => void;
@@ -1240,10 +1240,15 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
     set({ strategyIndex: prev });
   },
 
-  applyEuclidean: (pulses, eucSteps, rotation, noteMode, accentPulses = 0, accentRotation = 0, gateMode = "stac", octaveRange = 1) => {
+  applyEuclidean: (pulses, eucSteps, rotation, noteMode, accentPulses = 0, accentRotation = 0, gateMode = "stac", octaveRange = 1, progression) => {
     const { length, scaleName } = get();
     const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
     const rhythm = generateEuclidean(pulses, eucSteps, rotation);
+    // Per-bar progression offset — see chordsStore.applyEuclidean for the
+    // full rationale. Melody follows the chord changes by transposing each
+    // bar's notes by the progression's scale-degree offset.
+    const STEPS_PER_BAR = 16;
+    const hasProgression = !!progression && progression.length > 0;
     const accent = accentPulses > 0
       ? generateEuclidean(accentPulses, eucSteps, accentRotation)
       : null;
@@ -1281,6 +1286,12 @@ export const useMelodyStore = create<MelodyStore>((set, get) => ({
           note = pent[hitIndex % pent.length] ?? 0;
         } else if (noteMode === "contour") {
           note = Math.round((scaleLen - 1) * Math.sin((hitIndex / Math.max(1, totalHits - 1)) * Math.PI));
+        }
+
+        if (hasProgression) {
+          const barIdx = Math.floor(i / STEPS_PER_BAR);
+          const progDegree = progression![barIdx % progression!.length] ?? 0;
+          note = ((note + progDegree) % scaleLen + scaleLen) % scaleLen;
         }
 
         let octave = 0;

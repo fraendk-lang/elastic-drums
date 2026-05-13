@@ -33,6 +33,25 @@ const KIT_FILL_BASE: { pulses: number; steps: number; rotation: number }[] = [
   { pulses: 3, steps: 16, rotation: 5  }, // PRC2
 ];
 
+// ── Chord progressions — scale-degree arrays per bar ─────────────────────────
+// Applied when `bars > 1` to make Chords / Bass / Melody actually MOVE
+// harmonically across bars instead of repeating the same root. Degrees are
+// 0-indexed (0 = I, 1 = ii, 2 = iii, 3 = IV, 4 = V, 5 = vi, 6 = vii°). The
+// quality (maj/min/dim) is derived from the current scale by the diatonic
+// chord lookup — so the same `[0, 4, 5, 3]` plays I-V-vi-IV in major and
+// i-V-VI-iv in minor. Hold = repeat the previous bar's chord.
+interface ProgressionPreset { label: string; description: string; degrees: number[] }
+const PROGRESSIONS: ProgressionPreset[] = [
+  { label: "Hold",       description: "Same chord every bar (classic Euclidean behavior)", degrees: [0] },
+  { label: "I-V-vi-IV",  description: "Pop / anthem (Don't Stop Believin', Let It Be)",    degrees: [0, 4, 5, 3] },
+  { label: "vi-IV-I-V",  description: "Modern pop / EDM drop",                              degrees: [5, 3, 0, 4] },
+  { label: "I-vi-IV-V",  description: "50s doo-wop / power ballad",                         degrees: [0, 5, 3, 4] },
+  { label: "ii-V-I-vi",  description: "Jazz turnaround",                                    degrees: [1, 4, 0, 5] },
+  { label: "i-VI-III-VII", description: "Minor anthem (House Of The Rising Sun key)",       degrees: [0, 5, 2, 6] },
+  { label: "I-IV-V-IV",  description: "Blues / rock turnaround",                            degrees: [0, 3, 4, 3] },
+  { label: "Descending", description: "Step-wise down — I-vii-vi-V",                        degrees: [0, 6, 5, 4] },
+];
+
 // ── Groove Styles — multi-voice presets ──────────────────────────────────────
 interface VoicePat { p: number; s: number; r: number }
 interface GrooveStyle {
@@ -264,6 +283,14 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
   // resized to match. The pulses count stays user-controlled so density
   // can be adjusted independently of length.
   const [bars, setBars] = useState<1|2|4|8>(1);
+  /**
+   * Chord progression — array of scale-degree offsets applied per bar.
+   * Active only when bars > 1. The same progression is shared across
+   * Chords + Bass + Melody so they harmonize. Degrees are 0-indexed in
+   * the current scale, so [0, 4, 5, 3] in a major scale is I-V-vi-IV.
+   * `null` = no progression (every bar uses the same root, classic behavior).
+   */
+  const [progressionIdx, setProgressionIdx] = useState<number>(0);
   const [accentPulses, setAccentPulses] = useState(0);
   const [accentRotation, setAccentRotation] = useState(0);
   const [noteMode, setNoteMode] = useState("root");
@@ -346,6 +373,11 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
     const totalSteps = s * bars;
     const scaledP = p * bars;
     const scaledAp = ap * bars;
+    // Only attach a progression when there are multiple bars and the user
+    // picked something other than "Hold" (idx 0 = always-root). For drums
+    // and layers the progression is meaningless (no chord roots), so we
+    // skip it there.
+    const progDegrees = (bars > 1 && progressionIdx > 0) ? PROGRESSIONS[progressionIdx]?.degrees : undefined;
     // Resize bass / chords / melody stores to fit the multi-bar pattern.
     // Drum store resizes itself via applyEuclidean's targetTrackLength.
     if (target === "bass" && bars > 1) {
@@ -361,20 +393,20 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
         applyDrumEuclidean(selectedVoice, scaledP, totalSteps, r, scaledAp, ar, totalSteps);
         break;
       case "bass":
-        applyBassEuclidean(scaledP, totalSteps, r, noteMode, scaledAp, ar, gateMode, octaveRange, bassFollowTrack ?? undefined);
+        applyBassEuclidean(scaledP, totalSteps, r, noteMode, scaledAp, ar, gateMode, octaveRange, bassFollowTrack ?? undefined, progDegrees);
         break;
       case "chords":
-        applyChordsEuclidean(scaledP, totalSteps, r, noteMode, scaledAp, ar, gateMode, octaveRange);
+        applyChordsEuclidean(scaledP, totalSteps, r, noteMode, scaledAp, ar, gateMode, octaveRange, progDegrees);
         break;
       case "melody":
-        applyMelodyEuclidean(scaledP, totalSteps, r, noteMode, scaledAp, ar, gateMode, octaveRange);
+        applyMelodyEuclidean(scaledP, totalSteps, r, noteMode, scaledAp, ar, gateMode, octaveRange, progDegrees);
         break;
       case "layers":
         applyLayerEuclidean(scaledP, totalSteps, r, noteMode, melodyScale, melodyRoot, scaledAp, ar);
         setLayersEnabled(true);
         break;
     }
-  }, [target, bars, selectedVoice, noteMode, gateMode, octaveRange, bassFollowTrack,
+  }, [target, bars, progressionIdx, selectedVoice, noteMode, gateMode, octaveRange, bassFollowTrack,
       applyDrumEuclidean, applyBassEuclidean, applyChordsEuclidean, applyMelodyEuclidean,
       applyLayerEuclidean, setLayersEnabled, melodyScale, melodyRoot]);
 
@@ -848,6 +880,32 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
                 = {steps * bars} steps
               </span>
             </div>
+
+            {/* CHORD PROGRESSION — only meaningful for harmonic targets + bars > 1 */}
+            {bars > 1 && (target === "bass" || target === "chords" || target === "melody") && (
+              <div className="flex items-center gap-3">
+                <span
+                  className="text-[10px] font-bold tracking-[0.2em] uppercase text-white/55 w-[60px]"
+                  title="Chord progression — applied per bar across Chords / Bass / Melody"
+                >Chord</span>
+                <div className="flex gap-1 flex-wrap">
+                  {PROGRESSIONS.map((p, i) => (
+                    <button
+                      key={p.label}
+                      onClick={() => setProgressionIdx(i)}
+                      title={p.description}
+                      className={`px-2 h-6 text-[9px] font-bold rounded transition-all whitespace-nowrap ${
+                        progressionIdx === i
+                          ? "bg-[var(--ed-accent-orange)] text-black"
+                          : "bg-white/5 text-white/60 hover:bg-white/10"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {/* Pulses */}
             <SliderRow
               label="Pulses"

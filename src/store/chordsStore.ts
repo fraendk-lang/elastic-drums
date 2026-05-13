@@ -414,7 +414,7 @@ interface ChordsStore {
   generateChordline: (strategyIndex: number) => void;
   nextStrategy: () => void;
   prevStrategy: () => void;
-  applyEuclidean: (pulses: number, eucSteps: number, rotation: number, noteMode: string, accentPulses?: number, accentRotation?: number, gateMode?: "stac"|"med"|"leg"|"tie", octaveRange?: 1|2|3) => void;
+  applyEuclidean: (pulses: number, eucSteps: number, rotation: number, noteMode: string, accentPulses?: number, accentRotation?: number, gateMode?: "stac"|"med"|"leg"|"tie", octaveRange?: 1|2|3, progression?: number[]) => void;
   loadPreset: (index: number) => void;
   nextPreset: () => void;
   prevPreset: () => void;
@@ -724,11 +724,18 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
     set({ strategyIndex: prev });
   },
 
-  applyEuclidean: (pulses, eucSteps, rotation, noteMode, accentPulses = 0, accentRotation = 0, gateMode = "stac", octaveRange = 1) => {
+  applyEuclidean: (pulses, eucSteps, rotation, noteMode, accentPulses = 0, accentRotation = 0, gateMode = "stac", octaveRange = 1, progression) => {
     const { length, scaleName } = get();
     const scale = SCALES[scaleName] ?? SCALES["Chromatic"]!;
     const chordForDegree = buildDiatonicChordLookup(scaleName);
     const rhythm = generateEuclidean(pulses, eucSteps, rotation);
+    // Multi-bar chord progression: each bar advances to the next scale
+    // degree in `progression` (e.g. [0, 4, 5, 3] = I-V-vi-IV in major).
+    // The per-bar offset is added to whatever the noteMode picks, so
+    // ascending/walk/random etc. all still work — they just play
+    // RELATIVE to the current bar's root.
+    const STEPS_PER_BAR = 16;
+    const hasProgression = !!progression && progression.length > 0;
     const accent = accentPulses > 0
       ? generateEuclidean(accentPulses, eucSteps, accentRotation)
       : null;
@@ -766,6 +773,14 @@ export const useChordsStore = create<ChordsStore>((set, get) => ({
           note = pent[hitIndex % pent.length] ?? 0;
         } else if (noteMode === "contour") {
           note = Math.round((scaleLen - 1) * Math.sin((hitIndex / Math.max(1, totalHits - 1)) * Math.PI));
+        }
+
+        // Apply per-bar progression offset BEFORE computing octave/chord
+        // so the chord quality (maj/min/dim) is correct for the new degree.
+        if (hasProgression) {
+          const barIdx = Math.floor(i / STEPS_PER_BAR);
+          const progDegree = progression![barIdx % progression!.length] ?? 0;
+          note = ((note + progDegree) % scaleLen + scaleLen) % scaleLen;
         }
 
         let octave = 0;
