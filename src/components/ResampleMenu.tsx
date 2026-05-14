@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { resampleToPad } from "../utils/resample";
+import { HintPopover } from "./Hints";
 
 const VOICE_LABELS = [
   "KICK", "SNARE", "CLAP", "TOM L",
@@ -92,6 +93,14 @@ export function ResampleMenu() {
       >
         {state === "recording" ? `● ${barsDone}/${bars}` : state === "encoding" ? "..." : "BOUNCE"}
       </button>
+      <HintPopover
+        id="resample-bounce"
+        anchor={btnRef.current}
+        position="bottom"
+        title="Bounce to a Pad"
+        body="Record the live master output for N bars and drop the result on a pad slot — layer-on-layer producer workflow."
+        triggered={open || state !== "idle"}
+      />
 
       {open && (
         <div

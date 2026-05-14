@@ -7,14 +7,18 @@
  *   - destination: "bass.cutoff" | "chords.cutoff" | "melody.cutoff" | "bass.resonance" | ...
  *   - depth: -1..+1 (signed, so bipolar modulation)
  *
- * The matrix runs as a JS interval that computes LFO values and calls
- * setParams on the target engine every ~25ms. Intentionally simple and
- * CPU-cheap — keeps the UI reactive without audio-thread coupling.
+ * The matrix runs as a requestAnimationFrame loop and anchors LFO phase
+ * to the AudioContext clock (`ctx.currentTime`) so modulation stays
+ * sample-accurate against the rest of the audio engine even if the main
+ * thread stalls. (Previously: setInterval(25) with performance.now() —
+ * drifted against audio time on stalls / GC pauses, audible as wobble
+ * jitter on filter / cutoff modulation.)
  */
 
 import { bassEngine } from "./BassEngine";
 import { chordsEngine } from "./ChordsEngine";
 import { melodyEngine } from "./MelodyEngine";
+import { audioEngine } from "./AudioEngine";
 
 export type ModSource = {
   shape: "sine" | "triangle" | "saw" | "square" | "ramp-up" | "ramp-down";
@@ -80,19 +84,31 @@ class ModMatrixClass {
     { enabled: false, source: { shape: "sine", rate: 2, phase: 0 }, destination: "none", depth: 0.5 },
     { enabled: false, source: { shape: "square", rate: 0.25, phase: 0 }, destination: "none", depth: 0.5 },
   ];
-  private tickerId: ReturnType<typeof setInterval> | null = null;
-  private startTime = 0;
+  private rafId: number | null = null;
+  /** AudioContext time when start() was called — basis for LFO phase math. */
+  private startAudioTime = 0;
+  /** Wallclock fallback when no AudioContext is available yet. */
+  private startWallTime = 0;
   private listeners = new Set<() => void>();
 
   start(): void {
-    if (this.tickerId !== null) return;
-    this.startTime = performance.now() / 1000;
-    this.tickerId = setInterval(() => this.tick(), 25);
+    if (this.rafId !== null) return;
+    const ctx = audioEngine.getAudioContext();
+    this.startAudioTime = ctx?.currentTime ?? 0;
+    this.startWallTime = performance.now() / 1000;
+    const loop = () => {
+      this.tick();
+      // Reschedule next frame. rAF on a hidden tab pauses (which is fine — no
+      // audible LFOs while tab is hidden, and on focus-back the phase math
+      // resyncs to whatever ctx.currentTime says).
+      this.rafId = requestAnimationFrame(loop);
+    };
+    this.rafId = requestAnimationFrame(loop);
   }
 
   stop(): void {
-    if (this.tickerId !== null) clearInterval(this.tickerId);
-    this.tickerId = null;
+    if (this.rafId !== null) cancelAnimationFrame(this.rafId);
+    this.rafId = null;
   }
 
   getSlots(): ReadonlyArray<ModSlot> {
@@ -118,7 +134,15 @@ class ModMatrixClass {
   }
 
   private tick(): void {
-    const now = performance.now() / 1000 - this.startTime;
+    // Anchor phase to the audio clock when available — that's the same clock
+    // the rest of the engine schedules against, so an LFO at 1 Hz produces
+    // exactly 1 cycle per second of audio output regardless of any main-
+    // thread stalls between rAF frames. Fall back to wallclock if the audio
+    // context isn't ready yet (very early app startup).
+    const ctx = audioEngine.getAudioContext();
+    const now = ctx
+      ? ctx.currentTime - this.startAudioTime
+      : performance.now() / 1000 - this.startWallTime;
     for (const slot of this.slots) {
       if (!slot.enabled || slot.destination === "none") continue;
 

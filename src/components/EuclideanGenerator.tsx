@@ -326,6 +326,8 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
   // Hint anchors — point at the rows where the feature lives so first-time
   // users can find them.
   const morphRowRef = useRef<HTMLDivElement>(null);
+  // Anchor for the multi-bar / progression hint
+  const barsRowRef = useRef<HTMLDivElement>(null);
   const driftRowRef = useRef<HTMLDivElement>(null);
   const followRowRef = useRef<HTMLDivElement>(null);
 
@@ -859,7 +861,7 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
           {/* Sliders */}
           <div className="flex-1 flex flex-col gap-3">
             {/* BARS — multi-bar generator (1 / 2 / 4 / 8 bars × 16 steps) */}
-            <div className="flex items-center gap-3">
+            <div ref={barsRowRef} className="flex items-center gap-3">
               <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-white/55 w-[60px]">Bars</span>
               <div className="flex gap-1">
                 {([1, 2, 4, 8] as const).map((n) => (
@@ -1354,6 +1356,14 @@ export function EuclideanGenerator({ isOpen, onClose }: EuclideanGeneratorProps)
       </div>
 
       {/* Contextual hints — show once, dismissable */}
+      <HintPopover
+        id="euclid-bars"
+        anchor={barsRowRef.current}
+        position="bottom"
+        title="Multi-Bar Generation"
+        body="Pick 2/4/8 to spread the rhythm over multiple bars. For Bass/Chords/Melody a chord-progression picker appears (I-V-vi-IV etc.) so the harmony moves with the bars."
+        triggered={bars > 1}
+      />
       <HintPopover
         id="euclid-morph"
         anchor={morphRowRef.current}

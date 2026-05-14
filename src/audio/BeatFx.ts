@@ -303,7 +303,17 @@ class BeatFxManager {
   private _stopRoll(): void {
     if (!this._rollFeedback || !this._rollWet || !this._ctx) return;
     const now = this._ctx.currentTime;
-    this._rollFeedback.gain.setValueAtTime(0, now);
+    // Ramp feedback to zero alongside the wet bus instead of a hard
+    // setValueAtTime(0) jump. With high feedback (0.78) and an in-flight
+    // delay loop, the hard cut produced a sample-level discontinuity in
+    // the feedback path — audible as a click on release. 40 ms is
+    // shorter than the wet fade (150 ms) so the feedback dries up first,
+    // preventing any "tail of a tail" repeat artefact.
+    const curFb = this._rollFeedback.gain.value;
+    this._rollFeedback.gain.cancelScheduledValues(now);
+    this._rollFeedback.gain.setValueAtTime(curFb, now);
+    this._rollFeedback.gain.linearRampToValueAtTime(0, now + 0.04);
+
     this._rollWet.gain.cancelScheduledValues(now);
     this._rollWet.gain.setValueAtTime(this._rollWet.gain.value, now);
     this._rollWet.gain.linearRampToValueAtTime(0, now + 0.15);

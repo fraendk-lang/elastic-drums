@@ -23,6 +23,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSceneStore } from "../store/sceneStore";
+import { HintPopover } from "./Hints";
 
 const SLOT_LABELS = ["A", "B", "C", "D"] as const;
 const SLOTS = [0, 1, 2, 3] as const;
@@ -49,6 +50,11 @@ export function PatternVariationsBar() {
   const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lpFired = useRef(false);
   const [recentlySaved, setRecentlySaved] = useState<number | null>(null);
+  // Anchor for the contextual hint — points at the VAR label so first-time
+  // users understand what these buttons do.
+  const [labelAnchor, setLabelAnchor] = useState<HTMLElement | null>(null);
+  // Auto-dismiss the hint once they've actually saved any variation.
+  const anySlotFilled = slotA || slotB || slotC || slotD;
 
   function startLongPress(slot: number) {
     cancelLongPress();
@@ -98,11 +104,20 @@ export function PatternVariationsBar() {
   return (
     <div className="flex items-center gap-1.5 px-2 py-1">
       <span
+        ref={setLabelAnchor}
         className="text-[8px] font-bold tracking-[0.3em] uppercase text-white/35 mr-1 select-none"
         title="Pattern Variations — tap empty to save, tap saved to switch (quantised), long-press to overwrite"
       >
         VAR
       </span>
+      <HintPopover
+        id="pattern-variations"
+        anchor={labelAnchor}
+        position="bottom"
+        title="Pattern Variations A/B/C/D"
+        body="Tap an empty slot to snapshot the current performance. Tap a saved slot to switch at the next bar. Long-press overwrites."
+        triggered={anySlotFilled}
+      />
       {SLOTS.map((slot) => {
         const filled = slotFilled[slot];
         const isActive = activeScene === slot;

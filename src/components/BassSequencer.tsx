@@ -190,7 +190,19 @@ export function BassSequencer() {
     refreshSaved();
   }, [refreshSaved]);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent, absStep: number) => {
+  /**
+   * Pitch / step interaction handler. Was previously `onMouseDown` with
+   * window-level mousemove / mouseup listeners — that path is broken on
+   * iPad because iOS Safari emits synthesised mouse events only AFTER
+   * touchend, not during the drag, so vertical-drag-to-change-pitch
+   * silently did nothing on touch.
+   *
+   * Fix: pointer events throughout, so the same code path handles mouse,
+   * touch and stylus identically. We don't use setPointerCapture here —
+   * window-level pointermove gives us the same "drag continues outside
+   * the originating element" semantics with no extra state to manage.
+   */
+  const handleStepPointerDown = useCallback((e: React.PointerEvent, absStep: number) => {
     const s = steps[absStep];
     if (s?.active) {
       if (e.shiftKey) { e.preventDefault(); toggleSlide(absStep); return; }
@@ -202,11 +214,14 @@ export function BassSequencer() {
     if (e.button === 0) {
       dragRef.current = { step: absStep, startY: e.clientY, startNote: s.note };
       let didDrag = false;
-      const handleMove = (me: MouseEvent) => {
+      const handleMove = (me: PointerEvent) => {
         if (!dragRef.current) return;
         const dy = dragRef.current.startY - me.clientY;
         if (Math.abs(dy) > 3) didDrag = true; // Threshold to distinguish click from drag
         if (didDrag) {
+          // Prevent iOS from converting the gesture into a page scroll once
+          // we've decided we own it. Mouse browsers ignore this — no-op.
+          me.preventDefault();
           const newNote = Math.max(0, Math.min(14, dragRef.current.startNote + Math.round(dy / 8)));
           setStepNote(dragRef.current.step, newNote);
         }
@@ -215,11 +230,13 @@ export function BassSequencer() {
         // If no drag happened, toggle step off
         if (!didDrag && dragRef.current) toggleStep(dragRef.current.step);
         dragRef.current = null;
-        window.removeEventListener("mousemove", handleMove);
-        window.removeEventListener("mouseup", handleUp);
+        window.removeEventListener("pointermove", handleMove);
+        window.removeEventListener("pointerup", handleUp);
+        window.removeEventListener("pointercancel", handleUp);
       };
-      window.addEventListener("mousemove", handleMove);
-      window.addEventListener("mouseup", handleUp);
+      window.addEventListener("pointermove", handleMove, { passive: false });
+      window.addEventListener("pointerup", handleUp);
+      window.addEventListener("pointercancel", handleUp);
     }
   }, [steps, toggleStep, setStepNote, toggleSlide, toggleTie, cycleOctave]);
 
@@ -802,8 +819,15 @@ export function BassSequencer() {
             <div key={i}
               ref={(el) => { if (el) stepElRefs.current.set(absStep, el); else stepElRefs.current.delete(absStep); }}
               className={`flex-1 flex flex-col justify-end min-w-0 relative ${beyondLength ? "opacity-25" : ""} ${isSelected && isActive ? "ring-1 ring-[var(--ed-accent-bass)]/55 rounded-sm" : ""}`}
-              onMouseDown={(e) => { e.preventDefault(); handleMouseDown(e, absStep); }}
-              onPointerDown={(e) => handleDurationDragStart(e, absStep)}
+              onPointerDown={(e) => {
+                // Right-edge drag = gate-length adjust (early-returns if not at edge)
+                handleDurationDragStart(e, absStep);
+                if (e.defaultPrevented) return;
+                // Otherwise = step toggle / pitch drag / modifier
+                e.preventDefault();
+                handleStepPointerDown(e, absStep);
+              }}
+              style={{ touchAction: "none" }}
               onContextMenu={(e) => {
                 e.preventDefault();
                 if (!isActive) return;

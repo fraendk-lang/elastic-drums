@@ -17,6 +17,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { sliceToPads, type SliceMode } from "../utils/sliceSample";
+import { HintPopover } from "./Hints";
 
 const VOICE_LABELS = [
   "KICK", "SNARE", "CLAP", "TOM L",
@@ -102,6 +103,14 @@ export function SliceMenu() {
       >
         SLICE
       </button>
+      <HintPopover
+        id="slice-chop"
+        anchor={btnRef.current}
+        position="bottom"
+        title="Slice a Long Sample"
+        body="Drop a break / vocal / loop and split it into N pads (Even or Transient-detected). Each slice becomes a one-shot — chop and rearrange."
+        triggered={open || busy}
+      />
 
       {open && (
         <div
