@@ -1042,6 +1042,10 @@ interface DragState {
   origStart?:    number;
   origLen?:      number;
   drawBarStart?: number;
+  /** Live snap-bar feedback — set by the pointer-move handler so the
+   *  timeline can render a guide line at the position the clip would
+   *  land if released right now. */
+  snapBar?:      number;
 }
 
 // ─── makeEmptyClipData ────────────────────────────────────────────────────────
@@ -1340,7 +1344,14 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
   const { clips, totalBars, addClip, moveClip, resizeClip, removeClip, renameClip,
           updateClipData, loopRegion, setLoopRegion } =
     useArrangementStore();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  /**
+   * Selection state. Holds 0..N clip IDs (Set so order doesn't matter and
+   * has/add/delete are O(1)). The previous version was a single `string |
+   * null`; widening to Set unblocks shift-click multi-select and bulk
+   * delete without changing the existing single-click flow (a fresh click
+   * still ends up with exactly one ID in the set).
+   */
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [drag, setDrag] = useState<DragState | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -1461,15 +1472,25 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
 
   const rulerTicks = useMemo(
     () =>
-      Array.from({ length: totalBars }, (_, i) => (
-        <div
-          key={i}
-          className="text-[9px] text-white/40 font-mono shrink-0 border-l border-white/10 pl-1"
-          style={{ width: barPx, lineHeight: `${RULER_H}px` }}
-        >
-          {i + 1}
-        </div>
-      )),
+      Array.from({ length: totalBars }, (_, i) => {
+        // Every 4-bar boundary gets a brighter label + stronger divider —
+        // matches the way Ableton/Logic show downbeats so producers can
+        // navigate without counting ticks one by one.
+        const isMajor = i % 4 === 0;
+        return (
+          <div
+            key={i}
+            className={`font-mono shrink-0 border-l pl-1 ${
+              isMajor
+                ? "text-[10px] font-bold text-white/70 border-white/25"
+                : "text-[9px] text-white/30 border-white/10"
+            }`}
+            style={{ width: barPx, lineHeight: `${RULER_H}px` }}
+          >
+            {isMajor ? `${i + 1}` : ""}
+          </div>
+        );
+      }),
     [totalBars, barPx]
   );
 
@@ -1477,15 +1498,16 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (renaming) return;
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedIds.size > 0) {
         e.preventDefault();
-        removeClip(selectedId);
-        setSelectedId(null);
+        // Bulk delete — works whether 1 or N clips are selected.
+        for (const id of selectedIds) removeClip(id);
+        setSelectedIds(new Set());
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, renaming, removeClip]);
+  }, [selectedIds, renaming, removeClip]);
 
   // Auto-focus rename input
   useEffect(() => {
@@ -1512,9 +1534,20 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
       if (drag.mode === "move" && drag.clipId !== undefined && drag.origStart !== undefined) {
         const newStart = Math.max(0, drag.origStart + deltaBars);
         moveClip(drag.clipId, newStart);
+        // Surface the snap target so the timeline can draw a guide line
+        if (drag.snapBar !== newStart) setDrag({ ...drag, snapBar: newStart });
       } else if (drag.mode === "resize" && drag.clipId !== undefined && drag.origLen !== undefined) {
         const newLen = Math.max(1, drag.origLen + deltaBars);
         resizeClip(drag.clipId, newLen);
+        const snapEnd = (drag.origStart ?? 0) + newLen;
+        if (drag.snapBar !== snapEnd) setDrag({ ...drag, snapBar: snapEnd });
+      } else if (drag.mode === "draw" && drag.drawBarStart !== undefined) {
+        const tentativeStart = deltaBars < 0
+          ? Math.max(0, drag.drawBarStart + deltaBars)
+          : drag.drawBarStart;
+        const tentativeLen = Math.max(1, Math.abs(deltaBars) + 1);
+        const snapBar = tentativeStart + tentativeLen;
+        if (drag.snapBar !== snapBar) setDrag({ ...drag, snapBar });
       }
     }
 
@@ -1563,7 +1596,7 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
     <div
       className="flex flex-col"
       style={{ minWidth: ARR_LABEL_W + timelineW }}
-      onClick={() => { setSelectedId(null); setContextMenu(null); }}
+      onClick={() => { setSelectedIds(new Set()); setContextMenu(null); }}
     >
       {/* Bar ruler — click to seek, drag loop handles */}
       <div
@@ -1579,6 +1612,23 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
         }}
       >
         {rulerTicks}
+
+        {/* Snap-to-bar guide — shown while a clip is being dragged so the
+            producer sees exactly where it will land. The line runs through
+            the full timeline (rendered via absolute fixed-top in this ruler
+            for the head, full-height in the timeline body below). */}
+        {drag?.snapBar !== undefined && (
+          <div
+            className="absolute pointer-events-none top-0"
+            style={{
+              left: ARR_LABEL_W + drag.snapBar * barPx,
+              height: RULER_H,
+              width: 2,
+              backgroundColor: "var(--ed-accent-orange)",
+              boxShadow: "0 0 8px var(--ed-accent-orange)",
+            }}
+          />
+        )}
 
         {/* Loop region highlight */}
         <div
@@ -1684,23 +1734,41 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
                   clip={clip}
                   barPx={barPx}
                   color={clip.color ?? color}
-                  isSelected={selectedId === clip.id}
+                  isSelected={selectedIds.has(clip.id)}
                   isRenaming={renaming === clip.id}
                   renameValue={renaming === clip.id ? renameValue : ""}
                   renameInputRef={renaming === clip.id ? renameInputRef : undefined}
                   onRenameChange={setRenameValue}
                   onRenameCommit={commitRename}
-                  onSelect={(e) => { e.stopPropagation(); setSelectedId(clip.id); setContextMenu(null); }}
+                  onSelect={(e) => {
+                    e.stopPropagation();
+                    // Shift / Meta toggles the clicked clip in the set;
+                    // plain click replaces the selection with this single clip.
+                    if (e.shiftKey || e.metaKey || e.ctrlKey) {
+                      setSelectedIds((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(clip.id)) next.delete(clip.id);
+                        else next.add(clip.id);
+                        return next;
+                      });
+                    } else {
+                      setSelectedIds(new Set([clip.id]));
+                    }
+                    setContextMenu(null);
+                  }}
                   onDoubleClick={(e) => { e.stopPropagation(); handleEditClip(clip.id); }}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    setSelectedId(clip.id);
+                    // Right-click on an un-selected clip selects it (single).
+                    // Right-click on a selected clip leaves the rest of the
+                    // selection intact so bulk-context-actions can target many.
+                    setSelectedIds((prev) => prev.has(clip.id) ? prev : new Set([clip.id]));
                     setContextMenu({ x: e.clientX, y: e.clientY, clipId: clip.id });
                   }}
                   onMoveStart={(e) => {
                     e.stopPropagation();
-                    setSelectedId(clip.id);
+                    if (!selectedIds.has(clip.id)) setSelectedIds(new Set([clip.id]));
                     if (e.altKey) {
                       const newId = addClip({ ...clip });
                       if (newId) {
@@ -1712,7 +1780,7 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
                   }}
                   onResizeStart={(e) => {
                     e.stopPropagation();
-                    setSelectedId(clip.id);
+                    if (!selectedIds.has(clip.id)) setSelectedIds(new Set([clip.id]));
                     setDrag({ mode: "resize", clipId: clip.id, trackId, startClientX: e.clientX, origLen: clip.lengthBars });
                   }}
                 />
@@ -1767,7 +1835,17 @@ function PerTrackArrangement({ barPx, currentBar }: PerTrackArrangementProps) {
           </button>
           <button
             className="w-full text-left px-3 py-1 text-[11px] text-red-400/70 hover:bg-red-500/10 hover:text-red-400"
-            onClick={() => { removeClip(contextMenu.clipId); setContextMenu(null); setSelectedId(null); }}
+            onClick={() => {
+              // If the user right-clicked into a multi-selection, delete
+              // ALL selected clips (right-click + Delete is a power-user
+              // workflow for purging a chunk of the arrangement at once).
+              const targets = selectedIds.has(contextMenu.clipId) && selectedIds.size > 1
+                ? Array.from(selectedIds)
+                : [contextMenu.clipId];
+              for (const id of targets) removeClip(id);
+              setContextMenu(null);
+              setSelectedIds(new Set());
+            }}
           >
             Delete
           </button>

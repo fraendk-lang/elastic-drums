@@ -403,6 +403,11 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         } else if (e.key === "z") {
           e.preventDefault();
           undo();
+        } else if ((e.key === "l" || e.key === "L") && hasSel) {
+          // Cmd/Ctrl+L → Make Legato on selection (extend each note to
+          // the start of the next one). Plain L is the loop toggle below.
+          e.preventDefault();
+          handleLegato();
         }
         return;
       }
@@ -426,8 +431,18 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
         return;
       }
       if (e.key === "l" || e.key === "L") {
+        // Plain L = loop toggle. Cmd/Ctrl+L Make-Legato is handled in the
+        // Ctrl/Meta branch above (so the modifier guard is correct).
         e.preventDefault();
         setLoop({ ...loop, enabled: !loop.enabled });
+        return;
+      }
+      // Q — quantise selected notes (or all if nothing selected) to the
+      // current grid resolution. Mirrors Ableton's Q shortcut.
+      if ((e.key === "q" || e.key === "Q") && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        const target = hasSel ? selectedNoteIds : new Set(notes.map((n) => n.id));
+        if (target.size > 0) quantizeNotes(target);
         return;
       }
 

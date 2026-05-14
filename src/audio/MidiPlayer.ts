@@ -55,7 +55,10 @@ class MidiPlayer {
   private onChordTrigger: ((notes: number[], velocity: number, duration: number) => void) | null = null;
   private onMelodyTrigger: ((note: number, velocity: number, duration: number) => void) | null = null;
   private onProgress: ((position: number, duration: number) => void) | null = null;
-  private progressTimer: ReturnType<typeof setInterval> | null = null;
+  /** rAF handle replacing setInterval(100ms). Anchored to audio time so the
+   *  loop wraps on the exact audio sample, not "approximately ~100ms later
+   *  whenever the wallclock setInterval decided to fire". */
+  private progressRafId: number | null = null;
   private looping = false;
 
   /** Return the parsed Midi object for external consumers (e.g. import to PianoRoll) */
@@ -156,9 +159,16 @@ class MidiPlayer {
       }
     }
 
-    // Progress tracking
-    this.progressTimer = setInterval(() => {
-      if (!this.playing || !this.midi) return;
+    // Progress tracking — rAF driven so it never drifts (was setInterval(100)
+    // which on a stalled main thread fired late and let the playhead lag
+    // visibly behind the audio). rAF auto-pauses on hidden tabs which is
+    // fine: the audio events were already scheduled at start() time and
+    // will fire on the audio clock regardless of UI updates.
+    const tick = () => {
+      if (!this.playing || !this.midi) {
+        this.progressRafId = null;
+        return;
+      }
       const elapsed = (performance.now() - this.startTime) / 1000;
       this.onProgress?.(elapsed, this.midi.duration);
 
@@ -166,11 +176,15 @@ class MidiPlayer {
       if (elapsed >= this.midi.duration) {
         if (this.looping) {
           this.play(true); // Restart
+          return; // play() schedules its own next tick
         } else {
           this.stop();
+          return;
         }
       }
-    }, 100);
+      this.progressRafId = requestAnimationFrame(tick);
+    };
+    this.progressRafId = requestAnimationFrame(tick);
   }
 
   private onStopCallback: (() => void) | null = null;
@@ -185,9 +199,9 @@ class MidiPlayer {
     this.playing = false;
     for (const timer of this.scheduledEvents) clearTimeout(timer);
     this.scheduledEvents = [];
-    if (this.progressTimer) {
-      clearInterval(this.progressTimer);
-      this.progressTimer = null;
+    if (this.progressRafId !== null) {
+      cancelAnimationFrame(this.progressRafId);
+      this.progressRafId = null;
     }
     // Release all active notes to prevent hangs
     this.onStopCallback?.();
