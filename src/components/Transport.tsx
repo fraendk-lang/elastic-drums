@@ -6,6 +6,7 @@ import { downloadMidi } from "../utils/midiExport";
 import { sharePattern } from "../utils/patternShare";
 import { startSongRecording, stopSongRecording, isRecording, type ExportState } from "../utils/songExport";
 import { autoRecordExport, cancelAutoRecord, type RecordExportProgress } from "../utils/autoRecordExport";
+import { ResampleMenu } from "./ResampleMenu";
 
 interface TransportProps {
   onOpenBrowser: () => void;
@@ -262,6 +263,7 @@ export function Transport({
           onMidiExport={() => downloadMidi(pattern, bpm)}
           onShare={() => sharePattern(pattern, bpm)}
         />
+        <ResampleMenu />
 
         <Sep />
 

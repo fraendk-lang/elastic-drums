@@ -38,6 +38,7 @@ import { OnboardingModal } from "./components/OnboardingModal";
 import { PWAStatus } from "./components/PWAStatus";
 import { RecordingControls } from "./components/RecordingControls";
 import { recordingOrchestrator } from "./recording/RecordingOrchestrator";
+import { PatternVariationsBar } from "./components/PatternVariationsBar";
 import { DemoSongPicker } from "./components/DemoSongPicker";
 import { InstallHintIOS } from "./components/InstallHintIOS";
 import { getMidiClockMode, subscribeMidiClockMode } from "./store/midiClockMode";
@@ -492,6 +493,11 @@ export function App() {
         onOpenPad={() => overlay.openOverlay("performancePad")}
         onOpenPerformance={() => setSceneMiniOpen((o) => !o)}
       />
+      </div>
+
+      {/* Pattern Variations A/B/C/D — quick-switch toolbar for live performance */}
+      <div data-rec-hide="variations" className="flex items-center border-b border-[var(--ed-border)]/40 bg-[var(--ed-bg-surface)]/60 backdrop-blur-sm">
+        <PatternVariationsBar />
       </div>
 
       {/* Keyboard Help Bar */}
