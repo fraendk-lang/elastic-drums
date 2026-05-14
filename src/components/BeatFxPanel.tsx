@@ -105,7 +105,7 @@ export function BeatFxPanel() {
         className="flex flex-col items-center justify-start select-none shrink-0 cursor-pointer"
         style={{ width: 16, background: "#07070e", borderLeft: "1px solid rgba(255,255,255,0.05)" }}
         onClick={() => setCollapsed(false)}
-        title="Beat FX einblenden"
+        title="Show Beat FX"
       >
         <div
           style={{
@@ -149,7 +149,7 @@ export function BeatFxPanel() {
             lineHeight: 1,
             padding: "1px 2px",
           }}
-          title="Beat FX ausblenden"
+          title="Hide Beat FX"
         >
           ✕
         </button>

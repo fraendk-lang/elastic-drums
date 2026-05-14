@@ -462,10 +462,10 @@ export function PadGrid() {
                   }}
                   title={
                     isLooping
-                      ? `Loop aktiv${padLoopData?.nativeBpm ? ` · ${padLoopData.nativeBpm} BPM` : ""} — klicken zum Bearbeiten`
+                      ? `Loop active${padLoopData?.nativeBpm ? ` · ${padLoopData.nativeBpm} BPM` : ""} — click to edit`
                       : padLoopData?.nativeBpm
-                        ? `${padLoopData.nativeBpm} BPM erkannt — klicken zum Aktivieren`
-                        : "Loop-Editor öffnen"
+                        ? `${padLoopData.nativeBpm} BPM detected — click to activate`
+                        : "Open Loop Editor"
                   }
                   className={`absolute bottom-1 left-1 px-1 py-px rounded text-[7px] font-bold leading-none transition-all ${
                     isLooping

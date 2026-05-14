@@ -47,7 +47,7 @@ export function DemoSongPicker({ isOpen, onClose }: Props) {
           <div>
             <h2 className="text-sm font-bold text-white tracking-wide">DEMO SONGS</h2>
             <p className="text-[10px] text-white/40 mt-0.5">
-              Klick einen Song → er lädt alles und startet sofort
+              Click a song → it loads everything and starts playing
             </p>
           </div>
           <button
@@ -110,7 +110,7 @@ export function DemoSongPicker({ isOpen, onClose }: Props) {
 
         {/* Footer */}
         <div className="px-5 py-2.5 border-t border-white/8 text-[9px] text-white/35 flex items-center justify-between">
-          <span>Lädt Kit, Bass, Chords, Melodie + Pattern auf einen Klick</span>
+          <span>Loads kit, bass, chords, melody + pattern in one click</span>
           <span className="text-white/25">{DEMO_SONGS.length} Songs</span>
         </div>
       </div>

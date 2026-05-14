@@ -1374,7 +1374,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
                   ? "bg-[var(--ed-accent-bass)]/25 text-[var(--ed-accent-bass)]"
                   : "text-white/35 hover:text-white/60"
               }`}
-              title="Bass + Melody transponieren live zur Akkord-Grundnote (z.B. Bass in Cm spielt Fm wenn du F-Moll-Akkord drückst)"
+              title="Bass + Melody transpose live to the chord root (e.g. bass in Cm plays Fm when you hit an F-minor chord)"
             >🎯 FOLLOW</button>
             <div className="mx-1 h-4 w-px bg-white/10" />
           </>
@@ -1625,7 +1625,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
                   ? <span className="text-blue-300 font-bold tracking-[0.3em]">⏵ STEP MODE — each tap advances one {quantize === "off" ? "1/16" : quantize} step</span>
                   : mode === "chords"
                     ? `${chordSet.name} · ${chordSet.cells.length} CHORDS · HOLD TO EDIT`
-                    : "BERÜHREN · HALTEN · BEWEGEN — MULTI-TOUCH"}
+                    : "TOUCH · HOLD · MOVE — MULTI-TOUCH"}
           </div>
 
           {/* Key/Scale indicator — top-right corner */}

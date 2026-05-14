@@ -510,7 +510,7 @@ export function BassSequencer() {
               ? "bg-[var(--ed-accent-bass)]/25 text-[var(--ed-accent-bass)]"
               : "text-white/25 hover:text-white/50 hover:bg-white/5"
           }`}
-          title="Legato/Glide — jeder Ton gleitet zum nächsten (slideTime bestimmt Geschwindigkeit)"
+          title="Legato / Glide — each note slides to the next (slideTime sets the speed)"
         >GLIDE</button>
 
         <div className="flex-1" />

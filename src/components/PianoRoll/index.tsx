@@ -103,6 +103,19 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
   const [scaleSnap, setScaleSnap] = useState(false);
   const [clipboard, setClipboard] = useState<PianoRollNote[]>([]);
   const [rubberBand, setRubberBand] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  /**
+   * Velocity-ramp draw — Alt-drag in the velocity lane background.
+   * Sweeps the X-range of the drag and assigns each note a velocity that
+   * linearly interpolates from `startVel` (under the drag-start X position)
+   * to `endVel` (under the current pointer X). Lets producers shape
+   * dynamics across many notes in one gesture instead of bar-by-bar.
+   *
+   * Stored as state (not ref) so the live preview line + the affected-note
+   * highlight can re-render during the drag.
+   */
+  const [velRamp, setVelRamp] = useState<{
+    startX: number; startVel: number; endX: number; endVel: number;
+  } | null>(null);
   const [autoFollow, setAutoFollow] = useState(true);
   const [fold, setFold] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; noteId: string } | null>(null);
@@ -1524,11 +1537,58 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                 right: 0,
                 height: VELOCITY_LANE_HEIGHT,
                 backgroundColor: "rgba(0,0,0,0.15)",
+                touchAction: "none",
               }}
+              onPointerDown={(e) => {
+                // Alt-drag on the lane background = ramp draw. Each note
+                // whose start-x falls inside the drag's X-range gets a
+                // velocity linearly interpolated from startY to currentY.
+                if (!e.altKey) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const rect = e.currentTarget.getBoundingClientRect();
+                const relX = e.clientX - rect.left;
+                const relY = e.clientY - rect.top;
+                const startVel = Math.max(0.05, Math.min(1, 1 - relY / VELOCITY_LANE_HEIGHT));
+                setVelRamp({ startX: relX, startVel, endX: relX, endVel: startVel });
+                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                pushUndo();
+              }}
+              onPointerMove={(e) => {
+                if (!velRamp) return;
+                e.preventDefault();
+                const rect = e.currentTarget.getBoundingClientRect();
+                const relX = e.clientX - rect.left;
+                const relY = e.clientY - rect.top;
+                const endVel = Math.max(0.05, Math.min(1, 1 - relY / VELOCITY_LANE_HEIGHT));
+                setVelRamp({ ...velRamp, endX: relX, endVel });
+                // Apply the ramp NOW to every note whose start falls inside
+                // [minX, maxX]. Cheap to recompute on each move because the
+                // notes array is small enough (typical: 20–80 notes).
+                const xMin = Math.min(velRamp.startX, relX);
+                const xMax = Math.max(velRamp.startX, relX);
+                // Direction-aware interpolation: t = 0 at startX, 1 at endX
+                // (regardless of which is greater) so dragging right-to-left
+                // produces the inverse ramp shape that the user drew.
+                setNotes((prev) => prev.map((n) => {
+                  const nx = n.start * cellW;
+                  if (nx < xMin || nx > xMax) return n;
+                  const span = (relX - velRamp.startX) || 1;
+                  const t = (nx - velRamp.startX) / span;
+                  const vel = velRamp.startVel + (endVel - velRamp.startVel) * t;
+                  return { ...n, velocity: Math.max(0.05, Math.min(1, vel)) };
+                }));
+              }}
+              onPointerUp={(e) => {
+                if (!velRamp) return;
+                setVelRamp(null);
+                try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* */ }
+              }}
+              onPointerCancel={() => setVelRamp(null)}
             >
               <div className="absolute left-1 top-1 right-2 flex items-center justify-between text-[7px] font-bold pointer-events-none">
                 <span className="text-white/30">VELOCITY LANE</span>
-                <span className="text-white/20">drag bars or note footer to shape dynamics</span>
+                <span className="text-white/20">drag bars · Alt-drag = ramp across notes</span>
               </div>
 
               {[25, 50, 75, 100].map((pct) => (
@@ -1538,6 +1598,39 @@ export function PianoRoll({ isOpen, onClose }: PianoRollProps) {
                   style={{ top: `${VELOCITY_LANE_HEIGHT - (VELOCITY_LANE_HEIGHT * pct) / 100}px` }}
                 />
               ))}
+
+              {/* Live ramp guide — diagonal line from drag-start to current
+                  pointer. Renders behind the bars so the user sees the
+                  slope they're drawing without obscuring the result. */}
+              {velRamp && (() => {
+                const y1 = VELOCITY_LANE_HEIGHT - velRamp.startVel * VELOCITY_LANE_HEIGHT;
+                const y2 = VELOCITY_LANE_HEIGHT - velRamp.endVel * VELOCITY_LANE_HEIGHT;
+                const xMin = Math.min(velRamp.startX, velRamp.endX);
+                const xMax = Math.max(velRamp.startX, velRamp.endX);
+                return (
+                  <svg
+                    className="absolute top-0 left-0 pointer-events-none"
+                    width="100%"
+                    height={VELOCITY_LANE_HEIGHT}
+                    style={{ overflow: "visible" }}
+                  >
+                    <line
+                      x1={velRamp.startX} y1={y1}
+                      x2={velRamp.endX}   y2={y2}
+                      stroke="var(--ed-accent-orange)"
+                      strokeWidth={2}
+                      strokeDasharray="4 3"
+                      style={{ filter: "drop-shadow(0 0 4px var(--ed-accent-orange))" }}
+                    />
+                    {/* Range highlight underlay */}
+                    <rect
+                      x={xMin} y={0}
+                      width={xMax - xMin} height={VELOCITY_LANE_HEIGHT}
+                      fill="var(--ed-accent-orange)" opacity={0.05}
+                    />
+                  </svg>
+                );
+              })()}
 
               {notes.map((note) => {
                 const x = note.start * cellW;
