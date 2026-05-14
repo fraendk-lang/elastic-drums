@@ -25,7 +25,7 @@ export const DELAY_DIVISIONS: Record<string, number> = {
 
 export const DELAY_DIVISION_NAMES = Object.keys(DELAY_DIVISIONS);
 
-export const REVERB_TYPES = ["room", "hall", "plate", "spring"] as const;
+export const REVERB_TYPES = ["room", "hall", "plate", "spring", "chamber", "cathedral"] as const;
 export type ReverbType = typeof REVERB_TYPES[number];
 
 export class SendFxManager {

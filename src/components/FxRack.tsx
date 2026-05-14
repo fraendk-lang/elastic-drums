@@ -64,7 +64,7 @@ const MODULE_DEFS: FxModuleDef[] = [
       { id: "level",    label: "LVL",  min: 0, max: 100, default: 35 },
       { id: "damping",  label: "DMP",  min: 0, max: 100, default: 60 },
       { id: "preDelay", label: "PRE",  min: 0, max: 100, default: 15 }, // 0–150ms pre-delay
-      { id: "type",     label: "TYPE", min: 0, max: 3,   default: 1  }, // 0=room 1=hall 2=plate 3=spring
+      { id: "type",     label: "TYPE", min: 0, max: 5,   default: 1  }, // 0=room 1=hall 2=plate 3=spring 4=chamber 5=cathedral
     ],
   },
   {
@@ -173,7 +173,7 @@ function applyFxParam(
         audioEngine.setReverbPreDelay((value / 100) * 150); // 0–150ms
       }
       if (paramId === "type") {
-        const types = ["room", "hall", "plate", "spring"] as const;
+        const types = ["room", "hall", "plate", "spring", "chamber", "cathedral"] as const;
         audioEngine.setReverbType(types[Math.round(value)] ?? "hall");
       }
       break;
@@ -290,7 +290,7 @@ function applyModuleToggle(
       if (enabled) {
         audioEngine.setReverbDamping(500 + ((params.damping ?? 60) / 100) * 15500);
         audioEngine.setReverbPreDelay(((params.preDelay ?? 15) / 100) * 150);
-        const types = ["room", "hall", "plate", "spring"] as const;
+        const types = ["room", "hall", "plate", "spring", "chamber", "cathedral"] as const;
         audioEngine.setReverbType(types[Math.round(params.type ?? 1)] ?? "hall");
       }
       break;
