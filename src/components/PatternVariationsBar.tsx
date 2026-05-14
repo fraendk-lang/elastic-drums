@@ -113,9 +113,13 @@ export function PatternVariationsBar() {
       <HintPopover
         id="pattern-variations"
         anchor={labelAnchor}
-        position="bottom"
-        title="Pattern Variations A/B/C/D"
-        body="Tap an empty slot to snapshot the current performance. Tap a saved slot to switch at the next bar. Long-press overwrites."
+        // Positioned ABOVE the variations bar (into the Transport area)
+        // so it doesn't land on top of the pad grid that lives right
+        // below this bar. Body shortened to a single line so the popover
+        // stays compact and doesn't dominate the toolbar zone either.
+        position="top"
+        title="Pattern Variations"
+        body="Tap empty slot = save · Tap saved = switch at next bar · Long-press = overwrite"
         triggered={anySlotFilled}
       />
       {SLOTS.map((slot) => {
