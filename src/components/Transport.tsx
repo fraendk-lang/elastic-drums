@@ -7,6 +7,7 @@ import { sharePattern } from "../utils/patternShare";
 import { startSongRecording, stopSongRecording, isRecording, type ExportState } from "../utils/songExport";
 import { autoRecordExport, cancelAutoRecord, type RecordExportProgress } from "../utils/autoRecordExport";
 import { ResampleMenu } from "./ResampleMenu";
+import { SliceMenu } from "./SliceMenu";
 
 interface TransportProps {
   onOpenBrowser: () => void;
@@ -264,6 +265,7 @@ export function Transport({
           onShare={() => sharePattern(pattern, bpm)}
         />
         <ResampleMenu />
+        <SliceMenu />
 
         <Sep />
 
