@@ -9,6 +9,7 @@
  * Import this module once for its side effects (from App.tsx).
  */
 
+import { unstable_batchedUpdates } from "react-dom";
 import { drumCurrentStepStore, useDrumStore } from "../store/drumStore";
 import { useBassStore } from "../store/bassStore";
 import { useChordsStore } from "../store/chordsStore";
@@ -216,95 +217,125 @@ function applyAutoLanes(bar: number): void {
 function applyArrangementBar(bar: number): void {
   const store = useArrangementStore.getState();
 
-  // ── DRUMS ──────────────────────────────────────────────────────────────────
-  const drumClip = store.getActiveClip("drums", bar);
-  const drumClipId = drumClip?.id ?? null;
-  if (drumClipId !== _lastClipId.drums) {
-    _lastClipId.drums = drumClipId;
-    if (drumClip && drumClip.data.kind === "drums") {
-      useDrumStore.setState({
-        arrangementSilence: false,
-        pattern: structuredClone(drumClip.data.pattern),
-      });
-    } else {
-      useDrumStore.setState({ arrangementSilence: true });
-    }
-  }
+  // Schedule the panic ramp at the upcoming bar boundary. We use the drum
+  // scheduler's audio-clock anchor — at the moment this function runs, the
+  // drum sequencer just advanced to step 0 of the new bar but hasn't
+  // scheduled its audio events yet (those happen in the next while-loop
+  // iteration). So getDrumNextStepTime() is roughly the time of the just-
+  // ended step 15; bar boundary ≈ that + one stepDuration. Subtracting 2 ms
+  // ensures the fade ends just before any new triggers land.
+  const ctx = audioEngine.getAudioContext();
+  const now = ctx?.currentTime ?? 0;
+  const bpm = useDrumStore.getState().bpm;
+  const secondsPerStep = 60 / Math.max(1, bpm) / 4;
+  // Schedule panics for ~now-ish; the 8 ms ramp in each engine.panic() fades
+  // any sustained / tied note from the previous clip to zero before the
+  // new clip's first step (which fires further in the future via the
+  // drum-scheduler lookahead window).
+  const cleanupAt = Math.max(now, now + secondsPerStep * 0.5);
 
-  // ── BASS ───────────────────────────────────────────────────────────────────
-  const bassClip = store.getActiveClip("bass", bar);
-  const bassClipId = bassClip?.id ?? null;
-  if (bassClipId !== _lastClipId.bass) {
-    _lastClipId.bass = bassClipId;
-    if (bassClip && bassClip.data.kind === "bass") {
-      const { steps, length, params } = bassClip.data;
-      useBassStore.setState({ steps: structuredClone(steps), length });
-      if (params) {
-        useBassStore.setState({ params: structuredClone(params) });
-        bassEngine.setParams(params);
-        _prevClipHadParams.bass = true;
+  // Wrap ALL setState calls in a single React batch so the audio scheduler
+  // tick that triggered us doesn't get delayed by 4 cascading re-render
+  // chains. Previously this function did 4 setStates + 3 setParams
+  // synchronously inside the drum-scheduler loop — heavy enough on iPad to
+  // delay the next step.
+  unstable_batchedUpdates(() => {
+    // ── DRUMS ────────────────────────────────────────────────────────────────
+    const drumClip = store.getActiveClip("drums", bar);
+    const drumClipId = drumClip?.id ?? null;
+    if (drumClipId !== _lastClipId.drums) {
+      _lastClipId.drums = drumClipId;
+      if (drumClip && drumClip.data.kind === "drums") {
+        useDrumStore.setState({
+          arrangementSilence: false,
+          pattern: structuredClone(drumClip.data.pattern),
+        });
       } else {
+        useDrumStore.setState({ arrangementSilence: true });
+      }
+    }
+
+    // ── BASS ─────────────────────────────────────────────────────────────────
+    const bassClip = store.getActiveClip("bass", bar);
+    const bassClipId = bassClip?.id ?? null;
+    if (bassClipId !== _lastClipId.bass) {
+      _lastClipId.bass = bassClipId;
+      // Fade out anything sustaining from the old clip before swapping params.
+      // Without this, a tied note across the clip boundary picks up the new
+      // filter/cutoff/resonance mid-flight → audible click / filter zap.
+      bassEngine.panic(cleanupAt);
+      if (bassClip && bassClip.data.kind === "bass") {
+        const { steps, length, params } = bassClip.data;
+        useBassStore.setState({ steps: structuredClone(steps), length });
+        if (params) {
+          useBassStore.setState({ params: structuredClone(params) });
+          bassEngine.setParams(params);
+          _prevClipHadParams.bass = true;
+        } else {
+          _prevClipHadParams.bass = false;
+        }
+      } else {
+        useBassStore.setState({ steps: makeSilentBassSteps(), length: 16 });
+        if (_prevClipHadParams.bass && _baselineBassParams) {
+          useBassStore.setState({ params: structuredClone(_baselineBassParams) });
+          bassEngine.setParams(_baselineBassParams);
+        }
         _prevClipHadParams.bass = false;
       }
-    } else {
-      useBassStore.setState({ steps: makeSilentBassSteps(), length: 16 });
-      if (_prevClipHadParams.bass && _baselineBassParams) {
-        useBassStore.setState({ params: structuredClone(_baselineBassParams) });
-        bassEngine.setParams(_baselineBassParams);
-      }
-      _prevClipHadParams.bass = false;
     }
-  }
 
-  // ── CHORDS ─────────────────────────────────────────────────────────────────
-  const chordsClip = store.getActiveClip("chords", bar);
-  const chordsClipId = chordsClip?.id ?? null;
-  if (chordsClipId !== _lastClipId.chords) {
-    _lastClipId.chords = chordsClipId;
-    if (chordsClip && chordsClip.data.kind === "chords") {
-      const { steps, length, params } = chordsClip.data;
-      useChordsStore.setState({ steps: structuredClone(steps), length });
-      if (params) {
-        useChordsStore.setState({ params: structuredClone(params) });
-        chordsEngine.setParams(params);
-        _prevClipHadParams.chords = true;
+    // ── CHORDS ───────────────────────────────────────────────────────────────
+    const chordsClip = store.getActiveClip("chords", bar);
+    const chordsClipId = chordsClip?.id ?? null;
+    if (chordsClipId !== _lastClipId.chords) {
+      _lastClipId.chords = chordsClipId;
+      chordsEngine.panic(cleanupAt);
+      if (chordsClip && chordsClip.data.kind === "chords") {
+        const { steps, length, params } = chordsClip.data;
+        useChordsStore.setState({ steps: structuredClone(steps), length });
+        if (params) {
+          useChordsStore.setState({ params: structuredClone(params) });
+          chordsEngine.setParams(params);
+          _prevClipHadParams.chords = true;
+        } else {
+          _prevClipHadParams.chords = false;
+        }
       } else {
+        useChordsStore.setState({ steps: makeSilentChordsSteps(), length: 16 });
+        if (_prevClipHadParams.chords && _baselineChordsParams) {
+          useChordsStore.setState({ params: structuredClone(_baselineChordsParams) });
+          chordsEngine.setParams(_baselineChordsParams);
+        }
         _prevClipHadParams.chords = false;
       }
-    } else {
-      useChordsStore.setState({ steps: makeSilentChordsSteps(), length: 16 });
-      if (_prevClipHadParams.chords && _baselineChordsParams) {
-        useChordsStore.setState({ params: structuredClone(_baselineChordsParams) });
-        chordsEngine.setParams(_baselineChordsParams);
-      }
-      _prevClipHadParams.chords = false;
     }
-  }
 
-  // ── MELODY ─────────────────────────────────────────────────────────────────
-  const melodyClip = store.getActiveClip("melody", bar);
-  const melodyClipId = melodyClip?.id ?? null;
-  if (melodyClipId !== _lastClipId.melody) {
-    _lastClipId.melody = melodyClipId;
-    if (melodyClip && melodyClip.data.kind === "melody") {
-      const { steps, length, params } = melodyClip.data;
-      useMelodyStore.setState({ steps: structuredClone(steps), length });
-      if (params) {
-        useMelodyStore.setState({ params: structuredClone(params) });
-        melodyEngine.setParams(params);
-        _prevClipHadParams.melody = true;
+    // ── MELODY ───────────────────────────────────────────────────────────────
+    const melodyClip = store.getActiveClip("melody", bar);
+    const melodyClipId = melodyClip?.id ?? null;
+    if (melodyClipId !== _lastClipId.melody) {
+      _lastClipId.melody = melodyClipId;
+      melodyEngine.panic(cleanupAt);
+      if (melodyClip && melodyClip.data.kind === "melody") {
+        const { steps, length, params } = melodyClip.data;
+        useMelodyStore.setState({ steps: structuredClone(steps), length });
+        if (params) {
+          useMelodyStore.setState({ params: structuredClone(params) });
+          melodyEngine.setParams(params);
+          _prevClipHadParams.melody = true;
+        } else {
+          _prevClipHadParams.melody = false;
+        }
       } else {
+        useMelodyStore.setState({ steps: makeSilentMelodySteps(), length: 16 });
+        if (_prevClipHadParams.melody && _baselineMelodyParams) {
+          useMelodyStore.setState({ params: structuredClone(_baselineMelodyParams) });
+          melodyEngine.setParams(_baselineMelodyParams);
+        }
         _prevClipHadParams.melody = false;
       }
-    } else {
-      useMelodyStore.setState({ steps: makeSilentMelodySteps(), length: 16 });
-      if (_prevClipHadParams.melody && _baselineMelodyParams) {
-        useMelodyStore.setState({ params: structuredClone(_baselineMelodyParams) });
-        melodyEngine.setParams(_baselineMelodyParams);
-      }
-      _prevClipHadParams.melody = false;
     }
-  }
+  });
 }
 
 // ─── Public: seek to a specific bar ──────────────────────────────────────────
