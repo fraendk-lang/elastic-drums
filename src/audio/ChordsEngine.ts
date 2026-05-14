@@ -480,15 +480,28 @@ export class ChordsEngine {
     this.releaseChord(time);
   }
 
-  /** Emergency stop for stuck notes */
+  /**
+   * Emergency stop for stuck notes.
+   *
+   * Uses a short linear ramp (~8 ms) instead of a hard setValueAtTime(0)
+   * jump. A sample-level discontinuity from 0.8 → 0 produces an audible
+   * click on scene transitions; 8 ms is fast enough to be musically
+   * imperceptible (well under one perceptual sound unit ≈ 50 ms) but
+   * slow enough to avoid the click.
+   */
   panic(time?: number): void {
     if (!this.ctx || !this.vca) return;
     const t = time ?? this.ctx.currentTime;
+    const FADE = 0.008;
+    const curVca = this.vca.gain.value;
     this.vca.gain.cancelScheduledValues(t);
-    this.vca.gain.setValueAtTime(0, t);
+    this.vca.gain.setValueAtTime(curVca, t);
+    this.vca.gain.linearRampToValueAtTime(0, t + FADE);
     if (this.output) {
+      const curOut = this.output.gain.value;
       this.output.gain.cancelScheduledValues(t);
-      this.output.gain.setValueAtTime(0, t);
+      this.output.gain.setValueAtTime(curOut, t);
+      this.output.gain.linearRampToValueAtTime(0, t + FADE);
     }
     this.chordIsOn = false;
   }

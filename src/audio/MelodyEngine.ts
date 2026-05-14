@@ -539,15 +539,20 @@ export class MelodyEngine {
     this.releaseNote(time);
   }
 
-  /** Emergency stop for stuck notes */
+  /** Emergency stop for stuck notes (~8ms ramp to avoid scene-transition clicks) */
   panic(time?: number): void {
     if (!this.ctx || !this.vca) return;
     const t = time ?? this.ctx.currentTime;
+    const FADE = 0.008;
+    const curVca = this.vca.gain.value;
     this.vca.gain.cancelScheduledValues(t);
-    this.vca.gain.setValueAtTime(0, t);
+    this.vca.gain.setValueAtTime(curVca, t);
+    this.vca.gain.linearRampToValueAtTime(0, t + FADE);
     if (this.output) {
+      const curOut = this.output.gain.value;
       this.output.gain.cancelScheduledValues(t);
-      this.output.gain.setValueAtTime(0, t);
+      this.output.gain.setValueAtTime(curOut, t);
+      this.output.gain.linearRampToValueAtTime(0, t + FADE);
     }
     this.noteIsOn = false;
   }
