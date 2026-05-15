@@ -449,6 +449,10 @@ export function StepSequencer() {
   // ─── Gate-Length Drag State ─────────────────────────────
   const [gateDrag, setGateDrag] = useState<{ track: number; startStep: number } | null>(null);
   const [gateDragEnd, setGateDragEnd] = useState<number>(0);
+  // Visual confirmation for the "+ ARR" capture-to-arrangement button.
+  // null = idle; number = the bar index the clip just landed on (we show
+  // "✓ bar N" for 1.5 s, then revert).
+  const [arrCaptured, setArrCaptured] = useState<number | null>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const stepRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
@@ -758,23 +762,31 @@ export function StepSequencer() {
             PASTE
           </button>
           <button
-            className="text-[9px] font-black px-1.5 py-0.5 rounded border border-white/20 text-white/50 hover:text-white hover:border-white/40 transition-colors shrink-0"
-            title="Capture to Arrangement"
+            className={`text-[9px] font-black px-1.5 py-0.5 rounded border transition-colors shrink-0 ${
+              arrCaptured !== null
+                ? "border-green-400/70 bg-green-500/25 text-green-200"
+                : "border-white/20 text-white/50 hover:text-white hover:border-white/40"
+            }`}
+            title="Capture pattern as a clip in the Arrangement view"
             onClick={() => {
               const { pattern } = useDrumStore.getState();
               const store = useArrangementStore.getState();
               let startBar = 0;
               while (store.getActiveClip("drums", startBar) !== null) startBar++;
-              store.addClip({
+              const newId = store.addClip({
                 trackId: "drums",
                 startBar,
                 lengthBars: Math.max(1, Math.ceil(pattern.length / 16)),
                 name: pattern.name || `Drums ${startBar + 1}`,
                 data: { kind: "drums", pattern: structuredClone(pattern) },
               });
+              if (newId) {
+                setArrCaptured(startBar);
+                setTimeout(() => setArrCaptured(null), 1500);
+              }
             }}
           >
-            + ARR
+            {arrCaptured !== null ? `✓ bar ${arrCaptured + 1}` : "+ ARR"}
           </button>
         </div>
 

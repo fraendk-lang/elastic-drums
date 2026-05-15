@@ -130,6 +130,8 @@ export function ChordsSequencer({ onOpenPianoRoll }: { onOpenPianoRoll?: () => v
   const stepElRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [velocityLaneExpanded, setVelocityLaneExpanded] = useState(true);
   const [showArp, setShowArp] = useState(false);
+  /** Visual confirmation for "+ ARR" — shows "✓ bar N" for 1.5 s after capture. */
+  const [arrCaptured, setArrCaptured] = useState<number | null>(null);
 
   const pageOffset = selectedPage * 16;
   const totalPages = Math.max(1, Math.ceil(length / 16));
@@ -404,23 +406,31 @@ export function ChordsSequencer({ onOpenPianoRoll }: { onOpenPianoRoll?: () => v
           <button className="h-6 px-2 text-[7px] font-bold text-white/15 rounded-md transition-all cursor-default">LOAD</button>
           <button onClick={clearSteps} className="h-6 px-2 text-[7px] font-bold text-white/25 hover:text-red-400/70 hover:bg-white/5 rounded-md transition-all">CLR</button>
           <button
-            className="text-[9px] font-black px-1.5 py-0.5 rounded border border-white/20 text-white/50 hover:text-white hover:border-white/40 transition-colors shrink-0"
-            title="Capture to Arrangement"
+            className={`text-[9px] font-black px-1.5 py-0.5 rounded border transition-colors shrink-0 ${
+              arrCaptured !== null
+                ? "border-green-400/70 bg-green-500/25 text-green-200"
+                : "border-white/20 text-white/50 hover:text-white hover:border-white/40"
+            }`}
+            title="Capture clip into the Arrangement view"
             onClick={() => {
               const { steps, length, params } = useChordsStore.getState();
               const store = useArrangementStore.getState();
               let startBar = 0;
               while (store.getActiveClip("chords", startBar) !== null) startBar++;
-              store.addClip({
+              const newId = store.addClip({
                 trackId: "chords",
                 startBar,
                 lengthBars: Math.max(1, Math.ceil(length / 16)),
                 name: `Chords ${startBar + 1}`,
                 data: { kind: "chords", steps: structuredClone(steps), length, params: structuredClone(params) },
               });
+              if (newId) {
+                setArrCaptured(startBar);
+                setTimeout(() => setArrCaptured(null), 1500);
+              }
             }}
           >
-            + ARR
+            {arrCaptured !== null ? `✓ bar ${arrCaptured + 1}` : "+ ARR"}
           </button>
           {onOpenPianoRoll && (
             <button
