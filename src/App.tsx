@@ -59,6 +59,10 @@ import { useChordsStore, startChordsScheduler, stopChordsScheduler } from "./sto
 import { useMelodyStore, startMelodyScheduler, stopMelodyScheduler } from "./store/melodyStore";
 import { startSamplerScheduler, stopSamplerScheduler } from "./store/samplerStore";
 import { useSceneStore } from "./store/sceneStore";
+import { useArrangementStore } from "./store/arrangementStore";
+import { useMixerBarStore } from "./store/mixerBarStore";
+import { usePerformancePadStore } from "./store/performancePadStore";
+import { useMelodyLayerStore } from "./store/melodyLayerStore";
 import { useClipStore } from "./store/clipStore";
 import { setSceneStoreRef, setClipStoreRef } from "./store/drumStore";
 import { audioEngine } from "./audio/AudioEngine";
@@ -70,12 +74,15 @@ import { useMidiClock } from "./hooks/useMidiClock";
 import { useUndoRedo } from "./hooks/useUndoRedo";
 import { useWakeLock } from "./hooks/useWakeLock";
 import { loadSharedPattern } from "./utils/patternShare";
-import { scheduleAutoSave, loadAutoSave } from "./store/autoSave";
+import { scheduleAutoSave, loadAutoSave, AUTO_SAVE_SCHEMA_VERSION } from "./store/autoSave";
 
 export function App() {
   const [audioReady, setAudioReady] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
   const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saved" | "restored">("idle");
+  /** Shown briefly when the user starts the transport but every engine is
+   *  empty — prevents the "is it broken?" first-impression silent loop. */
+  const [emptyPlayHint, setEmptyPlayHint] = useState(false);
   const [fxRackOpen, setFxRackOpen] = useState(false);
   const [sceneMiniOpen, setSceneMiniOpen] = useState(false);
   const [demoPickerOpen, setDemoPickerOpen] = useState(false);
@@ -108,6 +115,32 @@ export function App() {
   // Keep iPad / Android screen awake while transport is running so the
   // AudioContext doesn't get suspended mid-loop on a stand.
   useWakeLock(isPlaying);
+
+  // Empty-pattern hint — if user hits Play and absolutely nothing is
+  // programmed yet (fresh app, never loaded a demo) we'd play silence
+  // and they'd think the app is broken. Show a tiny hint pointing at
+  // the Demos / sequencer instead.
+  const prevIsPlaying = useRef(false);
+  useEffect(() => {
+    const justStarted = isPlaying && !prevIsPlaying.current;
+    prevIsPlaying.current = isPlaying;
+    if (!justStarted) return;
+    // Check every active engine for at least one programmed step.
+    const drumHasStep = useDrumStore.getState().pattern.tracks.some(
+      (t) => t.steps.some((s) => s.active),
+    );
+    if (drumHasStep) return;
+    const bassHasStep = useBassStore.getState().steps.some((s) => s.active);
+    if (bassHasStep) return;
+    const chordsHasStep = useChordsStore.getState().steps.some((s) => s.active);
+    if (chordsHasStep) return;
+    const melodyHasStep = useMelodyStore.getState().steps.some((s) => s.active);
+    if (melodyHasStep) return;
+    // All four engines empty — surface the hint for 4s.
+    setEmptyPlayHint(true);
+    const t = window.setTimeout(() => setEmptyPlayHint(false), 4000);
+    return () => window.clearTimeout(t);
+  }, [isPlaying]);
 
   // Manifest "shortcuts" deep-link (?demo=1) — handled once on mount.
   // Also handles the product-video recording mode (?demo=record).
@@ -183,6 +216,45 @@ export function App() {
       if (data.melodyState) {
         useMelodyStore.getState().loadMelodyPattern(data.melodyState as Parameters<ReturnType<typeof useMelodyStore.getState>["loadMelodyPattern"]>[0]);
       }
+      // Restore the extended stores added in schema v2. All blocks are
+      // optional — older sessions saved with v1 will just skip these
+      // and continue working with default-empty scene/mixer/etc.
+      const scenes = (data as { scenesState?: Record<string, unknown> }).scenesState;
+      if (scenes && Array.isArray(scenes.scenes)) {
+        useSceneStore.setState({
+          scenes: scenes.scenes as never,
+          activeScene: (scenes.activeScene as number | undefined) ?? -1,
+          nextScene: (scenes.nextScene as number | null | undefined) ?? null,
+          launchQuantize: (scenes.launchQuantize as never) ?? "1bar",
+        });
+      }
+      const arr = (data as { arrangementState?: Record<string, unknown> }).arrangementState;
+      if (arr && Array.isArray(arr.clips)) {
+        useArrangementStore.setState({
+          clips: arr.clips as never,
+          totalBars: (arr.totalBars as number | undefined) ?? 16,
+          loopRegion: (arr.loopRegion as never) ?? { start: 0, end: 8, enabled: false },
+        });
+      }
+      const mix = (data as { mixerState?: Record<string, unknown> }).mixerState;
+      if (mix && Array.isArray(mix.channels)) {
+        useMixerBarStore.setState({
+          channels: mix.channels as never,
+          ...(mix.groupBuses ? { groupBuses: mix.groupBuses as never } : {}),
+        });
+      }
+      const pad = (data as { performancePadState?: Record<string, unknown> }).performancePadState;
+      if (pad) {
+        usePerformancePadStore.setState(pad as never);
+      }
+      const layers = (data as { melodyLayerState?: Record<string, unknown> }).melodyLayerState;
+      if (layers && Array.isArray(layers.layers)) {
+        useMelodyLayerStore.setState({
+          enabled: (layers.enabled as boolean | undefined) ?? false,
+          layers: layers.layers as never,
+          activeLayerId: (layers.activeLayerId as string | undefined) ?? "",
+        } as never);
+      }
       if (data.drumPattern || data.bassState || data.chordsState || data.melodyState) {
         setAutoSaveStatus("restored");
         setTimeout(() => setAutoSaveStatus("idle"), 2000);
@@ -205,7 +277,16 @@ export function App() {
         const bass = useBassStore.getState();
         const chords = useChordsStore.getState();
         const melody = useMelodyStore.getState();
+        // Extended persistence — see autoSave.ts AutoSaveData interface
+        // for what each block carries. All optional fields are picked
+        // defensively so a future store-shape change doesn't break loads.
+        const scene = useSceneStore.getState();
+        const arr = useArrangementStore.getState();
+        const mix = useMixerBarStore.getState();
+        const pad = usePerformancePadStore.getState();
+        const layers = useMelodyLayerStore.getState();
         return {
+          schemaVersion: AUTO_SAVE_SCHEMA_VERSION,
           drumPattern: drum.pattern,
           bpm: drum.bpm,
           swing: drum.swing,
@@ -232,6 +313,48 @@ export function App() {
             rootNote: melody.rootNote,
             rootName: melody.rootName,
             scaleName: melody.scaleName,
+          },
+          // Scenes = Pattern Variations A/B/C/D + 12 more slots. The
+          // headline live-performance feature; not persisting these used
+          // to wipe variations on every refresh.
+          scenesState: {
+            scenes: scene.scenes,
+            activeScene: scene.activeScene,
+            nextScene: scene.nextScene,
+            launchQuantize: scene.launchQuantize,
+          },
+          arrangementState: {
+            clips: arr.clips,
+            totalBars: arr.totalBars,
+            loopRegion: arr.loopRegion,
+          },
+          mixerState: {
+            channels: mix.channels,
+            groupBuses: mix.groupBuses,
+          },
+          // Performance Pad: persist config + custom chord sets. We DON'T
+          // persist `events` (the recorded XY gestures) — they can be very
+          // long and are typically per-session improvisations.
+          performancePadState: {
+            target: pad.target,
+            mode: pad.mode,
+            chordSetIndex: pad.chordSetIndex,
+            yParam: pad.yParam,
+            scaleOctaves: pad.scaleOctaves,
+            scaleLowestOct: pad.scaleLowestOct,
+            gridSnap: pad.gridSnap,
+            glide: pad.glide,
+            trailEnabled: pad.trailEnabled,
+            chordFollow: pad.chordFollow,
+            gridRows: pad.gridRows,
+            customChordSets: pad.customChordSets,
+            loopBars: pad.loopBars,
+            quantize: pad.quantize,
+          },
+          melodyLayerState: {
+            enabled: layers.enabled,
+            layers: layers.layers,
+            activeLayerId: layers.activeLayerId,
           },
           timestamp: Date.now(),
         };
@@ -261,12 +384,48 @@ export function App() {
         s.rootNote !== p.rootNote || s.rootName !== p.rootName || s.scaleName !== p.scaleName
       ) triggerSave();
     });
+    // Newly persisted stores — only subscribe to identity changes on the
+    // fields we save. Skipping derived/transient fields (activeScene
+    // flickers, channel meter values, etc.) keeps the autosave from
+    // firing on every audio frame.
+    const unsubScenes = useSceneStore.subscribe((s, p) => {
+      if (s.scenes !== p.scenes || s.launchQuantize !== p.launchQuantize) triggerSave();
+    });
+    const unsubArr = useArrangementStore.subscribe((s, p) => {
+      if (s.clips !== p.clips || s.totalBars !== p.totalBars || s.loopRegion !== p.loopRegion) triggerSave();
+    });
+    const unsubMix = useMixerBarStore.subscribe((s, p) => {
+      if (s.channels !== p.channels || s.groupBuses !== p.groupBuses) triggerSave();
+    });
+    const unsubPad = usePerformancePadStore.subscribe((s, p) => {
+      // Compare only the persisted-shape fields. `events` (recorded XY
+      // gestures) is excluded on purpose so an in-progress recording
+      // doesn't trigger constant saves.
+      if (
+        s.customChordSets !== p.customChordSets ||
+        s.target !== p.target || s.mode !== p.mode ||
+        s.chordSetIndex !== p.chordSetIndex || s.yParam !== p.yParam ||
+        s.scaleOctaves !== p.scaleOctaves || s.scaleLowestOct !== p.scaleLowestOct ||
+        s.gridSnap !== p.gridSnap || s.glide !== p.glide ||
+        s.trailEnabled !== p.trailEnabled || s.chordFollow !== p.chordFollow ||
+        s.gridRows !== p.gridRows ||
+        s.loopBars !== p.loopBars || s.quantize !== p.quantize
+      ) triggerSave();
+    });
+    const unsubLayers = useMelodyLayerStore.subscribe((s, p) => {
+      if (s.enabled !== p.enabled || s.layers !== p.layers || s.activeLayerId !== p.activeLayerId) triggerSave();
+    });
 
     return () => {
       unsubDrum();
       unsubBass();
       unsubChords();
       unsubMelody();
+      unsubScenes();
+      unsubArr();
+      unsubMix();
+      unsubPad();
+      unsubLayers();
     };
   }, []);
 
@@ -469,6 +628,21 @@ export function App() {
       {autoSaveStatus === "restored" && (
         <div className="absolute top-0 left-1/2 -translate-x-1/2 z-50 px-3 py-1 bg-[var(--ed-accent-green)]/10 border border-[var(--ed-accent-green)]/30 rounded-b-lg text-[9px] text-[var(--ed-accent-green)] font-bold tracking-wider animate-pulse">
           SESSION RESTORED
+        </div>
+      )}
+      {/* Empty-pattern hint — only shown for first 4s after pressing Play
+          on a fresh / blank session, so the transport never feels broken */}
+      {emptyPlayHint && (
+        <div
+          className="absolute top-12 left-1/2 -translate-x-1/2 z-[180] px-4 py-2 bg-[#0d0d12]/95 border border-[var(--ed-accent-orange)]/50 rounded-lg shadow-2xl text-[11px] text-white/85 max-w-md text-center cursor-pointer hover:bg-[#15151e]"
+          onClick={() => { setEmptyPlayHint(false); setDemoPickerOpen(true); }}
+        >
+          <span className="font-bold text-[var(--ed-accent-orange)]">Transport is running — but everything is empty.</span>
+          <br />
+          <span className="text-white/65">
+            Tap a step in the sequencer, drop a sample on a pad, or
+            {" "}<span className="underline text-[var(--ed-accent-orange)]/90">click here to pick a demo song</span>.
+          </span>
         </div>
       )}
 

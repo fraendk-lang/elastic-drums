@@ -74,9 +74,18 @@ export function OnboardingModal({ onComplete }: OnboardingProps = {}) {
   const isLast = page === STEPS.length - 1;
   const step = STEPS[page]!;
 
+  /**
+   * Both `dismiss` (backdrop click / × button / Skip) and `complete`
+   * (final CTA) now fire onComplete so the user always lands in the
+   * demo picker — the natural next step. Before this, dismissing via
+   * backdrop-click left the user staring at a blank drum machine with
+   * no idea what to click first; demos are still dismissable on their
+   * own if the user truly wants an empty canvas.
+   */
   function dismiss() {
     markOnboarded();
     setVisible(false);
+    onComplete?.();
   }
 
   function complete() {

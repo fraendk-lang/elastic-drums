@@ -103,14 +103,14 @@ export function useMidi() {
   useEffect(() => {
     if (connected.current) return;
     if (!navigator.requestMIDIAccess) {
-      console.log("Web MIDI API not available");
+      if (import.meta.env.DEV) console.debug("Web MIDI API not available");
       return;
     }
 
     navigator.requestMIDIAccess().then(
       (midi: MIDIAccess) => {
         connected.current = true;
-        console.log(`MIDI connected: ${midi.inputs.size} input(s)`);
+        if (import.meta.env.DEV) console.debug(`MIDI connected: ${midi.inputs.size} input(s)`);
 
         const handleMessage = (e: MIDIMessageEvent) => {
           const data = e.data;
@@ -135,7 +135,7 @@ export function useMidi() {
               // MIDI Learn mode (drums only)
               if (midiLearnTarget !== null) {
                 midiLearnMap.set(note, midiLearnTarget);
-                console.log(`MIDI Learn: Note ${note} → Voice ${midiLearnTarget}`);
+                if (import.meta.env.DEV) console.debug(`MIDI Learn: Note ${note} → Voice ${midiLearnTarget}`);
                 midiLearnTarget = null;
                 return;
               }
@@ -218,7 +218,7 @@ export function useMidi() {
             // CC Learn mode
             if (ccLearnTarget !== null) {
               ccMap.set(cc, ccLearnTarget);
-              console.log(`MIDI Learn: CC ${cc} → ${JSON.stringify(ccLearnTarget)}`);
+              if (import.meta.env.DEV) console.debug(`MIDI Learn: CC ${cc} → ${JSON.stringify(ccLearnTarget)}`);
               ccLearnTarget = null;
               return;
             }
@@ -231,7 +231,7 @@ export function useMidi() {
         // Attach to all current MIDI inputs
         midi.inputs.forEach((input: MIDIInput) => {
           input.onmidimessage = handleMessage;
-          console.log(`  → ${input.name}`);
+          if (import.meta.env.DEV) console.debug(`  → ${input.name}`);
         });
 
         // Handle hot-plug
@@ -240,7 +240,7 @@ export function useMidi() {
           const port = ce.port;
           if (port && port.type === "input" && port.state === "connected") {
             (port as MIDIInput).onmidimessage = handleMessage;
-            console.log(`MIDI input connected: ${port.name}`);
+            if (import.meta.env.DEV) console.debug(`MIDI input connected: ${port.name}`);
           }
         };
       },

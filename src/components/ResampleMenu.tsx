@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { resampleToPad } from "../utils/resample";
 import { HintPopover } from "./Hints";
+import { useDrumStore } from "../store/drumStore";
 
 const VOICE_LABELS = [
   "KICK", "SNARE", "CLAP", "TOM L",
@@ -25,6 +26,10 @@ const BARS_CHOICES = [1, 2, 4, 8] as const;
 
 export function ResampleMenu() {
   const [open, setOpen] = useState(false);
+  // Watch the transport state — if stopped when the popover opens, we
+  // show a "transport will auto-start" note so the resulting playback
+  // doesn't surprise the user.
+  const isPlaying = useDrumStore((s) => s.isPlaying);
   const [bars, setBars] = useState<1|2|4|8>(2);
   const [target, setTarget] = useState<number>(10); // default: PRC1 — least likely to overwrite drums
   const [state, setState] = useState<"idle" | "recording" | "encoding" | "done">("idle");
@@ -123,6 +128,16 @@ export function ResampleMenu() {
           <div className="text-[10px] text-white/55 leading-snug mb-3">
             Records the live master output for the chosen length and replaces the sample on the chosen pad.
           </div>
+
+          {/* Transport-state hint — only shown when stopped, because the
+              recording flow auto-starts the transport. Without this hint
+              the user clicks "Start Resample" and is surprised by the
+              sudden playback. */}
+          {!isPlaying && (
+            <div className="text-[9px] text-[var(--ed-accent-orange)]/85 leading-snug mb-3 px-2 py-1.5 rounded border border-[var(--ed-accent-orange)]/30 bg-[var(--ed-accent-orange)]/8">
+              ▷ Transport is stopped — it will start automatically when you press Resample, then stop again after capture.
+            </div>
+          )}
 
           {/* Bars selector */}
           <div className="mb-3">

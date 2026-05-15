@@ -23,13 +23,13 @@ export function useMotionRecording() {
   const startRecording = useCallback(() => {
     isRecording.current = true;
     lastRecordedStep.current = -1;
-    console.log("Motion Recording: STARTED");
+    if (import.meta.env.DEV) console.debug("Motion Recording: STARTED");
   }, []);
 
   const stopRecording = useCallback(() => {
     isRecording.current = false;
     lastRecordedStep.current = -1;
-    console.log("Motion Recording: STOPPED");
+    if (import.meta.env.DEV) console.debug("Motion Recording: STOPPED");
   }, []);
 
   const toggleRecording = useCallback(() => {
