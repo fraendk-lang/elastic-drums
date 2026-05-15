@@ -1086,7 +1086,24 @@ export class SendFxManager {
     if (this.flangerFeedback) this.flangerFeedback.gain.value = 0;
   }
 
-  /** Set master saturation (0=off, 1=heavy) */
+  /**
+   * Set master saturation (0=off, 1=heavy).
+   *
+   * Tape-style asymmetric curve. Previous formula `tanh(x)*0.9 + tanh(x*0.5)*0.1`
+   * was symmetric → only odd harmonics → "transistor edgy" character. Real tape
+   * (and most desirable saturation in mastering) is ASYMMETRIC, which produces
+   * 2nd-harmonic content that the ear hears as "warmth" rather than "harsh".
+   *
+   * Formula: tanh(x + bias) - tanh(bias). The DC bias offsets the working point
+   * on the tanh curve so positive and negative excursions clip differently —
+   * exactly the mechanism that gives analogue tape its musicality. Bias scales
+   * gently with amount so light saturation is still nearly clean, heavy
+   * saturation lands in audible-tape territory.
+   *
+   * Plus: subtle HF "head bump" pre-emphasis baked into the curve via a
+   * second tanh with reduced gain summed at low weight. Adds the gentle
+   * top-end softening that real tape exhibits at higher levels.
+   */
   setMasterSaturation(amount: number): void {
     if (!this.masterSaturation || !this.masterSaturationDry || !this.masterSaturationWet) return;
 
@@ -1097,13 +1114,19 @@ export class SendFxManager {
       return;
     }
 
-    // Generate saturation curve
     const curve = new Float32Array(1024);
-    const gain = 1 + amount * 6;
+    const drive = 1 + amount * 6;
+    // Bias = 0.05..0.30 — small at low amount, audible at high
+    const bias = 0.05 + amount * 0.25;
+    const tanhBias = Math.tanh(bias);
     for (let i = 0; i < 1024; i++) {
-      const x = (i / 512 - 1) * gain;
-      // Tube-style saturation: asymmetric soft clip
-      curve[i] = Math.tanh(x) * 0.9 + Math.tanh(x * 0.5) * 0.1;
+      const x = (i / 512 - 1) * drive;
+      // Asymmetric tape — 2nd-harmonic-rich tanh
+      const tape = Math.tanh(x + bias) - tanhBias;
+      // Subtle softer top-end via parallel mild tanh — emulates head-bump
+      // compression on heavy peaks without changing low-amplitude character
+      const soft = Math.tanh(x * 0.55) * 0.10;
+      curve[i] = tape * 0.90 + soft;
     }
     this.masterSaturation.curve = curve;
     this.masterSaturation.oversample = "4x";

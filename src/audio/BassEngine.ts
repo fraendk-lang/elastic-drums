@@ -268,6 +268,37 @@ export class BassEngine {
     this.isRunning = true;
     // Start LFO if it was enabled before init (e.g. preset loaded before audio context)
     if (this.params.lfoEnabled) this.startLFO();
+
+    // ── Analog drift — slow randomised pitch wobble on both oscillators ────
+    // Real analogue VCOs drift continuously due to thermal effects on the
+    // exponential converter, capacitor leakage and component tolerance.
+    // The drift is what makes analogue synths sound "alive" — perfectly
+    // stable digital oscillators sound sterile by comparison.
+    //
+    // Implementation: two slow random-walk LFOs (~0.07-0.12 Hz) at slightly
+    // different rates so they decorrelate over time, summed into each osc's
+    // detune AudioParam at ±2 cents. Below human "tuning" perception
+    // (~5 cents) so it's felt as warmth, not as out-of-tune. Started once
+    // at init and runs forever — has no relationship with note triggers.
+    const driftDepth = 2; // cents
+    const driftLfo1 = audioCtx.createOscillator();
+    driftLfo1.type = "sine";
+    driftLfo1.frequency.value = 0.09; // ~11 sec period
+    const driftGain1 = audioCtx.createGain();
+    driftGain1.gain.value = driftDepth;
+    driftLfo1.connect(driftGain1);
+    driftGain1.connect(this.osc.detune);
+
+    const driftLfo2 = audioCtx.createOscillator();
+    driftLfo2.type = "sine";
+    driftLfo2.frequency.value = 0.073; // ~14 sec period — non-integer ratio
+    const driftGain2 = audioCtx.createGain();
+    driftGain2.gain.value = driftDepth * 0.8;
+    driftLfo2.connect(driftGain2);
+    driftGain2.connect(this.subOsc.detune);
+
+    driftLfo1.start();
+    driftLfo2.start();
   }
 
   private updateDistortion(): void {

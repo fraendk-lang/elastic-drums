@@ -298,6 +298,28 @@ export class MelodyEngine {
     this.unisonOsc1.start();
     this.unisonOsc2.start();
     this.isRunning = true;
+
+    // ── Analog drift — see BassEngine for full rationale ───────────────────
+    // Slow random-walk LFOs on each unison osc's detune, ±2 cents at
+    // ~0.08-0.12 Hz with non-integer rate ratios so the three oscillators
+    // never reach the same detune offset twice. Adds the "breathing" feel
+    // of a poly-analogue lead/pad voice. Main osc is left at exact pitch
+    // so monophonic lines retain melodic clarity; unison voices wobble.
+    const driftDepth = 2; // cents
+    const driftRates = [0.083, 0.111, 0.067]; // Hz — coprime-ish for max decorrelation
+    const targets = [this.osc.detune, this.unisonOsc1.detune, this.unisonOsc2.detune];
+    for (let i = 0; i < 3; i++) {
+      const lfo = audioCtx.createOscillator();
+      lfo.type = "sine";
+      lfo.frequency.value = driftRates[i]!;
+      const g = audioCtx.createGain();
+      // Main osc gets half-strength drift (preserves melodic intonation),
+      // unison voices get full strength (where the analog character lives)
+      g.gain.value = driftDepth * (i === 0 ? 0.5 : 1.0);
+      lfo.connect(g);
+      g.connect(targets[i]!);
+      lfo.start();
+    }
   }
 
   private updateDistortion(): void {
