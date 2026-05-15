@@ -311,6 +311,21 @@ export class VoiceRenderer {
   ): void {
     const p = this.voiceParams[voice] ?? {};
 
+    // ── Perceptual velocity curve ──────────────────────────────────
+    // Human loudness perception is roughly logarithmic, but raw velocity
+    // is linear (vel = 0.5 → 50 % amplitude). That makes quiet hits feel
+    // too quiet relative to forte hits — the dynamic range squashes the
+    // bottom half. Applying a `vel ^ 0.7` curve compresses the top of
+    // the velocity range slightly (forte hits ~10 % softer) and lifts
+    // the bottom (piano hits noticeably more present). Net effect: the
+    // sequencer's velocity slider becomes more musically usable across
+    // its whole range — `vel = 0.4` is now actually playable as a soft
+    // hit, not "barely-audible".
+    //
+    // Samples bypass this curve — they already have layered velocity
+    // zones with their own dynamics built in via multi-sample lookup.
+    const shapedVel = Math.pow(Math.max(0.001, velocity), 0.7);
+
     // Check if this voice has a sample loaded — play sample instead of synth
     if (this.sampleLookup) {
       const buffer = this.sampleLookup(voice, velocity, projectBpm);
@@ -322,6 +337,10 @@ export class VoiceRenderer {
     }
 
     // Route directly to channel output — no wrapper GainNode overhead
+    // Synth voices receive the perceptually-shaped velocity so the
+    // dynamics feel right; raw velocity stays in the sample branch above.
+    velocity = shapedVel;
+
     switch (voice) {
       case 0: this.kick(ctx, t, velocity, out, p, gateDurationSec); break;
       case 1: this.snare(ctx, t, velocity, out, p, gateDurationSec); break;
@@ -363,12 +382,24 @@ export class VoiceRenderer {
   // ─── KICK ──────────────────────────────────────────────────
   // Improved 808-style: punchy attack + sophisticated pitch envelope + 2nd harmonic + phase distortion
   private kick(ctx: AudioContext, t: number, vel: number, out: AudioNode, p: VoiceParams, gateDurationSec?: number): void {
+    // Per-hit humanisation — tiny pitch + decay jitter so two consecutive
+    // kicks don't sound identical. Real drum kits never produce perfectly
+    // repeated hits. Sample machines vary by 0.3-1% in pitch and ~5% in
+    // decay between hits; we match that here.
+    const pitchMul = 1 + (Math.random() - 0.5) * 0.008;   // ±0.4 %
+    const decayMul = 1 + (Math.random() - 0.5) * 0.10;    // ±5 %
+    // Quiet hits should have proportionally LESS transient energy
+    // (a soft kick isn't just a quieter loud kick — it has less click,
+    // less drive, less sub-frequency content). transientFactor scales
+    // those elements with a steeper curve than vol.
+    const transientFactor = Math.pow(vel, 1.4);
+
     const vol = vel * 1.0;
-    const baseFreq = p.tune ?? 52;
-    const decaySec = this.getSustainedDecay((p.decay ?? 550) / 1000, gateDurationSec);
-    const clickAmt = (p.click ?? 50) / 100;
+    const baseFreq = (p.tune ?? 52) * pitchMul;
+    const decaySec = this.getSustainedDecay((p.decay ?? 550) / 1000 * decayMul, gateDurationSec);
+    const clickAmt = (p.click ?? 50) / 100 * transientFactor;
     const driveAmt = (p.drive ?? 40) / 100;
-    const subAmt = (p.sub ?? 60) / 100;
+    const subAmt = (p.sub ?? 60) / 100 * (0.5 + 0.5 * vel); // sub also velocity-aware
     const pitchSweep = (p.pitch ?? 45) / 10;
 
     // Master output with soft-clip waveshaper
@@ -510,11 +541,21 @@ export class VoiceRenderer {
   // ─── SNARE ─────────────────────────────────────────────────
   // Improved: 3-oscillator body + bandpass noise shaping + two-stage decay
   private snare(ctx: AudioContext, t: number, vel: number, out: AudioNode, p: VoiceParams, gateDurationSec?: number): void {
+    // Humanisation — same rationale as kick. Snare is the most-listened-to
+    // drum after the kick; varying its character per hit removes the
+    // "drum machine" feel immediately.
+    const pitchMul = 1 + (Math.random() - 0.5) * 0.010;   // ±0.5 %
+    const decayMul = 1 + (Math.random() - 0.5) * 0.08;    // ±4 %
+    // Snare snap is highly velocity-dependent in real life — a ghost
+    // snare hit is mostly body, no crack. transientFactor with exponent
+    // 1.5 gives 0.5-vel a 0.35-snap factor (sounds like a soft hit).
+    const transientFactor = Math.pow(vel, 1.5);
+
     const vol = vel * 0.80;
-    const tune = p.tune ?? 180;
-    const decaySec = this.getSustainedDecay((p.decay ?? 220) / 1000, gateDurationSec, 2.5);
+    const tune = (p.tune ?? 180) * pitchMul;
+    const decaySec = this.getSustainedDecay((p.decay ?? 220) / 1000 * decayMul, gateDurationSec, 2.5);
     const toneMix = (p.tone ?? 55) / 100;
-    const snap = (p.snap ?? 70) / 100;
+    const snap = (p.snap ?? 70) / 100 * transientFactor;
     const bodyAmt = (p.body ?? 60) / 100;
 
     const master = ctx.createGain();
@@ -825,8 +866,17 @@ export class VoiceRenderer {
   // ─── HIHAT ─────────────────────────────────────────────────
   // Improved: ring modulation between oscillator pairs + 6th-order highpass + dynamic HPF sweep
   private hihat(ctx: AudioContext, t: number, vel: number, closed: boolean, out: AudioNode, p: VoiceParams, gateDurationSec?: number): GainNode {
+    // Hi-hat humanisation — slightly more aggressive than kick/snare since
+    // hi-hat patterns play 8 or 16 hits per bar; even tiny variation here
+    // breaks the "robotic" feel that exposed sequences create.
+    // Decay is the main perceptual differentiator (= cymbal-vibration time),
+    // pitch jitter is smaller because the metallic spectrum is sensitive
+    // to detuning.
+    const pitchMul = 1 + (Math.random() - 0.5) * 0.006;   // ±0.3 %
+    const decayMul = 1 + (Math.random() - 0.5) * 0.12;    // ±6 %
+
     const vol = vel * (closed ? 0.65 : 0.70);
-    const decaySec = this.getSustainedDecay((p.decay ?? (closed ? 45 : 250)) / 1000, gateDurationSec, 2);
+    const decaySec = this.getSustainedDecay((p.decay ?? (closed ? 45 : 250)) / 1000 * decayMul, gateDurationSec, 2);
     const toneAmt = (p.tone ?? 60) / 100;
 
     const master = ctx.createGain();
@@ -877,7 +927,7 @@ export class VoiceRenderer {
     presence.connect(master);
 
     // Ring modulation between oscillator pairs for sizzle (like real 909)
-    const baseFreq = p.tune ?? 330;
+    const baseFreq = (p.tune ?? 330) * pitchMul;
     const pairs = [
       { f1: baseFreq * 1.0, f2: baseFreq * 1.4471 },
       { f1: baseFreq * 1.7409, f2: baseFreq * 1.9307 },
