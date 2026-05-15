@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useDrumStore, setFillMode } from "../store/drumStore";
+import { useArrangementStore } from "../store/arrangementStore";
 import { resetAll } from "../utils/resetAll";
 import { useSceneStore } from "../store/sceneStore";
 import { downloadMidi } from "../utils/midiExport";
@@ -424,7 +425,10 @@ function ExportMenu({ onSave, onMidiExport, onShare }: {
   onShare:      () => void;
 }) {
   const [open,     setOpen]     = useState(false);
-  const [bars,     setBars]     = useState(4);
+  // null = "FULL" — auto-detect length from arrangement / song chain / pattern.
+  // Resolved at export time so a user who adds another bar between opening
+  // the menu and pressing GO gets the new length.
+  const [bars,     setBars]     = useState<number | "full">(4);
   const [progress, setProgress] = useState<RecordExportProgress | null>(null);
   const ref    = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -455,18 +459,45 @@ function ExportMenu({ onSave, onMidiExport, onShare }: {
     setOpen((v) => !v);
   }, [open, isExporting]);
 
+  /**
+   * Resolve the chosen bar count into an actual number. "FULL" means
+   *   1. If the user has clips placed in the Arrangement, take the last
+   *      clip's end bar (so a 32-bar arrangement exports as 32 bars).
+   *   2. Else if the Song Chain has scenes queued, sum their repeats.
+   *   3. Else fall back to the drum pattern length (with a sane minimum
+   *      of 4 bars and a hard cap at 256 to avoid a 17-minute render
+   *      if someone has a long song chain at 60 BPM).
+   */
+  const resolveBars = useCallback((): number => {
+    if (bars !== "full") return bars;
+    const arr = useArrangementStore.getState();
+    if (arr.clips.length > 0) {
+      const lastEnd = Math.max(
+        ...arr.clips.map((c) => c.startBar + c.lengthBars),
+      );
+      return Math.min(256, Math.max(4, lastEnd));
+    }
+    const drum = useDrumStore.getState();
+    if (drum.songMode === "song" && drum.songChain.length > 0) {
+      const total = drum.songChain.reduce((s, e) => s + (e.repeats ?? 1), 0);
+      return Math.min(256, Math.max(4, total));
+    }
+    return Math.max(4, Math.ceil(drum.pattern.length / 16));
+  }, [bars]);
+
   const runExport = useCallback(async (mode: "wav" | "mp3") => {
     if (isExporting) return;
-    setProgress({ state: "starting", barsDone: 0, barsTotal: bars, elapsedSec: 0, totalSec: 0 });
+    const resolvedBars = resolveBars();
+    setProgress({ state: "starting", barsDone: 0, barsTotal: resolvedBars, elapsedSec: 0, totalSec: 0 });
     await autoRecordExport({
-      bars,
+      bars: resolvedBars,
       tail: 0.5,
       mp3ServerUrl: mode === "mp3" ? mp3ServerUrl : undefined,
       onProgress:   setProgress,
     });
     // Auto-clear after 3 s
     setTimeout(() => setProgress(null), 3000);
-  }, [bars, isExporting, mp3ServerUrl]);
+  }, [resolveBars, isExporting, mp3ServerUrl]);
 
   // Progress bar fraction 0–1
   const fraction = progress
@@ -478,7 +509,7 @@ function ExportMenu({ onSave, onMidiExport, onShare }: {
   const stateLabel: Record<RecordExportProgress["state"], string> = {
     idle:      "",
     starting:  "Starting…",
-    recording: `Recording bar ${Math.ceil(progress?.barsDone ?? 0)} / ${progress?.barsTotal ?? bars}`,
+    recording: `Recording bar ${Math.ceil(progress?.barsDone ?? 0)} / ${progress?.barsTotal ?? (bars === "full" ? "?" : bars)}`,
     encoding:  "Encoding WAV…",
     uploading: "Uploading to MP3 server…",
     done:      "✓ Done",
@@ -520,15 +551,18 @@ function ExportMenu({ onSave, onMidiExport, onShare }: {
 
           <div className="border-t border-white/8 my-1" />
 
-          {/* ── Bar count selector ─────────────────────────── */}
-          <div className="px-3 py-1 flex items-center gap-1.5">
-            <span className="text-[7px] font-bold tracking-[0.1em] text-white/25">BARS</span>
-            {[1, 2, 4, 8].map((b) => (
+          {/* ── Bar count selector — 1..64 bars, plus FULL ─── */}
+          {/* FULL auto-resolves to: arrangement-end > song-chain-total >
+              drum pattern length. Lets users render a whole song with one
+              click instead of being capped at 8 bars. */}
+          <div className="px-3 py-1 flex items-center gap-1 flex-wrap">
+            <span className="text-[7px] font-bold tracking-[0.1em] text-white/25 mr-0.5">BARS</span>
+            {[1, 2, 4, 8, 16, 32, 64].map((b) => (
               <button
                 key={b}
                 disabled={isExporting}
                 onClick={() => setBars(b)}
-                className="w-6 h-5 rounded text-[8px] font-bold transition-all"
+                className="px-1.5 h-5 rounded text-[8px] font-bold transition-all"
                 style={{
                   background: bars === b ? "rgba(245,158,11,0.18)" : "rgba(255,255,255,0.04)",
                   color:      bars === b ? "rgb(245,158,11)"       : "rgba(255,255,255,0.35)",
@@ -538,6 +572,20 @@ function ExportMenu({ onSave, onMidiExport, onShare }: {
                 {b}
               </button>
             ))}
+            <button
+              key="full"
+              disabled={isExporting}
+              onClick={() => setBars("full")}
+              title="Auto-detect: arrangement length, or song-chain length, or current pattern"
+              className="px-2 h-5 rounded text-[8px] font-bold transition-all"
+              style={{
+                background: bars === "full" ? "rgba(245,158,11,0.18)" : "rgba(255,255,255,0.04)",
+                color:      bars === "full" ? "rgb(245,158,11)"       : "rgba(255,255,255,0.35)",
+                border:     `1px solid ${bars === "full" ? "rgba(245,158,11,0.4)" : "rgba(255,255,255,0.06)"}`,
+              }}
+            >
+              FULL
+            </button>
           </div>
 
           {/* ── Progress / status bar ─────────────────────── */}
@@ -571,7 +619,7 @@ function ExportMenu({ onSave, onMidiExport, onShare }: {
             className="w-full text-left px-3 py-1.5 text-[9px] text-white/70 hover:text-white hover:bg-white/8 transition-colors flex items-center gap-2 disabled:opacity-40 disabled:cursor-wait"
           >
             <span className="text-[7px] text-white/30">🔊</span>
-            Export WAV ({bars} bar{bars > 1 ? "s" : ""})
+            Export WAV ({bars === "full" ? "full song" : `${bars} bar${bars > 1 ? "s" : ""}`})
           </button>
 
           {/* ── MP3 export ─────────────────────────────────── */}
@@ -593,7 +641,7 @@ function ExportMenu({ onSave, onMidiExport, onShare }: {
             }`}
           >
             <span className="text-[7px] text-white/30">🎵</span>
-            Export MP3{!mp3ServerUrl ? " (server needed)" : ` (${bars} bar${bars > 1 ? "s" : ""})`}
+            Export MP3{!mp3ServerUrl ? " (server needed)" : ` (${bars === "full" ? "full song" : `${bars} bar${bars > 1 ? "s" : ""}`})`}
           </button>
 
           {/* ── Cancel (during export) ───────────────────── */}

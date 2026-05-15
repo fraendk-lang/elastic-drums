@@ -401,13 +401,15 @@ export class MelodyEngine {
     // zero the VCA, producing the characteristic crackle/click artefact.
     const time = Math.max(timeRaw, this.ctx.currentTime + 0.002);
 
-    // Unmute output — 3ms ramp prevents DC clicks from running oscillators
-    // while staying below audible soft-attack threshold (scene transitions
-    // on bar-downbeats stay tight).
-    if (this.output && this.output.gain.value === 0) {
+    // Unmute output — 3 ms ramp. See BassEngine.triggerNote for full
+    // rationale on why we drop the `=== 0` guard: an in-flight panic ramp
+    // from sceneStore.loadScene would otherwise cut the new trigger
+    // mid-flight at scene boundaries.
+    if (this.output && this.ctx) {
       const t = this.ctx.currentTime;
+      const curValue = this.output.gain.value;
       this.output.gain.cancelScheduledValues(t);
-      this.output.gain.setValueAtTime(0.0001, t);
+      this.output.gain.setValueAtTime(Math.max(0.0001, curValue), t);
       this.output.gain.linearRampToValueAtTime(this.params.volume, t + 0.003);
     }
 
@@ -881,11 +883,14 @@ export class MelodyEngine {
   ): (() => void) | null {
     if (!this.ctx || !this.output) return null;
 
-    // Unmute output bus — 3ms click-safe, scene-transition-tight
-    if (this.output.gain.value === 0) {
+    // Unmute output bus — 3 ms click-safe, scene-transition-tight.
+    // Same fix as the mono trigger above: always cancel + ramp, so an
+    // in-flight panic ramp can't kill the new note mid-flight.
+    {
       const t = this.ctx.currentTime;
+      const curValue = this.output.gain.value;
       this.output.gain.cancelScheduledValues(t);
-      this.output.gain.setValueAtTime(0.0001, t);
+      this.output.gain.setValueAtTime(Math.max(0.0001, curValue), t);
       this.output.gain.linearRampToValueAtTime(this.params.volume, t + 0.003);
     }
 

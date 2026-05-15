@@ -398,11 +398,15 @@ export class ChordsEngine {
   triggerChord(midiNotes: number[], time: number, accent: boolean, tie: boolean, velocity = 0.85): void {
     if (!this.ctx || !this.vca || !this.filterChain || this.voices.length === 0) return;
 
-    // Unmute output — 3ms click-safe ramp, tight for scene transitions
-    if (this.output && this.output.gain.value === 0 && this.ctx) {
+    // Unmute output — 3 ms click-safe ramp, tight for scene transitions.
+    // See BassEngine.triggerNote for full rationale: the `value === 0`
+    // guard was too narrow and let an in-flight panic ramp finish AFTER
+    // the new trigger, cutting the note. Now we always cancel + ramp up.
+    if (this.output && this.ctx) {
       const t = this.ctx.currentTime;
+      const curValue = this.output.gain.value;
       this.output.gain.cancelScheduledValues(t);
-      this.output.gain.setValueAtTime(0.0001, t);
+      this.output.gain.setValueAtTime(Math.max(0.0001, curValue), t);
       this.output.gain.linearRampToValueAtTime(this.params.volume, t + 0.003);
     }
 

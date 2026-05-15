@@ -370,16 +370,27 @@ export class BassEngine {
     const subFreq = freq / 2; // One octave below
     const p = this.params;
 
-    // Unmute output — 3ms click-safe ramp, scene-transition-tight.
-    // (Scheduler's accent/attack envelope handles musical attack separately.)
-    if (this.output && this.output.gain.value === 0 && this.ctx) {
+    // Unmute output — 3 ms click-safe ramp, scene-transition-tight.
+    //
+    // Previously this only fired when `output.gain.value === 0`. Bug: if the
+    // panic ramp from sceneStore.loadScene was MID-DESCENT (e.g. heading
+    // toward 0 over 8 ms but only 3 ms in), `.value` was still ~0.5, the
+    // unmute-guard skipped the reset, and the panic ramp continued running
+    // → finished at 0 a few ms later → cut the new scene's first bass note
+    // mid-trigger. Frank-described as "dezente Sprünge" at scene changes.
+    //
+    // Fix: always cancel any scheduled values + ramp up to target volume.
+    // Cheap and idempotent — a fresh trigger while idle (already at volume)
+    // just sets-then-ramps to the same value = inaudible no-op.
+    if (this.output && this.ctx) {
       const t = this.ctx.currentTime;
+      const curValue = this.output.gain.value;
       this.output.gain.cancelScheduledValues(t);
       if (this.params.lfoEnabled && this.params.lfoTarget === "volume") {
         // LFO controls output gain — set directly so the ramp doesn't fight the LFO
         this.output.gain.setValueAtTime(this.params.volume, t);
       } else {
-        this.output.gain.setValueAtTime(0.0001, t);
+        this.output.gain.setValueAtTime(Math.max(0.0001, curValue), t);
         this.output.gain.linearRampToValueAtTime(this.params.volume, t + 0.003);
       }
     }

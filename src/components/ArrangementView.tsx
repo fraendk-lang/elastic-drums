@@ -2236,6 +2236,24 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
     const prevQ = useSceneStore.getState().launchQuantize;
     if (prevQ === "immediate") useSceneStore.getState().setLaunchQuantize("1bar");
 
+    // ── Capture the currently-active scene as the first chain entry ────
+    // Without this, REC only starts recording from the FIRST SCENE SWITCH.
+    // If you launched Scene A at bar 0 and then hit REC at bar 4, the
+    // recording would miss A entirely — the chain would start with
+    // whatever you launch NEXT. User-perceived as "REC nimmt nicht
+    // sauber auf" because A is silently dropped.
+    const initialScene = useSceneStore.getState().activeScene;
+    if (initialScene >= 0) {
+      const scene = useSceneStore.getState().scenes[initialScene];
+      if (scene) {
+        const bars = Math.max(1, Math.ceil((scene.drumPattern.length ?? 16) / 16));
+        useDrumStore.getState().addToSongChain(initialScene, bars);
+        recBarStart.current = useDrumStore.getState().barCycle;
+        lastRecScene.current = initialScene;
+        setRecCount(1);
+      }
+    }
+
     const unsub = useSceneStore.subscribe((state, prev) => {
       const newScene = state.activeScene;
       if (newScene === prev.activeScene || newScene < 0) return;
