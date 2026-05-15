@@ -104,6 +104,47 @@ export function stopAllAudioClips(): void {
   for (const id of _playing.keys()) stopClip(id);
 }
 
+/**
+ * Re-sync audio clips to the current playhead. Call this after a clip is
+ * added / moved / trimmed WHILE the transport is already running —
+ * otherwise a freshly-dropped clip stays silent until the playhead next
+ * crosses its startBar on a bar boundary (and if dropped on the current
+ * or a past bar, that never happens this cycle).
+ *
+ * Unlike seekAudioClips this does NOT reset `_stepsElapsed` — the normal
+ * bar-boundary scheduler keeps running untouched. We only START clips
+ * that (a) overlap the current bar and (b) aren't already playing.
+ * Future clips are left for the scheduler to fire on arrival, so there's
+ * no double-trigger / restart of an already-running clip.
+ *
+ * No-op when stopped — the normal scheduler picks the clip up on play.
+ */
+export function resyncAudioClips(): void {
+  if (!useDrumStore.getState().isPlaying) return;
+  const ctx = audioEngine.getAudioContext();
+  if (!ctx) return;
+  const { bpm }        = useDrumStore.getState();
+  const spb            = secondsPerBar(bpm);
+  const transportStart = getDrumTransportStartTime();
+  const currentBar     = Math.max(0, Math.floor(_stepsElapsed / 16));
+  const nowSec         = currentBar * spb; // bar-granular — good enough for a drop
+
+  for (const clip of useAudioClipStore.getState().clips) {
+    if (_playing.has(clip.id)) continue; // already running — don't restart
+    const clipStartSec  = clip.startBar * spb;
+    const clipLengthSec = clip.sampleEndSec - clip.sampleStartSec;
+    const clipEndSec    = clipStartSec + clipLengthSec;
+    if (clip.loop && nowSec >= clipStartSec) {
+      const elapsed  = nowSec - clipStartSec;
+      const cycleOff = clipLengthSec > 0 ? elapsed % clipLengthSec : 0;
+      startClip(clip, cycleOff, transportStart + clipStartSec);
+    } else if (!clip.loop && nowSec >= clipStartSec && nowSec < clipEndSec) {
+      startClip(clip, nowSec - clipStartSec, transportStart + clipStartSec);
+    }
+    // Future clips: untouched — the bar-boundary scheduler fires them.
+  }
+}
+
 /** Called when the transport seeks to a specific bar (e.g. click on ruler). */
 export function seekAudioClips(bar: number): void {
   stopAllAudioClips();

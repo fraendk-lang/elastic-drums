@@ -16,6 +16,7 @@ import { useAudioClipStore, computeWaveformPeaks, type AudioClip } from "../stor
 // view stays under control. LoopWaveformCanvas is co-located there because
 // the loop-player rows below use the same peaks renderer.
 import { AudioClipLane, LoopWaveformCanvas } from "./Arrangement/AudioClipLane";
+import { resyncAudioClips } from "../audio/audioClipEngine";
 import {
   SCENE_COLORS, LOOP_COLOR, getEntryColor, getEntryLabel, hexAlpha,
 } from "../utils/arrangementColors";
@@ -2562,6 +2563,9 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
         fadeInSec:      0,
         fadeOutSec:     0,
       });
+      // If the transport is already running, start the clip now instead
+      // of leaving it silent until the playhead next crosses its bar.
+      resyncAudioClips();
     } catch (err) {
       console.warn("AudioClip decode failed:", err);
     }
@@ -2888,6 +2892,7 @@ export function ArrangementView({ isOpen, onClose }: ArrangementViewProps) {
                           sampleStartSec: 0, sampleEndSec: buf.duration,
                           fadeInSec: 0, fadeOutSec: 0,
                         });
+                        resyncAudioClips();
                       } catch (err) { console.warn("AudioClip decode failed:", err); }
                     }} />
                   <svg width="9" height="9" viewBox="0 0 12 12" fill="currentColor">
