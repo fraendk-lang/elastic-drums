@@ -264,17 +264,24 @@ export function SynthSection() {
         </div>
       )}
 
-      {/* Active sequencer */}
-      {active === "bass" && <BassSequencer />}
-      {active === "chords" && (
-        <ChordsSequencer
-          onOpenPianoRoll={() => overlay.openOverlay("chordPianoRoll")}
-        />
-      )}
-      {active === "melody" && <MelodySequencer />}
-      {active === "sampler"  && <SamplerTab />}
-      {active === "loops"    && <LoopPlayerTab />}
-      {active === "library"  && <StockLibrary />}
+      {/* Active sequencer — a 2px engine-coloured strip at the top ties the
+          content visually to its tab, so it's instantly obvious which
+          engine you're editing without reading the tab label. */}
+      <div
+        className="border-t-2"
+        style={{ borderTopColor: (TABS.find((t) => t.id === active)?.color) ?? "transparent" }}
+      >
+        {active === "bass" && <BassSequencer />}
+        {active === "chords" && (
+          <ChordsSequencer
+            onOpenPianoRoll={() => overlay.openOverlay("chordPianoRoll")}
+          />
+        )}
+        {active === "melody" && <MelodySequencer />}
+        {active === "sampler"  && <SamplerTab />}
+        {active === "loops"    && <LoopPlayerTab />}
+        {active === "library"  && <StockLibrary />}
+      </div>
     </div>
   );
 }

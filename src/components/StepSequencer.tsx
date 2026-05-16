@@ -836,7 +836,22 @@ export function StepSequencer() {
       </div>
 
       {/* Step Grid */}
-      <div className="flex-1 overflow-auto">
+      <div className="relative flex-1 overflow-auto">
+        {/* Empty-state hint — shown when the whole pattern has zero trigs.
+            pointer-events-none so the user can click straight through it
+            onto a step to start programming. */}
+        {totalActiveSteps === 0 && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center text-center px-6">
+            <div className="text-3xl mb-2 opacity-40">🥁</div>
+            <div className="text-[12px] font-bold text-white/55 mb-1">
+              Empty pattern
+            </div>
+            <div className="text-[10px] text-white/35 leading-relaxed max-w-[280px]">
+              Tap any step to place a beat — or use EUCLID to generate one,
+              or load a demo song to hear the engine.
+            </div>
+          </div>
+        )}
         <div className="grid gap-[2px]" style={{ gridTemplateColumns: "72px repeat(4, 1fr) 5px repeat(4, 1fr) 5px repeat(4, 1fr) 5px repeat(4, 1fr)" }}>
 
           {/* Header: step numbers */}
