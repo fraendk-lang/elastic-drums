@@ -239,24 +239,46 @@ export function Transport({
       {/* ── Spacer ── */}
       <div className="flex-1" />
 
-      {/* ── Tools ── */}
+      {/* ── Tools — grouped into logical clusters so the toolbar reads as
+            5 small groups instead of one undifferentiated 19-button wall.
+            Rarely-used panels (MOD / MACRO / MIDI player / MIDI MAP / SYNC)
+            live behind a MORE ▾ dropdown. ── */}
       <div className="flex items-center gap-[2px] shrink-0">
+        {/* Start: load content */}
         <ToolBtn onClick={onOpenDemos} label="DEMOS" accent />
         <ToolBtn onClick={onOpenKits} label="KITS" />
-        <ToolBtn onClick={onOpenMidi} label="MIDI" />
+
+        <Sep />
+
+        {/* Sequence & arrange */}
         <ToolBtn onClick={onOpenEuclidean} label="EUCLID" />
-        <ToolBtn onClick={onOpenSong} label="SONG" />
         <ToolBtn onClick={onOpenScenes} label="SCENE" />
-        <ToolBtn onClick={onOpenClips} label="CLIPS" />
         <ToolBtn onClick={onOpenArrangement} label="ARR" />
-        <ToolBtn onClick={onOpenModMatrix} label="MOD" />
-        <ToolBtn onClick={onOpenMacros} label="MACRO" />
-        <ToolBtn onClick={onOpenMidiLearn} label="MIDI MAP" />
-        <ToolBtn onClick={onOpenMidiClock} label="SYNC" />
+        <ToolBtn onClick={onOpenSong} label="SONG" />
+
+        <Sep />
+
+        {/* Perform */}
         {onOpenPerformance && <ToolBtn onClick={onOpenPerformance} label="LIVE" accent />}
         {onOpenPad && <ToolBtn onClick={onOpenPad} label="XY PAD" accent />}
+        <ToolBtn onClick={onOpenClips} label="CLIPS" />
+
+        <Sep />
+
+        {/* Sound */}
         <ToolBtn onClick={onOpenFx} label="FX" accent />
         <ToolBtn onClick={onOpenMixer} label="MIXER" accent />
+
+        <Sep />
+
+        {/* Advanced / rarely-used — collapsed into a dropdown */}
+        <MoreMenu items={[
+          { label: "MOD MATRIX", onClick: onOpenModMatrix },
+          { label: "MACROS",     onClick: onOpenMacros },
+          { label: "MIDI PLAYER", onClick: onOpenMidi },
+          { label: "MIDI LEARN", onClick: onOpenMidiLearn },
+          { label: "CLOCK SYNC", onClick: onOpenMidiClock },
+        ]} />
 
         <Sep />
 
@@ -416,6 +438,63 @@ function ToolBtn({ onClick, label, accent }: { onClick: () => void; label: strin
     >
       {label}
     </button>
+  );
+}
+
+/**
+ * MoreMenu — dropdown that collapses the rarely-used toolbar panels
+ * (Mod Matrix, Macros, MIDI player, MIDI learn, Clock sync) behind a
+ * single MORE ▾ button. Keeps the toolbar from being a 19-button wall.
+ */
+function MoreMenu({ items }: { items: { label: string; onClick: () => void }[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("pointerdown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-label="More tools"
+        aria-expanded={open}
+        className={`h-6 px-2.5 rounded-md text-[8px] font-bold tracking-wider transition-all ed-tool-btn ${
+          open
+            ? "bg-white/10 text-white/80"
+            : "text-white/30 hover:text-white/70 hover:bg-white/5"
+        }`}
+      >
+        MORE ▾
+      </button>
+      {open && (
+        <div
+          className="absolute top-7 right-0 z-[180] min-w-[140px] rounded-lg border border-white/12 bg-[#0d0d12]/97 backdrop-blur-md shadow-2xl py-1"
+          style={{ boxShadow: "0 16px 48px rgba(0,0,0,0.7)" }}
+        >
+          {items.map((it) => (
+            <button
+              key={it.label}
+              onClick={() => { it.onClick(); setOpen(false); }}
+              className="w-full text-left px-3 py-1.5 text-[9px] font-bold tracking-wider text-white/55 hover:text-white hover:bg-white/8 transition-colors"
+            >
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
