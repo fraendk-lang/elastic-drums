@@ -34,6 +34,24 @@ function midiToName(midi: number): string {
   return (NOTE_NAMES_SHARP[midi % 12] ?? "?") + (Math.floor(midi / 12) - 1);
 }
 
+/**
+ * QWERTY musical typing — lets desktop users play the Performance Pad with
+ * the computer keyboard instead of mouse-clicking one cell at a time.
+ *
+ * Scale-degree based (not chromatic piano): every key plays an in-key note,
+ * so there are no wrong notes regardless of the active scale. Two rows give
+ * two octaves — the Z-row is the lower octave, the Q-row the upper. `degree`
+ * 7 wraps to the octave above (degree 0 + 12 semitones).
+ */
+const KEYBOARD_DEGREES: Record<string, { degree: number; octave: number }> = {
+  z: { degree: 0, octave: 0 }, x: { degree: 1, octave: 0 }, c: { degree: 2, octave: 0 },
+  v: { degree: 3, octave: 0 }, b: { degree: 4, octave: 0 }, n: { degree: 5, octave: 0 },
+  m: { degree: 6, octave: 0 }, ",": { degree: 7, octave: 0 },
+  q: { degree: 0, octave: 1 }, w: { degree: 1, octave: 1 }, e: { degree: 2, octave: 1 },
+  r: { degree: 3, octave: 1 }, t: { degree: 4, octave: 1 }, y: { degree: 5, octave: 1 },
+  u: { degree: 6, octave: 1 }, i: { degree: 7, octave: 1 },
+};
+
 // Y-Param definitions — wide, dramatic ranges that make every gesture feel powerful.
 // "springBack" params restore their original value when all pointers leave the pad.
 const Y_PARAMS: { id: YAxisParam; label: string; range: [number, number]; springBack?: boolean; group: "synth" | "fx" }[] = [
@@ -192,6 +210,59 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     const sched = arpSchedulerRef.current;
     return () => { sched?.stop(); };
   }, []);
+
+  // ── QWERTY musical typing ──────────────────────────────────────────────
+  // Playing the XY pad fluidly with a mouse is awkward — you can only click
+  // one cell at a time. This maps the computer keyboard to scale degrees so
+  // a melody can be played live on desktop, the same way fingers work on a
+  // touch screen. Two rows = two octaves; held key sustains, release stops.
+  //
+  // Listener is attached in the CAPTURE phase + stopImmediatePropagation so
+  // it wins over the global drum-pad QWERTY handler (which lives on window
+  // in the bubble phase) — otherwise pressing Q/W/E/Z would also trigger
+  // drum voices.
+  useEffect(() => {
+    if (!isOpen) return;
+    const held = new Map<string, () => void>(); // key char → release handle
+
+    const onDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const key = e.key.toLowerCase();
+      const map = KEYBOARD_DEGREES[key];
+      if (!map) return;
+      e.preventDefault();
+      e.stopImmediatePropagation(); // block the global drum QWERTY handler
+      if (e.repeat || held.has(key)) return;
+
+      const scale = SCALES[scaleNameRef.current] ?? SCALES["Chromatic"]!;
+      const baseMidi = rootNoteRef.current + scaleLowestOctRef.current * 12;
+      const len = scale.length;
+      // degree 7 (8th key) wraps to the next octave's root
+      const wrappedDeg = map.degree % len;
+      const extraOct = Math.floor(map.degree / len);
+      const midi = baseMidi + (map.octave + extraOct) * 12 + (scale[wrappedDeg] ?? 0);
+
+      // Fixed velocity + mid-Y — keyboard has no pressure / position axis.
+      const release = fireVoiceRef.current(midi, 0.85, 0.35);
+      if (release) held.set(key, release);
+    };
+
+    const onUp = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase();
+      const release = held.get(key);
+      if (release) { release(); held.delete(key); }
+    };
+
+    window.addEventListener("keydown", onDown, true); // capture phase
+    window.addEventListener("keyup", onUp, true);
+    return () => {
+      window.removeEventListener("keydown", onDown, true);
+      window.removeEventListener("keyup", onUp, true);
+      for (const r of held.values()) r(); // release any still-held notes
+      held.clear();
+    };
+  }, [isOpen]);
 
   // ── Wake-up handler ─────────────────────────────────────────────────────
   // When the browser window/tab regains focus, the AudioContext may have been
@@ -358,6 +429,11 @@ export function PerformancePad({ isOpen, onClose }: Props) {
       return () => bassEngine.releaseNote(ctx.currentTime);
     }
   }, [target, yParam, yToParam]);
+
+  // Stable ref to fireVoice so the QWERTY handler binds its window
+  // listener exactly once (advanced-event-handler-refs pattern).
+  const fireVoiceRef = useRef(fireVoice);
+  fireVoiceRef.current = fireVoice;
 
   // ── Live Y modulation while dragging ──
   const modulateVoice = useCallback((y: number) => {
@@ -1627,6 +1703,14 @@ export function PerformancePad({ isOpen, onClose }: Props) {
                     ? `${chordSet.name} · ${chordSet.cells.length} CHORDS · HOLD TO EDIT`
                     : "TOUCH · HOLD · MOVE — MULTI-TOUCH"}
           </div>
+
+          {/* QWERTY musical-typing hint — only useful on desktop, and only
+              while not recording (where the status text takes priority) */}
+          {!isArmed && !isRecording && !isStepRecording && (
+            <div className="absolute top-9 left-1/2 -translate-x-1/2 text-[8px] text-white/20 tracking-[0.2em] pointer-events-none font-light hidden md:block">
+              ⌨ PLAY WITH KEYBOARD — Z X C V B N M , (low) · Q W E R T Y U I (high)
+            </div>
+          )}
 
           {/* Key/Scale indicator — top-right corner */}
           {mode === "notes" && (
