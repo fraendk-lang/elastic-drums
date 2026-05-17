@@ -449,6 +449,10 @@ function ToolBtn({ onClick, label, accent }: { onClick: () => void; label: strin
 function MoreMenu({ items }: { items: { label: string; onClick: () => void }[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  // Dropdown uses position: fixed with computed coordinates — `absolute`
+  // got clipped by the Transport bar's overflow. Same approach as ExportMenu.
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number }>({ top: 36, right: 4 });
 
   useEffect(() => {
     if (!open) return;
@@ -464,10 +468,19 @@ function MoreMenu({ items }: { items: { label: string; onClick: () => void }[] }
     };
   }, [open]);
 
+  const toggle = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+    }
+    setOpen((v) => !v);
+  };
+
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => setOpen((v) => !v)}
+        ref={btnRef}
+        onClick={toggle}
         aria-label="More tools"
         aria-expanded={open}
         className={`h-6 px-2.5 rounded-md text-[8px] font-bold tracking-wider transition-all ed-tool-btn ${
@@ -480,8 +493,8 @@ function MoreMenu({ items }: { items: { label: string; onClick: () => void }[] }
       </button>
       {open && (
         <div
-          className="absolute top-7 right-0 z-[180] min-w-[140px] rounded-lg border border-white/12 bg-[#0d0d12]/97 backdrop-blur-md shadow-2xl py-1"
-          style={{ boxShadow: "0 16px 48px rgba(0,0,0,0.7)" }}
+          className="fixed z-[200] min-w-[150px] rounded-lg border border-white/12 bg-[#0d0d12]/97 backdrop-blur-md py-1"
+          style={{ top: menuPos.top, right: menuPos.right, boxShadow: "0 16px 48px rgba(0,0,0,0.7)" }}
         >
           {items.map((it) => (
             <button
