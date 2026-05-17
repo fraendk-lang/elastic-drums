@@ -40,16 +40,22 @@ function midiToName(midi: number): string {
  *
  * Scale-degree based (not chromatic piano): every key plays an in-key note,
  * so there are no wrong notes regardless of the active scale. Two rows give
- * two octaves — the Z-row is the lower octave, the Q-row the upper. `degree`
- * 7 wraps to the octave above (degree 0 + 12 semitones).
+ * two octaves — the bottom letter row is the lower octave, the row above
+ * the upper. `degree` 7 wraps to the octave above (degree 0 + 12 semitones).
+ *
+ * Keyed by `KeyboardEvent.code` (PHYSICAL key position), NOT `.key`. On a
+ * QWERTZ (German) or AZERTY (French) layout `.key` reports different
+ * letters for the same physical keys — e.g. on QWERTZ the bottom-left key
+ * reports "y" instead of "z". `.code` is layout-independent, so the bottom
+ * row is always the lower octave wherever the user is.
  */
 const KEYBOARD_DEGREES: Record<string, { degree: number; octave: number }> = {
-  z: { degree: 0, octave: 0 }, x: { degree: 1, octave: 0 }, c: { degree: 2, octave: 0 },
-  v: { degree: 3, octave: 0 }, b: { degree: 4, octave: 0 }, n: { degree: 5, octave: 0 },
-  m: { degree: 6, octave: 0 }, ",": { degree: 7, octave: 0 },
-  q: { degree: 0, octave: 1 }, w: { degree: 1, octave: 1 }, e: { degree: 2, octave: 1 },
-  r: { degree: 3, octave: 1 }, t: { degree: 4, octave: 1 }, y: { degree: 5, octave: 1 },
-  u: { degree: 6, octave: 1 }, i: { degree: 7, octave: 1 },
+  KeyZ: { degree: 0, octave: 0 }, KeyX: { degree: 1, octave: 0 }, KeyC: { degree: 2, octave: 0 },
+  KeyV: { degree: 3, octave: 0 }, KeyB: { degree: 4, octave: 0 }, KeyN: { degree: 5, octave: 0 },
+  KeyM: { degree: 6, octave: 0 }, Comma: { degree: 7, octave: 0 },
+  KeyQ: { degree: 0, octave: 1 }, KeyW: { degree: 1, octave: 1 }, KeyE: { degree: 2, octave: 1 },
+  KeyR: { degree: 3, octave: 1 }, KeyT: { degree: 4, octave: 1 }, KeyY: { degree: 5, octave: 1 },
+  KeyU: { degree: 6, octave: 1 }, KeyI: { degree: 7, octave: 1 },
 };
 
 // Y-Param definitions — wide, dramatic ranges that make every gesture feel powerful.
@@ -223,17 +229,19 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   // drum voices.
   useEffect(() => {
     if (!isOpen) return;
-    const held = new Map<string, () => void>(); // key char → release handle
+    const held = new Map<string, () => void>(); // physical key code → release handle
 
     const onDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      const key = e.key.toLowerCase();
-      const map = KEYBOARD_DEGREES[key];
+      // Key by physical position (e.code) — layout-independent, so QWERTZ /
+      // AZERTY keyboards map the same physical keys to the same notes.
+      const code = e.code;
+      const map = KEYBOARD_DEGREES[code];
       if (!map) return;
       e.preventDefault();
       e.stopImmediatePropagation(); // block the global drum QWERTY handler
-      if (e.repeat || held.has(key)) return;
+      if (e.repeat || held.has(code)) return;
 
       const scale = SCALES[scaleNameRef.current] ?? SCALES["Chromatic"]!;
       const baseMidi = rootNoteRef.current + scaleLowestOctRef.current * 12;
@@ -245,13 +253,12 @@ export function PerformancePad({ isOpen, onClose }: Props) {
 
       // Fixed velocity + mid-Y — keyboard has no pressure / position axis.
       const release = fireVoiceRef.current(midi, 0.85, 0.35);
-      if (release) held.set(key, release);
+      if (release) held.set(code, release);
     };
 
     const onUp = (e: KeyboardEvent) => {
-      const key = e.key.toLowerCase();
-      const release = held.get(key);
-      if (release) { release(); held.delete(key); }
+      const release = held.get(e.code);
+      if (release) { release(); held.delete(e.code); }
     };
 
     window.addEventListener("keydown", onDown, true); // capture phase
@@ -1704,11 +1711,13 @@ export function PerformancePad({ isOpen, onClose }: Props) {
                     : "TOUCH · HOLD · MOVE — MULTI-TOUCH"}
           </div>
 
-          {/* QWERTY musical-typing hint — only useful on desktop, and only
-              while not recording (where the status text takes priority) */}
+          {/* Musical-typing hint — only useful on desktop, and only while
+              not recording. Described by ROW rather than letters, since the
+              key labels differ across layouts (QWERTZ / AZERTY) — the
+              physical rows stay the same everywhere. */}
           {!isArmed && !isRecording && !isStepRecording && (
             <div className="absolute top-9 left-1/2 -translate-x-1/2 text-[8px] text-white/20 tracking-[0.2em] pointer-events-none font-light hidden md:block">
-              ⌨ PLAY WITH KEYBOARD — Z X C V B N M , (low) · Q W E R T Y U I (high)
+              ⌨ PLAY WITH KEYBOARD — bottom letter row = low octave · row above = high octave
             </div>
           )}
 
