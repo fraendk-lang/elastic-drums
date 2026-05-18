@@ -176,9 +176,10 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     }
     let raf = 0;
     const tick = () => {
-      const startedAt = usePerformancePadStore.getState().playbackStartTime;
-      const elapsed = (performance.now() - startedAt) % loopDuration;
-      setPlayheadStep(Math.floor(elapsed / stepGridMs));
+      const s = usePerformancePadStore.getState();
+      const elapsed = (performance.now() - s.loopWallStart) % loopDuration;
+      const len = s.stepNotes.length;
+      setPlayheadStep(len > 0 ? Math.min(Math.floor(elapsed / stepGridMs), len - 1) : null);
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -834,6 +835,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
       iterationAudioStart = ctx.currentTime + 0.05;
     }
     const wallStart = performance.now() + (iterationAudioStart - ctx.currentTime) * 1000;
+    usePerformancePadStore.getState().setLoopWallStart(wallStart);
 
     const scheduleIteration = (iterAudioStart: number, iterWallStart: number) => {
       // Schedule paired notes — each fires triggerPolyNote with exact audio time

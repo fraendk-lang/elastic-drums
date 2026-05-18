@@ -262,6 +262,7 @@ interface PerformancePadState {
   quantize: "off" | "1/4" | "1/8" | "1/16" | "1/32";  // Grid to snap event timings to
   playbackTimer: ReturnType<typeof setTimeout> | null;
   playbackStartTime: number;
+  loopWallStart: number;    // Wall-clock time (performance.now ms) of loop iteration #0 — true playback anchor
 
   // Setters
   setTarget: (t: PadTarget) => void;
@@ -300,6 +301,7 @@ interface PerformancePadState {
   setQuantize: (q: "off" | "1/4" | "1/8" | "1/16" | "1/32") => void;
 
   // Loop playback API
+  setLoopWallStart: (t: number) => void;
   startLoop: () => void;
   stopLoop: () => void;
 }
@@ -332,6 +334,7 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
   quantize: "off",
   playbackTimer: null,
   playbackStartTime: 0,
+  loopWallStart: 0,
 
   setTarget: (t) => set({ target: t }),
   setMode: (m) => set({ mode: m }),
@@ -559,6 +562,8 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
 
   setLoopBars: (n) => set({ loopBars: n }),
   setQuantize: (q) => set({ quantize: q }),
+
+  setLoopWallStart: (t) => set({ loopWallStart: t }),
 
   startLoop: () => {
     const s = get();
