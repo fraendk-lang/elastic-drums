@@ -11,6 +11,7 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { usePerformancePadStore, CHORD_SETS, type YAxisParam, type PadTarget, type PadMode } from "../store/performancePadStore";
+import { PerformancePadStepLane } from "./PerformancePadStepLane";
 import { useMelodyStore, MELODY_PRESETS } from "../store/melodyStore";
 import { useBassStore, BASS_PRESETS } from "../store/bassStore";
 import { useDrumStore, getDrumTransportStartTime } from "../store/drumStore";
@@ -99,9 +100,9 @@ const _padVolumeByTarget: Record<string, number> = {};
 export function PerformancePad({ isOpen, onClose }: Props) {
   const {
     target, mode, chordSetIndex, yParam, scaleOctaves, scaleLowestOct, gridSnap, trailEnabled, chordFollow, gridRows,
-    events, isArmed, isRecording, isStepRecording, stepCursorMs, isLooping, loopDuration, loopBars, quantize,
+    events, isArmed, isRecording, isStepRecording, stepNotes, stepCursor, stepGridMs, isLooping, loopDuration, loopBars, quantize,
     setTarget, setMode, setChordSetIndex, setYParam, setScaleOctaves, setScaleLowestOct, setGridSnap, setTrailEnabled, setChordFollow, setGridRows,
-    armRecording, startStepRecording, stopRecording, clearRecording, skipStep, undoLastStep, appendEvent, setLoopBars, setQuantize,
+    armRecording, startStepRecording, stopRecording, clearRecording, placeStepNote, setStepCursor, clearStepAt, skipStep, undoLastStep, appendEvent, setLoopBars, setQuantize,
     startLoop, stopLoop,
     customChordSets, setChordIntervals, resetChordCell,
   } = usePerformancePadStore();
@@ -165,6 +166,24 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   /** Derived editor state — resolved from customChordSets when editTarget is set */
   const [editIntervals, setEditIntervals] = useState<boolean[]>(Array(12).fill(false));
   const [editLabel, setEditLabel] = useState("");
+
+  // Step index currently sounding during loop playback (null when not looping).
+  const [playheadStep, setPlayheadStep] = useState<number | null>(null);
+  useEffect(() => {
+    if (!isLooping || stepGridMs <= 0 || loopDuration <= 0) {
+      setPlayheadStep(null);
+      return;
+    }
+    let raf = 0;
+    const tick = () => {
+      const startedAt = usePerformancePadStore.getState().playbackStartTime;
+      const elapsed = (performance.now() - startedAt) % loopDuration;
+      setPlayheadStep(Math.floor(elapsed / stepGridMs));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isLooping, stepGridMs, loopDuration]);
 
   const arpModeRef = useRef(arpMode);
   const arpRateRef = useRef(arpRate);
@@ -651,7 +670,11 @@ export function PerformancePad({ isOpen, onClose }: Props) {
 
     activeVoicesRef.current.set(e.pointerId, voice);
     trailRef.current.push({ x, y, t: performance.now(), pointerId: e.pointerId });
-    appendEvent({ type: "down", pointerId: e.pointerId, x, y, velocity });
+    if (isStepRecording) {
+      placeStepNote({ x, y, velocity });
+    } else {
+      appendEvent({ type: "down", pointerId: e.pointerId, x, y, velocity });
+    }
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -701,7 +724,9 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     if (!voice) return;
     activeVoicesRef.current.delete(e.pointerId);
     const { x, y } = getXY(e);
-    appendEvent({ type: "up", pointerId: e.pointerId, x, y, velocity: voice.velocity });
+    if (!isStepRecording) {
+      appendEvent({ type: "up", pointerId: e.pointerId, x, y, velocity: voice.velocity });
+    }
     // Trigger musical release for all voices (single note or chord stack)
     voice.releases.forEach((r) => r?.());
     // Chord-follow: if no chord voices remain, reset transpose to 0
@@ -1596,19 +1621,19 @@ export function PerformancePad({ isOpen, onClose }: Props) {
           <>
             <button onClick={() => stopRecording(bpm)}
               className="px-3 h-6 text-[9px] font-bold rounded bg-blue-500/40 text-blue-100 animate-pulse transition-all"
-              title={`Step recording — cursor at ${(stepCursorMs / 1000).toFixed(2)}s`}
+              title="Stop step recording"
             >■ STOP STEP</button>
-            <button onClick={() => skipStep(bpm)}
+            <button onClick={skipStep}
               className="px-2 h-6 text-[9px] font-bold rounded bg-white/10 text-white/70 hover:bg-white/20 transition-all"
               title="Advance cursor without placing a note (rest)"
             >↷ SKIP</button>
-            <button onClick={() => undoLastStep(bpm)}
+            <button onClick={undoLastStep}
               disabled={events.length === 0}
               className="px-2 h-6 text-[9px] font-bold rounded bg-white/10 text-white/70 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
               title="Remove last placed note and rewind cursor one step"
             >↶ UNDO</button>
             <span className="text-[8px] text-blue-300/70 font-mono">
-              {(stepCursorMs / 1000).toFixed(2)}s / {(loopDuration / 1000).toFixed(1)}s
+              Step {stepCursor + 1} / {stepNotes.length} · Bar {Math.floor(stepCursor / 4) + 1}.{(stepCursor % 4) + 1}
             </span>
           </>
         ) : (
@@ -1974,6 +1999,16 @@ export function PerformancePad({ isOpen, onClose }: Props) {
           <span className="text-[7px] text-orange-400/80 font-mono">{padVolume}%</span>
         </div>
       </div>
+
+      {(isStepRecording || stepNotes.some((n) => n !== null)) && (
+        <PerformancePadStepLane
+          stepNotes={stepNotes}
+          stepCursor={stepCursor}
+          playheadStep={playheadStep}
+          onStepTap={setStepCursor}
+          onStepClear={clearStepAt}
+        />
+      )}
 
       {/* Arp bar — melody target only */}
       {target === "melody" && (
