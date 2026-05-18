@@ -540,9 +540,12 @@ export function PerformancePad({ isOpen, onClose }: Props) {
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Capture the pointer so pointerup/pointercancel are always delivered to
+    // the pad even if the finger/mouse leaves the pad's bounds — otherwise the
+    // voice is never released and the note hangs (notably in Grid mode).
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
     if (!isOpen) return;
     e.preventDefault();
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
     const { x, y } = getXY(e);
 
     // ── Long-press detection for chord editor (chord mode only) ──────────
@@ -1691,6 +1694,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
+          onLostPointerCapture={handlePointerUp}
           style={{
             touchAction: "none",
             // Hard-coded dark fallback BG guarantees contrast even if CSS vars
