@@ -40,6 +40,10 @@ const SOUNDSET_COLORS: Record<string, string> = {
   "Ambient":   "#8b5cf6",
   "Cinematic": "#64748b",
   "Samples":   "#22d3ee",
+  "Garage":    "#14b8a6",
+  "Grime":     "#f43f5e",
+  "Footwork":  "#ec4899",
+  "Club":      "#6366f1",
 };
 
 const SOUNDSET_DESCRIPTIONS: Record<string, string> = {
@@ -54,6 +58,10 @@ const SOUNDSET_DESCRIPTIONS: Record<string, string> = {
   "Ambient":   "Ambient textures, IDM, glitch, experimental",
   "Cinematic": "Film scoring — impacts, tension, atmospheric",
   "Samples":   "100% real drum samples from the library — no synthesis",
+  "Garage":    "UK Garage — shuffled 2-step, skippy hats, mid-bass kicks",
+  "Grime":     "140 BPM grime — dark, sparse, war-dub energy",
+  "Footwork":  "Chicago footwork & juke — frantic 160 BPM triplet kicks",
+  "Club":      "Jersey & Philly club — bounce, chopped vocals, kick rolls",
 };
 
 function buildSoundsets(kits: DrumKit[]): Soundset[] {

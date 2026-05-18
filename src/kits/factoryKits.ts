@@ -669,7 +669,7 @@ export const FACTORY_KITS: DrumKit[] = [
   // ═══════════════════════════════════════════════════════
 
   {
-    id: "garage-uk", name: "UK Garage", category: "909",
+    id: "garage-uk", name: "2-Step Garage", category: "Garage",
     tags: ["garage", "2step", "uk", "shuffled"], author: "Factory", bpmRange: [130, 140],
     description: "Shuffled 2-step groove with garage bass and skippy hats",
     samples: {
@@ -902,7 +902,7 @@ export const FACTORY_KITS: DrumKit[] = [
   },
 
   {
-    id: "minimal-techno", name: "Minimal Techno", category: "Electro",
+    id: "minimal-techno", name: "Detroit Minimal", category: "Electro",
     tags: ["minimal", "techno", "detroit"], author: "Factory", bpmRange: [128, 140],
     description: "Sparse, hypnotic techno — every hit counts",
     samples: {
