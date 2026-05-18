@@ -178,6 +178,7 @@ export function PerformancePad({ isOpen, onClose }: Props) {
     const tick = () => {
       const s = usePerformancePadStore.getState();
       const elapsed = (performance.now() - s.loopWallStart) % loopDuration;
+      // stepNotes.length is read live here, intentionally not an effect dep.
       const len = s.stepNotes.length;
       setPlayheadStep(len > 0 ? Math.min(Math.floor(elapsed / stepGridMs), len - 1) : null);
       raf = requestAnimationFrame(tick);
@@ -1633,9 +1634,9 @@ export function PerformancePad({ isOpen, onClose }: Props) {
               title="Advance cursor without placing a note (rest)"
             >↷ SKIP</button>
             <button onClick={undoLastStep}
-              disabled={events.length === 0}
+              disabled={stepCursor === 0}
               className="px-2 h-6 text-[9px] font-bold rounded bg-white/10 text-white/70 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-              title="Remove last placed note and rewind cursor one step"
+              title="Clear the step before the cursor and step back"
             >↶ UNDO</button>
             <span className="text-[8px] text-blue-300/70 font-mono">
               Step {stepCursor + 1} / {stepNotes.length} · Bar {Math.floor(stepCursor / 4) + 1}.{(stepCursor % 4) + 1}

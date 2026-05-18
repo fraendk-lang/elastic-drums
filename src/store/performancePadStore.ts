@@ -294,7 +294,7 @@ interface PerformancePadState {
   clearStepAt: (index: number) => void;
   /** Advance the step cursor by one WITHOUT placing a note (rest). */
   skipStep: () => void;
-  /** Clear the step before the cursor and rewind the cursor onto it. */
+  /** Clear the step before the cursor and rewind onto it; no-op at step 0. */
   undoLastStep: () => void;
   appendEvent: (ev: Omit<PadEvent, "t">) => void;
   setLoopBars: (n: 0 | 1 | 2 | 4 | 8) => void;
@@ -534,8 +534,10 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
 
   undoLastStep: () => {
     const s = get();
-    if (!s.isStepRecording || s.stepNotes.length === 0) return;
-    const prev = (s.stepCursor - 1 + s.stepNotes.length) % s.stepNotes.length;
+    // No-op at step 0 — there is no "previous" step to clear, and wrapping
+    // back to the last step would clobber an unrelated note.
+    if (!s.isStepRecording || s.stepNotes.length === 0 || s.stepCursor === 0) return;
+    const prev = s.stepCursor - 1;
     const stepNotes = s.stepNotes.slice();
     stepNotes[prev] = null;
     set({
