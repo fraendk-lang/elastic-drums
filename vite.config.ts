@@ -1,9 +1,14 @@
-import { defineConfig } from "vite";
+import { defineConfig, configDefaults } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import path from "path";
 
 export default defineConfig({
   plugins: [react()],
+  test: {
+    // Never scan build-output directories for tests — `plugin/build` holds
+    // vendored JUCE example code (CMake FetchContent) with unparsable JSX.
+    exclude: [...configDefaults.exclude, "plugin/**"],
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
