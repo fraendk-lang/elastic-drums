@@ -11,7 +11,7 @@
  */
 
 import { create } from "zustand";
-import { useDrumStore } from "./drumStore";
+import { gridMs, stepCountFor, stepNotesToEvents, type StepNote } from "./performancePadStep";
 
 export type YAxisParam = "cutoff" | "resonance" | "envMod" | "decay" | "distortion" | "volume" | "reverb" | "delay" | "drive" | "pitch";
 
@@ -252,7 +252,9 @@ interface PerformancePadState {
   isArmed: boolean;         // REC pressed, waiting for first note to actually start
   isRecording: boolean;
   isStepRecording: boolean; // Step-record mode — each press places a note at the current step and advances
-  stepCursorMs: number;     // Current "virtual time" position in step mode (ms from loop start)
+  stepNotes: (StepNote | null)[]; // Step-indexed melody — source of truth in step mode (null = rest)
+  stepCursor: number;             // Current step index in step mode
+  stepGridMs: number;             // ms per step, captured when step recording starts
   isLooping: boolean;
   recordStart: number;      // performance.now() at record start (first-note-touch)
   loopDuration: number;     // ms, set after first recording (quantized if loopBars set)
@@ -283,10 +285,16 @@ interface PerformancePadState {
   startStepRecording: (bpm: number) => void;
   stopRecording: (bpm: number) => void;  // bpm needed to compute bar-snapped loop length
   clearRecording: () => void;
-  /** Advance the step-record cursor by one grid step WITHOUT placing a note (rest). */
-  skipStep: (bpm: number) => void;
-  /** Remove the most recent step-recorded note + rewind cursor by one grid step. */
-  undoLastStep: (bpm: number) => void;
+  /** Place a note at the current step and advance the cursor by one (wraps). */
+  placeStepNote: (note: StepNote) => void;
+  /** Jump the step cursor to any step index (clamped to range). */
+  setStepCursor: (index: number) => void;
+  /** Delete the note at any step index. */
+  clearStepAt: (index: number) => void;
+  /** Advance the step cursor by one WITHOUT placing a note (rest). */
+  skipStep: () => void;
+  /** Clear the step before the cursor and rewind the cursor onto it. */
+  undoLastStep: () => void;
   appendEvent: (ev: Omit<PadEvent, "t">) => void;
   setLoopBars: (n: 0 | 1 | 2 | 4 | 8) => void;
   setQuantize: (q: "off" | "1/4" | "1/8" | "1/16" | "1/32") => void;
@@ -314,7 +322,9 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
   isArmed: false,
   isRecording: false,
   isStepRecording: false,
-  stepCursorMs: 0,
+  stepNotes: [],
+  stepCursor: 0,
+  stepGridMs: 0,
   isLooping: false,
   recordStart: 0,
   loopDuration: 0,
@@ -384,17 +394,25 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
   startStepRecording: (bpm: number) => {
     const s = get();
     if (s.isLooping) s.stopLoop();
+    const grid = gridMs(s.quantize, bpm);
+    const loopDuration = s.loopBars > 0
+      ? s.loopBars * (60000 / bpm) * 4
+      : 2 * (60000 / bpm) * 4;
+    const count = stepCountFor(loopDuration, grid);
+    // Keep an existing pattern if grid + length still match — toggling STEP
+    // off/on must not wipe the user's work. Otherwise start fresh.
+    const keep = s.stepNotes.length === count && s.stepGridMs === grid;
+    const stepNotes = keep ? s.stepNotes : new Array(count).fill(null);
     set({
       isArmed: false,
       isRecording: false,
       isStepRecording: true,
-      stepCursorMs: 0,
-      recordStart: performance.now(), // placeholder, step mode doesn't use it
-      events: [],
-      // Auto-set loopDuration based on loopBars or default 2 bars
-      loopDuration: s.loopBars > 0
-        ? s.loopBars * (60000 / bpm) * 4
-        : 2 * (60000 / bpm) * 4,
+      stepGridMs: grid,
+      stepCursor: 0,
+      stepNotes,
+      recordStart: performance.now(),
+      loopDuration,
+      events: stepNotesToEvents(stepNotes, grid, loopDuration),
     });
   },
 
@@ -473,115 +491,61 @@ export const usePerformancePadStore = create<PerformancePadState>((set, get) => 
   clearRecording: () => {
     const s = get();
     if (s.isLooping) s.stopLoop();
-    set({ events: [], loopDuration: 0, isRecording: false, isArmed: false, isStepRecording: false, stepCursorMs: 0 });
+    set({
+      events: [], loopDuration: 0, isRecording: false, isArmed: false,
+      isStepRecording: false, stepNotes: [], stepCursor: 0,
+    });
   },
 
-  /**
-   * Step mode: advance the cursor by ONE grid step without placing a note.
-   * Lets users program rhythms with rests instead of being forced to fill
-   * every step. No-op outside step-record mode.
-   */
-  skipStep: (bpm: number) => {
+  placeStepNote: (note) => {
     const s = get();
-    if (!s.isStepRecording || bpm <= 0) return;
-    const beatMs = 60000 / bpm;
-    const gridMap: Record<typeof s.quantize, number> = {
-      "off":  beatMs / 4,
-      "1/4":  beatMs,
-      "1/8":  beatMs / 2,
-      "1/16": beatMs / 4,
-      "1/32": beatMs / 8,
-    };
-    const grid = gridMap[s.quantize];
-    const loopMs = s.loopDuration || grid * 16;
-    set({ stepCursorMs: (s.stepCursorMs + grid) % loopMs });
+    if (!s.isStepRecording || s.stepNotes.length === 0) return;
+    const stepNotes = s.stepNotes.slice();
+    stepNotes[s.stepCursor] = note;
+    set({
+      stepNotes,
+      stepCursor: (s.stepCursor + 1) % stepNotes.length,
+      events: stepNotesToEvents(stepNotes, s.stepGridMs, s.loopDuration),
+    });
   },
 
-  /**
-   * Step mode: remove the most recently placed note and rewind cursor by
-   * one grid step. Each step-mode tap appends a down + up event pair tagged
-   * with a unique negative pointerId, so we drop the last pair whose
-   * pointerId is in the synthetic range. No-op outside step mode or with
-   * empty events.
-   */
-  undoLastStep: (bpm: number) => {
-    const s = get();
-    if (!s.isStepRecording || s.events.length === 0 || bpm <= 0) return;
-    // Find the last synthetic-pointerId pair (down + up). Both share the
-    // same negative pointerId.
-    const lastEv = s.events[s.events.length - 1];
-    if (!lastEv || lastEv.pointerId > -1000) return; // not a step-recorded event
-    const targetPid = lastEv.pointerId;
-    const trimmed = s.events.filter((e) => e.pointerId !== targetPid);
+  setStepCursor: (index) => {
+    const len = get().stepNotes.length;
+    if (len === 0) return;
+    set({ stepCursor: Math.max(0, Math.min(len - 1, index)) });
+  },
 
-    const beatMs = 60000 / bpm;
-    const gridMap: Record<typeof s.quantize, number> = {
-      "off":  beatMs / 4,
-      "1/4":  beatMs,
-      "1/8":  beatMs / 2,
-      "1/16": beatMs / 4,
-      "1/32": beatMs / 8,
-    };
-    const grid = gridMap[s.quantize];
-    const loopMs = s.loopDuration || grid * 16;
-    // Rewind cursor by one grid step (wrap-safe).
-    const newCursor = (s.stepCursorMs - grid + loopMs) % loopMs;
-    set({ events: trimmed, stepCursorMs: newCursor });
+  clearStepAt: (index) => {
+    const s = get();
+    if (index < 0 || index >= s.stepNotes.length) return;
+    const stepNotes = s.stepNotes.slice();
+    stepNotes[index] = null;
+    set({ stepNotes, events: stepNotesToEvents(stepNotes, s.stepGridMs, s.loopDuration) });
+  },
+
+  skipStep: () => {
+    const s = get();
+    if (!s.isStepRecording || s.stepNotes.length === 0) return;
+    set({ stepCursor: (s.stepCursor + 1) % s.stepNotes.length });
+  },
+
+  undoLastStep: () => {
+    const s = get();
+    if (!s.isStepRecording || s.stepNotes.length === 0) return;
+    const prev = (s.stepCursor - 1 + s.stepNotes.length) % s.stepNotes.length;
+    const stepNotes = s.stepNotes.slice();
+    stepNotes[prev] = null;
+    set({
+      stepNotes, stepCursor: prev,
+      events: stepNotesToEvents(stepNotes, s.stepGridMs, s.loopDuration),
+    });
   },
 
   appendEvent: (ev) => {
     const s = get();
-
-    // Step-record mode: each pointer-down places a note at stepCursorMs
-    // and auto-advances the cursor by one quantize grid. "move" events are
-    // ignored. "up" event finalizes note length (one grid step by default).
-    if (s.isStepRecording) {
-      if (ev.type === "move") return; // no gesture tracking in step mode
-      // We need BPM to compute grid — read directly from drumStore
-      const bpm = useDrumStore.getState().bpm;
-      const beatMs = 60000 / bpm;
-      const gridMap: Record<typeof s.quantize, number> = {
-        "off":  beatMs / 4,   // default: 1/16 if Q is off in step mode
-        "1/4":  beatMs,
-        "1/8":  beatMs / 2,
-        "1/16": beatMs / 4,
-        "1/32": beatMs / 8,
-      };
-      const grid = gridMap[s.quantize];
-
-      if (ev.type === "down") {
-        const downT = s.stepCursorMs;
-        // Notes end slightly BEFORE the next grid step so consecutive notes
-        // don't have their down/up events at the exact same scheduled time
-        // (which causes setTimeout-order race conditions). 92% gives a small
-        // breathing gap that's musically inaudible but technically reliable.
-        // Also clamp the off-event to fit inside the loop — otherwise the
-        // last step's note would have its "up" past the iteration boundary
-        // and the voice would hang until auto-evict.
-        const loopMs = s.loopDuration || grid * 16;
-        const rawOffT = downT + grid * 0.92;
-        const noteOffT = Math.min(rawOffT, loopMs - 1);
-        set((state) => {
-          // Each step-recorded tap gets its OWN synthetic pointerId so that
-          // playback voices never collide on the same key (a real concern on
-          // mouse where ev.pointerId is reused across taps). Negative range
-          // ensures no clash with real pointer events (which are always >= 0).
-          const stepPointerId = -1000 - state.events.length;
-          return {
-            events: [
-              ...state.events,
-              { ...ev, t: downT, pointerId: stepPointerId },
-              { ...ev, t: noteOffT, pointerId: stepPointerId, type: "up" as const },
-            ],
-            // Advance cursor by one FULL grid step (the note is shortened to
-            // 92% but the grid spacing stays exact).
-            stepCursorMs: (downT + grid) % loopMs,
-          };
-        });
-      }
-      return;
-    }
-
+    // Step mode places notes via placeStepNote (called from the component);
+    // appendEvent only handles real-time (armed) recording.
+    if (s.isStepRecording) return;
     // If armed and this is the first event, start recording NOW
     if (s.isArmed && ev.type === "down") {
       const startTime = performance.now();
