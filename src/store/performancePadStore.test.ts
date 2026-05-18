@@ -62,3 +62,29 @@ describe("performancePadStore — step model", () => {
     expect(store().stepNotes[0]).toBeNull();
   });
 });
+
+describe("performancePadStore — startStepRecording pattern preservation", () => {
+  const store = () => usePerformancePadStore.getState();
+
+  it("keeps the existing pattern when grid + length are unchanged", () => {
+    store().clearRecording();
+    store().setQuantize("1/16");
+    store().setLoopBars(1);
+    store().startStepRecording(120);
+    store().placeStepNote({ x: 0.4, y: 0.5, velocity: 0.9 }); // note on step 0
+    store().startStepRecording(120); // same quantize + loopBars + bpm
+    expect(store().stepNotes[0]).toEqual({ x: 0.4, y: 0.5, velocity: 0.9 });
+    expect(store().stepCursor).toBe(0);
+  });
+
+  it("starts fresh when the grid changes", () => {
+    store().clearRecording();
+    store().setQuantize("1/16");
+    store().setLoopBars(1);
+    store().startStepRecording(120);
+    store().placeStepNote({ x: 0.4, y: 0.5, velocity: 0.9 });
+    store().setQuantize("1/8"); // grid changes → pattern must be wiped
+    store().startStepRecording(120);
+    expect(store().stepNotes.every((s) => s === null)).toBe(true);
+  });
+});
