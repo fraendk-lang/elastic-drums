@@ -38,9 +38,9 @@ describe("stepNotesToEvents", () => {
     const evs = stepNotesToEvents([n(0.5)], 125, 2000);
     expect(evs.find((e) => e.type === "up")!.t).toBeCloseTo(115);
   });
-  it("clamps the final note's up event inside the loop", () => {
+  it("ends the final note 92% into its grid step", () => {
     const evs = stepNotesToEvents([null, null, null, n(0.5)], 125, 500);
-    expect(evs.find((e) => e.type === "up")!.t).toBe(499);
+    expect(evs.find((e) => e.type === "up")!.t).toBe(490);
   });
   it("gives each step a stable unique pointerId", () => {
     const evs = stepNotesToEvents([n(0.1), n(0.2)], 125, 2000);

@@ -51,11 +51,7 @@ export function stepNotesToEvents(
     if (!note) continue;
     const pointerId = -1000 - i;
     const downT = i * grid;
-    const nextStepT = (i + 1) * grid;
-    const tentativeUpT = downT + grid * 0.92;
-    const upT = nextStepT >= loopDuration
-      ? loopDuration - 1
-      : Math.min(tentativeUpT, loopDuration - 1);
+    const upT = Math.min(downT + grid * 0.92, loopDuration - 1);
     events.push({ t: downT, type: "down", pointerId, x: note.x, y: note.y, velocity: note.velocity });
     events.push({ t: upT,   type: "up",   pointerId, x: note.x, y: note.y, velocity: note.velocity });
   }
