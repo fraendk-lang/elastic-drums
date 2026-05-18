@@ -897,7 +897,10 @@ export class MelodyEngine {
     const p = this.params;
     const ctx = this.ctx;
     const velLevel = 0.35 + Math.max(0, Math.min(1, velocity)) * 0.65;
-    const accentBoost = accent ? (1 + p.accent * 0.8) : 1;
+    // Non-accent notes sit at 0.75 for headroom — matches the mono triggerNote
+    // path. Without this the poly path (pad, chords, layers, most sequencer
+    // melody) ran ~2.5 dB hotter than the engine's mono-path calibration.
+    const accentBoost = accent ? (1 + p.accent * 0.8) : 0.75;
     const level = velLevel * accentBoost;
 
     // Non-subtractive: fire-and-forget helpers (cheap one-shots, not the bottleneck)
