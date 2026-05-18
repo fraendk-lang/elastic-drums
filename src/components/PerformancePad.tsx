@@ -1574,33 +1574,41 @@ export function PerformancePad({ isOpen, onClose }: Props) {
 
         <div className="mx-1 h-4 w-px bg-white/10" />
 
-        {/* Loop length selector (auto / 1 / 2 / 4 / 8 bars) */}
+        {/* Loop length selector (auto / 1 / 2 / 4 / 8 bars).
+            Locked during step recording — the grid is snapshotted at STEP-on. */}
         {!isRecording && !isArmed && (
-          <div className="flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1">
+          <div className={`flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1 ${isStepRecording ? "opacity-40" : ""}`}>
             <span className="text-[8px] text-[var(--ed-text-muted)] mr-1">BARS</span>
             {([0, 1, 2, 4, 8] as const).map((n) => (
               <button key={n} onClick={() => setLoopBars(n)}
-                className={`px-1.5 h-5 text-[9px] font-bold rounded ${
-                  loopBars === n ? "bg-white/15 text-white/90" : "text-white/30 hover:text-white/60"
+                disabled={isStepRecording}
+                className={`px-1.5 h-5 text-[9px] font-bold rounded disabled:cursor-not-allowed ${
+                  loopBars === n ? "bg-white/15 text-white/90" : `text-white/30 ${isStepRecording ? "" : "hover:text-white/60"}`
                 }`}
-                title={n === 0 ? "Auto (measured duration)" : `${n} bar${n > 1 ? "s" : ""} at current BPM`}
+                title={isStepRecording
+                  ? "Locked while step recording — toggle STEP off to change"
+                  : n === 0 ? "Auto (measured duration)" : `${n} bar${n > 1 ? "s" : ""} at current BPM`}
               >{n === 0 ? "AUTO" : n}</button>
             ))}
           </div>
         )}
 
-        {/* Quantize selector */}
+        {/* Quantize selector.
+            Locked during step recording — stepGridMs is snapshotted at STEP-on. */}
         {!isRecording && !isArmed && (
-          <div className="flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1">
+          <div className={`flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1 ${isStepRecording ? "opacity-40" : ""}`}>
             <span className="text-[8px] text-[var(--ed-text-muted)] mr-1">Q</span>
             {(["off", "1/4", "1/8", "1/16", "1/32"] as const).map((q) => (
               <button key={q} onClick={() => setQuantize(q)}
-                className={`px-1 h-5 text-[8px] font-bold rounded ${
+                disabled={isStepRecording}
+                className={`px-1 h-5 text-[8px] font-bold rounded disabled:cursor-not-allowed ${
                   quantize === q
                     ? "bg-[var(--ed-accent-blue)]/25 text-[var(--ed-accent-blue)]"
-                    : "text-white/30 hover:text-white/60"
+                    : `text-white/30 ${isStepRecording ? "" : "hover:text-white/60"}`
                 }`}
-                title={q === "off" ? "No quantize" : `Snap event timings to ${q} grid`}
+                title={isStepRecording
+                  ? "Locked while step recording — toggle STEP off to change"
+                  : q === "off" ? "No quantize" : `Snap event timings to ${q} grid`}
               >{q === "off" ? "—" : q}</button>
             ))}
           </div>
